@@ -1,0 +1,453 @@
+// Prisma Schema for Smartifly OTT Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Admin users for the backend panel
+model Admin {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String
+  name          String?
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// Refresh tokens for secure authentication
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// Portal/DNS configurations (max 5 per deployment)
+model Portal {
+  id          String   @id @default(uuid())
+  displayId   Int      @unique @default(autoincrement()) // Fixed visible ID
+  name        String
+  url         String
+  username    String?  // Optional: some setups might have default credentials
+  password    String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  description String?
+  category    String   @default("General")
+  healthStatus String  @default("UNKNOWN") // ONLINE, OFFLINE, UNSTABLE, UNKNOWN
+  lastCheckAt DateTime?
+  latency     Int?     // in ms
+  uptime      Float?   // percentage
+  activeConnections Int @default(0)
+  errorCount  Int      @default(0)  // Track connection errors
+  serverIp    String?              // Resolved server IP address
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive])
+}
+
+// Subscription packages displayed on customer portal
+model Package {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  duration    String   // "1 Month", "3 Months", "6 Months", "1 Year"
+  price       Float
+  currency    String   @default("USD")
+  features    Json     @default("[]") // Array of feature strings (JSON for MySQL)
+  isPopular   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  pricingTiers PricingTier[]
+  analytics   PackageAnalytics?
+  subscriptionRequests SubscriptionRequest[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Pricing tiers for volume discounts
+model PricingTier {
+  id          String   @id @default(uuid())
+  packageId   String
+  package     Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  minQuantity Int      // Minimum quantity for this tier
+  maxQuantity Int?     // Maximum quantity (null = unlimited)
+  price       Float    // Price per unit at this tier
+  discount    Float?   // Percentage discount (optional)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Package analytics and performance metrics
+model PackageAnalytics {
+  id              String   @id @default(uuid())
+  packageId       String   @unique
+  package         Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  views           Int      @default(0)
+  purchases       Int      @default(0)
+  revenue         Float    @default(0)
+  conversionRate  Float    @default(0) // purchases / views
+  lastViewedAt    DateTime?
+  lastPurchasedAt DateTime?
+  updatedAt       DateTime @updatedAt
+}
+
+// Reusable feature templates for packages
+model FeatureTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  features    Json     @default("[]") // Array of feature strings (JSON for MySQL)
+  category    String   @default("General")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Support tickets from customer portal
+model Ticket {
+  id              String   @id @default(uuid())
+  ticketNo        String   @unique  // Human-readable ticket number
+  name            String
+  email           String
+  subject         String
+  message         String
+  status          TicketStatus @default(OPEN)
+  priority        TicketPriority @default(MEDIUM)
+  tags            Json      @default("[]") // Categorization labels (JSON for MySQL)
+  firstResponseAt DateTime? // SLA: When first admin response was sent
+  resolvedAt      DateTime? // When ticket was resolved
+  replies         Reply[]
+  attachments     TicketAttachment[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Reply {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  message   String
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// File attachments for tickets
+model TicketAttachment {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  filename  String
+  fileUrl   String
+  fileType  String   // image/png, application/pdf, etc.
+  fileSize  Int      // in bytes
+  createdAt DateTime @default(now())
+}
+
+// Pre-defined response templates
+model TicketTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  content   String
+  category  String   @default("General")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// System announcements (shown in app and portal)
+model Announcement {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   // Rich text content
+  type        AnnouncementType @default(INFO)
+  priority    AnnouncementPriority @default(NORMAL)
+  status      AnnouncementStatus @default(DRAFT)
+  audience    String?  // JSON string: "ALL", "ADMINS", "USERS" or specific IDs
+  isActive    Boolean  @default(true)
+  views       Int      @default(0)
+  scheduledAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// Global app settings
+model AppSettings {
+  id              String  @id @default("main")
+  maintenanceMode Boolean @default(false)
+  maintenanceMsg  String?
+  latestVersion   String  @default("1.0.0")
+  minVersion      String  @default("1.0.0")
+  updateUrl       String?
+  forceUpdate     Boolean @default(false)
+  contactEmail    String?
+  contactPhone    String?
+  aboutText       String?
+  termsUrl        String?
+  privacyUrl      String?
+  // Bank details for manual payments
+  bankName        String?
+  accountTitle    String?
+  accountNumber   String?
+  iban            String?
+  paymentInstructions String?
+  updatedAt       DateTime @updatedAt
+}
+
+// Push notification logs
+model Notification {
+  id          String   @id @default(uuid())
+  title       String
+  body        String
+  data        Json?
+  sentAt      DateTime? // Nullable for scheduled
+  sentBy      String?   // Admin ID who sent it
+  status      NotificationStatus @default(PENDING)
+  scheduledAt DateTime?
+  error       String?
+  openedAt    DateTime?
+  
+  // Relations
+  templateId  String?
+  template    NotificationTemplate? @relation(fields: [templateId], references: [id])
+  segmentId   String?
+  segment     NotificationSegment? @relation(fields: [segmentId], references: [id])
+  abTestId    String?
+  abTest      ABTest? @relation(fields: [abTestId], references: [id])
+  
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([status, scheduledAt])
+}
+
+model NotificationTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  title       String
+  body        String
+  data        Json?
+  
+  // Customization
+  imageUrl    String?
+  deepLink    String?
+  
+  category    String   @default("General")
+  isActive    Boolean  @default(true)
+  notifications Notification[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NotificationSegment {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  filters     Json     // Store filter rules e.g. { "platform": "android", "region": "US" }
+  isActive    Boolean  @default(true)
+  notifications Notification[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ABTest {
+  id          String   @id @default(uuid())
+  name        String
+  status      ABTestStatus @default(RUNNING)
+  variants    Json     // Array of variants e.g. [{ name: "A", title: "...", body: "..." }, { name: "B", ... }]
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  winnerVariant String?
+  notifications Notification[]
+  
+  metrics     Json?    // Store aggregated metrics for each variant
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum NotificationStatus {
+  PENDING
+  SCHEDULED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum ABTestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  STOPPED
+}
+
+// Device tokens for push notifications
+model DeviceToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  platform  String   // android, ios, web
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([platform])
+}
+
+// ==========================================
+// SETTINGS MODULE EXTENSIONS
+// ==========================================
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g., "new_dashboard"
+  name        String
+  description String?
+  isEnabled   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MaintenanceWindow {
+  id          String   @id @default(uuid())
+  startTime   DateTime
+  endTime     DateTime
+  reason      String?
+  status      MaintenanceStatus @default(SCHEDULED)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Backup {
+  id          String   @id @default(uuid())
+  filename    String
+  size        Int      // in bytes
+  status      BackupStatus @default(PENDING)
+  url         String?  // path to file
+  createdAt   DateTime @default(now())
+}
+
+model SystemAuditLog {
+  id          String   @id @default(uuid())
+  adminId     String?  // Optional, if performed by system
+  action      String   // CREATE, UPDATE, DELETE, TOGGLE
+  resource    String   // Settings, FeatureFlag, User, etc.
+  details     Json?    // Store diffs or relevant data
+  ipAddress   String? 
+  createdAt   DateTime @default(now())
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+
+// Enums
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  MAINTENANCE
+  UPDATE
+}
+
+// ==========================================
+// ANALYTICS MODULE
+// ==========================================
+
+model AnalyticsSnapshot {
+  id              String   @id @default(uuid())
+  date            DateTime @db.Date
+
+  // Ticket Metrics
+  ticketsCreated    Int @default(0)
+  ticketsResolved   Int @default(0)
+  avgResolutionTime Float?  // in hours
+
+  // Ticket Status Counts (snapshot at end of day)
+  ticketsOpen       Int @default(0)
+  ticketsInProgress Int @default(0)
+  ticketsClosed     Int @default(0)
+
+  // Portal Metrics
+  portalConnections  Int @default(0)
+  portalUptimeAvg    Float? // percentage
+
+  // Notification Metrics
+  notificationsSent      Int @default(0)
+  notificationsDelivered Int @default(0)
+  notificationsFailed    Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([date])
+}
+
+// Subscription requests from customer portal
+model SubscriptionRequest {
+  id                String   @id @default(uuid())
+  packageId         String
+  package           Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  fullName          String
+  email             String
+  phoneNumber       String
+  verificationToken String   @unique
+  isEmailVerified   Boolean  @default(false)
+  verifiedAt        DateTime?
+  pdfSentAt         DateTime?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([email])
+  @@index([verificationToken])
+  @@index([expiresAt])
+}
+
