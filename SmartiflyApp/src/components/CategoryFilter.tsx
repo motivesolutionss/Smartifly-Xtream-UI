@@ -1,0 +1,198 @@
+/**
+ * Smartifly Category Filter Component
+ * 
+ * Netflix-style interactive filter chips for home screen.
+ * States:
+ * - Default: Shows all filter chips (Live TV, Films, Series, Categories)
+ * - Filtered: Shows X button + selected filter + "All categories" dropdown
+ */
+
+import React from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    Animated,
+} from 'react-native';
+import { Icon, colors, spacing, borderRadius } from '../theme';
+import useFilterStore, { ContentType } from '../store/filterStore';
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+interface CategoryFilterProps {
+    onCategoryPress?: () => void;
+}
+
+interface FilterChip {
+    id: ContentType;
+    label: string;
+}
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+const FILTER_CHIPS: FilterChip[] = [
+    { id: 'live', label: 'Live TV' },
+    { id: 'movies', label: 'Movies' },
+    { id: 'series', label: 'Series' },
+];
+
+// =============================================================================
+// COMPONENT
+// =============================================================================
+
+const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryPress }) => {
+    const {
+        selectedType,
+        getCategoryNameForType,
+        setType,
+        clearFilters,
+        setCategoryModalVisible,
+    } = useFilterStore();
+
+    // Get the category name for the current type
+    const currentCategoryName = getCategoryNameForType();
+
+    const isFiltered = selectedType !== null;
+
+    // Handle filter chip press
+    const handleChipPress = (type: ContentType) => {
+        if (selectedType === type) {
+            // Already selected, clear filter
+            clearFilters();
+        } else {
+            setType(type);
+        }
+    };
+
+    // Handle clear button press
+    const handleClear = () => {
+        clearFilters();
+    };
+
+    // Handle categories dropdown press
+    const handleCategoriesPress = () => {
+        setCategoryModalVisible(true);
+        onCategoryPress?.();
+    };
+
+    // Get label for selected type
+    const getSelectedLabel = () => {
+        return FILTER_CHIPS.find(chip => chip.id === selectedType)?.label || '';
+    };
+
+    return (
+        <View style={styles.container}>
+            {isFiltered ? (
+                <React.Fragment>
+                    <TouchableOpacity
+                        style={styles.clearButton}
+                        onPress={handleClear}
+                        activeOpacity={0.7}
+                    >
+                        <Icon name="x" size={16} color={colors.textPrimary} weight="bold" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.chip, styles.chipActive]}
+                        onPress={() => handleChipPress(selectedType)}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={[styles.chipText, styles.chipTextActive]}>
+                            {getSelectedLabel()}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.chipWithArrow}
+                        onPress={handleCategoriesPress}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={styles.chipText}>
+                            {currentCategoryName || 'All categories'}
+                        </Text>
+                        <Icon name="caretDown" size={14} color={colors.textSecondary} weight="bold" />
+                    </TouchableOpacity>
+                </React.Fragment>
+            ) : (
+                <React.Fragment>
+                    {FILTER_CHIPS.map((chip) => (
+                        <TouchableOpacity
+                            key={chip.id}
+                            style={styles.chip}
+                            onPress={() => handleChipPress(chip.id)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.chipText}>{chip.label}</Text>
+                        </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                        style={styles.chipWithArrow}
+                        onPress={handleCategoriesPress}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={styles.chipText}>Categories</Text>
+                        <Icon name="caretDown" size={14} color={colors.textSecondary} weight="bold" />
+                    </TouchableOpacity>
+                </React.Fragment>
+            )}
+        </View>
+    );
+};
+
+// =============================================================================
+// STYLES
+// =============================================================================
+
+const styles = StyleSheet.create({
+    container: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    clearButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    chip: {
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.round,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'transparent',
+    },
+    chipActive: {
+        backgroundColor: colors.textPrimary,
+        borderColor: colors.textPrimary,
+    },
+    chipWithArrow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.round,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'transparent',
+        gap: spacing.xxs,
+    },
+    chipText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: colors.textSecondary,
+    },
+    chipTextActive: {
+        color: colors.background,
+    },
+});
+
+export default CategoryFilter;

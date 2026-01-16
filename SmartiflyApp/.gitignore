@@ -1,0 +1,87 @@
+# =========================
+# OS / SYSTEM
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# NODE / JS
+# =========================
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# METRO / REACT NATIVE
+# =========================
+.metro-health-check*
+*.jsbundle
+/coverage
+
+# =========================
+# ANDROID
+# =========================
+android/.gradle
+android/.kotlin
+android/local.properties
+android/app/build
+android/build
+android/.idea
+android/.cxx
+android/**/*.iml
+android/**/*.hprof
+android/**/*.keystore
+!android/app/debug.keystore
+
+# =========================
+# iOS / Xcode
+# =========================
+ios/build
+ios/Pods
+ios/DerivedData
+ios/*.xcworkspace
+ios/*.xcuserstate
+ios/**/*.pbxuser
+ios/**/*.mode1v3
+ios/**/*.mode2v3
+ios/**/*.perspectivev3
+!ios/default.pbxuser
+!ios/default.mode1v3
+!ios/default.mode2v3
+!ios/default.perspectivev3
+**/.xcode.env.local
+
+# =========================
+# FASTLANE
+# =========================
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# =========================
+# RUBY / COCOAPODS
+# =========================
+vendor/bundle
+
+# =========================
+# YARN (Berry / PnP safe)
+# =========================
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# =========================
+# NETLIFY / DEPLOY TOOLS
+# =========================
+.netlify
+
+# =========================
+# IDEs
+# =========================
+.idea/
+.vscode/
