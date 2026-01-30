@@ -391,19 +391,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             });
         } else if (item.type === 'movie') {
             // Navigate to MovieDetail instead of direct play
+            const movieData = item.data as any;
             navigation.navigate('MovieDetail', {
                 movie: {
-                    stream_id: item.data.stream_id,
-                    name: item.data.name,
-                    stream_icon: item.data.stream_icon,
-                    rating: item.data.rating,
-                    rating_5based: item.data.rating_5based,
-                    container_extension: item.data.container_extension,
-                    plot: item.data.plot,
-                    genre: item.data.genre,
-                    cast: item.data.cast,
-                    director: item.data.director,
-                    youtube_trailer: item.data.youtube_trailer,
+                    stream_id: movieData.stream_id,
+                    name: movieData.name,
+                    stream_icon: movieData.stream_icon,
+                    rating: movieData.rating,
+                    rating_5based: movieData.rating_5based,
+                    container_extension: movieData.container_extension,
+                    plot: movieData.plot,
+                    genre: movieData.genre,
+                    cast: movieData.cast,
+                    director: movieData.director,
+                    youtube_trailer: movieData.youtube_trailer,
                 },
             });
         } else if (item.type === 'series') {
@@ -429,15 +430,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             return;
         }
 
-        if (item.type === 'series') {
-            const extension = item.data?.container_extension || 'mp4';
-            const episodeUrl = api.getSeriesEpisodeUrl(item.streamId, extension);
-            navigation.navigate('Player', {
-                type: 'series',
-                item: item.data || {
-                    id: item.streamId,
-                    name: item.episodeTitle || item.title,
-                },
+    if (item.type === 'series') {
+        const seriesData = item.data as any;
+        const extension = seriesData?.container_extension || 'mp4';
+        const episodeUrl = api.getSeriesEpisodeUrl(item.streamId, extension);
+        navigation.navigate('Player', {
+            type: 'series',
+            item: item.data || {
+                id: item.streamId,
+                name: item.episodeTitle || item.title,
+            },
                 episodeUrl,
             });
         }

@@ -47,6 +47,7 @@ export interface ContentItem {
     year?: string;
     episodeCount?: number;
     progress?: number;
+    data?: any;
 }
 
 export interface ContentCardProps {

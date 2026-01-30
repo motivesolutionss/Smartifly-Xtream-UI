@@ -138,7 +138,7 @@ class XtreamAPI {
             }
 
             // Check if portal returned auth response instead of content data
-            // This happens when: 1) Portal doesn't support action param, 2) Account has no content
+            // This happens when: 1. Portal doesn't support action param, 2. Account has no content
             if (data.user_info && data.server_info) {
                 if (data.user_info.auth === 1) {
                     // Auth succeeded but portal returned auth response instead of content
@@ -262,7 +262,7 @@ class XtreamAPI {
 
         this.client = axios.create({
             baseURL: this.baseUrl,
-            timeout: 30000, // Increased timeout for large responses
+            timeout: config.xtream.timeout ?? 30000, // Use configured Xtream timeout with fallback
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
             decompress: true, // Enable gzip decompression
@@ -330,10 +330,10 @@ class XtreamAPI {
                         // Truncated array - needs `]` or `}]`
                         // Try progressive repairs
                         const repairs = [
-                            rawData + ']',           // Just missing closing bracket
-                            rawData + '}]',          // Missing object close + bracket
-                            rawData + '"}]',         // Missing string close + object + bracket
-                            rawData + '"}]',         // Alternative
+                            rawData + ']',
+                            rawData + '}]',
+                            rawData + '"}]',
+                            rawData + '"}]',
                         ];
 
                         for (const attempt of repairs) {

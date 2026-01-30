@@ -107,7 +107,7 @@ export interface ContentRowItem {
     image?: string;
     type: 'live' | 'movie' | 'series';
     rating?: number;
-    data: any; // Original API data for navigation
+    data: unknown; // Original API data for navigation
 }
 
 /**
@@ -239,7 +239,7 @@ export interface SearchResult {
     type: 'live' | 'movie' | 'series';
     image?: string;
     rating?: number;
-    data: any;
+    data: unknown;
 }
 
 /**
@@ -265,5 +265,5 @@ export interface FavoriteItem {
     name: string;
     image?: string;
     addedAt: number;
-    data: any;
+    data: unknown;
 }

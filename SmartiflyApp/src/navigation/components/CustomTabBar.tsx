@@ -11,21 +11,12 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
-import { colors, spacing, borderRadius } from '../../theme';
+import { colors, spacing } from '../../theme';
 import { Icon, IconName } from '../../theme/icons';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-// =============================================================================
-// TAB CONFIGURATION
-// =============================================================================
 
 interface TabItemConfig {
     route: string;
@@ -39,9 +30,16 @@ const TAB_CONFIG: Record<string, TabItemConfig> = {
     HomeTab: {
         route: 'HomeTab',
         label: 'Home',
-        icon: '⌂',
-        iconActive: '⌂',
+        icon: 'home',
+        iconActive: 'home',
         activeColor: colors.primary,
+    },
+    SearchTab: {
+        route: 'SearchTab',
+        label: 'Search',
+        icon: 'magnifyingGlass',
+        iconActive: 'magnifyingGlass',
+        activeColor: colors.accent,
     },
     FavoritesTab: {
         route: 'FavoritesTab',
@@ -60,17 +58,11 @@ const TAB_CONFIG: Record<string, TabItemConfig> = {
     SettingsTab: {
         route: 'SettingsTab',
         label: 'Settings',
-        icon: '⚙',
-        iconActive: '⚙',
+        icon: 'settings',
+        iconActive: 'settings',
         activeColor: colors.accent,
     },
 };
-
-// =============================================================================
-// TAB ICON COMPONENT
-// =============================================================================
-
-
 
 interface TabIconProps {
     name: string;
@@ -79,11 +71,7 @@ interface TabIconProps {
     size: number;
 }
 
-/**
- * Tab Icon - Using Phosphor icons from theme
- */
 const TabIcon: React.FC<TabIconProps> = ({ name, focused, color, size }) => {
-    // Icon mapping - route icon names to IconName type
     const iconNameMap: Record<string, IconName> = {
         home: 'home',
         favorites: 'heart',
@@ -102,10 +90,6 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused, color, size }) => {
         />
     );
 };
-
-// =============================================================================
-// TAB BAR ITEM COMPONENT
-// =============================================================================
 
 interface TabBarItemProps {
     route: any;
@@ -152,6 +136,7 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
 
     const iconNameMap: Record<string, string> = {
         HomeTab: 'home',
+        SearchTab: 'magnifyingGlass',
         FavoritesTab: 'favorites',
         AnnouncementsTab: 'updates',
         SettingsTab: 'settings',
@@ -174,12 +159,10 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
             style={styles.tabItem}
             activeOpacity={0.7}
         >
-            {/* Active Indicator */}
             {isFocused && (
                 <View style={[styles.activeIndicator, { backgroundColor: activeColor }]} />
             )}
 
-            {/* Icon Container */}
             <View style={[
                 styles.iconContainer,
                 isFocused && styles.iconContainerActive,
@@ -192,7 +175,6 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
                 />
             </View>
 
-            {/* Label */}
             <Text
                 style={[
                     styles.label,
@@ -203,15 +185,9 @@ const TabBarItem: React.FC<TabBarItemProps> = ({
             >
                 {config.label}
             </Text>
-
-
         </TouchableOpacity>
     );
 };
-
-// =============================================================================
-// CUSTOM TAB BAR COMPONENT
-// =============================================================================
 
 const CustomTabBar: React.FC<BottomTabBarProps> = ({
     state,
@@ -219,19 +195,15 @@ const CustomTabBar: React.FC<BottomTabBarProps> = ({
     navigation,
 }) => {
     const insets = useSafeAreaInsets();
-
-    // Calculate bottom padding for safe area
     const bottomPadding = Math.max(insets.bottom, spacing.sm);
 
     return (
         <View style={[
             styles.container,
-            { paddingBottom: bottomPadding }
+            { paddingBottom: bottomPadding },
         ]}>
-            {/* Top border line */}
             <View style={styles.topBorder} />
 
-            {/* Tab items */}
             <View style={styles.tabsContainer}>
                 {state.routes.map((route, index) => (
                     <TabBarItem
@@ -247,10 +219,6 @@ const CustomTabBar: React.FC<BottomTabBarProps> = ({
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -288,10 +256,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderRadius: 8,
     },
-    iconContainerActive: {
-        // Subtle background for active state
-        // backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    },
+    iconContainerActive: {},
     label: {
         fontSize: 10,
         fontWeight: '500',
@@ -300,16 +265,6 @@ const styles = StyleSheet.create({
     },
     labelActive: {
         fontWeight: '600',
-    },
-    liveDot: {
-        position: 'absolute',
-        top: 6,
-        right: '50%',
-        marginRight: -18,
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: colors.live,
     },
 });
 

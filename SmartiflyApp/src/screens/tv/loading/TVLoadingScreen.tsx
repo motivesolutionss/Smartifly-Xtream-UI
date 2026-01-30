@@ -26,76 +26,61 @@ import useStore from '../../../store';
 import { logger } from '../../../config';
 import { colors, scale, scaleFont } from '../../../theme';
 
-// =============================================================================
-// TYPES
-// =============================================================================
-
 interface TVLoadingScreenProps {
     navigation: any;
 }
 
-// TV Safe Area
 const TV_SAFE_AREA = {
     horizontal: scale(48),
     vertical: scale(27),
 };
-
-// =============================================================================
-// LOADING STEP INDICATOR
-// =============================================================================
 
 interface StepIndicatorProps {
     steps: Array<{ number: number; label: string; icon: string }>;
     currentStep: number;
 }
 
-const LoadingStepIndicator: React.FC<StepIndicatorProps> = ({ steps, currentStep }) => {
-    return (
-        <View style={styles.stepsContainer}>
-            {steps.map((step, index) => {
-                const isComplete = currentStep > step.number;
-                const isActive = currentStep === step.number;
+const LoadingStepIndicator: React.FC<StepIndicatorProps> = ({ steps, currentStep }) => (
+    <View style={styles.stepsContainer}>
+        {steps.map((step, index) => {
+            const isComplete = currentStep > step.number;
+            const isActive = currentStep === step.number;
 
-                return (
-                    <View key={step.number} style={styles.stepWrapper}>
-                        <Animated.View
-                            style={[
-                                styles.stepItem,
-                                isComplete && styles.stepItemComplete,
-                                isActive && styles.stepItemActive,
-                            ]}
-                        >
-                            {isActive ? (
-                                <ActivityIndicator size="small" color={colors.accent} />
-                            ) : isComplete ? (
-                                <Text style={styles.stepCheck}>✓</Text>
-                            ) : (
-                                <Text style={styles.stepIcon}>{step.icon}</Text>
-                            )}
-                        </Animated.View>
-                        <Text style={[
-                            styles.stepLabel,
-                            isComplete && styles.stepLabelComplete,
-                            isActive && styles.stepLabelActive,
-                        ]}>
-                            {step.label}
-                        </Text>
-                        {index < steps.length - 1 && (
-                            <View style={[
-                                styles.stepConnector,
-                                isComplete && styles.stepConnectorComplete,
-                            ]} />
+            return (
+                <View key={step.number} style={styles.stepWrapper}>
+                    <Animated.View
+                        style={[
+                            styles.stepItem,
+                            isComplete && styles.stepItemComplete,
+                            isActive && styles.stepItemActive,
+                        ]}
+                    >
+                        {isActive ? (
+                            <ActivityIndicator size="small" color={colors.accent} />
+                        ) : isComplete ? (
+                            <Text style={styles.stepCheck}>✔</Text>
+                        ) : (
+                            <Text style={styles.stepIcon}>{step.icon}</Text>
                         )}
-                    </View>
-                );
-            })}
-        </View>
-    );
-};
-
-// =============================================================================
-// ERROR OVERLAY COMPONENT
-// =============================================================================
+                    </Animated.View>
+                    <Text style={[
+                        styles.stepLabel,
+                        isComplete && styles.stepLabelComplete,
+                        isActive && styles.stepLabelActive,
+                    ]}>
+                        {step.label}
+                    </Text>
+                    {index < steps.length - 1 && (
+                        <View style={[
+                            styles.stepConnector,
+                            isComplete && styles.stepConnectorComplete,
+                        ]} />
+                    )}
+                </View>
+            );
+        })}
+    </View>
+);
 
 interface ErrorOverlayProps {
     error: { message: string };
@@ -131,12 +116,7 @@ const ErrorOverlay: React.FC<ErrorOverlayProps> = ({ error, onRetry }) => {
     );
 };
 
-// =============================================================================
-// TV LOADING SCREEN COMPONENT
-// =============================================================================
-
 const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
-    // Store - using dynamic getContentReady() instead of stored contentReady
     const prefetchAllContent = useStore((state) => state.prefetchAllContent);
     const isPrefetching = useStore((state) => state.isPrefetching);
     const prefetchProgress = useStore((state) => state.prefetchProgress);
@@ -147,29 +127,21 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
     const retryCount = useStore((state) => state.retryCount);
     const maxRetries = useStore((state) => state.maxRetries);
 
-    // Guards to prevent double prefetch and multiple navigations
     const hasStarted = useRef(false);
     const hasNavigated = useRef(false);
 
-    // Animations
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
 
-    // =============================================================================
-    // EFFECTS
-    // =============================================================================
-
-    // Start prefetch on mount
     useEffect(() => {
         if (hasStarted.current) return;
         hasStarted.current = true;
         startPrefetch();
     }, []);
 
-    // Animate progress bar
     useEffect(() => {
         const progress = prefetchProgress.total > 0
             ? prefetchProgress.current / prefetchProgress.total
@@ -183,7 +155,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         }).start();
     }, [prefetchProgress.current, prefetchProgress.total]);
 
-    // Pulse animation for logo
     useEffect(() => {
         const pulse = Animated.loop(
             Animated.sequence([
@@ -205,7 +176,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         return () => pulse.stop();
     }, []);
 
-    // Glow animation
     useEffect(() => {
         const glow = Animated.loop(
             Animated.sequence([
@@ -227,7 +197,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         return () => glow.stop();
     }, []);
 
-    // Fade and scale in animation
     useEffect(() => {
         Animated.parallel([
             Animated.timing(fadeAnim, {
@@ -244,7 +213,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         ]).start();
     }, []);
 
-    // Navigate when complete
     useEffect(() => {
         if (hasNavigated.current) return;
 
@@ -255,7 +223,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
             const stats = getContentStats();
             logger.info(`Content loaded: ${stats.live} channels, ${stats.movies} movies, ${stats.series} series`);
 
-            // Celebrate animation then navigate
             Animated.sequence([
                 Animated.timing(scaleAnim, {
                     toValue: 1.05,
@@ -278,10 +245,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         }
     }, [getContentReady, isPrefetching]);
 
-    // =============================================================================
-    // FUNCTIONS
-    // =============================================================================
-
     const startPrefetch = async () => {
         logger.info('Starting TV content prefetch...');
         const success = await prefetchAllContent();
@@ -298,10 +261,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         await startPrefetch();
     };
 
-    // =============================================================================
-    // COMPUTED VALUES
-    // =============================================================================
-
     const progressWidth = progressAnim.interpolate({
         inputRange: [0, 1],
         outputRange: ['0%', '100%'],
@@ -315,7 +274,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
 
     const steps = [
         { number: 1, label: 'Live TV', icon: '📺' },
-        { number: 2, label: 'Channels', icon: '📡' },
+        { number: 2, label: 'Channels', icon: '💡' },
         { number: 3, label: 'Movies', icon: '🎬' },
         { number: 4, label: 'VOD', icon: '🎥' },
         { number: 5, label: 'Series', icon: '📺' },
@@ -327,15 +286,10 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         outputRange: [0.3, 0.8],
     });
 
-    // =============================================================================
-    // RENDER
-    // =============================================================================
-
     return (
         <View style={styles.container}>
             <StatusBar hidden />
 
-            {/* BACKGROUND - Same as TV Login Screen */}
             <Image
                 source={require('../../../assets/overlay_1.1.png')}
                 style={styles.backgroundImage}
@@ -345,7 +299,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
             <View style={styles.vignetteTop} pointerEvents="none" />
             <View style={styles.vignetteBottom} pointerEvents="none" />
 
-            {/* MAIN CONTENT */}
             <Animated.View
                 style={[
                     styles.content,
@@ -355,9 +308,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                     }
                 ]}
             >
-                {/* LEFT SECTION - Logo & Branding */}
                 <View style={styles.leftSection}>
-                    {/* Wing Logo Icon */}
                     <View style={styles.logoContainer}>
                         <Image
                             source={require('../../../assets/smartifly_icon_5.png')}
@@ -366,14 +317,12 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                         />
                     </View>
 
-                    {/* Text Logo */}
                     <Image
                         source={require('../../../assets/smartifly_icon_6.png')}
                         style={styles.logoText}
                         resizeMode="contain"
                     />
 
-                    {/* Footer Info */}
                     <View style={styles.footerInfo}>
                         <View style={styles.footerDivider} />
                         <Text style={styles.footerText}>
@@ -385,9 +334,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                     </View>
                 </View>
 
-                {/* RIGHT SECTION - Progress */}
                 <View style={styles.rightSection}>
-                    {/* Status Title */}
                     <Text style={styles.statusTitle}>
                         {contentReady
                             ? '🎉 Ready!'
@@ -405,7 +352,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                         }
                     </Text>
 
-                    {/* Progress Bar */}
                     <View style={styles.progressBarContainer}>
                         <Animated.View
                             style={[
@@ -421,7 +367,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                         />
                     </View>
 
-                    {/* Percentage Display */}
                     <View style={styles.percentageContainer}>
                         <Text style={styles.percentageNumber}>
                             {progressPercentage}
@@ -429,12 +374,10 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                         <Text style={styles.percentageSymbol}>%</Text>
                     </View>
 
-                    {/* Current Task */}
                     <Text style={styles.currentTask}>
                         {prefetchProgress.currentTask || 'Initializing...'}
                     </Text>
 
-                    {/* Step Indicators */}
                     <LoadingStepIndicator
                         steps={steps}
                         currentStep={prefetchProgress.current}
@@ -442,7 +385,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 </View>
             </Animated.View>
 
-            {/* Error Overlay */}
             {error && !isPrefetching && !contentReady && (
                 <ErrorOverlay
                     error={error}
@@ -450,7 +392,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 />
             )}
 
-            {/* Bottom Hint */}
             <View style={styles.bottomHint}>
                 <View style={styles.hintIndicator} />
                 <Text style={styles.hintText}>LOADING YOUR ENTERTAINMENT</Text>
@@ -458,10 +399,6 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -500,8 +437,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: TV_SAFE_AREA.horizontal,
         paddingVertical: TV_SAFE_AREA.vertical,
     },
-
-    // Left Section - Logo
     leftSection: {
         flex: 1,
         justifyContent: 'center',
@@ -512,19 +447,6 @@ const styles = StyleSheet.create({
         position: 'relative',
         marginBottom: 0,
     },
-    logoGlow: {
-        position: 'absolute',
-        width: scale(320),
-        height: scale(120),
-        borderRadius: scale(20),
-        backgroundColor: 'rgba(229, 9, 20, 0.3)',
-        top: -scale(10),
-        left: -scale(10),
-        shadowColor: '#E50914',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: scale(40),
-    },
     logoIcon: {
         width: scale(180),
         height: scale(180),
@@ -532,20 +454,6 @@ const styles = StyleSheet.create({
     logoText: {
         width: scale(550),
         height: scale(180),
-        marginTop: 0,
-    },
-    brandName: {
-        fontSize: scaleFont(42),
-        fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: 8,
-        marginBottom: scale(8),
-    },
-    tagline: {
-        fontSize: scaleFont(18),
-        color: 'rgba(255, 255, 255, 0.6)',
-        letterSpacing: 4,
-        textTransform: 'uppercase',
     },
     footerInfo: {
         position: 'absolute',
@@ -568,8 +476,6 @@ const styles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.3)',
         marginTop: scale(4),
     },
-
-    // Right Section - Progress
     rightSection: {
         flex: 1.2,
         justifyContent: 'center',
@@ -631,8 +537,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginBottom: scale(40),
     },
-
-    // Step Indicators
     stepsContainer: {
         flexDirection: 'row',
         alignItems: 'flex-start',
@@ -672,8 +576,7 @@ const styles = StyleSheet.create({
     stepLabel: {
         fontSize: scaleFont(11),
         color: 'rgba(255, 255, 255, 0.5)',
-        marginLeft: scale(8),
-        marginRight: scale(8),
+        marginHorizontal: scale(8),
     },
     stepLabelActive: {
         color: colors.accent || '#00E5FF',
@@ -691,8 +594,6 @@ const styles = StyleSheet.create({
     stepConnectorComplete: {
         backgroundColor: '#10B981',
     },
-
-    // Error Overlay
     errorOverlay: {
         position: 'absolute',
         top: 0,
@@ -743,8 +644,6 @@ const styles = StyleSheet.create({
     retryButtonTextFocused: {
         color: '#000000',
     },
-
-    // Bottom Hint
     bottomHint: {
         position: 'absolute',
         bottom: scale(20),

@@ -54,7 +54,7 @@ export interface WatchProgress {
     /** Whether content was completed (>90%) */
     completed: boolean;
     /** Full data object for navigation */
-    data?: any;
+    data?: unknown;
     /** Source provider (for future multi-provider support) */
     source?: 'xtream' | 'stalker' | 'm3u';
 }
@@ -85,28 +85,12 @@ interface WatchHistoryState {
     clearHistory: () => void;
 }
 
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-/**
- * Generate unique ID for watch progress.
- * Always uses just type + streamId for simplicity and cross-provider safety.
- * For series: streamId should be the episode's stream_id (globally unique).
- */
 const generateId = (
     type: WatchContentType,
     streamId: number
 ): string => `${type}-${streamId}`;
 
-/**
- * Check if content is considered completed (>90% progress)
- */
 const isCompleted = (progress: number): boolean => progress >= 90;
-
-// =============================================================================
-// STORE
-// =============================================================================
 
 export const useWatchHistoryStore = create<WatchHistoryState>()(
     persist(
@@ -139,11 +123,8 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
 
             getContinueWatching: (limit = 10) => {
                 const items = Object.values(get().history)
-                    // Exclude completed items
                     .filter((item) => !item.completed && item.progress > 0)
-                    // Sort by most recent
                     .sort((a, b) => b.lastWatched - a.lastWatched)
-                    // Limit
                     .slice(0, limit);
 
                 return items;
@@ -187,33 +168,22 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
         {
             name: 'smartifly-watch-history',
             storage: createJSONStorage(() => AsyncStorage),
-            // Only persist the history object
             partialize: (state) => ({ history: state.history }),
         }
     )
 );
 
-// =============================================================================
-// CONVENIENCE HOOKS
-// =============================================================================
-
-/**
- * Hook to track watch progress (call from player)
- */
 export const useTrackProgress = () => {
     const updateProgress = useWatchHistoryStore((state) => state.updateProgress);
 
     return {
-        /**
-         * Track movie progress
-         */
         trackMovie: (
             streamId: number,
             title: string,
             position: number,
             duration: number,
             thumbnail?: string,
-            data?: any
+            data?: unknown
         ) => {
             if (duration <= 0) return;
 
@@ -229,11 +199,6 @@ export const useTrackProgress = () => {
             });
         },
 
-        /**
-         * Track series episode progress
-         * @param episodeStreamId - The episode's stream_id (used as unique ID)
-         * @param seriesId - The parent series ID (metadata only)
-         */
         trackEpisode: (
             episodeStreamId: number,
             seriesId: number,
@@ -244,13 +209,13 @@ export const useTrackProgress = () => {
             position: number,
             duration: number,
             thumbnail?: string,
-            data?: any
+            data?: unknown
         ) => {
             if (duration <= 0) return;
 
             updateProgress({
                 type: 'series',
-                streamId: episodeStreamId, // Episode stream_id is the unique ID
+                streamId: episodeStreamId,
                 seriesId,
                 title: seriesTitle,
                 episodeTitle,
@@ -264,14 +229,11 @@ export const useTrackProgress = () => {
             });
         },
 
-        /**
-         * Track live channel view (just last watched, no progress)
-         */
         trackLive: (
             streamId: number,
             title: string,
             thumbnail?: string,
-            data?: any
+            data?: unknown
         ) => {
             updateProgress({
                 type: 'live',
@@ -279,7 +241,7 @@ export const useTrackProgress = () => {
                 title,
                 position: 0,
                 duration: 0,
-                progress: 0, // Live doesn't have progress
+                progress: 0,
                 thumbnail,
                 data,
             });

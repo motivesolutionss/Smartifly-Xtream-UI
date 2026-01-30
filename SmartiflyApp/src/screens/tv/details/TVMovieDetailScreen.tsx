@@ -7,7 +7,7 @@
  * @enterprise-grade
  */
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -18,9 +18,10 @@ import {
     ScrollView,
     BackHandler,
 } from 'react-native';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import useStore from '../../../store';
 import { colors, scale, scaleFont } from '../../../theme';
+import useTVBackHandler from '../../../utils/useTVBackHandler';
 import { logger } from '../../../config';
 import { prefetchImage } from '../../../utils/image';
 
@@ -45,6 +46,9 @@ const TVMovieDetailScreen: React.FC = () => {
     const [info, setInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | 'back' | null>('play');
+    const [isTrailerModalOpen, setIsTrailerModalOpen] = useState(false);
+    const [lastFocusedButton, setLastFocusedButton] = useState<'play' | 'trailer' | 'back' | null>('play');
+    const [preferredFocusButton, setPreferredFocusButton] = useState<'play' | 'trailer' | 'back' | null>(null);
 
     // ==========================================================================
     // DATA FETCHING
@@ -91,6 +95,22 @@ const TVMovieDetailScreen: React.FC = () => {
         }, [navigation])
     );
 
+    const closeTrailerModal = () => {
+        setIsTrailerModalOpen(false);
+        if (lastFocusedButton) {
+            setPreferredFocusButton(lastFocusedButton);
+        }
+    };
+
+    useTVBackHandler(() => {
+        if (isTrailerModalOpen) {
+            closeTrailerModal();
+            return true;
+        }
+        navigation.goBack();
+        return true;
+    });
+
     const handlePlay = () => {
         navigation.navigate('FullscreenPlayer', {
             type: 'movie',
@@ -111,9 +131,10 @@ const TVMovieDetailScreen: React.FC = () => {
     const year = movieData.releasedate || movie.added;
 
     useEffect(() => {
-        prefetchImage(backdrop);
-        prefetchImage(poster);
-    }, [backdrop, poster]);
+        if (!preferredFocusButton) return;
+        const handle = setTimeout(() => setPreferredFocusButton(null), 50);
+        return () => clearTimeout(handle);
+    }, [preferredFocusButton]);
 
     // ==========================================================================
     // RENDER
@@ -130,10 +151,13 @@ const TVMovieDetailScreen: React.FC = () => {
         return (
             <Pressable
                 onPress={onPress}
-                onFocus={() => setFocusedButton(id)}
+                onFocus={() => {
+                    setFocusedButton(id);
+                    setLastFocusedButton(id);
+                }}
                 onBlur={() => setFocusedButton(null)}
                 focusable
-                hasTVPreferredFocus={id === 'play'}
+                hasTVPreferredFocus={preferredFocusButton ? preferredFocusButton === id : id === 'play'}
                 style={[
                     styles.button,
                     primary && styles.buttonPrimary,
@@ -210,8 +234,20 @@ const TVMovieDetailScreen: React.FC = () => {
                     {/* Actions */}
                     <View style={styles.actionsRow}>
                         {renderButton('play', '▶ Play Movie', handlePlay, true)}
-                        {/* {renderButton('trailer', 'Trailer', () => {}, false)} */}
+                        {renderButton('trailer', 'Trailer', () => setIsTrailerModalOpen(true), false)}
                         {renderButton('back', 'Go Back', () => navigation.goBack(), false)}
+                    {isTrailerModalOpen && (
+                        <View style={styles.modalOverlay}>
+                            <Text style={styles.modalTitle}>Trailer preview (placeholder)</Text>
+                            <Pressable
+                                onPress={closeTrailerModal}
+                                style={styles.modalButton}
+                                hasTVPreferredFocus
+                            >
+                                <Text style={styles.modalButtonText}>Close</Text>
+                            </Pressable>
+                        </View>
+                    )}
                     </View>
                 </View>
             </View>
@@ -335,6 +371,33 @@ const styles = StyleSheet.create({
     },
     buttonTextFocused: {
         color: colors.accent,
+    },
+    modalOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        padding: scale(40),
+        zIndex: 100,
+    },
+    modalTitle: {
+        color: '#FFF',
+        fontSize: scaleFont(24),
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    modalButton: {
+        marginTop: scale(20),
+        paddingVertical: scale(12),
+        paddingHorizontal: scale(30),
+        borderRadius: scale(10),
+        borderWidth: 1,
+        borderColor: colors.primary,
+    },
+    modalButtonText: {
+        color: colors.primary,
+        fontSize: scaleFont(18),
+        fontWeight: '600',
     },
 });
 

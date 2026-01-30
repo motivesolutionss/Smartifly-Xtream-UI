@@ -69,9 +69,6 @@ export interface EpisodeItem {
 // STACK NAVIGATOR PARAM LISTS
 // =============================================================================
 
-/**
- * Home Stack Parameters
- */
 export type HomeStackParamList = {
     HomeMain: undefined;
     Search: undefined;
@@ -88,9 +85,6 @@ export type HomeStackParamList = {
     };
 };
 
-/**
- * Live Stack Parameters
- */
 export type LiveStackParamList = {
     LiveMain: undefined;
     Player: {
@@ -99,9 +93,6 @@ export type LiveStackParamList = {
     };
 };
 
-/**
- * Movies Stack Parameters
- */
 export type MoviesStackParamList = {
     MoviesMain: undefined;
     MovieDetail: {
@@ -113,9 +104,6 @@ export type MoviesStackParamList = {
     };
 };
 
-/**
- * Series Stack Parameters
- */
 export type SeriesStackParamList = {
     SeriesMain: undefined;
     SeriesDetail: {
@@ -128,9 +116,6 @@ export type SeriesStackParamList = {
     };
 };
 
-/**
- * Settings Stack Parameters
- */
 export type SettingsStackParamList = {
     SettingsMain: undefined;
     Profile: undefined;
@@ -138,16 +123,10 @@ export type SettingsStackParamList = {
     About: undefined;
 };
 
-/**
- * Announcements Stack Parameters
- */
 export type AnnouncementsStackParamList = {
     AnnouncementsMain: undefined;
 };
 
-/**
- * Favorites Stack Parameters
- */
 export type FavoritesStackParamList = {
     FavoritesMain: undefined;
     Player: {
@@ -163,9 +142,6 @@ export type FavoritesStackParamList = {
     };
 };
 
-/**
- * Search Stack Parameters
- */
 export type SearchStackParamList = {
     SearchMain: undefined;
     Player: {
@@ -181,13 +157,6 @@ export type SearchStackParamList = {
     };
 };
 
-// =============================================================================
-// BOTTOM TAB NAVIGATOR PARAM LIST
-// =============================================================================
-
-/**
- * Main Bottom Tab Parameters
- */
 export type BottomTabParamList = {
     HomeTab: NavigatorScreenParams<HomeStackParamList>;
     FavoritesTab: NavigatorScreenParams<FavoritesStackParamList>;
@@ -195,26 +164,16 @@ export type BottomTabParamList = {
     SettingsTab: NavigatorScreenParams<SettingsStackParamList>;
 };
 
-// =============================================================================
-// ROOT NAVIGATOR PARAM LIST
-// =============================================================================
-
-/**
- * Root Stack Parameters (Auth flow + Main app)
- */
 export type RootStackParamList = {
     Login: undefined;
     Loading: undefined;
-    // TV Screens
     TVHome: undefined;
     TVLive: undefined;
     TVMovies: undefined;
     TVSeries: undefined;
     TVMovieDetail: { movie: any };
-    TVSeriesDetail: { series: any }; // Added for TV Module
-    // Mobile
+    TVSeriesDetail: { series: any };
     MainTabs: NavigatorScreenParams<BottomTabParamList>;
-    // Fullscreen player (can be accessed from anywhere)
     FullscreenPlayer: {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
@@ -222,50 +181,26 @@ export type RootStackParamList = {
     };
 };
 
-// =============================================================================
-// SCREEN PROPS TYPES
-// =============================================================================
-
-// Root Stack
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export type FullscreenPlayerScreenProps = NativeStackScreenProps<RootStackParamList, 'FullscreenPlayer'>;
-
-// Home Stack
 export type HomeScreenProps = NativeStackScreenProps<HomeStackParamList, 'HomeMain'>;
 export type SearchScreenProps = NativeStackScreenProps<HomeStackParamList, 'Search'>;
 export type HomePlayerScreenProps = NativeStackScreenProps<HomeStackParamList, 'Player'>;
-
-// Live Stack
 export type LiveScreenProps = NativeStackScreenProps<LiveStackParamList, 'LiveMain'>;
 export type LivePlayerScreenProps = NativeStackScreenProps<LiveStackParamList, 'Player'>;
-
-// Movies Stack
 export type MoviesScreenProps = NativeStackScreenProps<MoviesStackParamList, 'MoviesMain'>;
 export type MovieDetailScreenProps = NativeStackScreenProps<MoviesStackParamList, 'MovieDetail'>;
 export type MoviesPlayerScreenProps = NativeStackScreenProps<MoviesStackParamList, 'Player'>;
-
-// Series Stack
 export type SeriesScreenProps = NativeStackScreenProps<SeriesStackParamList, 'SeriesMain'>;
 export type SeriesDetailScreenProps = NativeStackScreenProps<SeriesStackParamList, 'SeriesDetail'>;
 export type SeriesPlayerScreenProps = NativeStackScreenProps<SeriesStackParamList, 'Player'>;
-
-// Settings Stack
 export type SettingsScreenProps = NativeStackScreenProps<SettingsStackParamList, 'SettingsMain'>;
 export type ProfileScreenProps = NativeStackScreenProps<SettingsStackParamList, 'Profile'>;
-
-// Bottom Tabs
 export type HomeTabProps = BottomTabScreenProps<BottomTabParamList, 'HomeTab'>;
 export type FavoritesTabProps = BottomTabScreenProps<BottomTabParamList, 'FavoritesTab'>;
 export type AnnouncementsTabProps = BottomTabScreenProps<BottomTabParamList, 'AnnouncementsTab'>;
 export type SettingsTabProps = BottomTabScreenProps<BottomTabParamList, 'SettingsTab'>;
 
-// =============================================================================
-// NAVIGATION HELPER TYPES
-// =============================================================================
-
-/**
- * Tab configuration type
- */
 export interface TabConfig {
     name: keyof BottomTabParamList;
     label: string;
@@ -274,20 +209,13 @@ export interface TabConfig {
     color: string;
 }
 
-/**
- * Tab bar visibility context
- */
 export interface TabBarVisibilityState {
     visible: boolean;
     setVisible: (visible: boolean) => void;
 }
 
-// =============================================================================
-// DECLARATION MERGING FOR REACT NAVIGATION
-// =============================================================================
-
 declare global {
     namespace ReactNavigation {
-        interface RootParamList extends RootStackParamList { }
+        interface RootParamList extends RootStackParamList {}
     }
 }

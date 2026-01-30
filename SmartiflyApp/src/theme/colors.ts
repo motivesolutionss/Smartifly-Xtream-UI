@@ -1,26 +1,117 @@
 /**
  * Smartifly Design System - Colors
- * 
+ *
  * THEME MANAGER
- * This file now exports the colors from the ACTIVE THEME.
- * To change the app theme, update the 'activeTheme' import.
+ * Exposes the active color palette, gradients, and quality helpers.
+ * The exported colors object is kept in sync when the theme changes so legacy
+ * consumers can keep using the same import while newer code should prefer
+ * the ThemeProvider / useTheme hook.
  */
 
-import { premiumTheme } from './themes/premium'; // <--- ACTIVE THEME
+import { premiumTheme } from './themes/premium';
 import { defaultTheme } from './themes/default';
+import { Theme, ThemeColors } from './themes/types';
 
 // =============================================================================
-// ACTIVE THEME SELECTION
+// THEME REGISTRY
 // =============================================================================
 
-// Change this to swap themes
-export const activeTheme = defaultTheme;
+export const themeRegistry = {
+    default: defaultTheme,
+    premium: premiumTheme,
+} as const;
 
-// Export the colors object from the active theme
-export const colors = activeTheme.colors;
+export type ThemeId = keyof typeof themeRegistry;
+export const defaultThemeId: ThemeId = defaultTheme.id as ThemeId;
 
 // =============================================================================
-// TYPE DEFINITIONS (Re-defined for standalone usage)
+// ACTIVATION STATE (mutable exports for legacy compatibility)
+// =============================================================================
+
+export let activeTheme: Theme = defaultTheme;
+export const colors: ThemeColors = { ...defaultTheme.colors };
+
+const updateColors = (source: ThemeColors) => {
+    Object.assign(colors, source);
+};
+
+export type GradientStops = [string, string, string?];
+export type Gradients = {
+    heroOverlay: [string, string, string];
+    cardHover: [string, string];
+    primaryButton: [string, string];
+    accentButton: [string, string];
+    progress: [string, string];
+    premium: [string, string];
+    liveIndicator: [string, string];
+    shimmer: [string, string, string];
+};
+
+export const gradients: Gradients = {
+    heroOverlay: ['transparent', 'rgba(11, 18, 32, 0.4)', 'rgba(11, 18, 32, 0.95)'],
+    cardHover: ['transparent', 'rgba(0, 229, 255, 0.1)'],
+    primaryButton: [colors.primary, colors.primaryDark],
+    accentButton: [colors.accent, colors.accentDark],
+    progress: [colors.primary, colors.primaryLight],
+    premium: ['#FFD700', '#FFA500'],
+    liveIndicator: ['#FF0000', colors.live],
+    shimmer: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)'],
+};
+
+export type QualityColors = {
+    uhd: string;
+    '4k': string;
+    hd: string;
+    sd: string;
+    hdr: string;
+    dolby: string;
+};
+
+export const qualityColors: QualityColors = {
+    uhd: colors.qualityUHD,
+    '4k': colors.qualityUHD,
+    hd: colors.qualityHD,
+    sd: colors.qualitySD,
+    hdr: colors.primary,
+    dolby: '#B4D7FF',
+};
+
+const refreshGradients = (palette: ThemeColors) => {
+    gradients.primaryButton = [palette.primary, palette.primaryDark];
+    gradients.accentButton = [palette.accent, palette.accentDark];
+    gradients.progress = [palette.primary, palette.primaryLight];
+    gradients.liveIndicator = ['#FF0000', palette.live];
+};
+
+const refreshQualityColors = (palette: ThemeColors) => {
+    qualityColors.uhd = palette.qualityUHD;
+    qualityColors['4k'] = palette.qualityUHD;
+    qualityColors.hd = palette.qualityHD;
+    qualityColors.sd = palette.qualitySD;
+    qualityColors.hdr = palette.primary;
+};
+
+const applyTheme = (theme: Theme) => {
+    activeTheme = theme;
+    updateColors(theme.colors);
+    refreshGradients(theme.colors);
+    refreshQualityColors(theme.colors);
+};
+
+export const getThemeById = (themeId: ThemeId) => themeRegistry[themeId] ?? defaultTheme;
+
+export const setActiveTheme = (themeId: ThemeId) => {
+    const nextTheme = getThemeById(themeId);
+    applyTheme(nextTheme);
+    return nextTheme;
+};
+
+// Ensure gradients/quality colors are initialized
+refreshGradients(colors);
+refreshQualityColors(colors);
+
+// =============================================================================
+// LEGACY TYPES / EXPORTS
 // =============================================================================
 
 export interface BrandColors {
@@ -98,31 +189,4 @@ export interface GlassColors {
     glassDark: string;
 }
 
-// Interface removed to avoid duplicate identifier with type alias below
-
-// Gradients are still defined here as consts if not in theme, 
-// OR we can move them to theme later. For now, keep as is.
-export const gradients = {
-    heroOverlay: ['transparent', 'rgba(11, 18, 32, 0.4)', 'rgba(11, 18, 32, 0.95)'],
-    cardHover: ['transparent', 'rgba(0, 229, 255, 0.1)'],
-    primaryButton: [activeTheme.colors.primary, activeTheme.colors.primaryDark],
-    accentButton: [activeTheme.colors.accent, activeTheme.colors.accentDark],
-    progress: [activeTheme.colors.primary, activeTheme.colors.primaryLight],
-    premium: ['#FFD700', '#FFA500'],
-    liveIndicator: ['#FF0000', activeTheme.colors.live],
-    shimmer: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)'],
-} as const;
-
-// Legacy support for qualityColors usage
-export const qualityColors = {
-    uhd: activeTheme.colors.qualityUHD,
-    '4k': activeTheme.colors.qualityUHD,
-    hd: activeTheme.colors.qualityHD,
-    sd: activeTheme.colors.qualitySD,
-    hdr: activeTheme.colors.primary, // using primary as HDR color
-    dolby: '#B4D7FF', // Static fallback
-};
-
-export type Gradients = typeof gradients;
 export type Colors = typeof colors;
-export type QualityColors = typeof qualityColors;

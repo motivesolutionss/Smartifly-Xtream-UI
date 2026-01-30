@@ -483,11 +483,25 @@ export const typographyTV = {
         letterSpacing: letterSpacing.normal,
     } as TextStyle,
 
+    placeholder: {
+        fontSize: fontSizeTV.md,
+        fontWeight: fontWeight.regular,
+        lineHeight: fontSizeTV.md * lineHeight.normal,
+        letterSpacing: letterSpacing.normal,
+    } as TextStyle,
+
     logo: {
         fontSize: fontSizeTV['4xl'],
         fontWeight: fontWeight.bold,
         lineHeight: fontSizeTV['4xl'] * lineHeight.tight,
         letterSpacing: letterSpacing.widest,
+    } as TextStyle,
+
+    tabLabel: {
+        fontSize: fontSizeTV.xs,
+        fontWeight: fontWeight.medium,
+        lineHeight: fontSizeTV.xs * lineHeight.tight,
+        letterSpacing: letterSpacing.normal,
     } as TextStyle,
 
     // Alias for backwards compatibility

@@ -5,32 +5,29 @@
  */
 
 import React from 'react';
+import { View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { FavoritesStackParamList } from '../types';
-
-// Screens
-import FavoritesScreen from '../../screens/mobile/favorites/FavoritesScreen';
-import PlayerScreen from '../../screens/mobile/PlayerScreen';
-import MovieDetailScreen from '../../screens/mobile/MovieDetailScreen';
-import SeriesDetailScreen from '../../screens/mobile/SeriesDetailScreen';
+import { FavoritesStackParamList } from '../../navigation/types';
 
 const Stack = createNativeStackNavigator<FavoritesStackParamList>();
 
+const PlaceholderScreen: React.FC = () => <View />;
+
 const FavoritesStack: React.FC = () => {
-    return (
-        <Stack.Navigator
-            screenOptions={{
-                headerShown: false,
-                animation: 'slide_from_right',
-            }}
-            initialRouteName="FavoritesMain"
-        >
-            <Stack.Screen name="FavoritesMain" component={FavoritesScreen} />
-            <Stack.Screen name="Player" component={PlayerScreen} />
-            <Stack.Screen name="MovieDetail" component={MovieDetailScreen} />
-            <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />
-        </Stack.Navigator>
-    );
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+      }}
+      initialRouteName="FavoritesMain"
+    >
+      <Stack.Screen name="FavoritesMain" component={PlaceholderScreen} />
+      <Stack.Screen name="Player" component={PlaceholderScreen} />
+      <Stack.Screen name="MovieDetail" component={PlaceholderScreen} />
+      <Stack.Screen name="SeriesDetail" component={PlaceholderScreen} />
+    </Stack.Navigator>
+  );
 };
 
 export default FavoritesStack;

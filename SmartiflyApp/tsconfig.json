@@ -1,12 +1,7 @@
 {
+  "extends": "@react-native/typescript-config",
   "compilerOptions": {
-    "jsx": "react-native",
-    "target": "es2017",
-    "lib": ["es2017", "dom"],
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "types": ["jest"]
+    "types": ["jest"],
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["**/node_modules", "**/Pods"]

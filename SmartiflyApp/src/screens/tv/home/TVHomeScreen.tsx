@@ -35,17 +35,17 @@ import TVContentRail from './components/TVContentRail';
 import TVContinueRail from './components/TVContinueRail';
 import { TVContentItem } from './components/TVContentCard';
 import { WatchProgress } from '../../../store/watchHistoryStore';
-
+import TVLiveScreen from '../TVLiveScreen';
+import TVMoviesScreen from '../TVMoviesScreen';
+import TVSeriesScreen from '../TVSeriesScreen';
+import TVSearchScreen from './TVSearchScreen';
+import TVAnnouncementsScreen from '../TVAnnouncementsScreen';
+import TVSettingsScreen from '../TVSettingsScreen';
+import TVFavoritesScreen from './TVFavoritesScreen';
 // Netflix-grade resolver
 import { useHomeRails } from './hooks/useHomeRails';
 
 // Content Screens (Rendered internally as Sections)
-import TVLiveScreen from '../TVLiveScreen';
-import TVMoviesScreen from '../TVMoviesScreen';
-import TVSeriesScreen from '../TVSeriesScreen';
-import TVAnnouncementsScreen from '../TVAnnouncementsScreen';
-import TVSearchScreen from './TVSearchScreen';
-import TVSettingsScreen from '../TVSettingsScreen';
 
 // =============================================================================
 // TYPES
@@ -54,6 +54,12 @@ import TVSettingsScreen from '../TVSettingsScreen';
 interface TVHomeScreenProps {
     navigation: any;
 }
+
+const PlaceholderSection: React.FC<{ title: string }> = ({ title }) => (
+    <View style={[styles.placeholderContainer]}>
+        <Text style={styles.placeholderText}>{title}</Text>
+    </View>
+);
 
 // =============================================================================
 // TV HOME SCREEN COMPONENT
@@ -274,51 +280,51 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         };
 
         switch (activeRoute) {
-            case 'Live':
-                return (
-                    <View style={contentStyle}>
-                        <TVLiveScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Movies':
-                return (
-                    <View style={contentStyle}>
-                        <TVMoviesScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Series':
-                return (
-                    <View style={contentStyle}>
-                        <TVSeriesScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Announcements':
-                return (
-                    <View style={contentStyle}>
-                        <TVAnnouncementsScreen />
-                    </View>
-                );
-            case 'Search':
-                return (
-                    <View style={contentStyle}>
-                        <TVSearchScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Favorites':
-                return (
-                    <View style={[contentStyle, styles.placeholderContainer]}>
-                        <Text style={styles.placeholderText}>Favorites Coming Soon</Text>
-                    </View>
-                );
-            case 'Settings':
-                return (
-                    <View style={contentStyle}>
-                        <TVSettingsScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Home':
-            default:
-                return renderHomeSection();
+        case 'Live':
+            return (
+                <View style={contentStyle}>
+                    <TVLiveScreen navigation={navigation} />
+                </View>
+            );
+        case 'Movies':
+            return (
+                <View style={contentStyle}>
+                    <TVMoviesScreen navigation={navigation} />
+                </View>
+            );
+        case 'Series':
+            return (
+                <View style={contentStyle}>
+                    <TVSeriesScreen navigation={navigation} />
+                </View>
+            );
+        case 'Announcements':
+            return (
+                <View style={contentStyle}>
+                    <TVAnnouncementsScreen />
+                </View>
+            );
+        case 'Search':
+            return (
+                <View style={contentStyle}>
+                    <TVSearchScreen navigation={navigation} />
+                </View>
+            );
+        case 'Favorites':
+            return (
+                <View style={contentStyle}>
+                    <TVFavoritesScreen navigation={navigation} />
+                </View>
+            );
+        case 'Settings':
+            return (
+                <View style={contentStyle}>
+                    <TVSettingsScreen navigation={navigation} />
+                </View>
+            );
+        case 'Home':
+        default:
+            return renderHomeSection();
         }
     };
 
@@ -394,3 +400,6 @@ const styles = StyleSheet.create({
 });
 
 export default TVHomeScreen;
+
+
+

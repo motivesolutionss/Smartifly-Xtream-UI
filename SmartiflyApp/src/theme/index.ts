@@ -12,13 +12,36 @@
 // EXPORTS
 // =============================================================================
 
+import { ThemeProvider, useTheme } from './ThemeProvider';
+import { colors as themeColors } from './colors';
+import { Platform } from 'react-native';
+import { typographyMobile, getTypography } from './typography';
+import { getSpacing } from './spacing';
+import { getBorderRadius } from './sizes';
+import { getElevation } from './shadows';
+
+const selectPlatformTokens = (forceTV?: boolean) => {
+    const isTV = forceTV ?? Platform.isTV;
+    return {
+        typography: getTypography(isTV),
+        spacing: getSpacing(isTV),
+        borderRadius: getBorderRadius(isTV),
+        elevation: getElevation(isTV),
+    } as const;
+};
+
 // Colors
 export {
     colors,
     activeTheme,
     gradients,
     qualityColors,
+    setActiveTheme,
+    themeRegistry,
+    defaultThemeId,
+    getThemeById,
 } from './colors';
+export type { ThemeId } from './colors';
 
 // Typography
 export {
@@ -207,50 +230,12 @@ export type {
 } from './icons';
 
 // =============================================================================
-// PLATFORM-AWARE THEME HELPER
+// PROVIDERS / CONTEXT
 // =============================================================================
 
-import { Platform } from 'react-native';
-import { colors } from './colors';
-import { typographyMobile, typographyTV } from './typography';
-import { spacing, spacingTV } from './spacing';
-import { elevation, elevationTV, glowEffects, glowEffectsTV } from './shadows';
-import { borderRadius, borderRadiusTV, iconSize, iconSizeTV, cardSize } from './sizes';
+export { ThemeProvider, useTheme };
 
-/**
- * Check if running on TV platform
- */
-export const isTV = Platform.isTV;
-
-/**
- * Get complete theme object based on platform
- * This provides a single import for all theme values
- */
-export const getTheme = (forceTV?: boolean) => {
-    const isTVPlatform = forceTV ?? isTV;
-
-    return {
-        colors,
-        typography: isTVPlatform ? typographyTV : typographyMobile,
-        spacing: isTVPlatform ? spacingTV : spacing,
-        elevation: isTVPlatform ? elevationTV : elevation,
-        glowEffects: isTVPlatform ? glowEffectsTV : glowEffects,
-        borderRadius: isTVPlatform ? borderRadiusTV : borderRadius,
-        iconSize: isTVPlatform ? iconSizeTV : iconSize,
-        cardSize: isTVPlatform ? cardSize.tv : cardSize.mobile,
-        isTV: isTVPlatform,
-    };
-};
-
-/**
- * Default theme for mobile
- */
-export const theme = getTheme(false);
-
-/**
- * TV theme
- */
-export const tvTheme = getTheme(true);
+export { getTheme, isTV, theme, tvTheme } from './platformTheme';
 
 // =============================================================================
 // STYLE HELPERS
@@ -261,22 +246,33 @@ export const tvTheme = getTheme(true);
  */
 export const createTextStyle = (
     variant: keyof typeof typographyMobile,
-    color: string = colors.textPrimary
-) => ({
-    ...typographyMobile[variant],
-    color,
-});
+    color: string = themeColors.textPrimary
+) => {
+    const { typography: platformTypography } = selectPlatformTokens();
+
+    const variantStyle =
+        (platformTypography as typeof typographyMobile)[variant] ?? typographyMobile[variant];
+
+    return {
+        ...variantStyle,
+        color,
+    };
+};
 
 /**
  * Create a card style with common properties
  */
-export const createCardStyle = (elevated: boolean = false) => ({
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...(elevated ? elevation.md : elevation.sm),
-});
+export const createCardStyle = (elevated: boolean = false) => {
+    const { borderRadius: platformBorderRadius, elevation: platformElevation } = selectPlatformTokens();
+
+    return {
+        backgroundColor: themeColors.cardBackground,
+        borderRadius: platformBorderRadius.lg,
+        borderWidth: 1,
+        borderColor: themeColors.border,
+        ...(elevated ? platformElevation.md : platformElevation.sm),
+    };
+};
 
 /**
  * Create a button style
@@ -285,27 +281,29 @@ export const createButtonStyle = (
     variant: 'primary' | 'secondary' | 'ghost' = 'primary',
     size: 'sm' | 'md' | 'lg' = 'md'
 ) => {
+    const { spacing: platformSpacing, borderRadius: platformBorderRadius, elevation: platformElevation } = selectPlatformTokens();
+
     const baseStyle = {
-        borderRadius: borderRadius.lg,
+        borderRadius: platformBorderRadius.lg,
         alignItems: 'center' as const,
         justifyContent: 'center' as const,
     };
 
     const sizeStyles = {
-        sm: { height: 36, paddingHorizontal: spacing.md },
-        md: { height: 44, paddingHorizontal: spacing.lg },
-        lg: { height: 52, paddingHorizontal: spacing.xl },
+        sm: { height: 36, paddingHorizontal: platformSpacing.md },
+        md: { height: 44, paddingHorizontal: platformSpacing.lg },
+        lg: { height: 52, paddingHorizontal: platformSpacing.xl },
     };
 
     const variantStyles = {
         primary: {
-            backgroundColor: colors.primary,
-            ...elevation.sm,
+            backgroundColor: themeColors.primary,
+            ...platformElevation.sm,
         },
         secondary: {
-            backgroundColor: colors.backgroundTertiary,
+            backgroundColor: themeColors.backgroundTertiary,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: themeColors.border,
         },
         ghost: {
             backgroundColor: 'transparent',
@@ -322,16 +320,20 @@ export const createButtonStyle = (
 /**
  * Create input field style
  */
-export const createInputStyle = (focused: boolean = false, error: boolean = false) => ({
-    backgroundColor: colors.backgroundInput,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: error ? colors.error : focused ? colors.borderFocus : colors.border,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    color: colors.textPrimary,
-    ...typographyMobile.input,
-});
+export const createInputStyle = (focused: boolean = false, error: boolean = false) => {
+    const { spacing: platformSpacing, borderRadius: platformBorderRadius, typography: platformTypography } = selectPlatformTokens();
+
+    return {
+        backgroundColor: themeColors.backgroundInput,
+        borderRadius: platformBorderRadius.lg,
+        borderWidth: 1,
+        borderColor: error ? themeColors.error : focused ? themeColors.borderFocus : themeColors.border,
+        paddingHorizontal: platformSpacing.base,
+        paddingVertical: platformSpacing.md,
+        color: themeColors.textPrimary,
+        ...(platformTypography as typeof typographyMobile).input,
+    };
+};
 
 // =============================================================================
 // COMMON STYLE PRESETS
@@ -340,23 +342,26 @@ export const createInputStyle = (focused: boolean = false, error: boolean = fals
 /**
  * Common style presets for quick access
  */
+const platformPresetTokens = selectPlatformTokens();
+const presetSpacing = platformPresetTokens.spacing;
+const presetBorderRadius = platformPresetTokens.borderRadius;
 export const stylePresets = {
     // Screen container
     screenContainer: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: themeColors.background,
     },
 
     // Safe area padding
     safeArea: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: themeColors.background,
     },
 
     // Content container with padding
     contentContainer: {
         flex: 1,
-        paddingHorizontal: spacing.base,
+        paddingHorizontal: presetSpacing.base,
     },
 
     // Centered content
@@ -381,25 +386,25 @@ export const stylePresets = {
 
     // Card base
     card: {
-        backgroundColor: colors.cardBackground,
-        borderRadius: borderRadius.lg,
+        backgroundColor: themeColors.cardBackground,
+        borderRadius: presetBorderRadius.lg,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: themeColors.border,
         overflow: 'hidden' as const,
     },
 
     // Glass card
     glassCard: {
-        backgroundColor: colors.glass,
-        borderRadius: borderRadius.lg,
+        backgroundColor: themeColors.glass,
+        borderRadius: presetBorderRadius.lg,
         borderWidth: 1,
-        borderColor: colors.borderMedium,
+        borderColor: themeColors.borderMedium,
     },
 
     // Divider
     divider: {
         height: 1,
-        backgroundColor: colors.divider,
+        backgroundColor: themeColors.divider,
     },
 
     // Section header
@@ -407,15 +412,15 @@ export const stylePresets = {
         flexDirection: 'row' as const,
         alignItems: 'center' as const,
         justifyContent: 'space-between' as const,
-        paddingHorizontal: spacing.base,
-        marginBottom: spacing.sm,
+        paddingHorizontal: presetSpacing.base,
+        marginBottom: presetSpacing.sm,
     },
 
     // Badge base
     badge: {
-        paddingHorizontal: spacing.xs,
-        paddingVertical: spacing.xxs,
-        borderRadius: borderRadius.sm,
+        paddingHorizontal: presetSpacing.xs,
+        paddingVertical: presetSpacing.xxs,
+        borderRadius: presetBorderRadius.sm,
     },
 
     // Absolute fill
@@ -445,14 +450,14 @@ export const stylePresets = {
  */
 export const getContentTypeColor = (type: 'live' | 'movie' | 'series' | 'sports' | 'news' | 'kids') => {
     const colorMap = {
-        live: colors.live,
-        movie: colors.movies,
-        series: colors.series,
-        sports: colors.sports,
-        news: colors.news,
-        kids: colors.kids,
+        live: themeColors.live,
+        movie: themeColors.movies,
+        series: themeColors.series,
+        sports: themeColors.sports,
+        news: themeColors.news,
+        kids: themeColors.kids,
     };
-    return colorMap[type] || colors.primary;
+    return colorMap[type] || themeColors.primary;
 };
 
 /**
@@ -460,11 +465,11 @@ export const getContentTypeColor = (type: 'live' | 'movie' | 'series' | 'sports'
  */
 export const getContentTypeGlow = (type: 'live' | 'movie' | 'series') => {
     const glowMap = {
-        live: colors.liveGlow,
-        movie: colors.moviesGlow,
-        series: colors.seriesGlow,
+        live: themeColors.liveGlow,
+        movie: themeColors.moviesGlow,
+        series: themeColors.seriesGlow,
     };
-    return glowMap[type] || colors.liveGlow;
+    return glowMap[type] || themeColors.liveGlow;
 };
 
 // =============================================================================
@@ -476,13 +481,13 @@ export const getContentTypeGlow = (type: 'live' | 'movie' | 'series') => {
  */
 export const getQualityColor = (quality: 'uhd' | '4k' | 'hd' | 'sd' | 'hdr') => {
     const qualityMap = {
-        uhd: colors.qualityUHD,
-        '4k': colors.qualityUHD,
-        hd: colors.qualityHD,
-        sd: colors.qualitySD,
-        hdr: colors.primary,
+        uhd: themeColors.qualityUHD,
+        '4k': themeColors.qualityUHD,
+        hd: themeColors.qualityHD,
+        sd: themeColors.qualitySD,
+        hdr: themeColors.primary,
     };
-    return qualityMap[quality.toLowerCase() as keyof typeof qualityMap] || colors.qualitySD;
+    return qualityMap[quality.toLowerCase() as keyof typeof qualityMap] || themeColors.qualitySD;
 };
 
 /**

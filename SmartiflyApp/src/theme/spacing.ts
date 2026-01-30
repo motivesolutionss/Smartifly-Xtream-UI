@@ -279,6 +279,17 @@ export const defaultInsets = {
     right: 0,
 } as const;
 
+export const defaultInsetsTV = {
+    top: 40,
+    bottom: 40,
+    left: 40,
+    right: 40,
+} as const;
+
+export const getDefaultInsets = (isTV: boolean) => {
+    return isTV ? defaultInsetsTV : defaultInsets;
+};
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
