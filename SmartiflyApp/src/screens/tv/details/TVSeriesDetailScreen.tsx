@@ -7,7 +7,7 @@
  * @enterprise-grade
  */
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -18,7 +18,7 @@ import {
     FlatList,
     BackHandler,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import useStore from '../../../store';
 import { colors, scale, scaleFont } from '../../../theme';
 import { logger } from '../../../config';

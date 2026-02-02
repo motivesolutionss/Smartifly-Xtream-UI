@@ -82,5 +82,10 @@ export const defaultTheme: Theme = {
         cardBackground: '#142238',
         neon: '#00E5FF',
         neonGlow: 'rgba(0, 229, 255, 0.25)',
+    },
+    effects: {
+        blur: false,
+        glow: 'low',
+        meshBackground: false,
     }
 };

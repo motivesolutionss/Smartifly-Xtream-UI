@@ -1,13 +1,24 @@
 import React, { createContext, useCallback, useMemo, useState, useContext } from 'react';
 import { Platform } from 'react-native';
-import { colors, ThemeId, setActiveTheme, defaultThemeId as colorsDefaultThemeId, type Colors } from './colors';
+import {
+    colors,
+    gradients,
+    ThemeId,
+    setActiveTheme,
+    defaultThemeId as colorsDefaultThemeId,
+    type Colors,
+    type Gradients,
+    activeTheme
+} from './colors';
 import { getTheme } from './platformTheme';
 import type { Theme } from './themes/types';
 
 export interface ThemeContextValue {
     themeId: ThemeId;
     colors: Colors;
+    gradients: Gradients;
     theme: ReturnType<typeof getTheme>;
+    effects: Theme['effects'];
     isTV: boolean;
     setActiveTheme: (themeId: ThemeId) => Theme;
 }
@@ -41,7 +52,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
         () => ({
             themeId,
             colors,
+            gradients,
             theme: getTheme(isTV),
+            effects: activeTheme.effects,
             isTV,
             setActiveTheme: switchTheme,
         }),
@@ -57,4 +70,9 @@ export const useTheme = () => {
         throw new Error('useTheme must be rendered within ThemeProvider');
     }
     return context;
+};
+
+export const useThemeId = () => {
+    const context = useTheme();
+    return context.themeId;
 };

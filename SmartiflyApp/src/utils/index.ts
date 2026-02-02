@@ -1,1 +1,2 @@
-export * from './platform';\nexport { default as useTVBackHandler } from './useTVBackHandler';
+export * from './platform';
+export { default as useTVBackHandler } from './useTVBackHandler';

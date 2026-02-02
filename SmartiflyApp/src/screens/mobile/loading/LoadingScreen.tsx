@@ -20,6 +20,7 @@ import {
     Animated,
     Easing,
     ActivityIndicator,
+    Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useStore from '../../../store';
@@ -41,6 +42,7 @@ interface LoadingScreenProps {
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     const insets = useSafeAreaInsets();
 
+    // Store - using dynamic getContentReady() instead of stored contentReady
     const prefetchAllContent = useStore((state) => state.prefetchAllContent);
     const isPrefetching = useStore((state) => state.isPrefetching);
     const prefetchProgress = useStore((state) => state.prefetchProgress);
@@ -51,20 +53,28 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     const retryCount = useStore((state) => state.retryCount);
     const maxRetries = useStore((state) => state.maxRetries);
 
+    // FIX: Guards to prevent double prefetch and multiple navigations
     const hasStarted = useRef(false);
     const hasNavigated = useRef(false);
 
+    // Animations
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
+    // =============================================================================
+    // EFFECTS
+    // =============================================================================
+
+    // Start prefetch on mount (with guard to prevent double prefetch)
     useEffect(() => {
         if (hasStarted.current) return;
         hasStarted.current = true;
         startPrefetch();
     }, []);
 
+    // Animate progress bar
     useEffect(() => {
         const progress = prefetchProgress.total > 0
             ? prefetchProgress.current / prefetchProgress.total
@@ -78,6 +88,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         }).start();
     }, [prefetchProgress.current, prefetchProgress.total]);
 
+    // Pulse animation for logo
     useEffect(() => {
         const pulse = Animated.loop(
             Animated.sequence([
@@ -99,6 +110,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         return () => pulse.stop();
     }, []);
 
+    // Fade and scale in animation
     useEffect(() => {
         Animated.parallel([
             Animated.timing(fadeAnim, {
@@ -115,9 +127,11 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         ]).start();
     }, []);
 
+    // Navigate when complete (using dynamic getContentReady)
     useEffect(() => {
         if (hasNavigated.current) return;
 
+        // Use dynamic getter instead of stored value
         const contentReady = getContentReady();
 
         if (contentReady && !isPrefetching) {
@@ -125,6 +139,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
             const stats = getContentStats();
             logger.info(`Content loaded: ${stats.live} channels, ${stats.movies} movies, ${stats.series} series`);
 
+            // Celebrate with a small animation then navigate
             Animated.sequence([
                 Animated.timing(scaleAnim, {
                     toValue: 1.1,
@@ -147,6 +162,10 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         }
     }, [getContentReady, isPrefetching]);
 
+    // =============================================================================
+    // FUNCTIONS
+    // =============================================================================
+
     const startPrefetch = async () => {
         logger.info('Starting content prefetch...');
         const success = await prefetchAllContent();
@@ -157,11 +176,17 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     };
 
     const handleRetry = async () => {
+        // Reset guards to allow retry
         hasStarted.current = false;
         hasNavigated.current = false;
+        // Reset retry count in store before manual retry
         useStore.setState({ retryCount: 0 });
         await startPrefetch();
     };
+
+    // =============================================================================
+    // COMPUTED VALUES
+    // =============================================================================
 
     const progressWidth = progressAnim.interpolate({
         inputRange: [0, 1],
@@ -172,6 +197,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         ? Math.round((prefetchProgress.current / prefetchProgress.total) * 100)
         : 0;
 
+    // Use dynamic getter
     const contentReady = getContentReady();
 
     const getStepStatus = (stepNumber: number) => {
@@ -182,12 +208,16 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
 
     const steps = [
         { number: 1, label: 'Live TV', icon: '📺' },
-        { number: 2, label: 'Channels', icon: '💡' },
+        { number: 2, label: 'Channels', icon: '📡' },
         { number: 3, label: 'Movies', icon: '🎬' },
         { number: 4, label: 'VOD', icon: '🎥' },
         { number: 5, label: 'Series', icon: '📺' },
         { number: 6, label: 'Shows', icon: '🎭' },
     ];
+
+    // =============================================================================
+    // RENDER
+    // =============================================================================
 
     return (
         <Animated.View
@@ -201,6 +231,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 }
             ]}
         >
+            {/* Logo Section */}
             <View style={styles.logoSection}>
                 <Animated.View
                     style={[
@@ -208,14 +239,17 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                         { transform: [{ scale: pulseAnim }] }
                     ]}
                 >
-                    <View style={styles.logoPlaceholder}>
-                        <Text style={styles.logoEmoji}>🎫</Text>
-                    </View>
+                    <Image
+                        source={require('../../../assets/smartifly_icon.png')}
+                        style={styles.logoImage}
+                        resizeMode="contain"
+                    />
                 </Animated.View>
                 <Text style={styles.appName}>SMARTIFLY</Text>
                 <Text style={styles.tagline}>Premium Streaming</Text>
             </View>
 
+            {/* Progress Section */}
             <View style={styles.progressSection}>
                 <Text style={styles.statusTitle}>
                     {contentReady ? 'Ready!' : isRetrying ? 'Retrying...' : 'Preparing Your Content'}
@@ -229,6 +263,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                     }
                 </Text>
 
+                {/* Progress Bar */}
                 <View style={styles.progressBarContainer}>
                     <Animated.View
                         style={[
@@ -239,14 +274,17 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                     <View style={styles.progressGlow} />
                 </View>
 
+                {/* Percentage */}
                 <Text style={styles.progressText}>
                     {progressPercentage}%
                 </Text>
 
+                {/* Current Task */}
                 <Text style={styles.currentTask}>
                     {prefetchProgress.currentTask || 'Initializing...'}
                 </Text>
 
+                {/* Step Indicators */}
                 <View style={styles.stepsContainer}>
                     {steps.map((step, index) => {
                         const status = getStepStatus(step.number);
@@ -260,7 +298,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                                     {status === 'active' ? (
                                         <ActivityIndicator size="small" color={colors.accent} />
                                     ) : status === 'complete' ? (
-                                        <Text style={styles.stepCheck}>✔</Text>
+                                        <Text style={styles.stepCheck}>✓</Text>
                                     ) : (
                                         <Text style={styles.stepIcon}>{step.icon}</Text>
                                     )}
@@ -277,6 +315,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 </View>
             </View>
 
+            {/* Footer */}
             <View style={styles.footer}>
                 <View style={styles.footerDivider} />
                 <Text style={styles.footerText}>
@@ -287,6 +326,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 </Text>
             </View>
 
+            {/* Error State */}
             {error && !isPrefetching && !contentReady && (
                 <View style={styles.errorOverlay}>
                     <Text style={styles.errorText}>{error.message}</Text>
@@ -312,6 +352,8 @@ const styles = StyleSheet.create({
         backgroundColor: colors.background,
         justifyContent: 'space-between',
     },
+
+    // Logo Section
     logoSection: {
         alignItems: 'center',
         paddingTop: 60,
@@ -319,18 +361,9 @@ const styles = StyleSheet.create({
     logoContainer: {
         marginBottom: spacing.lg,
     },
-    logoPlaceholder: {
+    logoImage: {
         width: 100,
         height: 100,
-        borderRadius: 25,
-        backgroundColor: colors.backgroundTertiary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: colors.border,
-    },
-    logoEmoji: {
-        fontSize: 48,
     },
     appName: {
         fontSize: 32,
@@ -344,6 +377,8 @@ const styles = StyleSheet.create({
         marginTop: spacing.xs,
         letterSpacing: 2,
     },
+
+    // Progress Section
     progressSection: {
         alignItems: 'center',
         paddingHorizontal: spacing.xl,
@@ -393,6 +428,8 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         marginBottom: spacing.xxl,
     },
+
+    // Steps
     stepsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -437,6 +474,8 @@ const styles = StyleSheet.create({
     stepConnectorComplete: {
         backgroundColor: colors.success,
     },
+
+    // Footer
     footer: {
         alignItems: 'center',
         paddingHorizontal: spacing.lg,
@@ -459,6 +498,8 @@ const styles = StyleSheet.create({
         opacity: 0.6,
         marginTop: spacing.xs,
     },
+
+    // Error
     errorOverlay: {
         position: 'absolute',
         bottom: 100,

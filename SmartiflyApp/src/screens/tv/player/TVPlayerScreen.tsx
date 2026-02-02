@@ -13,7 +13,7 @@ import {
     Text,
     StyleSheet,
     ActivityIndicator,
-        StatusBar,
+    StatusBar,
     TouchableOpacity,
 } from 'react-native';
 import Video, { VideoRef } from 'react-native-video';
@@ -34,6 +34,7 @@ const TVPlayerScreen: React.FC = () => {
     // Params might come from FullscreenPlayer or just Player depending on how we route
     // The previous mobile player used { type, item, episodeUrl }
     const { type, item, episodeUrl } = route.params || {};
+    const resumePosition = route.params?.resumePosition ?? 0;
 
     const { getXtreamAPI } = useStore();
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
@@ -47,6 +48,7 @@ const TVPlayerScreen: React.FC = () => {
     const [showOverlay, setShowOverlay] = useState(false);
     const [streamUrl, setStreamUrl] = useState<string>('');
     const [videoKey, setVideoKey] = useState(0);
+    const [hasSeeked, setHasSeeked] = useState(false);
     const durationRef = useRef(0);
     const lastProgressUpdateRef = useRef(0);
     const hasTrackedLiveRef = useRef(false);
@@ -56,8 +58,32 @@ const TVPlayerScreen: React.FC = () => {
         if (now - lastProgressUpdateRef.current < 5000) return;
         lastProgressUpdateRef.current = now;
 
-        const duration = durationRef.current;
+        // FIX: Fallback duration if player reports 0 (common with some containers)
+        let duration = durationRef.current;
         const anyItem = item as any;
+
+        if (duration <= 0 && anyItem) {
+            // Try to parse from metadata (e.g. "01:30:00" or "90 min" or raw seconds)
+            const rawDuration = anyItem.duration;
+            if (rawDuration) {
+                if (typeof rawDuration === 'string') {
+                    if (rawDuration.includes(':')) {
+                        // HH:MM:SS
+                        const parts = rawDuration.split(':').map(Number);
+                        if (parts.length === 3) duration = (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+                        else if (parts.length === 2) duration = (parts[0] * 60) + parts[1];
+                    } else if (rawDuration.includes('min')) {
+                        // "90 min"
+                        duration = parseInt(rawDuration) * 60;
+                    } else {
+                        // "5400"
+                        duration = parseInt(rawDuration);
+                    }
+                } else if (typeof rawDuration === 'number') {
+                    duration = rawDuration;
+                }
+            }
+        }
 
         if (type === 'movie' && duration > 0) {
             trackMovie(
@@ -104,6 +130,7 @@ const TVPlayerScreen: React.FC = () => {
         setShowOverlay(false);
         setOverlayMessage(null);
         setStreamUrl('');
+        setHasSeeked(false);
 
         if (!api || !item) {
             setOverlayMessage('Missing player session');
@@ -144,7 +171,7 @@ const TVPlayerScreen: React.FC = () => {
         }
 
         setStreamUrl(url);
-    }, [api, item, type, episodeUrl, videoKey]);
+    }, [api, item, type, episodeUrl, videoKey, resumePosition]);
 
     // Lifecycle cleanup
     useEffect(() => {
@@ -191,13 +218,17 @@ const TVPlayerScreen: React.FC = () => {
                     onLoad={(data) => {
                         logger.debug('TVPlayer: Loaded');
                         durationRef.current = data.duration || 0;
-                        if (type === 'live' && !hasTrackedLiveRef.current) {
-                            const anyItem = item as any;
-                            trackLive(anyItem.stream_id || anyItem.id, anyItem.name, anyItem.stream_icon || anyItem.cover, anyItem);
-                            hasTrackedLiveRef.current = true;
-                        }
-                        setIsBuffering(false);
-                    }}
+            if (type === 'live' && !hasTrackedLiveRef.current) {
+                const anyItem = item as any;
+                trackLive(anyItem.stream_id || anyItem.id, anyItem.name, anyItem.stream_icon || anyItem.cover, anyItem);
+                hasTrackedLiveRef.current = true;
+            }
+            if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
+                videoRef.current.seek(Math.max(0, resumePosition));
+                setHasSeeked(true);
+            }
+            setIsBuffering(false);
+        }}
                     onBuffer={({ isBuffering }) => setIsBuffering(isBuffering)}
                     onProgress={({ currentTime }) => handleProgress(currentTime)}
                 />

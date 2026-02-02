@@ -76,6 +76,7 @@ export type HomeStackParamList = {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
         episodeUrl?: string;
+        resumePosition?: number;
     };
     MovieDetail: {
         movie: MovieItem;
@@ -90,6 +91,7 @@ export type LiveStackParamList = {
     Player: {
         type: 'live';
         item: LiveStreamItem;
+        resumePosition?: number;
     };
 };
 
@@ -101,6 +103,7 @@ export type MoviesStackParamList = {
     Player: {
         type: 'movie';
         item: MovieItem;
+        resumePosition?: number;
     };
 };
 
@@ -113,6 +116,7 @@ export type SeriesStackParamList = {
         type: 'series';
         item: SeriesItem | EpisodeItem;
         episodeUrl?: string;
+        resumePosition?: number;
     };
 };
 
@@ -133,6 +137,7 @@ export type FavoritesStackParamList = {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
         episodeUrl?: string;
+        resumePosition?: number;
     };
     MovieDetail: {
         movie: MovieItem;
@@ -148,6 +153,7 @@ export type SearchStackParamList = {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
         episodeUrl?: string;
+        resumePosition?: number;
     };
     MovieDetail: {
         movie: MovieItem;
@@ -178,6 +184,7 @@ export type RootStackParamList = {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
         episodeUrl?: string;
+        resumePosition?: number;
     };
 };
 
@@ -216,6 +223,6 @@ export interface TabBarVisibilityState {
 
 declare global {
     namespace ReactNavigation {
-        interface RootParamList extends RootStackParamList {}
+        interface RootParamList extends RootStackParamList { }
     }
 }

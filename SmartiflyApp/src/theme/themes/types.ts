@@ -93,6 +93,9 @@ export interface Theme {
     name: string;
     dark: boolean;
     colors: ThemeColors;
-    // We can add validation for gradients later if needed, 
-    // but they are usually complex objects.
+    effects: {
+        blur: boolean;
+        glow: 'low' | 'high';
+        meshBackground: boolean;
+    };
 }

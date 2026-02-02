@@ -426,21 +426,23 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     name: item.title,
                     stream_icon: item.thumbnail,
                 },
+                resumePosition: item.position,
             });
             return;
         }
 
-    if (item.type === 'series') {
-        const seriesData = item.data as any;
-        const extension = seriesData?.container_extension || 'mp4';
-        const episodeUrl = api.getSeriesEpisodeUrl(item.streamId, extension);
-        navigation.navigate('Player', {
-            type: 'series',
-            item: item.data || {
-                id: item.streamId,
-                name: item.episodeTitle || item.title,
-            },
+        if (item.type === 'series') {
+            const seriesData = item.data as any;
+            const extension = seriesData?.container_extension || 'mp4';
+            const episodeUrl = api.getSeriesEpisodeUrl(item.streamId, extension);
+            navigation.navigate('Player', {
+                type: 'series',
+                item: item.data || {
+                    id: item.streamId,
+                    name: item.episodeTitle || item.title,
+                },
                 episodeUrl,
+                resumePosition: item.position,
             });
         }
     };

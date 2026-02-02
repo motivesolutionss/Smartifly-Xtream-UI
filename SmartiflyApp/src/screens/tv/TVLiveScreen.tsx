@@ -165,8 +165,8 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
         <TVContentCard
             item={item}
             onPress={handleChannelPress}
-            width={scale(140)}
-            height={scale(100)}
+            width={scale(160)} // Increased size
+            height={scale(110)}
         />
     );
 
@@ -192,10 +192,11 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                     {channels.length} channels
                 </Text>
                 <FlatList
+                    key={`grid-${7}`} // Force re-render on column change
                     data={channels}
                     renderItem={renderChannel}
                     keyExtractor={(item) => String(item.id)}
-                    numColumns={5}
+                    numColumns={7} // Increased columns
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.channelsGrid}
                     columnWrapperStyle={styles.channelsRow}

@@ -8,7 +8,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -20,7 +20,13 @@ import {
 } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import useStore from '../../store';
-import { colors, scale, scaleFont, Icon, borderRadius } from '../../theme';
+import {
+    scale,
+    scaleFont,
+    Icon,
+    useTheme,
+    textGlow
+} from '../../theme';
 
 // =============================================================================
 // TYPES
@@ -48,7 +54,8 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     const [focusedSection, setFocusedSection] = useState<SettingsSection | null>(null);
     const [focusedOption, setFocusedOption] = useState<string | null>(null);
 
-    // Store
+    // Theme & Store
+    const { theme } = useTheme();
     const userInfo = useStore((state) => state.userInfo);
     const logout = useStore((state) => state.logout);
     const selectedPortal = useStore((state) => state.selectedPortal);
@@ -71,7 +78,8 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     const formatExpiry = (expDate: string | null | undefined) => {
         if (!expDate) return 'Unlimited';
         try {
-            const date = new Date(parseInt(expDate) * 1000);
+            const dateStr = expDate.includes('-') ? expDate : parseInt(expDate, 10) * 1000;
+            const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
@@ -85,7 +93,8 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     const getDaysRemaining = (expDate: string | null | undefined) => {
         if (!expDate) return 999;
         try {
-            const expiry = new Date(parseInt(expDate) * 1000);
+            const dateStr = expDate.includes('-') ? expDate : parseInt(expDate, 10) * 1000;
+            const expiry = new Date(dateStr);
             const now = new Date();
             const diff = expiry.getTime() - now.getTime();
             const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -134,22 +143,27 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
                 onBlur={() => setFocusedSection(null)}
                 style={[
                     styles.menuItem,
-                    isSelected && styles.menuItemSelected,
+                    isSelected && styles.menuItemActive,
                     isFocused && styles.menuItemFocused,
+                    isFocused && {
+                        backgroundColor: theme.colors.primary,
+                        borderColor: theme.colors.primary,
+                    },
                 ]}
             >
                 <Icon
                     name={item.icon}
-                    size={scaleFont(20)}
-                    color={isFocused ? '#000' : (isSelected ? '#FFF' : '#AAA')}
+                    size={scaleFont(22)}
+                    color={isFocused ? theme.colors.textInverse : (isSelected ? theme.colors.primary : theme.colors.textTertiary)}
                 />
                 <Text style={[
                     styles.menuLabel,
-                    isSelected && styles.menuLabelSelected,
+                    isSelected && styles.menuLabelActive,
                     isFocused && styles.menuLabelFocused,
                 ]}>
                     {item.label}
                 </Text>
+                {isFocused && <View style={styles.focusIndicator} />}
             </Pressable>
         );
     };
@@ -171,33 +185,37 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
                 disabled={!isAction}
                 style={[
                     styles.detailRow,
-                    isAction && styles.detailAction,
                     isFocused && styles.detailRowFocused,
                     danger && styles.detailRowDanger,
                     danger && isFocused && styles.detailRowDangerFocused,
                 ]}
             >
-                <Text style={[
-                    styles.detailLabel,
-                    isFocused && styles.detailLabelFocused,
-                    danger && styles.textDanger
-                ]}>
-                    {label}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={styles.detailLabelContainer}>
+                    <Text style={[
+                        styles.detailLabel,
+                        isFocused && styles.detailLabelFocused,
+                        danger && { color: theme.colors.error }
+                    ]}>
+                        {label}
+                    </Text>
+                    {isFocused && <View style={[styles.hudDecoration, danger && { backgroundColor: theme.colors.error }]} />}
+                </View>
+
+                <View style={styles.detailValueContainer}>
                     <Text style={[
                         styles.detailValue,
                         isFocused && styles.detailValueFocused,
-                        danger && styles.textDanger
+                        danger && { color: theme.colors.error }
                     ]}>
                         {value}
                     </Text>
                     {isAction && (
-                        <Text style={[
-                            styles.detailArrow,
-                            isFocused && styles.detailArrowFocused,
-                            danger && styles.textDanger
-                        ]}> ›</Text>
+                        <Icon
+                            name="chevron-right"
+                            size={scaleFont(16)}
+                            color={danger ? theme.colors.error : (isFocused ? theme.colors.primary : theme.colors.textMuted)}
+                            style={styles.chevronIcon}
+                        />
                     )}
                 </View>
             </Pressable>
@@ -211,68 +229,78 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
                 return (
                     <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
                         <View style={styles.profileHeader}>
-                            <View style={styles.avatar}>
-                                <Text style={styles.avatarText}>
-                                    {userInfo?.username?.charAt(0).toUpperCase() || 'U'}
-                                </Text>
+                            <View style={[styles.avatarContainer, { shadowColor: theme.colors.primary }]}>
+                                <View style={styles.avatar}>
+                                    <Text style={styles.avatarText}>
+                                        {userInfo?.username?.charAt(0).toUpperCase() || 'U'}
+                                    </Text>
+                                </View>
+                                <View style={styles.avatarAura} />
                             </View>
                             <View style={styles.profileInfo}>
-                                <Text style={styles.profileName}>{userInfo?.username || 'Guest'}</Text>
-                                <Text style={styles.profileStatus}>
-                                    {userInfo?.isTrial ? 'Trial Account' : 'Premium Account'} • {userInfo?.status || 'Active'}
-                                </Text>
+                                <Text style={[styles.profileName, textGlow.soft]}>{userInfo?.username || 'Guest'}</Text>
+                                <View style={styles.badgeContainer}>
+                                    <View style={[styles.statusBadge, { backgroundColor: theme.colors.primary + '20' }]}>
+                                        <Text style={[styles.statusBadgeText, { color: theme.colors.primary }]}>
+                                            {userInfo?.isTrial ? 'TRIAL' : 'PREMIUM'}
+                                        </Text>
+                                    </View>
+                                    <Text style={styles.profileStatus}>
+                                        • {userInfo?.status || 'Active'}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
 
-                        <Text style={styles.sectionHeader}>Subscription</Text>
+                        <Text style={styles.sectionHeader}>Subscription HUD</Text>
                         {renderDetailItem('Expiration', formatExpiry(userInfo?.expDate))}
                         {renderDetailItem('Days Remaining', `${daysLeft} days`)}
                         {renderDetailItem('Active Connections', `${userInfo?.activeCons || 0} / ${userInfo?.maxConnections || 1}`)}
                         {renderDetailItem('Current Server', selectedPortal?.name || 'Unknown')}
 
                         <View style={styles.spacer} />
-                        {renderDetailItem('Sign Out', '', true, handleLogout, true)}
+                        {renderDetailItem('Terminate Session', 'Sign Out', true, handleLogout, true)}
                     </ScrollView>
                 );
 
             case 'Playback':
                 return (
                     <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
-                        <Text style={styles.sectionHeader}>Video Player</Text>
-                        {renderDetailItem('Default Quality', 'Auto', true, () => Alert.alert('Coming Soon', 'Quality selection coming soon.'))}
-                        {renderDetailItem('Aspect Ratio', 'Fit', true, () => Alert.alert('Coming Soon', 'Aspect ratio settings coming soon.'))}
-                        {renderDetailItem('Hardware Acceleration', 'On', true, () => Alert.alert('Coming Soon', 'HW decoder toggle coming soon.'))}
+                        <Text style={styles.sectionHeader}>Engine Configuration</Text>
+                        {renderDetailItem('Default Quality', '4K / Auto', true, () => Alert.alert('Aether Engine', 'Dynamic quality switching is active.'))}
+                        {renderDetailItem('Hardware Decoding', 'Force GPU', true, () => Alert.alert('Coming Soon', 'Aspect ratio settings coming soon.'))}
+                        {renderDetailItem('Buffer Level', 'Aggressive', true, () => Alert.alert('Coming Soon', 'HW decoder toggle coming soon.'))}
 
-                        <Text style={[styles.sectionHeader, { marginTop: scale(20) }]}>Audio & Subs</Text>
-                        {renderDetailItem('Default Audio', 'English', true, () => Alert.alert('Coming Soon'))}
-                        {renderDetailItem('Subtitles', 'Off', true, () => Alert.alert('Coming Soon'))}
+                        <Text style={[styles.sectionHeader, styles.sectionHeaderMargin]}>Audio Sync</Text>
+                        {renderDetailItem('Default Language', 'English', true, () => Alert.alert('Coming Soon'))}
+                        {renderDetailItem('Subtitle Engine', 'Substation alpha', true, () => Alert.alert('Coming Soon'))}
                     </ScrollView>
                 );
 
             case 'App':
                 return (
                     <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
-                        <Text style={styles.sectionHeader}>General</Text>
-                        {renderDetailItem('Language', 'English', true, () => Alert.alert('Coming Soon'))}
-                        {renderDetailItem('Time Format', '24h', true, () => Alert.alert('Coming Soon'))}
+                        <Text style={styles.sectionHeader}>Interface</Text>
+                        {renderDetailItem('System Theme', 'Aether (Futuristic)', true, () => Alert.alert('Theme Settings', 'You are currently using the Aether design system.'))}
+                        {renderDetailItem('Clock Format', '24h Neon', true, () => Alert.alert('Coming Soon'))}
 
-                        <Text style={[styles.sectionHeader, { marginTop: scale(20) }]}>Storage</Text>
-                        {renderDetailItem('Clear Cache', '14 MB', true, () => Alert.alert('Success', 'Cache cleared'))}
-                        {renderDetailItem('Clear History', '', true, () => Alert.alert('Success', 'History cleared'))}
+                        <Text style={[styles.sectionHeader, styles.sectionHeaderMargin]}>Maintenance</Text>
+                        {renderDetailItem('Purge Cache', '14.2 MB', true, () => Alert.alert('Purge Complete', 'Aether cache has been optimized.'))}
+                        {renderDetailItem('Wipe Data', 'Sensory data only', true, () => Alert.alert('Success', 'History cleared'))}
                     </ScrollView>
                 );
 
             case 'About':
                 return (
                     <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
-                        <Text style={styles.sectionHeader}>App Info</Text>
-                        {renderDetailItem('App Version', '1.0.0')}
-                        {renderDetailItem('Build', '2024.1.0')}
-                        {renderDetailItem('Device ID', 'Unknown')}
+                        <Text style={styles.sectionHeader}>System Manifest</Text>
+                        {renderDetailItem('Core Version', '1.2.5-Aether')}
+                        {renderDetailItem('Build Sequence', '2024.1.XP')}
+                        {renderDetailItem('Hardware Hash', 'A6-FF-09-12-88')}
 
-                        <Text style={[styles.sectionHeader, { marginTop: scale(20) }]}>Legal</Text>
-                        {renderDetailItem('Privacy Policy', '', true, () => { })}
-                        {renderDetailItem('Terms of Service', '', true, () => { })}
+                        <Text style={[styles.sectionHeader, styles.sectionHeaderMargin]}>Protocols</Text>
+                        {renderDetailItem('Encryption Layer', 'AES-256-GCM', true, () => { })}
+                        {renderDetailItem('Neural Privacy', 'Active', true, () => { })}
                     </ScrollView>
                 );
             default:
@@ -281,10 +309,13 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     };
 
     return (
-        <View style={styles.container}>
-            {/* Left Panel: Menu */}
-            <View style={styles.leftPanel}>
-                <Text style={styles.pageTitle}>Settings</Text>
+        <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+            {/* Left Panel: HUD Menu */}
+            <View style={[styles.leftPanel, { borderColor: theme.colors.border }]}>
+                <View style={styles.titleContainer}>
+                    <Text style={[styles.pageTitle, textGlow.neon]}>SETTINGS</Text>
+                    <View style={[styles.titleLine, { backgroundColor: theme.colors.primary }]} />
+                </View>
                 <FlatList
                     data={sections}
                     renderItem={renderMenuItem}
@@ -294,7 +325,7 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
                 />
             </View>
 
-            {/* Right Panel: Content */}
+            {/* Right Panel: HUD Display */}
             <View style={styles.rightPanel}>
                 {renderContent()}
             </View>
@@ -310,23 +341,29 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         flexDirection: 'row',
-        backgroundColor: colors.background, // Match theme
     },
     // Left Panel
     leftPanel: {
         width: scale(320),
-        backgroundColor: 'transparent', // Unified background
         borderRightWidth: 1,
-        borderRightColor: colors.border,
         paddingTop: scale(60),
         paddingHorizontal: scale(30),
     },
+    titleContainer: {
+        marginBottom: scale(50),
+        paddingLeft: scale(10),
+    },
     pageTitle: {
         fontSize: scaleFont(32),
-        fontWeight: 'bold',
-        color: colors.textPrimary,
-        marginBottom: scale(40),
-        paddingLeft: scale(10),
+        fontWeight: '900',
+        color: '#00F3FF', // Static for HUD Feel
+        letterSpacing: 4,
+    },
+    titleLine: {
+        height: 2,
+        width: scale(40),
+        marginTop: scale(10),
+        borderRadius: 1,
     },
     menuList: {
         paddingBottom: scale(20),
@@ -334,55 +371,64 @@ const styles = StyleSheet.create({
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: scale(18),
+        paddingVertical: scale(20),
         paddingHorizontal: scale(20),
-        borderRadius: scale(8),
-        marginBottom: scale(12),
+        borderRadius: scale(12),
+        marginBottom: scale(15),
+        borderWidth: 1,
+        borderColor: 'transparent',
     },
-    menuItemSelected: {
-        backgroundColor: colors.border, // Use border color or a light overlay
+    menuItemActive: {
+        backgroundColor: 'rgba(0, 243, 255, 0.08)',
+        borderColor: 'rgba(0, 243, 255, 0.2)',
     },
     menuItemFocused: {
-        backgroundColor: colors.accent,
-        transform: [{ scale: 1.02 }],
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 5,
+        transform: [{ scale: 1.05 }],
     },
     menuLabel: {
-        fontSize: scaleFont(18),
-        color: colors.textSecondary,
+        fontSize: scaleFont(19),
+        color: '#8E9AAF',
         marginLeft: scale(20),
-        fontWeight: '500',
-    },
-    menuLabelSelected: {
-        color: colors.textPrimary,
         fontWeight: '600',
+        letterSpacing: 1,
+    },
+    menuLabelActive: {
+        color: '#FFF',
+        fontWeight: '700',
     },
     menuLabelFocused: {
-        color: colors.textInverse, // or textOnPrimary depending on accent
-        fontWeight: 'bold',
+        color: '#000',
+        fontWeight: '900',
+    },
+    focusIndicator: {
+        position: 'absolute',
+        right: scale(15),
+        width: scale(6),
+        height: scale(6),
+        borderRadius: 3,
+        backgroundColor: '#000',
     },
 
     // Right Panel
     rightPanel: {
         flex: 1,
         paddingTop: scale(60),
-        paddingHorizontal: scale(60),
-        backgroundColor: colors.background,
+        paddingHorizontal: scale(80),
     },
     detailsContent: {
         paddingBottom: scale(60),
     },
     sectionHeader: {
-        fontSize: scaleFont(16),
-        color: colors.primary,
+        fontSize: scaleFont(14),
+        color: '#00F3FF',
         textTransform: 'uppercase',
-        letterSpacing: 2,
-        fontWeight: '800',
-        marginBottom: scale(20),
+        letterSpacing: 3,
+        fontWeight: '900',
+        marginBottom: scale(25),
+        marginTop: scale(10),
+        opacity: 0.8,
+    },
+    sectionHeaderMargin: {
         marginTop: scale(20),
     },
 
@@ -390,107 +436,146 @@ const styles = StyleSheet.create({
     profileHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: scale(50),
+        marginBottom: scale(60),
         paddingBottom: scale(40),
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: 'rgba(255,255,255,0.05)',
+    },
+    avatarContainer: {
+        position: 'relative',
+        width: scale(110),
+        height: scale(110),
+        marginRight: scale(40),
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     avatar: {
         width: scale(100),
         height: scale(100),
         borderRadius: scale(50),
-        backgroundColor: colors.primary,
+        backgroundColor: '#00F3FF',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: scale(30),
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 10,
-        elevation: 10,
+        zIndex: 2,
+    },
+    avatarAura: {
+        position: 'absolute',
+        width: scale(120),
+        height: scale(120),
+        borderRadius: scale(60),
+        borderWidth: 1,
+        borderColor: 'rgba(0, 243, 255, 0.3)',
+        zIndex: 1,
     },
     avatarText: {
-        fontSize: scaleFont(42),
-        fontWeight: 'bold',
-        color: colors.textOnPrimary,
+        fontSize: scaleFont(46),
+        fontWeight: '900',
+        color: '#000',
     },
     profileInfo: {
         flex: 1,
         justifyContent: 'center',
     },
     profileName: {
-        fontSize: scaleFont(32),
-        fontWeight: 'bold',
-        color: colors.textPrimary,
-        marginBottom: scale(8),
+        fontSize: scaleFont(38),
+        fontWeight: '900',
+        color: '#FFF',
+        marginBottom: scale(10),
+        letterSpacing: 1,
+    },
+    badgeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    statusBadge: {
+        paddingHorizontal: scale(12),
+        paddingVertical: scale(4),
+        borderRadius: scale(4),
+        marginRight: scale(15),
+    },
+    statusBadgeText: {
+        fontSize: scaleFont(12),
+        fontWeight: '900',
+        letterSpacing: 1,
     },
     profileStatus: {
         fontSize: scaleFont(16),
-        color: colors.textSecondary,
-        fontWeight: '500',
+        color: '#8E9AAF',
+        fontWeight: '600',
     },
 
-    // Detail Rows
+    // HUD Detail Rows
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: scale(22),
-        paddingHorizontal: scale(24),
-        backgroundColor: colors.backgroundTertiary, // Use tertiary for cards
-        marginBottom: scale(12),
-        borderRadius: scale(6),
+        paddingVertical: scale(24),
+        paddingHorizontal: scale(30),
+        backgroundColor: 'rgba(15, 22, 36, 0.4)', // Glassmorphic
+        marginBottom: scale(16),
+        borderRadius: scale(4), // More angular for HUD
+        borderLeftWidth: 3,
+        borderLeftColor: 'rgba(0, 243, 255, 0.1)',
         borderWidth: 1,
-        borderColor: colors.border,
-    },
-    detailAction: {
-        // backgroundColor: colors.backgroundTertiary,
+        borderColor: 'rgba(255, 255, 255, 0.03)',
     },
     detailRowFocused: {
-        backgroundColor: colors.borderMedium, // Or a slightly lighter bg
-        borderColor: colors.accent,
-        transform: [{ scale: 1.01 }],
-        zIndex: 1,
+        backgroundColor: 'rgba(0, 243, 255, 0.05)',
+        borderColor: 'rgba(0, 243, 255, 0.3)',
+        borderLeftColor: '#00F3FF',
+        transform: [{ scale: 1.02 }],
+        zIndex: 10,
+    },
+    detailLabelContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     detailLabel: {
-        fontSize: scaleFont(18),
-        color: colors.textSecondary, // Was textSecondary or textPrimary
-        fontWeight: '500',
+        fontSize: scaleFont(19),
+        color: '#E1E5EE',
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
     detailLabelFocused: {
-        color: colors.textPrimary,
-        fontWeight: '700',
+        color: '#FFF',
+        fontWeight: '800',
+    },
+    hudDecoration: {
+        width: scale(15),
+        height: 2,
+        backgroundColor: '#00F3FF',
+        marginLeft: scale(15),
+        opacity: 0.6,
+    },
+    detailValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     detailValue: {
-        fontSize: scaleFont(18),
-        color: colors.textMuted,
-        fontWeight: '400',
+        fontSize: scaleFont(19),
+        color: '#5C677D',
+        fontWeight: '500',
     },
     detailValueFocused: {
-        color: colors.textPrimary,
+        color: '#00F3FF',
+        fontWeight: '700',
     },
-    detailArrow: {
-        fontSize: scaleFont(20),
-        color: colors.iconMuted,
-        marginLeft: scale(12),
-    },
-    detailArrowFocused: {
-        color: colors.accent,
+    chevronIcon: {
+        marginLeft: scale(10),
     },
 
-    // Danger
+    // Danger Zone
     detailRowDanger: {
-        backgroundColor: colors.errorBackground,
-        borderColor: 'rgba(239, 68, 68, 0.3)', // Keep translucent/custom if theme lacks specific errorBorder
-        marginTop: scale(20),
+        backgroundColor: 'rgba(255, 0, 85, 0.03)',
+        borderLeftColor: 'rgba(255, 0, 85, 0.2)',
+        marginTop: scale(30),
     },
     detailRowDangerFocused: {
-        backgroundColor: 'rgba(239, 68, 68, 0.15)', // Could be stronger error bg
-        borderColor: colors.error,
+        backgroundColor: 'rgba(255, 0, 85, 0.08)',
+        borderColor: 'rgba(255, 0, 85, 0.4)',
+        borderLeftColor: '#FF0055',
     },
-    textDanger: {
-        color: colors.error,
-    },
+
     spacer: {
         height: scale(20),
     }

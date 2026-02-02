@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         position: 'absolute',
-        left: scale(60),
+        left: scale(30), // Reduced from 60
         bottom: scale(80),
         maxWidth: scale(600),
         zIndex: 2,
@@ -476,10 +476,10 @@ const styles = StyleSheet.create({
 
     // appLogoContainer removed
     appLogo: {
-        width: scale(300), // Larger text
-        height: scale(100), // Tighter height to bring it down
-        marginBottom: scale(0), // Reset negative margin now that height is fixed
-        marginLeft: scale(-40), // Adjust for center-alignment in wider box
+        width: scale(300),
+        height: scale(100),
+        marginBottom: scale(0),
+        // marginLeft removed
     },
 });
 

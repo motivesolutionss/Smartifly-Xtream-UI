@@ -34,7 +34,7 @@ import TVHeroBanner from './components/TVHeroBanner';
 import TVContentRail from './components/TVContentRail';
 import TVContinueRail from './components/TVContinueRail';
 import { TVContentItem } from './components/TVContentCard';
-import { WatchProgress } from '../../../store/watchHistoryStore';
+import useWatchHistoryStore, { WatchProgress } from '../../../store/watchHistoryStore';
 import TVLiveScreen from '../TVLiveScreen';
 import TVMoviesScreen from '../TVMoviesScreen';
 import TVSeriesScreen from '../TVSeriesScreen';
@@ -80,6 +80,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     // =========================================================================
     const { rails, continueWatching, hero, isLoading } = useHomeRails();
     const { getXtreamAPI } = useStore();
+    const removeFromHistory = useWatchHistoryStore((state) => state.removeFromHistory);
 
     // =========================================================================
     // HERO DETAILS FETCH
@@ -194,8 +195,9 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
                 item: item.data || {
                     stream_id: item.streamId,
                     name: item.title,
-                    stream_icon: item.thumbnail
-                }
+                    stream_icon: item.thumbnail,
+                },
+                resumePosition: item.position,
             });
         } else if (item.type === 'series') {
             navigation.navigate('FullscreenPlayer', {
@@ -203,7 +205,8 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
                 item: item.data || {
                     id: item.streamId,
                     title: item.episodeTitle || item.title,
-                }
+                },
+                resumePosition: item.position,
             });
         }
     };
@@ -230,7 +233,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
             style={[
                 styles.scrollView,
                 // Apply margin to avoid overlap with absolute sidebar
-                { marginLeft: scale(95) }
+                { marginLeft: scale(130) }
             ]}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
@@ -256,6 +259,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
                         title="Continue Watching"
                         data={continueWatching}
                         onPressItem={handleContinuePress}
+                        onRemoveItem={(item) => removeFromHistory(item.id)}
                     />
                 )}
 
@@ -276,55 +280,55 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         const contentStyle = {
             flex: 1,
             // All content sections need to respect the sidebar space
-            marginLeft: scale(95)
+            marginLeft: scale(130)
         };
 
         switch (activeRoute) {
-        case 'Live':
-            return (
-                <View style={contentStyle}>
-                    <TVLiveScreen navigation={navigation} />
-                </View>
-            );
-        case 'Movies':
-            return (
-                <View style={contentStyle}>
-                    <TVMoviesScreen navigation={navigation} />
-                </View>
-            );
-        case 'Series':
-            return (
-                <View style={contentStyle}>
-                    <TVSeriesScreen navigation={navigation} />
-                </View>
-            );
-        case 'Announcements':
-            return (
-                <View style={contentStyle}>
-                    <TVAnnouncementsScreen />
-                </View>
-            );
-        case 'Search':
-            return (
-                <View style={contentStyle}>
-                    <TVSearchScreen navigation={navigation} />
-                </View>
-            );
-        case 'Favorites':
-            return (
-                <View style={contentStyle}>
-                    <TVFavoritesScreen navigation={navigation} />
-                </View>
-            );
-        case 'Settings':
-            return (
-                <View style={contentStyle}>
-                    <TVSettingsScreen navigation={navigation} />
-                </View>
-            );
-        case 'Home':
-        default:
-            return renderHomeSection();
+            case 'Live':
+                return (
+                    <View style={contentStyle}>
+                        <TVLiveScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Movies':
+                return (
+                    <View style={contentStyle}>
+                        <TVMoviesScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Series':
+                return (
+                    <View style={contentStyle}>
+                        <TVSeriesScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Announcements':
+                return (
+                    <View style={contentStyle}>
+                        <TVAnnouncementsScreen />
+                    </View>
+                );
+            case 'Search':
+                return (
+                    <View style={contentStyle}>
+                        <TVSearchScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Favorites':
+                return (
+                    <View style={contentStyle}>
+                        <TVFavoritesScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Settings':
+                return (
+                    <View style={contentStyle}>
+                        <TVSettingsScreen navigation={navigation} />
+                    </View>
+                );
+            case 'Home':
+            default:
+                return renderHomeSection();
         }
     };
 
@@ -337,7 +341,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
             <StatusBar translucent backgroundColor="transparent" />
 
             {/* Sidebar Overlay (Fixed Position) */}
-            <View style={[styles.sidebarWrapper, { width: scale(95) }]}>
+            <View style={[styles.sidebarWrapper, { width: scale(130) }]}>
                 <TVSidebar
                     activeRoute={activeRoute}
                     onNavigate={handleNavigate}

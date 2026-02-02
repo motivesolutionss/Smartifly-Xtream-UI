@@ -20,7 +20,17 @@ const instructionalSteps = [
 ];
 
 const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => {
-    const favorites = useWatchHistoryStore((state) => state.getContinueWatching(12));
+    // FIX: Optimized selector to prevent infinite re-renders
+    // Using simple selector to get history object, which is referentially stable unless updated
+    const history = useWatchHistoryStore((state) => state.history);
+
+    // Compute favorites derived state inside component
+    const favorites = React.useMemo(() => {
+        return Object.values(history)
+            .filter((item) => !item.completed && item.progress > 0)
+            .sort((a, b) => b.lastWatched - a.lastWatched)
+            .slice(0, 12);
+    }, [history]);
 
     const handlePress = (item: WatchProgress) => {
         const payload: any = item.data || {
@@ -41,7 +51,7 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => 
             onPress={() => handlePress(item)}
         >
             <Text style={styles.title}>{item.title}</Text>
-            <Text style={styles.meta}>{item.type.toUpperCase()} · {Math.round(item.progress)}% watched</Text>
+            <Text style={styles.meta}>{item.type.toUpperCase()} Â· {Math.round(item.progress)}% watched</Text>
         </Pressable>
     );
 

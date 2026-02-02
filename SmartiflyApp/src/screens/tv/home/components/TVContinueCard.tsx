@@ -15,6 +15,7 @@ import {
     Image,
     Pressable,
     Animated,
+    TouchableOpacity,
 } from 'react-native';
 import { colors, scale, scaleFont } from '../../../../theme';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
@@ -123,6 +124,14 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
                 <View style={styles.overlay} />
 
                 {/* Play icon overlay */}
+                {onRemove && (
+                    <TouchableOpacity
+                        style={styles.removeButton}
+                        onPress={() => onRemove(item)}
+                    >
+                        <Text style={styles.removeText}>Remove</Text>
+                    </TouchableOpacity>
+                )}
                 <View style={styles.playIconContainer}>
                     <View style={styles.playIcon}>
                         <Text style={styles.playIconText}>▶</Text>
@@ -153,18 +162,6 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
                 </View>
             </Animated.View>
 
-            {/* Title & Subtitle */}
-            <View style={styles.metaContainer}>
-                <Text
-                    style={[styles.title, isFocused && styles.titleFocused]}
-                    numberOfLines={1}
-                >
-                    {item.title}
-                </Text>
-                <Text style={styles.subtitle} numberOfLines={1}>
-                    {getSubtitle()}
-                </Text>
-            </View>
         </Pressable>
     );
 };
@@ -257,6 +254,20 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#FFF',
         letterSpacing: 0.5,
+    },
+    removeButton: {
+        position: 'absolute',
+        top: scale(6),
+        right: scale(10),
+        paddingHorizontal: scale(12),
+        paddingVertical: scale(4),
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: scale(12),
+    },
+    removeText: {
+        fontSize: scaleFont(10),
+        color: colors.error || '#EF4444',
+        fontWeight: '600',
     },
     // Meta
     metaContainer: {

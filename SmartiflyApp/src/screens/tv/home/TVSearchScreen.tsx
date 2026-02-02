@@ -7,6 +7,7 @@ import {
     ScrollView,
     Animated,
     TouchableOpacity,
+    Image,
 } from 'react-native';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
 import TVSearchKeypad from './components/TVSearchKeypad';
@@ -46,6 +47,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
     }>({ movies: [], series: [], live: [] });
 
     const [isSearching, setIsSearching] = useState(false);
+
 
     // Animation for the "focused" search bar state (since it's always the active input method here)
     const glowAnim = React.useRef(new Animated.Value(0.6)).current; // Constant subtle glow
@@ -172,7 +174,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                                     type: type
                                 }}
                                 onPress={() => handleContentPress(item, type)}
-                                width={scale(140)} // Smaller cards for search results
+                                width={scale(160)} // Slightly larger cards to fill space
                             />
                         </View>
                     ))}
@@ -183,9 +185,16 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
 
     return (
         <View style={styles.container}>
-            {/* LEFT: KEYPAD (1/3 Width) */}
+            {/* LEFT: KEYPAD (1/4 Width) - Reduced width */}
             <View style={styles.leftPanel}>
-                {/* <Text style={styles.inputLabel}>Search</Text> */}
+                {/* Logo */}
+                <View style={styles.logoContainer}>
+                    <Image
+                        source={require('../../../assets/smartifly_icon.png')}
+                        style={styles.logo}
+                        resizeMode="contain"
+                    />
+                </View>
 
                 {/* SEARCH BAR - Styled like TVInput */}
                 <View style={styles.searchBarWrapper}>
@@ -228,6 +237,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                     onClear={handleClear}
                 />
 
+
                 {/* SEARCH SUGGESTIONS */}
                 {query.length > 0 && textSuggestions.length > 0 && (
                     <View style={styles.suggestionsContainer}>
@@ -249,7 +259,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                 )}
             </View>
 
-            {/* RIGHT: RESULTS (2/3 Width) */}
+            {/* RIGHT: RESULTS (3/4 Width) - Expanded */}
             <View style={styles.rightPanel}>
                 {isSearching ? (
                     <View style={styles.centerContainer}>
@@ -318,7 +328,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.background,
     },
     leftPanel: {
-        flex: 1.2, // ~35-40% width
+        flex: 1.2, // ~25% width (Adjusted ratio)
         padding: scale(20),
         paddingTop: scale(40),
         backgroundColor: 'transparent', // Unified background
@@ -327,9 +337,10 @@ const styles = StyleSheet.create({
         zIndex: 10,
     },
     rightPanel: {
-        flex: 2, // ~60-65% width
+        flex: 3, // ~75% width (Expanded)
         backgroundColor: 'transparent',
     },
+    // ...
     inputLabel: {
         fontSize: scaleFont(14),
         fontWeight: '700',
@@ -370,6 +381,14 @@ const styles = StyleSheet.create({
     },
     searchIconContainer: {
         marginRight: scale(12),
+    },
+    logoContainer: {
+        alignItems: 'flex-start',
+        marginBottom: scale(20),
+    },
+    logo: {
+        width: scale(250),
+        height: scale(100),
     },
     inputText: {
         flex: 1,

@@ -36,7 +36,7 @@ const isAndroidEmulator = Platform.OS === 'android' && __DEV__;
  */
 const getBackendUrl = (): string => {
     // Universal Backend URL
-    const BACKEND_URL = 'https://xtreamui-backend.onrender.com/api';
+    const BACKEND_URL = 'https://smartifly-xtream-ui-production-2d03.up.railway.app/api';
 
     return BACKEND_URL;
 };

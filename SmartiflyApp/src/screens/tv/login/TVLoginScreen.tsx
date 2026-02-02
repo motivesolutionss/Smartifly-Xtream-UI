@@ -212,6 +212,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
     // Store & State
     const {
         login,
+        isAuthenticated,
         isLoading,
         error: authError,
         selectedPortal: activePortal,
@@ -283,6 +284,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
             setErrors(prev => ({ ...prev, general: errorMessage }));
         }
     }, [authError]);
+
 
     // Fetch portals
     const fetchPortals = useCallback(async () => {

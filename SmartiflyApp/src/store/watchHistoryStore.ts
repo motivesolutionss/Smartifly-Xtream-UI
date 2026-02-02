@@ -185,7 +185,7 @@ export const useTrackProgress = () => {
             thumbnail?: string,
             data?: unknown
         ) => {
-            if (duration <= 0) return;
+            const progress = duration > 0 ? Math.round((position / duration) * 100) : 1;
 
             updateProgress({
                 type: 'movie',
@@ -193,7 +193,7 @@ export const useTrackProgress = () => {
                 title,
                 position,
                 duration,
-                progress: Math.round((position / duration) * 100),
+                progress: Math.min(Math.max(progress, 1), 100),
                 thumbnail,
                 data,
             });
@@ -211,7 +211,7 @@ export const useTrackProgress = () => {
             thumbnail?: string,
             data?: unknown
         ) => {
-            if (duration <= 0) return;
+            const progress = duration > 0 ? Math.round((position / duration) * 100) : 1;
 
             updateProgress({
                 type: 'series',
@@ -223,7 +223,7 @@ export const useTrackProgress = () => {
                 episodeNumber,
                 position,
                 duration,
-                progress: Math.round((position / duration) * 100),
+                progress: Math.min(Math.max(progress, 1), 100),
                 thumbnail,
                 data,
             });

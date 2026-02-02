@@ -71,18 +71,18 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        marginBottom: scale(40),
+        marginBottom: scale(10), // Reduced from 40
         width: '100%',
     },
     title: {
         fontSize: scaleFont(24),
         fontWeight: 'bold',
         color: colors.textPrimary || '#EEE',
-        marginBottom: scale(16),
-        marginLeft: scale(40),
+        marginBottom: scale(8),
+        marginLeft: scale(30),
     },
     listContent: {
-        paddingHorizontal: scale(40),
+        paddingHorizontal: scale(30),
         paddingRight: scale(80),
     },
 });

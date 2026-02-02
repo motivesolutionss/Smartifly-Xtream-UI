@@ -10,6 +10,7 @@
 
 import { premiumTheme } from './themes/premium';
 import { defaultTheme } from './themes/default';
+import { aetherTheme } from './themes/aether';
 import { Theme, ThemeColors } from './themes/types';
 
 // =============================================================================
@@ -19,6 +20,7 @@ import { Theme, ThemeColors } from './themes/types';
 export const themeRegistry = {
     default: defaultTheme,
     premium: premiumTheme,
+    aether: aetherTheme,
 } as const;
 
 export type ThemeId = keyof typeof themeRegistry;
@@ -45,6 +47,11 @@ export type Gradients = {
     premium: [string, string];
     liveIndicator: [string, string];
     shimmer: [string, string, string];
+    // Futuristic Gradients
+    aetherPulse: [string, string, string];
+    cyanNeon: [string, string];
+    violetNeon: [string, string];
+    meshBackground: string[];
 };
 
 export const gradients: Gradients = {
@@ -56,6 +63,11 @@ export const gradients: Gradients = {
     premium: ['#FFD700', '#FFA500'],
     liveIndicator: ['#FF0000', colors.live],
     shimmer: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0)'],
+    // Initial placeholders
+    aetherPulse: ['#00F3FF', '#7000FF', '#020408'],
+    cyanNeon: ['#00F3FF', 'rgba(0, 243, 255, 0.1)'],
+    violetNeon: ['#7000FF', 'rgba(112, 0, 255, 0.1)'],
+    meshBackground: ['#020408', '#080C14', '#00F3FF', '#7000FF'],
 };
 
 export type QualityColors = {
@@ -81,6 +93,14 @@ const refreshGradients = (palette: ThemeColors) => {
     gradients.accentButton = [palette.accent, palette.accentDark];
     gradients.progress = [palette.primary, palette.primaryLight];
     gradients.liveIndicator = ['#FF0000', palette.live];
+
+    // Refresh futuristic gradients based on active palette
+    if (activeTheme.id === 'aether') {
+        gradients.aetherPulse = [palette.primary, palette.accent, palette.background];
+        gradients.cyanNeon = [palette.primary, 'rgba(0, 243, 255, 0.1)'];
+        gradients.violetNeon = [palette.accent, 'rgba(112, 0, 255, 0.1)'];
+        gradients.meshBackground = [palette.background, palette.backgroundSecondary, palette.primary, palette.accent];
+    }
 };
 
 const refreshQualityColors = (palette: ThemeColors) => {
@@ -98,9 +118,9 @@ const applyTheme = (theme: Theme) => {
     refreshQualityColors(theme.colors);
 };
 
-export const getThemeById = (themeId: ThemeId) => themeRegistry[themeId] ?? defaultTheme;
+export const getThemeById = (themeId: ThemeId): Theme => themeRegistry[themeId] ?? defaultTheme;
 
-export const setActiveTheme = (themeId: ThemeId) => {
+export const setActiveTheme = (themeId: ThemeId): Theme => {
     const nextTheme = getThemeById(themeId);
     applyTheme(nextTheme);
     return nextTheme;

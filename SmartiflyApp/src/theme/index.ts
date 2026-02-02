@@ -41,7 +41,7 @@ export {
     defaultThemeId,
     getThemeById,
 } from './colors';
-export type { ThemeId } from './colors';
+export type { ThemeId, Gradients, Colors } from './colors';
 
 // Typography
 export {
@@ -56,6 +56,18 @@ export {
     letterSpacing,
     getTypography,
     getFontSize,
+    textGlow,
+} from './typography';
+export type {
+    Typography,
+    TypographyMobile,
+    TypographyTV,
+    FontFamily,
+    FontWeight,
+    FontSizeMobile,
+    FontSizeTV,
+    LineHeight,
+    LetterSpacing,
 } from './typography';
 
 // Spacing
@@ -78,6 +90,21 @@ export {
     createPadding,
     createMargin,
 } from './spacing';
+export type {
+    Spacing,
+    SpacingTV,
+    ScreenPadding,
+    CardSpacing,
+    ListSpacing,
+    ButtonSpacing,
+    InputSpacing,
+    HeaderSpacing,
+    TabBarSpacing,
+    ModalSpacing,
+    ContentRowSpacing,
+    PlayerSpacing,
+    Layout,
+} from './spacing';
 
 // Shadows
 export {
@@ -92,6 +119,15 @@ export {
     getGlowEffects,
     createShadow,
     combineShadows,
+} from './shadows';
+export type {
+    Shadows,
+    Elevation,
+    ElevationTV,
+    ComponentShadows,
+    GlowEffects,
+    GlowEffectsTV,
+    ShadowColors,
 } from './shadows';
 
 // Sizes
@@ -120,12 +156,35 @@ export {
     getResponsiveHeight,
     getGridColumns,
 } from './sizes';
+export type {
+    BorderRadius,
+    BorderRadiusTV,
+    IconSize,
+    IconSizeTV,
+    ButtonSize,
+    InputSize,
+    AvatarSize,
+    BadgeSize,
+    CardSize,
+    HeaderSize,
+    TabBarSize,
+    SidebarSize,
+    ModalSize,
+    TouchTarget,
+    PlayerSize,
+    AspectRatio,
+} from './sizes';
 
 // Icons
 export {
     Icon,
     iconSizes,
     featureIcons,
+} from './icons';
+export type {
+    IconName,
+    IconProps,
+    IconWeight,
 } from './icons';
 
 // TV Scaling (Resolution-aware scaling for TV platform)
@@ -152,88 +211,12 @@ export {
     getResolutionDebugInfo,
 } from './tvScaling';
 
-// Re-export types
-export type {
-    Colors,
-    BrandColors,
-    BackgroundColors,
-    TextColors,
-    SemanticColors,
-    ContentColors,
-    UIColors,
-    GlassColors,
-    Gradients,
-    QualityColors,
-} from './colors';
-
-export type {
-    Typography,
-    TypographyMobile,
-    TypographyTV,
-    FontFamily,
-    FontWeight,
-    FontSizeMobile,
-    FontSizeTV,
-    LineHeight,
-    LetterSpacing,
-} from './typography';
-
-export type {
-    Spacing,
-    SpacingTV,
-    ScreenPadding,
-    CardSpacing,
-    ListSpacing,
-    ButtonSpacing,
-    InputSpacing,
-    HeaderSpacing,
-    TabBarSpacing,
-    ModalSpacing,
-    ContentRowSpacing,
-    PlayerSpacing,
-    Layout,
-} from './spacing';
-
-export type {
-    Shadows,
-    Elevation,
-    ElevationTV,
-    ComponentShadows,
-    GlowEffects,
-    GlowEffectsTV,
-    ShadowColors,
-} from './shadows';
-
-export type {
-    BorderRadius,
-    BorderRadiusTV,
-    IconSize,
-    IconSizeTV,
-    ButtonSize,
-    InputSize,
-    AvatarSize,
-    BadgeSize,
-    CardSize,
-    HeaderSize,
-    TabBarSize,
-    SidebarSize,
-    ModalSize,
-    TouchTarget,
-    PlayerSize,
-    AspectRatio,
-} from './sizes';
-
-export type {
-    IconName,
-    IconProps,
-    IconWeight,
-} from './icons';
-
 // =============================================================================
 // PROVIDERS / CONTEXT
 // =============================================================================
 
-export { ThemeProvider, useTheme };
+export { ThemeProvider, useTheme, useThemeId } from './ThemeProvider';
+export type { ThemeContextValue, ThemeProviderProps } from './ThemeProvider';
 
 export { getTheme, isTV, theme, tvTheme } from './platformTheme';
 

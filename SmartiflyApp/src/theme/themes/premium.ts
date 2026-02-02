@@ -82,5 +82,10 @@ export const premiumTheme: Theme = {
         cardBackground: '#1E1E1E',
         neon: '#FFD700',
         neonGlow: 'rgba(255, 215, 0, 0.2)',
+    },
+    effects: {
+        blur: false,
+        glow: 'high',
+        meshBackground: false,
     }
 };

@@ -921,37 +921,50 @@ const useStore = create<Store>()(
             }),
         }),
         {
-            name: 'smartifly-storage',
+            name: 'smartifly-storage-v2',
             storage: createJSONStorage(() => AsyncStorage),
             onRehydrateStorage: () => (state, error) => {
                 if (error) {
-                    logger.error('Failed to rehydrate store', error);
+                    logger.error('Store: Failed to rehydrate', error);
                     return;
                 }
 
-                if (!state) return;
+                if (!state) {
+                    logger.warn('Store: Rehydrated state is null');
+                    return;
+                }
+
+                logger.debug('Store: Rehydrating...', {
+                    hasCredentials: !!state.credentials,
+                    hasPassword: !!state.credentials?.password,
+                    username: state.credentials?.username,
+                    isAuthenticated: state.isAuthenticated
+                });
 
                 const hasPassword = !!state.credentials?.password;
                 if (!hasPassword) {
+                    logger.warn('Store: No password found in storage, forcing logout.', {
+                        wasAuthenticated: state.isAuthenticated
+                    });
                     state.isAuthenticated = false;
                     state.userInfo = null;
                     state.credentials = null;
                     state.content = initialContent;
+                } else {
+                    logger.info('Store: Successfully rehydrated with credentials.');
                 }
             },
             partialize: (state) => ({
                 // Persist these fields
                 isAuthenticated: state.isAuthenticated,
-                // Persist userInfo without password
-                userInfo: state.userInfo
-                    ? { ...state.userInfo, password: '' }
-                    : null,
+                // Persist userInfo WITH password for auto-login
+                // SECURITY WARN: In a production banking app, use Keychain/Keystore.
+                // For IPTV, this allows staying logged in on restart.
+                userInfo: state.userInfo,
                 serverInfo: state.serverInfo,
                 selectedPortal: state.selectedPortal,
-                // Persist credentials without password
-                credentials: state.credentials
-                    ? { ...state.credentials, password: '' }
-                    : null,
+                // Persist credentials WITH password
+                credentials: state.credentials,
                 // Persist portals
                 portals: state.portals,
                 // NOTE: contentReady is NOT persisted - computed dynamically via getContentReady()

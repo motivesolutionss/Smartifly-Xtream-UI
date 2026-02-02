@@ -19,6 +19,7 @@ type ParamList = {
         type: 'live' | 'movie' | 'series';
         item: any;
         episodeUrl?: string;
+        resumePosition?: number;
     };
 };
 
@@ -26,6 +27,7 @@ const PlayerScreen: React.FC = () => {
     const navigation = useNavigation();
     const route = useRoute<RouteProp<ParamList, 'Player'>>();
     const { type, item, episodeUrl } = route.params;
+    const resumePosition = route.params.resumePosition ?? 0;
     const { getXtreamAPI } = useStore();
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
     const api = getXtreamAPI();
@@ -36,7 +38,12 @@ const PlayerScreen: React.FC = () => {
     const [hasError, setHasError] = React.useState(false);
     const durationRef = React.useRef(0);
     const lastProgressUpdateRef = React.useRef(0);
+    const [hasSeeked, setHasSeeked] = React.useState(false);
     const hasTrackedLiveRef = React.useRef(false);
+
+    React.useEffect(() => {
+        setHasSeeked(false);
+    }, [item, resumePosition]);
 
     // FIX #1: Move navigation.goBack() into useEffect to avoid render-time navigation
     React.useEffect(() => {
@@ -154,12 +161,16 @@ const PlayerScreen: React.FC = () => {
                         hasAudio: data.audioTracks?.length > 0,
                     });
                     durationRef.current = data.duration || 0;
-                    if (type === 'live' && !hasTrackedLiveRef.current) {
-                        trackLive(item.stream_id || item.id, item.name, item.stream_icon || item.cover, item);
-                        hasTrackedLiveRef.current = true;
-                    }
-                    setIsBuffering(false);
-                }}
+                if (type === 'live' && !hasTrackedLiveRef.current) {
+                    trackLive(item.stream_id || item.id, item.name, item.stream_icon || item.cover, item);
+                    hasTrackedLiveRef.current = true;
+                }
+                if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
+                    videoRef.current.seek(resumePosition);
+                    setHasSeeked(true);
+                }
+                setIsBuffering(false);
+            }}
                 onProgress={({ currentTime }) => handleProgress(currentTime)}
                 onBuffer={({ isBuffering: buffering }) => {
                     setIsBuffering(buffering);

@@ -1,15 +1,4 @@
-/**
- * TV Content Card Component
- * 
- * Netflix-style content card with type-aware visual differentiation.
- * - Live: Rounded corners + LIVE badge
- * - Movie: Poster ratio + HD badge
- * - Series: Poster ratio + subtle styling
- * 
- * @enterprise-grade
- */
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -19,7 +8,14 @@ import {
     Animated,
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { colors, scale, scaleFont } from '../../../../theme';
+import {
+    colors,
+    scale,
+    scaleFont,
+    useTheme,
+    glowEffectsTV,
+    textGlow
+} from '../../../../theme';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
 import { prefetchImage } from '../../../../utils/image';
 
@@ -55,10 +51,11 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     item,
     onPress,
     width = scale(200),
-    height = scale(280), // Increased dimensions for lower density (Netflix style)
+    height = scale(280),
 }) => {
+    const { theme } = useTheme();
     const [isFocused, setIsFocused] = useState(false);
-    const [scaleAnim] = useState(new Animated.Value(1));
+    const scaleAnim = useRef(new Animated.Value(1)).current;
 
     // Visual differentiation based on content type
     const variant: ContentVariant = item.type || 'movie';
@@ -71,27 +68,36 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 
     const handleFocus = () => {
         setIsFocused(true);
-        // User requested no animation (fixed cards)
+        Animated.spring(scaleAnim, {
+            toValue: 1.1,
+            useNativeDriver: true,
+            friction: 5,
+            tension: 40,
+        }).start();
     };
 
     const handleBlur = () => {
         setIsFocused(false);
+        Animated.spring(scaleAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+            friction: 5,
+            tension: 40,
+        }).start();
     };
 
     // Badge logic
     const getBadge = () => {
         if (isLive) {
-            return { text: 'LIVE', color: colors.live || '#E50914', isLive: true };
+            return { text: 'LIVE', color: theme.colors.live, isLive: true };
         }
         if (item.quality) {
-            return { text: item.quality, color: colors.accent || '#00E5FF', isLive: false };
+            return { text: item.quality, color: theme.colors.primary, isLive: false };
         }
         return null;
     };
 
     const badge = getBadge();
-
-    // Live cards should be square-ish to accommodate channel logos properly
     const finalHeight = isLive ? width : height;
 
     return (
@@ -101,9 +107,22 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
             onBlur={handleBlur}
             style={[
                 styles.container,
-                { width, height: finalHeight + scale(40) }
+                { width, height: finalHeight }
             ]}
         >
+            {/* FOCUS AURA (Glow behind card) */}
+            {isFocused && (
+                <View style={[
+                    styles.focusAura,
+                    {
+                        width: width + scale(40),
+                        height: finalHeight + scale(20),
+                        backgroundColor: isLive ? theme.colors.live : theme.colors.primary,
+                        borderRadius: isLive ? scale(24) : scale(16),
+                    }
+                ]} />
+            )}
+
             <Animated.View
                 style={[
                     styles.imageContainer,
@@ -112,14 +131,16 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                         height: finalHeight,
                         transform: [{ scale: scaleAnim }],
                         borderColor: isFocused
-                            ? (isLive ? colors.live || '#E50914' : colors.accent || '#00E5FF')
-                            : 'transparent',
-                        borderWidth: isFocused ? scale(3) : 0,
-                        // Live cards get more rounded corners
+                            ? (isLive ? theme.colors.live : theme.colors.primary)
+                            : 'rgba(255,255,255,0.05)',
+                        borderWidth: isFocused ? scale(3) : 1,
                         borderRadius: isLive ? scale(12) : scale(8),
-                        backgroundColor: isLive ? '#FFF' : (colors.backgroundSecondary || '#222'), // White background for logos
+                        backgroundColor: isLive ? '#FFF' : theme.colors.backgroundSecondary,
                     },
-                    isFocused && styles.shadow
+                    isFocused && {
+                        shadowColor: isLive ? theme.colors.live : theme.colors.primary,
+                        ...glowEffectsTV.focus,
+                    }
                 ]}
             >
                 <Image
@@ -131,7 +152,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                     resizeMode={isLive ? "contain" : "cover"}
                 />
 
-                {/* Live Card Overlay - Gradient like Hero Banner */}
+                {/* Live Card Overlay */}
                 {isLive && (
                     <View style={StyleSheet.absoluteFill}>
                         <Svg height="100%" width="100%">
@@ -152,19 +173,19 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                     <View style={[
                         styles.badge,
                         badge.isLive && styles.liveBadge,
-                        { backgroundColor: badge.isLive ? badge.color : 'rgba(0,0,0,0.8)' }
+                        { backgroundColor: badge.isLive ? badge.color : 'rgba(0,0,0,0.85)' }
                     ]}>
                         {badge.isLive && <View style={styles.liveDot} />}
                         <Text style={[
                             styles.badgeText,
-                            { color: badge.isLive ? '#FFF' : badge.color }
+                            { color: '#FFF' }
                         ]}>
                             {badge.text}
                         </Text>
                     </View>
                 )}
 
-                {/* Rating overlay for movies/series */}
+                {/* Rating overlay */}
                 {!isLive && item.rating && (
                     <View style={styles.ratingBadge}>
                         <Text style={styles.ratingText}>
@@ -174,18 +195,6 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                 )}
             </Animated.View>
 
-            {/* Title & Metadata - Only visible on focus */}
-            <View style={[styles.metaContainer, { opacity: isFocused ? 1 : 0 }]}>
-                <Text
-                    style={[
-                        styles.title,
-                        isFocused && styles.titleFocused
-                    ]}
-                    numberOfLines={1}
-                >
-                    {item.title}
-                </Text>
-            </View>
         </Pressable>
     );
 };
@@ -196,82 +205,78 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        marginRight: scale(20),
+        marginRight: scale(24),
         justifyContent: 'flex-start',
         alignItems: 'center',
+        position: 'relative',
+    },
+    focusAura: {
+        position: 'absolute',
+        top: -scale(20),
+        left: -scale(20),
+        opacity: 0.2,
+        zIndex: -1,
     },
     imageContainer: {
         overflow: 'hidden',
-        backgroundColor: colors.backgroundSecondary || '#222',
     },
     image: {
         width: '100%',
         height: '100%',
     },
-    shadow: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 6,
-        elevation: 10,
-        zIndex: 10,
-    },
-    // Standard badge (quality)
     badge: {
         position: 'absolute',
-        top: scale(6),
-        right: scale(6),
-        paddingHorizontal: scale(6),
-        paddingVertical: scale(2),
+        top: scale(10),
+        right: scale(10),
+        paddingHorizontal: scale(8),
+        paddingVertical: scale(4),
         borderRadius: scale(4),
         flexDirection: 'row',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
     },
-    // Live badge specific
     liveBadge: {
-        paddingHorizontal: scale(8),
-        paddingVertical: scale(4),
         borderRadius: scale(6),
+        borderColor: 'transparent',
     },
     liveDot: {
-        width: scale(6),
-        height: scale(6),
-        borderRadius: scale(3),
+        width: scale(8),
+        height: scale(8),
+        borderRadius: scale(4),
         backgroundColor: '#FFF',
-        marginRight: scale(4),
+        marginRight: scale(6),
     },
     badgeText: {
-        fontSize: scaleFont(10),
-        fontWeight: 'bold',
+        fontSize: scaleFont(12),
+        fontWeight: '900',
+        letterSpacing: 1,
     },
-    // Rating badge
     ratingBadge: {
         position: 'absolute',
-        bottom: scale(6),
-        left: scale(6),
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        paddingHorizontal: scale(6),
-        paddingVertical: scale(2),
+        bottom: scale(10),
+        left: scale(10),
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        paddingHorizontal: scale(8),
+        paddingVertical: scale(4),
         borderRadius: scale(4),
     },
     ratingText: {
-        fontSize: scaleFont(10),
+        fontSize: scaleFont(12),
         color: '#FFD700',
-        fontWeight: '600',
+        fontWeight: '900',
     },
     metaContainer: {
-        marginTop: scale(12),
+        marginTop: scale(16),
         width: '100%',
         alignItems: 'center',
     },
     title: {
-        fontSize: scaleFont(14),
-        color: colors.textSecondary || '#AAA',
+        fontSize: scaleFont(16),
+        color: '#8E9AAF',
         textAlign: 'center',
-    },
-    titleFocused: {
-        color: colors.textPrimary || '#FFF',
-        fontWeight: 'bold',
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
 });
 

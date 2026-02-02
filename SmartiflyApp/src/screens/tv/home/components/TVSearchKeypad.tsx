@@ -108,13 +108,21 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
         { id: 'r5', keys: [...'yz'.split(''), ...'1234'.split('')] },
         // Row 6: 5-0
         { id: 'r6', keys: '567890'.split('') },
-        // Row 7: Controls (Space, Clear, Backspace)
+        // Row 7: Space (Full Width)
         {
             id: 'r7',
+            type: 'control',
             keys: [
-                { id: 'space', label: 'Space', action: onSpace, width: 2 },
-                { id: 'clear', label: 'Clear All', action: onClear, width: 2 },
-                { id: 'backspace', label: '⌫', action: onBackspace, width: 2 }
+                { id: 'space', label: 'Space', action: onSpace, width: 1 }
+            ]
+        },
+        // Row 8: Actions (Clear, Backspace)
+        {
+            id: 'r8',
+            type: 'control',
+            keys: [
+                { id: 'clear', label: 'Clear All', action: onClear, width: 1 },
+                { id: 'backspace', label: '⌫', action: onBackspace, width: 1 } // Using flex 1 for equal split
             ]
         },
     ];
@@ -123,7 +131,7 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
         <View style={styles.container}>
             {rows.map((row, rowIndex) => (
                 <View key={row.id} style={styles.row}>
-                    {row.id === 'r7' ? (
+                    {(row as any).type === 'control' ? (
                         // Special handling for control row
                         (row.keys as any[]).map((key: any) => (
                             <View key={key.id} style={{ flex: key.width }}>
@@ -162,11 +170,11 @@ const styles = StyleSheet.create({
     },
     row: {
         flexDirection: 'row',
-        marginBottom: scale(8),
-        gap: scale(8),
+        marginBottom: scale(6), // Reduced margin
+        gap: scale(6), // Reduced gap
     },
     keyWrapper: {
-        height: scale(50), // Fixed height for consistency
+        height: scale(60), // Increased height (was 50)
         width: '100%',
     },
     key: {
@@ -197,11 +205,11 @@ const styles = StyleSheet.create({
     },
     keyText: {
         color: 'rgba(255, 255, 255, 0.9)',
-        fontSize: scaleFont(20), // Larger text
+        fontSize: scaleFont(24), // Increased font size (was 20)
         fontWeight: '500',
     },
     focusedKeyText: {
-        fontSize: scaleFont(22),
+        fontSize: scaleFont(26), // Increased focused font size (was 22)
         fontWeight: '700',
         color: '#FFFFFF',
     },

@@ -22,6 +22,18 @@ export const fontFamily = {
         android: 'Roboto',
         default: 'System',
     }),
+    /** Futuristic body font (Optional) */
+    inter: Platform.select({
+        ios: 'Inter-Regular',
+        android: 'Inter-Regular',
+        default: 'System',
+    }),
+    /** Futuristic heading font (Optional) */
+    spaceGrotesk: Platform.select({
+        ios: 'SpaceGrotesk-Medium',
+        android: 'SpaceGrotesk-Medium',
+        default: 'System',
+    }),
     /** Medium weight for emphasis */
     medium: Platform.select({
         ios: 'System',
@@ -47,6 +59,35 @@ export const fontFamily = {
         default: 'monospace',
     }),
 } as const;
+
+// =============================================================================
+// TEXT GLOW EFFECTS (Futuristic)
+// =============================================================================
+
+/**
+ * Token-only glow presets (TextStyle)
+ * Usable on focused TV items or display text.
+ */
+export const textGlow = {
+    none: {
+        textShadowColor: 'transparent',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 0,
+    } as TextStyle,
+
+    soft: {
+        textShadowColor: 'rgba(255, 255, 255, 0.3)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 4,
+    } as TextStyle,
+
+    neon: {
+        textShadowColor: '#00F3FF', // Cyan default, can be overridden
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 8,
+    } as TextStyle,
+} as const;
+
 
 // =============================================================================
 // FONT WEIGHTS

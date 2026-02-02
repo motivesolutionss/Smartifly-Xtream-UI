@@ -52,19 +52,19 @@ const TVContentRail: React.FC<TVContentRailProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        marginBottom: scale(10),
+        marginBottom: scale(4), // Reduced from 10
         width: '100%',
     },
     title: {
         fontSize: scaleFont(24),
         fontWeight: 'bold',
         color: colors.textPrimary || '#EEE',
-        marginBottom: scale(16),
-        marginLeft: scale(20), // Align with cards which have margin
-        paddingLeft: scale(20), // Or just pad container
+        marginBottom: scale(8),
+        marginLeft: scale(30), // Align with banner
+        paddingLeft: scale(0), // Removed extra padding
     },
     listContent: {
-        paddingHorizontal: scale(40), // Left padding for focus room
+        paddingHorizontal: scale(30), // Align with title
         paddingRight: scale(80),
     }
 });
