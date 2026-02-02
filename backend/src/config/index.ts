@@ -16,7 +16,7 @@ const envSchema = z.object({
     FIREBASE_CLIENT_EMAIL: z.string().optional(),
     ADMIN_EMAIL: z.string().email().default('admin@smartifly.com'),
     ADMIN_PASSWORD: z.string().min(6).default('admin123'),
-    CORS_ORIGINS: z.string().default('http://localhost:3000'),
+    CORS_ORIGINS: z.string().default('http://localhost:5000'),
 
     // PostgreSQL Tools
     PG_DUMP_PATH: z.string().optional(),

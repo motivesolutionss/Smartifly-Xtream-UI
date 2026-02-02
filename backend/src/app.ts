@@ -60,6 +60,16 @@ app.use(express.urlencoded({ extended: true }));
 // Static files
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+// Root route
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Welcome to Smartifly Backend API',
+        status: 'running',
+        api_base: '/api',
+        health_check: '/health'
+    });
+});
+
 // Health check with database connectivity
 app.get('/health', async (req, res) => {
     try {
