@@ -24,7 +24,7 @@ import {
     BackHandler,
     ScrollView,
     StatusBar,
-    Text,
+    Animated,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import useStore from '../../../store';
@@ -42,8 +42,10 @@ import TVSearchScreen from './TVSearchScreen';
 import TVAnnouncementsScreen from '../TVAnnouncementsScreen';
 import TVSettingsScreen from '../TVSettingsScreen';
 import TVFavoritesScreen from './TVFavoritesScreen';
+import TVDownloadsScreen from '../TVDownloadsScreen';
 // Netflix-grade resolver
 import { useHomeRails } from './hooks/useHomeRails';
+import { TVHomeScreenProps, MovieItem, SeriesItem } from '../../../navigation/types';
 
 // Content Screens (Rendered internally as Sections)
 
@@ -51,15 +53,15 @@ import { useHomeRails } from './hooks/useHomeRails';
 // TYPES
 // =============================================================================
 
-interface TVHomeScreenProps {
-    navigation: any;
+interface HeroDetails {
+    description?: string;
+    rating?: number; // Changed from string to match TVHeroItem
+    backdrop?: string;
+    tags?: string[];
+    year?: string;
 }
 
-const PlaceholderSection: React.FC<{ title: string }> = ({ title }) => (
-    <View style={[styles.placeholderContainer]}>
-        <Text style={styles.placeholderText}>{title}</Text>
-    </View>
-);
+
 
 // =============================================================================
 // TV HOME SCREEN COMPONENT
@@ -70,7 +72,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     // STATE
     // =========================================================================
     const [activeRoute, setActiveRoute] = useState<SidebarRoute>('Home');
-    const [heroDetails, setHeroDetails] = useState<any>(null);
+    const [heroDetails, setHeroDetails] = useState<HeroDetails | null>(null);
 
     // Refs for explicit navigation
     const searchRef = useRef<View>(null);
@@ -78,9 +80,33 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     // =========================================================================
     // RESOLVER - Single source of truth for home content
     // =========================================================================
-    const { rails, continueWatching, hero, isLoading } = useHomeRails();
+    const { rails, continueWatching, hero } = useHomeRails();
     const { getXtreamAPI } = useStore();
     const removeFromHistory = useWatchHistoryStore((state) => state.removeFromHistory);
+
+    // Animations for section switching
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(20)).current;
+
+    useEffect(() => {
+        // Reset and animate in when route changes
+        fadeAnim.setValue(0);
+        slideAnim.setValue(20);
+
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 400,
+                useNativeDriver: true,
+            }),
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                friction: 8,
+                tension: 40,
+                useNativeDriver: true,
+            })
+        ]).start();
+    }, [activeRoute, fadeAnim, slideAnim]);
 
     // =========================================================================
     // HERO DETAILS FETCH
@@ -132,7 +158,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         fetchHeroDetails();
 
         return () => { isMounted = false; };
-    }, [hero?.id, getXtreamAPI]);
+    }, [hero, getXtreamAPI]);
 
     // =========================================================================
     // BACK HANDLER
@@ -190,22 +216,26 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     const handleContinuePress = (item: WatchProgress) => {
         console.log('[TVHome] Continue watching pressed:', item.title, item.type);
         if (item.type === 'movie') {
+            // Cast to MovieItem - item.data contains the original movie data, or construct from WatchProgress
+            const movieItem = (item.data as MovieItem) ?? ({
+                stream_id: item.streamId,
+                name: item.title,
+                stream_icon: item.thumbnail,
+            } as MovieItem);
             navigation.navigate('FullscreenPlayer', {
                 type: 'movie',
-                item: item.data || {
-                    stream_id: item.streamId,
-                    name: item.title,
-                    stream_icon: item.thumbnail,
-                },
+                item: movieItem,
                 resumePosition: item.position,
             });
         } else if (item.type === 'series') {
+            // Cast to SeriesItem - item.data contains the original series data, or construct from WatchProgress
+            const seriesItem = (item.data as SeriesItem) ?? ({
+                series_id: item.streamId,
+                name: item.episodeTitle || item.title,
+            } as SeriesItem);
             navigation.navigate('FullscreenPlayer', {
                 type: 'series',
-                item: item.data || {
-                    id: item.streamId,
-                    title: item.episodeTitle || item.title,
-                },
+                item: seriesItem,
                 resumePosition: item.position,
             });
         }
@@ -320,6 +350,12 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
                         <TVFavoritesScreen navigation={navigation} />
                     </View>
                 );
+            case 'Downloads':
+                return (
+                    <View style={contentStyle}>
+                        <TVDownloadsScreen navigation={navigation} />
+                    </View>
+                );
             case 'Settings':
                 return (
                     <View style={contentStyle}>
@@ -353,9 +389,15 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
             </View>
 
             {/* Main Content Area */}
-            <View style={styles.contentContainer}>
+            <Animated.View style={[
+                styles.contentContainer,
+                {
+                    opacity: fadeAnim,
+                    transform: [{ translateY: slideAnim }]
+                }
+            ]}>
                 {renderContent()}
-            </View>
+            </Animated.View>
         </View>
     );
 };

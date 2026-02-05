@@ -1,16 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     StyleSheet,
     Pressable,
 } from 'react-native';
 import {
-    colors,
     scale,
     scaleFont,
     Icon,
     useTheme,
-    glowEffectsTV,
     stylePresets
 } from '../../../../theme';
 
@@ -26,6 +24,7 @@ export type SidebarRoute =
     | 'Announcements'
     | 'Search'
     | 'Favorites'
+    | 'Downloads'
     | 'Settings';
 
 interface TVSidebarProps {
@@ -56,6 +55,7 @@ const MENU_ITEMS: MenuItem[] = [
     { id: 'Series', label: 'Series', icon: 'layers', section: 'content' },
     { id: 'Announcements', label: 'Announcements', icon: 'bell', section: 'content' },
     { id: 'Favorites', label: 'Favorites', icon: 'heart', section: 'utility' },
+    { id: 'Downloads', label: 'Downloads', icon: 'downloadSimple', section: 'utility' },
     { id: 'Settings', label: 'Settings', icon: 'settings', section: 'utility' },
 ];
 
@@ -71,14 +71,25 @@ const TVSidebar: React.FC<TVSidebarProps> = ({
     // State
     const [focusedId, setFocusedId] = useState<SidebarRoute | null>(null);
     const { theme } = useTheme();
+    const navTimer = useRef<any>(null);
 
     const handleFocus = (id: SidebarRoute) => {
         setFocusedId(id);
-        const contentRoutes: SidebarRoute[] = ['Home', 'Live', 'Movies', 'Series', 'Announcements'];
-        if (contentRoutes.includes(id)) {
+
+        // Debounce navigation slightly to let focus animations finish (approx 150ms)
+        if (navTimer.current) clearTimeout(navTimer.current);
+
+        navTimer.current = setTimeout(() => {
             onNavigate(id);
-        }
+        }, 150);
     };
+
+    // Clear timer on unmount
+    useEffect(() => {
+        return () => {
+            if (navTimer.current) clearTimeout(navTimer.current);
+        };
+    }, []);
 
     const renderItem = (item: MenuItem) => {
         const isActive = activeRoute === item.id;

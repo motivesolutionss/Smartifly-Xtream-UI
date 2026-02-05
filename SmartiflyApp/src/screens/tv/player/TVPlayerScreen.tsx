@@ -24,6 +24,7 @@ import { logger } from '../../../config';
 import { RootStackParamList } from '../../../navigation/types';
 import { useTrackProgress } from '../../../store/watchHistoryStore';
 import useTVBackHandler from '../../../utils/useTVBackHandler';
+import useDownloadStore from '../../../store/downloadStore';
 
 type TVPlayerScreenRouteProp = RouteProp<RootStackParamList, 'FullscreenPlayer'>;
 
@@ -38,6 +39,7 @@ const TVPlayerScreen: React.FC = () => {
 
     const { getXtreamAPI } = useStore();
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
+    const { downloads } = useDownloadStore();
     const api = getXtreamAPI();
 
     // Refs and state
@@ -74,10 +76,10 @@ const TVPlayerScreen: React.FC = () => {
                         else if (parts.length === 2) duration = (parts[0] * 60) + parts[1];
                     } else if (rawDuration.includes('min')) {
                         // "90 min"
-                        duration = parseInt(rawDuration) * 60;
+                        duration = parseInt(rawDuration, 10) * 60;
                     } else {
                         // "5400"
-                        duration = parseInt(rawDuration);
+                        duration = parseInt(rawDuration, 10);
                     }
                 } else if (typeof rawDuration === 'number') {
                     duration = rawDuration;
@@ -142,7 +144,28 @@ const TVPlayerScreen: React.FC = () => {
         let url = '';
         try {
             const mediaItem = item as any;
-            if (type === 'live') {
+            const searchId = String(mediaItem.stream_id || mediaItem.id);
+
+            // Debug: Log all downloads and search ID
+            logger.debug('TVPlayer: Checking for local download', {
+                searchId,
+                item_stream_id: mediaItem.stream_id,
+                item_id: mediaItem.id,
+                downloadsCount: downloads.length,
+                downloadIds: downloads.map(d => d.id),
+            });
+
+            const download = downloads.find(d => d.id === searchId);
+
+            if (download && download.status === 'completed' && download.localPath) {
+                // Use local file for offline playback
+                url = `file://${download.localPath}`;
+                logger.info('TVPlayer: Playing from local download', {
+                    id: download.id,
+                    path: download.localPath,
+                    url
+                });
+            } else if (type === 'live') {
                 url = api.getLiveStreamUrl(mediaItem.stream_id || mediaItem.id, 'm3u8');
                 logger.debug('TVPlayer: Live stream prepared', { id: mediaItem.stream_id });
             } else if (type === 'movie') {
@@ -171,7 +194,7 @@ const TVPlayerScreen: React.FC = () => {
         }
 
         setStreamUrl(url);
-    }, [api, item, type, episodeUrl, videoKey, resumePosition]);
+    }, [api, item, type, episodeUrl, videoKey, resumePosition, downloads]);
 
     // Lifecycle cleanup
     useEffect(() => {
@@ -218,18 +241,18 @@ const TVPlayerScreen: React.FC = () => {
                     onLoad={(data) => {
                         logger.debug('TVPlayer: Loaded');
                         durationRef.current = data.duration || 0;
-            if (type === 'live' && !hasTrackedLiveRef.current) {
-                const anyItem = item as any;
-                trackLive(anyItem.stream_id || anyItem.id, anyItem.name, anyItem.stream_icon || anyItem.cover, anyItem);
-                hasTrackedLiveRef.current = true;
-            }
-            if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
-                videoRef.current.seek(Math.max(0, resumePosition));
-                setHasSeeked(true);
-            }
-            setIsBuffering(false);
-        }}
-                    onBuffer={({ isBuffering }) => setIsBuffering(isBuffering)}
+                        if (type === 'live' && !hasTrackedLiveRef.current) {
+                            const anyItem = item as any;
+                            trackLive(anyItem.stream_id || anyItem.id, anyItem.name, anyItem.stream_icon || anyItem.cover, anyItem);
+                            hasTrackedLiveRef.current = true;
+                        }
+                        if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
+                            videoRef.current.seek(Math.max(0, resumePosition));
+                            setHasSeeked(true);
+                        }
+                        setIsBuffering(false);
+                    }}
+                    onBuffer={({ isBuffering: buffering }) => setIsBuffering(buffering)}
                     onProgress={({ currentTime }) => handleProgress(currentTime)}
                 />
             )}

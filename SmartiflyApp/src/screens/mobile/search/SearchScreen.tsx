@@ -28,6 +28,7 @@ import SearchTabs, { SearchTabType } from './components/SearchTabs';
 import RecentSearches, { RecentSearch, TrendingSearches } from './components/RecentSearches';
 import SearchResults, { SearchResultItem, SearchResultsData, SearchResultsSkeleton } from './components/SearchResults';
 import EmptySearchState from './components/EmptySearchState';
+import { useContentFilter } from '../../../store/profileStore';
 
 // Store and utilities
 import useStore from '../../../store';
@@ -80,6 +81,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
 
     // Store integration - uses new domain structure
     const content = useStore((state) => state.content);
+    const { filterContent } = useContentFilter();
 
     // =============================================================================
     // RECENT SEARCHES PERSISTENCE
@@ -96,9 +98,10 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
                         setRecentSearches(parsed);
                     }
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error('Failed to load recent searches', {
-                    message: error?.message || 'Unknown error',
+                    message: errorMessage,
                 });
             }
         };
@@ -109,131 +112,17 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const persistRecentSearches = useCallback(async (searches: RecentSearch[]) => {
         try {
             await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             logger.error('Failed to persist recent searches', {
-                message: error?.message || 'Unknown error',
+                message: errorMessage,
             });
         }
     }, []);
 
     // =============================================================================
-    // SEARCH LOGIC
     // =============================================================================
-
-    // Perform search with cancellation guard
-    const performSearch = useCallback(async (query: string) => {
-        // Increment search token for this search
-        const currentToken = ++searchTokenRef.current;
-
-        if (!query.trim()) {
-            setResults({ live: [], movies: [], series: [] });
-            setHasSearched(false);
-            return;
-        }
-
-        setIsSearching(true);
-        setHasSearched(true);
-
-        try {
-            // Pre-normalize query once (micro-optimization)
-            const lowerQuery = query.trim().toLowerCase();
-
-            // 1. Filter Live Channels (using new domain structure)
-            const liveStreams = content.live.loaded ? content.live.items : [];
-            const liveResults: SearchResultItem[] = liveStreams
-                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
-                .slice(0, 20) // Limit to 20 results
-                .map(item => ({
-                    id: String(item.stream_id),
-                    name: item.name,
-                    image: item.stream_icon,
-                    type: 'live',
-                    category: String(item.category_id || ''),
-                    data: item, // Keep original data for navigation
-                }));
-
-            // 2. Filter Movies (using new domain structure)
-            const vodStreams = content.movies.loaded ? content.movies.items : [];
-            const movieResults: SearchResultItem[] = vodStreams
-                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
-                .slice(0, 20)
-                .map(item => ({
-                    id: String(item.stream_id),
-                    name: item.name,
-                    image: item.stream_icon,
-                    type: 'movie',
-                    rating: item.rating_5based,
-                    category: String(item.category_id || ''),
-                    data: item,
-                }));
-
-            // 3. Filter Series (using new domain structure)
-            const seriesList = content.series.loaded ? content.series.items : [];
-            const seriesResults: SearchResultItem[] = seriesList
-                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
-                .slice(0, 20)
-                .map(item => ({
-                    id: String(item.series_id),
-                    name: item.name,
-                    image: item.cover,
-                    type: 'series',
-                    rating: item.rating_5based,
-                    year: item.releaseDate ? item.releaseDate.split('-')[0] : '',
-                    data: item,
-                }));
-
-            // Check if this search is still the latest (prevents out-of-order results)
-            if (currentToken !== searchTokenRef.current) {
-                return; // Stale search, discard results
-            }
-
-            const hasResults = liveResults.length > 0 || movieResults.length > 0 || seriesResults.length > 0;
-
-            setResults({
-                live: liveResults,
-                movies: movieResults,
-                series: seriesResults,
-            });
-
-            // Add to recent searches if successful
-            if (hasResults) {
-                addToRecentSearches(query, liveResults.length + movieResults.length + seriesResults.length);
-            }
-
-        } catch (error: any) {
-            // Safe error logging - avoid dumping huge error objects
-            logger.error('Search failed', {
-                message: error?.message || 'Unknown error',
-            });
-        } finally {
-            // Only update loading state if this is still the current search
-            if (currentToken === searchTokenRef.current) {
-                setIsSearching(false);
-            }
-        }
-    }, [content]);
-
-    // Debounced search handler
-    const handleSearchChange = useCallback((text: string) => {
-        setSearchQuery(text);
-        if (text.trim()) {
-            performSearch(text);
-        } else {
-            setResults({ live: [], movies: [], series: [] });
-            setHasSearched(false);
-        }
-    }, [performSearch]);
-
-    // Submit search
-    const handleSearchSubmit = useCallback((text: string) => {
-        Keyboard.dismiss();
-        if (text.trim()) {
-            performSearch(text);
-        }
-    }, [performSearch]);
-
-    // =============================================================================
-    // RECENT SEARCHES
+    // RECENT SEARCHES HELPERS
     // =============================================================================
 
     // Add to recent searches (with persistence)
@@ -273,6 +162,129 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         setRecentSearches([]);
         persistRecentSearches([]);
     }, [persistRecentSearches]);
+
+    // =============================================================================
+    // SEARCH LOGIC
+    // =============================================================================
+
+    // Perform search with cancellation guard
+    const performSearch = useCallback(async (query: string) => {
+        // Increment search token for this search
+        const currentToken = ++searchTokenRef.current;
+
+        if (!query.trim()) {
+            setResults({ live: [], movies: [], series: [] });
+            setHasSearched(false);
+            return;
+        }
+
+        setIsSearching(true);
+        setHasSearched(true);
+
+        try {
+            // Pre-normalize query once (micro-optimization)
+            const lowerQuery = query.trim().toLowerCase();
+
+            // 1. Filter Live Channels (using new domain structure)
+            const liveStreams = content.live.loaded ? content.live.items : [];
+            const liveResults: SearchResultItem[] = liveStreams
+                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
+                .slice(0, 20) // Limit to 20 results
+                .map(item => ({
+                    id: String(item.stream_id),
+                    name: item.name,
+                    image: item.stream_icon,
+                    type: 'live',
+                    category: String(item.category_id || ''),
+                    data: item, // Keep original data for navigation
+                }));
+
+            // 2. Filter Movies (using new domain structure)
+            const vodStreams = content.movies.loaded ? filterContent(content.movies.items) : [];
+            const movieResults: SearchResultItem[] = vodStreams
+                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
+                .slice(0, 20)
+                .map(item => ({
+                    id: String(item.stream_id),
+                    name: item.name,
+                    image: item.stream_icon,
+                    type: 'movie',
+                    rating: item.rating_5based,
+                    category: String(item.category_id || ''),
+                    data: item,
+                }));
+
+            // 3. Filter Series (using new domain structure)
+            const seriesList = content.series.loaded ? filterContent(content.series.items) : [];
+            const seriesResults: SearchResultItem[] = seriesList
+                .filter(item => item.name && item.name.toLowerCase().includes(lowerQuery))
+                .slice(0, 20)
+                .map(item => ({
+                    id: String(item.series_id),
+                    name: item.name,
+                    image: item.cover,
+                    type: 'series',
+                    rating: item.rating_5based,
+                    year: item.releaseDate ? item.releaseDate.split('-')[0] : '',
+                    data: item,
+                }));
+
+            // Check if this search is still the latest (prevents out-of-order results)
+            if (currentToken !== searchTokenRef.current) {
+                return; // Stale search, discard results
+            }
+
+            const hasResults = liveResults.length > 0 || movieResults.length > 0 || seriesResults.length > 0;
+
+            setResults({
+                live: liveResults,
+                movies: movieResults,
+                series: seriesResults,
+            });
+
+            // Add to recent searches if successful
+            if (hasResults) {
+                addToRecentSearches(query, liveResults.length + movieResults.length + seriesResults.length);
+            }
+
+        } catch (error: unknown) {
+            // Safe error logging - avoid dumping huge error objects
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            logger.error('Search failed', {
+                message: errorMessage,
+            });
+        } finally {
+            // Only update loading state if this is still the current search
+            if (currentToken === searchTokenRef.current) {
+                setIsSearching(false);
+            }
+        }
+    }, [content, addToRecentSearches, filterContent]);
+
+    // Debounced search handler
+    const handleSearchChange = useCallback((text: string) => {
+        setSearchQuery(text);
+        if (text.trim()) {
+            performSearch(text);
+        } else {
+            setResults({ live: [], movies: [], series: [] });
+            setHasSearched(false);
+        }
+    }, [performSearch]);
+
+    // Submit search
+    const handleSearchSubmit = useCallback((text: string) => {
+        Keyboard.dismiss();
+        if (text.trim()) {
+            performSearch(text);
+        }
+    }, [performSearch]);
+
+    // =============================================================================
+    // RECENT SEARCHES
+    // =============================================================================
+
+
 
     // Use recent search
     const handleRecentSearchPress = useCallback((query: string) => {

@@ -103,15 +103,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
         return '??';
     };
 
-    // Get type color
-    const getTypeColor = () => {
-        switch (item.type) {
-            case 'live': return colors.live;
-            case 'movie': return colors.movies;
-            case 'series': return colors.series;
-            default: return colors.primary;
-        }
-    };
+
 
     return (
         <TouchableOpacity

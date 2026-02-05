@@ -19,11 +19,11 @@
 import { useMemo } from 'react';
 import useStore from '../../../../store';
 import { useWatchHistoryStore, WatchProgress } from '../../../../store/watchHistoryStore';
+import { useContentFilter } from '../../../../store/profileStore';
 import {
     TV_HOME_RAILS,
     HomeRailConfig,
     ResolvedRail,
-    HomeRailType,
     MAX_HOME_MOVIE_CATEGORIES,
     MAX_HOME_SERIES_CATEGORIES,
 } from '../HomeRailConfig';
@@ -61,52 +61,65 @@ export const useHomeRails = (): HomeRailsResult => {
     const { content } = useStore();
     const getContinueWatching = useWatchHistoryStore((state) => state.getContinueWatching);
 
+    // Parental Controls: Get content filter for active profile
+    const { filterContent } = useContentFilter();
+
     // =========================================================================
-    // HERO RESOLVER (Stable - first recent, not random)
+    // HERO RESOLVER (Stable - first recent, not random) + PARENTAL FILTER
     // =========================================================================
     const hero = useMemo(() => {
-        // Priority: First recent movie, then first recent series
+        // Priority: First recent movie (filtered by parental controls), then first recent series
         if (content.movies.loaded && content.movies.items.length > 0) {
-            const sortedMovies = [...content.movies.items]
-                .sort((a: any, b: any) => parseInt(b.added || '0') - parseInt(a.added || '0'));
+            // Apply parental control filter
+            const allowedMovies = filterContent(content.movies.items as any[]);
 
-            const m = sortedMovies[0];
-            return {
-                id: `movie-${m.stream_id}`,
-                title: m.name,
-                description: m.plot || 'No description available.',
-                backdrop: m.backdrop_path?.[0] || m.stream_icon,
-                rating: m.rating_5based,
-                tags: [m.genre].filter((t): t is string => Boolean(t)),
-                type: 'movie' as const,
-                data: m,
-            };
+            if (allowedMovies.length > 0) {
+                const sortedMovies = [...allowedMovies]
+                    .sort((a: any, b: any) => parseInt(b.added || '0', 10) - parseInt(a.added || '0', 10));
+
+                const m = sortedMovies[0];
+                return {
+                    id: `movie-${m.stream_id}`,
+                    title: m.name,
+                    description: m.plot || 'No description available.',
+                    backdrop: m.backdrop_path?.[0] || m.stream_icon,
+                    rating: m.rating_5based,
+                    tags: [m.genre].filter((t): t is string => Boolean(t)),
+                    type: 'movie' as const,
+                    data: m,
+                };
+            }
         }
 
         if (content.series.loaded && content.series.items.length > 0) {
-            const sortedSeries = [...content.series.items]
-                .sort((a: any, b: any) =>
-                    new Date(b.last_modified || 0).getTime() - new Date(a.last_modified || 0).getTime()
-                );
+            // Apply parental control filter
+            const allowedSeries = filterContent(content.series.items as any[]);
 
-            const s = sortedSeries[0];
-            return {
-                id: `series-${s.series_id}`,
-                title: s.name,
-                description: s.plot || 'No description available.',
-                backdrop: s.backdrop_path?.[0] || s.cover,
-                rating: s.rating_5based,
-                tags: [s.genre, 'Series'].filter((t): t is string => Boolean(t)),
-                type: 'series' as const,
-                data: s,
-            };
+            if (allowedSeries.length > 0) {
+                const sortedSeries = [...allowedSeries]
+                    .sort((a: any, b: any) =>
+                        new Date(b.last_modified || 0).getTime() - new Date(a.last_modified || 0).getTime()
+                    );
+
+                const s = sortedSeries[0];
+                return {
+                    id: `series-${s.series_id}`,
+                    title: s.name,
+                    description: s.plot || 'No description available.',
+                    backdrop: s.backdrop_path?.[0] || s.cover,
+                    rating: s.rating_5based,
+                    tags: [s.genre, 'Series'].filter((t): t is string => Boolean(t)),
+                    type: 'series' as const,
+                    data: s,
+                };
+            }
         }
 
         return null;
-    }, [content.movies.loaded, content.movies.items, content.series.loaded, content.series.items]);
+    }, [content.movies.loaded, content.movies.items, content.series.loaded, content.series.items, filterContent]);
 
     // =========================================================================
-    // RAIL RESOLVER
+    // RAIL RESOLVER + PARENTAL FILTER
     // =========================================================================
     const rails = useMemo(() => {
         const resolved: ResolvedRail[] = [];
@@ -114,15 +127,16 @@ export const useHomeRails = (): HomeRailsResult => {
         for (const config of TV_HOME_RAILS) {
             if (!config.enabled) continue;
 
-            const railsFromConfig = resolveRail(config, content);
+            // Pass filterContent to rail resolvers for parental control filtering
+            const railsFromConfig = resolveRail(config, content, filterContent);
             resolved.push(...railsFromConfig);
         }
 
         return resolved;
-    }, [content]);
+    }, [content, filterContent]);
 
     // =========================================================================
-    // CONTINUE WATCHING (from history store)
+    // CONTINUE WATCHING (from history store - already profile-filtered)
     // =========================================================================
     const continueWatching = useMemo(() => {
         return getContinueWatching(10);
@@ -140,29 +154,37 @@ export const useHomeRails = (): HomeRailsResult => {
 // RESOLVER FUNCTIONS
 // =============================================================================
 
+// Type for content filter function
+type ContentFilterFn = <T extends { rating?: string; rating_5based?: number }>(items: T[]) => T[];
+
 /**
  * Resolve a single rail config into one or more renderable rails.
  * Category rails expand into multiple rails (up to max limit).
+ * Applies parental control filtering via filterContent.
  */
-function resolveRail(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveRail(
+    config: HomeRailConfig,
+    content: any,
+    filterContent: ContentFilterFn
+): ResolvedRail[] {
     switch (config.type) {
         case 'live_now':
             return resolveLiveNow(config, content);
 
         case 'trending_movies':
-            return resolveTrendingMovies(config, content);
+            return resolveTrendingMovies(config, content, filterContent);
 
         case 'trending_series':
-            return resolveTrendingSeries(config, content);
+            return resolveTrendingSeries(config, content, filterContent);
 
         case 'top_rated':
-            return resolveTopRated(config, content);
+            return resolveTopRated(config, content, filterContent);
 
         case 'movie_category':
-            return resolveMovieCategories(config, content);
+            return resolveMovieCategories(config, content, filterContent);
 
         case 'series_category':
-            return resolveSeriesCategories(config, content);
+            return resolveSeriesCategories(config, content, filterContent);
 
         case 'continue_watching':
             // Handled separately in the hook (uses different store)
@@ -201,11 +223,14 @@ function resolveLiveNow(config: HomeRailConfig, content: any): ResolvedRail[] {
     }];
 }
 
-function resolveTrendingMovies(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveTrendingMovies(config: HomeRailConfig, content: any, filterContent: ContentFilterFn): ResolvedRail[] {
     if (!content.movies.loaded || content.movies.items.length === 0) return [];
 
-    const items: TVContentItem[] = [...content.movies.items]
-        .sort((a: any, b: any) => parseInt(b.added || '0') - parseInt(a.added || '0'))
+    // Apply parental control filter
+    const filteredMovies = filterContent(content.movies.items);
+
+    const items: TVContentItem[] = [...filteredMovies]
+        .sort((a: any, b: any) => parseInt(b.added || '0', 10) - parseInt(a.added || '0', 10))
         .slice(0, config.maxItems)
         .map((m: any) => ({
             id: String(m.stream_id),
@@ -228,10 +253,13 @@ function resolveTrendingMovies(config: HomeRailConfig, content: any): ResolvedRa
     }];
 }
 
-function resolveTrendingSeries(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveTrendingSeries(config: HomeRailConfig, content: any, filterContent: ContentFilterFn): ResolvedRail[] {
     if (!content.series.loaded || content.series.items.length === 0) return [];
 
-    const items: TVContentItem[] = [...content.series.items]
+    // Apply parental control filter
+    const filteredSeries = filterContent(content.series.items);
+
+    const items: TVContentItem[] = [...filteredSeries]
         .sort((a: any, b: any) =>
             new Date(b.last_modified || 0).getTime() - new Date(a.last_modified || 0).getTime()
         )
@@ -256,10 +284,13 @@ function resolveTrendingSeries(config: HomeRailConfig, content: any): ResolvedRa
     }];
 }
 
-function resolveTopRated(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveTopRated(config: HomeRailConfig, content: any, filterContent: ContentFilterFn): ResolvedRail[] {
     if (!content.movies.loaded || content.movies.items.length === 0) return [];
 
-    const items: TVContentItem[] = [...content.movies.items]
+    // Apply parental control filter
+    const filteredMovies = filterContent(content.movies.items);
+
+    const items: TVContentItem[] = [...filteredMovies]
         .sort((a: any, b: any) => (b.rating_5based || 0) - (a.rating_5based || 0))
         .slice(0, config.maxItems)
         .map((m: any) => ({
@@ -285,15 +316,26 @@ function resolveTopRated(config: HomeRailConfig, content: any): ResolvedRail[] {
 /**
  * Movie categories - expands into MULTIPLE rails (max 4)
  */
-function resolveMovieCategories(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveMovieCategories(config: HomeRailConfig, content: any, filterContent: ContentFilterFn): ResolvedRail[] {
     if (!content.movies.loaded || !content.movies.categories) return [];
+
+    // Apply parental control filter first
+    const filteredMovies = filterContent(content.movies.items);
+
+    const groupMap: Record<string, any[]> = {};
+    filteredMovies.forEach((m: any) => {
+        const catId = String(m.category_id);
+        if (!groupMap[catId]) groupMap[catId] = [];
+        groupMap[catId].push(m);
+    });
 
     const rails: ResolvedRail[] = [];
 
     for (const category of content.movies.categories.slice(0, MAX_HOME_MOVIE_CATEGORIES)) {
         const catId = String(category.category_id);
-        const items: TVContentItem[] = content.movies.items
-            .filter((m: any) => String(m.category_id) === catId)
+        const catItems = groupMap[catId] || [];
+
+        const items: TVContentItem[] = catItems
             .slice(0, config.maxItems)
             .map((m: any) => ({
                 id: String(m.stream_id),
@@ -321,15 +363,26 @@ function resolveMovieCategories(config: HomeRailConfig, content: any): ResolvedR
 /**
  * Series categories - expands into MULTIPLE rails (max 4)
  */
-function resolveSeriesCategories(config: HomeRailConfig, content: any): ResolvedRail[] {
+function resolveSeriesCategories(config: HomeRailConfig, content: any, filterContent: ContentFilterFn): ResolvedRail[] {
     if (!content.series.loaded || !content.series.categories) return [];
+
+    // Apply parental control filter first
+    const filteredSeries = filterContent(content.series.items);
+
+    const groupMap: Record<string, any[]> = {};
+    filteredSeries.forEach((s: any) => {
+        const catId = String(s.category_id);
+        if (!groupMap[catId]) groupMap[catId] = [];
+        groupMap[catId].push(s);
+    });
 
     const rails: ResolvedRail[] = [];
 
     for (const category of content.series.categories.slice(0, MAX_HOME_SERIES_CATEGORIES)) {
         const catId = String(category.category_id);
-        const items: TVContentItem[] = content.series.items
-            .filter((s: any) => String(s.category_id) === catId)
+        const catItems = groupMap[catId] || [];
+
+        const items: TVContentItem[] = catItems
             .slice(0, config.maxItems)
             .map((s: any) => ({
                 id: String(s.series_id),

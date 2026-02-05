@@ -25,6 +25,7 @@ export interface MovieItem {
     stream_id: number;
     name: string;
     stream_icon?: string;
+    cover?: string;
     rating?: string;
     rating_5based?: number;
     category_id?: string;
@@ -35,6 +36,7 @@ export interface MovieItem {
     genre?: string;
     releaseDate?: string;
     duration?: string;
+    youtube_trailer?: string;
 }
 
 export interface SeriesItem {
@@ -51,6 +53,7 @@ export interface SeriesItem {
     backdrop_path?: string[];
     youtube_trailer?: string;
     category_id?: string;
+    episode_run_time?: string;
 }
 
 export interface EpisodeItem {
@@ -124,6 +127,7 @@ export type SettingsStackParamList = {
     SettingsMain: undefined;
     Profile: undefined;
     Playback: undefined;
+    Downloads: undefined;
     About: undefined;
 };
 
@@ -174,11 +178,12 @@ export type RootStackParamList = {
     Login: undefined;
     Loading: undefined;
     TVHome: undefined;
+    TVAccountSwitcher: undefined;
     TVLive: undefined;
     TVMovies: undefined;
     TVSeries: undefined;
-    TVMovieDetail: { movie: any };
-    TVSeriesDetail: { series: any };
+    TVMovieDetail: { movie: MovieItem };
+    TVSeriesDetail: { series: SeriesItem };
     MainTabs: NavigatorScreenParams<BottomTabParamList>;
     FullscreenPlayer: {
         type: 'live' | 'movie' | 'series';
@@ -186,7 +191,32 @@ export type RootStackParamList = {
         episodeUrl?: string;
         resumePosition?: number;
     };
+    // Profile screens (Parental Controls)
+    ProfileSwitcher: undefined;
+    ProfileEditor: { profileId?: string };
+    PinEntry: { profileId: string; returnTo: keyof RootStackParamList };
+    Downloads: undefined;
 };
+
+// TV Screen Props - for standalone screens
+export type TVHomeScreenProps = NativeStackScreenProps<RootStackParamList, 'TVHome'>;
+export type TVLoadingScreenProps = NativeStackScreenProps<RootStackParamList, 'Loading'>;
+export type TVMovieDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVMovieDetail'>;
+export type TVSeriesDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVSeriesDetail'>;
+
+// Props for embedded TV section screens (used within TVHomeScreen)
+// These screens receive navigation from TVHomeScreen and need to navigate to other routes
+export interface TVEmbeddedScreenProps {
+    navigation: TVHomeScreenProps['navigation'];
+}
+
+// Types for embedded screens
+export type TVLiveScreenProps = TVEmbeddedScreenProps;
+export type TVMoviesScreenProps = TVEmbeddedScreenProps;
+export type TVSeriesScreenProps = TVEmbeddedScreenProps;
+export type TVSettingsScreenProps = TVEmbeddedScreenProps;
+export type TVFavoritesScreenProps = TVEmbeddedScreenProps;
+export type TVSearchScreenProps = TVEmbeddedScreenProps;
 
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export type FullscreenPlayerScreenProps = NativeStackScreenProps<RootStackParamList, 'FullscreenPlayer'>;

@@ -71,21 +71,16 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
                 useNativeDriver: true,
             }),
         ]).start();
-    }, [item]);
+    }, [item, fadeAnim, slideAnim]);
 
     useEffect(() => {
         prefetchImage(item.backdrop || (item as any).image);
         if (item.logo) {
             prefetchImage(item.logo);
         }
-    }, [item.backdrop, item.logo]);
+    }, [item, item.backdrop, item.logo]);
 
-    const formatRuntime = () => {
-        const parts = [];
-        if (item.year) parts.push(item.year);
-        // Note: Rating is now rendered as a badge
-        return parts;
-    };
+
 
     return (
         <View style={styles.container}>
@@ -209,13 +204,13 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
                             <View style={styles.playIcon}>
                                 <Text style={[
                                     styles.playIconText,
-                                    focusedButton === 'play' && { color: '#000' }
+                                    focusedButton === 'play' && styles.textBlack
                                 ]}>▶</Text>
                             </View>
                             <Text style={[
                                 styles.buttonText,
                                 styles.playButtonText,
-                                focusedButton === 'play' && { color: '#000' }
+                                focusedButton === 'play' && styles.textBlack
                             ]}>
                                 Play
                             </Text>
@@ -302,10 +297,11 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         position: 'absolute',
-        left: scale(30), // Reduced from 60
+        left: scale(30),
         bottom: scale(80),
         maxWidth: scale(600),
         zIndex: 2,
+        alignItems: 'flex-start', // Ensure children align to the left
     },
     title: {
         fontSize: scaleFont(64),
@@ -477,10 +473,14 @@ const styles = StyleSheet.create({
     // appLogoContainer removed
     appLogo: {
         width: scale(300),
-        height: scale(100),
-        marginBottom: scale(0),
-        // marginLeft removed
+        height: scale(80),
+        marginBottom: scale(8),
+        marginLeft: scale(-65), // Aggressively shift left to compensate for asset padding
+        alignSelf: 'flex-start',
     },
+    textBlack: {
+        color: '#000',
+    }
 });
 
 export default TVHeroBanner;

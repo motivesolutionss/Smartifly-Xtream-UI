@@ -311,7 +311,7 @@ class XtreamAPI {
                     response.data = JSON.parse(rawData);
                     logger.debug('Xtream: Parsed string response successfully');
                     return response;
-                } catch (parseError) {
+                } catch {
                     // Parse failed - attempt repair
                     logger.debug('Xtream: JSON parse failed, attempting repair...', {
                         length: rawData.length,

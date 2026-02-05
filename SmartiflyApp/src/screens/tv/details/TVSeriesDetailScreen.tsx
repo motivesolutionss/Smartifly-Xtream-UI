@@ -17,22 +17,21 @@ import {
     Pressable,
     FlatList,
     BackHandler,
+    Modal,
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import useStore from '../../../store';
-import { colors, scale, scaleFont } from '../../../theme';
+import { colors, scale, scaleFont, Icon } from '../../../theme';
 import { logger } from '../../../config';
-import useTVBackHandler from '../../../utils/useTVBackHandler';
+// import useTVBackHandler from '../../../utils/useTVBackHandler';
 import { prefetchImage } from '../../../utils/image';
+import useDownloadStore from '../../../store/downloadStore';
+import downloadService from '../../../services/downloadService';
 
 // Types
-interface TVSeriesDetailScreenProps {
-    route: {
-        params: {
-            series: any; // Raw series item
-        };
-    };
-}
+
 
 const TVSeriesDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
@@ -48,6 +47,18 @@ const TVSeriesDetailScreen: React.FC = () => {
     const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
     const [focusedEpisodeId, setFocusedEpisodeId] = useState<string | null>(null);
     const [focusedSeasonId, setFocusedSeasonId] = useState<string | null>(null);
+    const [hasInitialFocus, setHasInitialFocus] = useState(false);
+    const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | null>(null);
+    const [isTrailerOpen, setIsTrailerOpen] = useState(false);
+    const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
+
+    // Helper to extract YouTube ID
+    const getYoutubeId = (url: string) => {
+        if (!url) return null;
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : url;
+    };
 
     // ==========================================================================
     // DATA FETCHING
@@ -137,11 +148,53 @@ const TVSeriesDetailScreen: React.FC = () => {
     const name = seriesData.name || series.name;
     const plot = seriesData.plot || seriesData.description || 'No description available.';
     const rating = seriesData.rating || series.rating_5based;
+    const cast = seriesData.cast;
+    const director = seriesData.director;
+    const genre = seriesData.genre;
+
 
     useEffect(() => {
         prefetchImage(backdrop);
         prefetchImage(poster);
     }, [backdrop, poster]);
+
+    const renderButton = (
+        id: 'play' | 'trailer',
+        label: string,
+        iconName: string,
+        onPress: () => void,
+        primary = false
+    ) => {
+        const isFocused = focusedButton === id;
+
+        return (
+            <Pressable
+                onPress={onPress}
+                onFocus={() => setFocusedButton(id)}
+                onBlur={() => setFocusedButton(null)}
+                style={[
+                    styles.button,
+                    primary ? styles.buttonPrimary : styles.buttonSecondary,
+                    isFocused && styles.buttonFocused,
+                    isFocused && primary && styles.buttonFocusedPrimary,
+                    isFocused && !primary && styles.buttonFocusedSecondary,
+                ]}
+            >
+                <Icon
+                    name={iconName}
+                    size={scale(20)}
+                    color={primary ? (isFocused ? colors.background : '#FFF') : '#FFF'}
+                    style={{ marginRight: scale(8) }}
+                />
+                <Text style={[
+                    styles.buttonText,
+                    primary && isFocused && { color: colors.background }
+                ]}>
+                    {label}
+                </Text>
+            </Pressable>
+        );
+    };
 
     useEffect(() => {
         episodes.slice(0, 8).forEach((episode: any) => {
@@ -161,10 +214,13 @@ const TVSeriesDetailScreen: React.FC = () => {
         return (
             <Pressable
                 onPress={() => setSelectedSeason(item)}
-                onFocus={() => setFocusedSeasonId(item)}
+                onFocus={() => {
+                    setFocusedSeasonId(item);
+                    if (!hasInitialFocus) setHasInitialFocus(true);
+                }}
                 onBlur={() => setFocusedSeasonId(null)}
                 focusable
-                hasTVPreferredFocus={!focusedSeasonId && index === 0}
+                hasTVPreferredFocus={index === 0 && !hasInitialFocus}
                 style={[
                     styles.seasonChip,
                     isSelected && styles.seasonChipSelected,
@@ -184,6 +240,37 @@ const TVSeriesDetailScreen: React.FC = () => {
     const renderEpisodeItem = ({ item }: { item: any }) => {
         const isFocused = focusedEpisodeId === String(item.id);
         const image = item.info?.movie_image || series.cover;
+        const { downloads, addDownload } = useDownloadStore.getState();
+        const download = downloads.find(d => d.id === String(item.id));
+
+        const handleEpisodeDownload = () => {
+            if (download?.status === 'completed' || download?.status === 'downloading') return;
+
+            const api = getXtreamAPI();
+            if (!api || !downloadService.isAvailable()) return;
+
+            const extension = item.container_extension || 'mp4';
+            const url = api.getSeriesEpisodeUrl(item.id, extension);
+
+            addDownload({
+                id: String(item.id),
+                title: `${series.name} - ${item.title}`,
+                thumbnail: image,
+                type: 'series',
+                url,
+                quality: 'hd',
+                data: item,
+            });
+
+            downloadService.startDownload(String(item.id), url, `${item.id}.${extension}`);
+        };
+
+        const getDownloadIcon = () => {
+            if (download?.status === 'completed') return { name: 'checkCircle', color: colors.success };
+            if (download?.status === 'downloading') return { name: 'arrowCounterClockwise', color: colors.primary };
+            return { name: 'downloadSimple', color: '#FFF' };
+        };
+        const dlIcon = getDownloadIcon();
 
         return (
             <Pressable
@@ -213,6 +300,12 @@ const TVSeriesDetailScreen: React.FC = () => {
                         <Text style={styles.episodeDuration}>{item.info.duration}</Text>
                     )}
                 </View>
+                <Pressable
+                    onPress={handleEpisodeDownload}
+                    style={styles.episodeDownloadBtn}
+                >
+                    <Icon name={dlIcon.name} size={scale(20)} color={dlIcon.color} />
+                </Pressable>
                 {isFocused && (
                     <View style={styles.playIconContainer}>
                         <Text style={styles.playIcon}>▶</Text>
@@ -223,27 +316,51 @@ const TVSeriesDetailScreen: React.FC = () => {
     };
 
     return (
-        <View style={styles.container}>
-            {/* Background Image */}
+        <View
+            style={styles.container}
+            importantForAccessibility={isTrailerOpen ? 'no-hide-descendants' : 'auto'}
+        >
+            {/* 1. Full Screen Backdrop */}
             <Image
                 source={{ uri: backdrop }}
                 style={styles.backdrop}
                 resizeMode="cover"
             />
 
-            {/* Dark Overlay */}
-            <View style={styles.overlay} />
+            {/* 2. Gradient Overlay (Cinema Mode) */}
+            <View style={StyleSheet.absoluteFill}>
+                <Svg height="100%" width="100%">
+                    <Defs>
+                        <LinearGradient id="grad" x1="0" y1="0" x2="1" y2="0">
+                            <Stop offset="0" stopColor="#000" stopOpacity="0.95" />
+                            <Stop offset="0.4" stopColor="#000" stopOpacity="0.8" />
+                            <Stop offset="0.7" stopColor="#000" stopOpacity="0.4" />
+                            <Stop offset="1" stopColor="#000" stopOpacity="0.1" />
+                        </LinearGradient>
+                        <LinearGradient id="gradBottom" x1="0" y1="0" x2="0" y2="1">
+                            <Stop offset="0" stopColor="#000" stopOpacity="0" />
+                            <Stop offset="0.8" stopColor="#000" stopOpacity="0.8" />
+                            <Stop offset="1" stopColor="#000" stopOpacity="1" />
+                        </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#grad)" />
+                    <Rect width="100%" height="100%" fill="url(#gradBottom)" />
+                </Svg>
+            </View>
 
             <View style={styles.contentContainer}>
-                {/* Left: Info Panel */}
+                {/* Left Column: Series Info */}
                 <View style={styles.leftColumn}>
                     <Image
                         source={{ uri: poster }}
                         style={styles.poster}
                         resizeMode="cover"
                     />
-                    <View style={styles.metaContainer}>
-                        <Text style={styles.title}>{name}</Text>
+
+                    <View style={styles.infoContainer}>
+                        <Text style={styles.title} numberOfLines={2}>{name}</Text>
+
+                        {/* Metadata Row */}
                         <View style={styles.metaRow}>
                             {rating && (
                                 <View style={styles.badge}>
@@ -251,12 +368,55 @@ const TVSeriesDetailScreen: React.FC = () => {
                                 </View>
                             )}
                             <Text style={styles.metaText}>{seasons.length} Seasons</Text>
+                            {genre && (
+                                <>
+                                    <View style={styles.metaDivider} />
+                                    <Text style={styles.metaText}>{genre}</Text>
+                                </>
+                            )}
                         </View>
-                        <Text style={styles.plot} numberOfLines={4}>{plot}</Text>
+
+                        {/* Credits Row */}
+                        <View style={styles.creditsSection}>
+                            {director && (
+                                <Text style={styles.creditText}>
+                                    <Text style={styles.creditLabel}>Director: </Text>
+                                    {director}
+                                </Text>
+                            )}
+                            {cast && (
+                                <Text style={styles.creditText} numberOfLines={2}>
+                                    <Text style={styles.creditLabel}>Cast: </Text>
+                                    {cast}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Action Buttons */}
+                        <View style={styles.actionsContainer}>
+                            {renderButton(
+                                'play',
+                                'Watch Now',
+                                'playCircle',
+                                () => {
+                                    if (episodes.length > 0) handlePlayEpisode(episodes[0]);
+                                },
+                                true
+                            )}
+                            {seriesData.youtube_trailer && renderButton(
+                                'trailer',
+                                'Trailer',
+                                'filmStrip',
+                                () => setIsTrailerOpen(true),
+                                false
+                            )}
+                        </View>
+
+                        <Text style={styles.plot} numberOfLines={5}>{plot}</Text>
                     </View>
                 </View>
 
-                {/* Right: Seasons & Episodes */}
+                {/* Right Column: Seasons & Episodes */}
                 <View style={styles.rightColumn}>
                     {loading ? (
                         <ActivityIndicator size="large" color={colors.primary} />
@@ -288,6 +448,49 @@ const TVSeriesDetailScreen: React.FC = () => {
                     )}
                 </View>
             </View>
+
+            {/* YouTube Trailer Modal */}
+            <Modal
+                visible={isTrailerOpen && !!seriesData.youtube_trailer}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsTrailerOpen(false)}
+                onShow={() => setIsTrailerPlaying(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>{name} - Trailer</Text>
+                            <Pressable
+                                onPress={() => setIsTrailerOpen(false)}
+                                style={({ pressed }) => [
+                                    styles.closeButton,
+                                    pressed && { transform: [{ scale: 0.95 }] }
+                                ]}
+                                hasTVPreferredFocus
+                            >
+                                <Icon name="close" size={scale(24)} color="#FFF" />
+                            </Pressable>
+                        </View>
+                        <View style={styles.youtubeContainer}>
+                            <YoutubePlayer
+                                height={scale(450)}
+                                width={scale(800)}
+                                play={isTrailerPlaying}
+                                videoId={getYoutubeId(seriesData.youtube_trailer)}
+                                onReady={() => setIsTrailerPlaying(true)}
+                                initialPlayerParams={{
+                                    autoplay: 1,
+                                    modestbranding: 1,
+                                    rel: 0,
+                                    controls: 1,
+                                }}
+                                onError={(e: any) => logger.error('Youtube Player Error', e)}
+                            />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -295,11 +498,12 @@ const TVSeriesDetailScreen: React.FC = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: '#000',
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        opacity: 0.3,
+        width: '100%',
+        height: '100%',
     },
     overlay: {
         ...StyleSheet.absoluteFillObject,
@@ -309,81 +513,149 @@ const styles = StyleSheet.create({
         flex: 1,
         flexDirection: 'row',
         padding: scale(40),
+        zIndex: 10,
     },
     leftColumn: {
-        width: scale(300),
+        width: scale(380),
         marginRight: scale(40),
+        justifyContent: 'center',
     },
     rightColumn: {
         flex: 1,
+        justifyContent: 'center',
     },
     poster: {
-        width: '100%',
+        width: scale(220),
         aspectRatio: 2 / 3,
         borderRadius: scale(12),
         borderWidth: 2,
         borderColor: 'rgba(255,255,255,0.1)',
-        marginBottom: scale(20),
+        marginBottom: scale(24),
+        alignSelf: 'flex-start',
     },
-    metaContainer: {
-
+    infoContainer: {
+        flex: 1,
     },
     title: {
-        fontSize: scaleFont(28),
-        fontWeight: 'bold',
+        fontSize: scaleFont(42),
+        fontWeight: '900',
         color: '#FFF',
-        marginBottom: scale(10),
+        marginBottom: scale(16),
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 10,
     },
     metaRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: scale(15),
+        marginBottom: scale(20),
     },
     badge: {
-        backgroundColor: colors.accent,
-        paddingHorizontal: scale(8),
+        backgroundColor: colors.accent || '#00E5FF',
+        paddingHorizontal: scale(10),
         paddingVertical: scale(4),
         borderRadius: scale(4),
-        marginRight: scale(10),
+        marginRight: scale(12),
     },
     badgeText: {
         color: '#000',
-        fontWeight: 'bold',
-        fontSize: scaleFont(12),
+        fontWeight: '900',
+        fontSize: scaleFont(14),
     },
     metaText: {
-        color: '#CCC',
+        color: '#E0E0E0',
+        fontSize: scaleFont(16),
+        fontWeight: '600',
+    },
+    metaDivider: {
+        width: 1,
+        height: scale(14),
+        backgroundColor: 'rgba(255,255,255,0.4)',
+        marginHorizontal: scale(16),
+    },
+    creditsSection: {
+        marginBottom: scale(24),
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+        paddingTop: scale(16),
+    },
+    creditText: {
         fontSize: scaleFont(14),
+        color: '#FFF',
+        marginBottom: scale(4),
+        lineHeight: scaleFont(20),
+    },
+    creditLabel: {
+        opacity: 0.6,
+        fontWeight: '600',
+    },
+    actionsContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: scale(24),
+    },
+    button: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: scale(12),
+        paddingHorizontal: scale(24),
+        borderRadius: scale(8),
+        marginRight: scale(16),
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    buttonPrimary: {
+        backgroundColor: colors.accent || '#00E5FF',
+    },
+    buttonSecondary: {
+        backgroundColor: 'rgba(255,255,255,0.15)',
+    },
+    buttonFocused: {
+        borderColor: '#FFF',
+        transform: [{ scale: 1.05 }],
+    },
+    buttonText: {
+        fontSize: scaleFont(16),
+        fontWeight: '700',
+        color: '#FFF',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     plot: {
         color: '#BBB',
-        fontSize: scaleFont(14),
-        lineHeight: scaleFont(20),
+        fontSize: scaleFont(15),
+        lineHeight: scaleFont(22),
+        opacity: 0.9,
     },
     // Seasons
     seasonsContainer: {
-        marginBottom: scale(20),
+        marginBottom: scale(24),
     },
     seasonsList: {
         paddingVertical: scale(5),
     },
     seasonChip: {
-        paddingHorizontal: scale(20),
-        paddingVertical: scale(10),
+        paddingHorizontal: scale(24),
+        paddingVertical: scale(12),
         backgroundColor: 'rgba(255,255,255,0.1)',
         borderRadius: scale(20),
-        marginRight: scale(10),
+        marginRight: scale(12),
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
     },
     seasonChipSelected: {
-        backgroundColor: 'rgba(255,255,255,0.3)',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderColor: 'rgba(255,255,255,0.3)',
     },
     seasonChipFocused: {
-        backgroundColor: colors.accent,
+        backgroundColor: colors.accent || '#00E5FF',
+        borderColor: '#FFF',
         transform: [{ scale: 1.05 }],
     },
     seasonText: {
         color: '#AAA',
         fontWeight: 'bold',
+        fontSize: scaleFont(16),
     },
     seasonTextActive: {
         color: '#FFF',
@@ -391,68 +663,130 @@ const styles = StyleSheet.create({
     // Episodes
     episodesContainer: {
         flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        borderRadius: scale(12),
+        padding: scale(10),
     },
     episodesList: {
-        paddingBottom: scale(40),
+        paddingBottom: scale(20),
     },
     episodeCard: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        borderRadius: scale(8),
-        marginBottom: scale(10),
-        height: scale(80),
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        borderRadius: scale(10),
+        marginBottom: scale(12),
+        height: scale(90),
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'transparent',
+        overflow: 'hidden',
     },
     episodeCardFocused: {
-        borderColor: colors.accent,
+        borderColor: colors.accent || '#00E5FF',
         backgroundColor: 'rgba(255,255,255,0.1)',
+        transform: [{ scale: 1.02 }],
     },
     episodeThumb: {
-        width: scale(120),
+        width: scale(160),
         height: '100%',
-        borderTopLeftRadius: scale(8),
-        borderBottomLeftRadius: scale(8),
-        marginRight: scale(15),
+        marginRight: scale(20),
     },
     episodeInfo: {
         flex: 1,
         justifyContent: 'center',
-        paddingRight: scale(10),
+        paddingRight: scale(20),
     },
     episodeNum: {
-        color: colors.accent,
+        color: colors.accent || '#00E5FF',
         fontSize: scaleFont(12),
-        fontWeight: 'bold',
+        fontWeight: '900',
         marginBottom: scale(4),
+        textTransform: 'uppercase',
     },
     episodeTitle: {
         color: '#FFF',
-        fontSize: scaleFont(16),
-        fontWeight: 'bold',
+        fontSize: scaleFont(18),
+        fontWeight: '700',
         marginBottom: scale(4),
     },
     episodeTitleFocused: {
-        color: colors.accent,
+        color: colors.accent || '#00E5FF',
     },
     episodeDuration: {
         color: '#888',
-        fontSize: scaleFont(12),
+        fontSize: scaleFont(13),
+        fontWeight: '600',
+    },
+    episodeDownloadBtn: {
+        padding: scale(10),
+        marginRight: scale(10),
     },
     playIconContainer: {
-        marginRight: scale(20),
-        width: scale(30),
-        height: scale(30),
-        borderRadius: scale(15),
-        backgroundColor: colors.accent,
+        marginRight: scale(24),
+        width: scale(36),
+        height: scale(36),
+        borderRadius: scale(18),
+        backgroundColor: colors.accent || '#00E5FF',
         justifyContent: 'center',
         alignItems: 'center',
+        shadowColor: colors.accent || '#00E5FF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
     },
     playIcon: {
         color: '#000',
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(16),
+        fontWeight: 'bold',
+        marginLeft: scale(2),
     },
+    // Modal
+    modalOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+    },
+    modalContent: {
+        backgroundColor: '#1a1a1a',
+        padding: scale(30),
+        borderRadius: scale(16),
+        width: scale(860),
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 20,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: scale(20),
+    },
+    modalTitle: {
+        fontSize: scaleFont(24),
+        fontWeight: 'bold',
+        color: '#FFF',
+    },
+    closeButton: {
+        padding: scale(10),
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: scale(24),
+    },
+    youtubeContainer: {
+        borderRadius: scale(12),
+        overflow: 'hidden',
+        backgroundColor: '#000',
+    },
+    buttonFocusedPrimary: {
+        backgroundColor: '#FFF',
+    },
+    buttonFocusedSecondary: {
+        backgroundColor: 'rgba(255,255,255,0.3)',
+    }
 });
 
 export default TVSeriesDetailScreen;

@@ -22,9 +22,11 @@ import FastImageComponent from '../../components/FastImageComponent';
 import { colors, spacing, borderRadius, Icon } from '../../theme';
 import useStore from '../../store';
 import { logger } from '../../config';
+import { MovieItem } from '../../navigation/types';
+import DownloadButton from '../../components/DownloadButton';
 
 type ParamList = {
-    MovieDetail: { movie: any };
+    MovieDetail: { movie: MovieItem };
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -59,10 +61,11 @@ const MovieDetailScreen: React.FC = () => {
 
                 if (!isMountedRef.current) return;
                 setMovieInfo(info);
-            } catch (error: any) {
+            } catch (error: unknown) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error('Failed to fetch movie info', {
                     streamId: movie.stream_id,
-                    message: error?.message || 'Unknown error',
+                    message: errorMessage,
                 });
             } finally {
                 if (isMountedRef.current) {
@@ -190,16 +193,31 @@ const MovieDetailScreen: React.FC = () => {
                     </View>
                 )}
 
-                {/* YouTube Trailer Button */}
-                {info.youtube_trailer && (
-                    <TouchableOpacity
-                        style={styles.trailerButton}
-                        onPress={() => setTrailerVisible(true)}
-                    >
-                        <Icon name="playCircle" size={20} color={colors.error} weight="fill" />
-                        <Text style={styles.trailerButtonText}>Watch Trailer</Text>
-                    </TouchableOpacity>
-                )}
+                {/* Action Buttons Row */}
+                <View style={styles.actionButtonsRow}>
+                    {/* YouTube Trailer Button */}
+                    {info.youtube_trailer && (
+                        <TouchableOpacity
+                            style={styles.trailerButton}
+                            onPress={() => setTrailerVisible(true)}
+                        >
+                            <Icon name="playCircle" size={20} color={colors.error} weight="fill" />
+                            <Text style={styles.trailerButtonText}>Trailer</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Download Button */}
+                    <DownloadButton
+                        item={{
+                            id: String(movie.stream_id),
+                            name: movie.name,
+                            stream_icon: movie.stream_icon,
+                            container_extension: movie.container_extension || (info as any).container_extension || (info as any).movie_data?.container_extension,
+                            type: 'movie',
+                        }}
+                        style={styles.downloadButton}
+                    />
+                </View>
 
                 {loading && (
                     <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
@@ -370,6 +388,15 @@ const styles = StyleSheet.create({
         color: colors.error,
         fontSize: 14,
         fontWeight: '600',
+    },
+    actionButtonsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: spacing.md,
+        gap: spacing.sm,
+    },
+    downloadButton: {
+        flex: 1,
     },
     loader: {
         marginTop: spacing.xl,

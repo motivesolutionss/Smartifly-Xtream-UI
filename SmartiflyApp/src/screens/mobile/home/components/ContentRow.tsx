@@ -178,6 +178,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({ type }) => {
     );
 };
 
+const Separator = () => <View style={styles.separator} />;
+
 // =============================================================================
 // CONTENT ROW COMPONENT
 // =============================================================================
@@ -242,7 +244,7 @@ const ContentRow: React.FC<ContentRowProps> = ({
                     keyExtractor={keyExtractor}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
-                    ItemSeparatorComponent={() => <View style={styles.separator} />}
+                    ItemSeparatorComponent={Separator}
                     // Performance optimizations
                     removeClippedSubviews={true}
                     maxToRenderPerBatch={10}

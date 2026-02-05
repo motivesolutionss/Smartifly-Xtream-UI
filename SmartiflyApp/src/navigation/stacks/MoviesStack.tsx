@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MoviesStackParamList } from '../../navigation/types';
 import { colors } from '../../theme';
@@ -16,7 +16,7 @@ import PlayerScreen from '../../screens/mobile/PlayerScreen';
 
 const Stack = createNativeStackNavigator<MoviesStackParamList>();
 
-const PlaceholderScreen: React.FC = () => <View />;
+
 
 const MoviesStack: React.FC = () => {
   return (

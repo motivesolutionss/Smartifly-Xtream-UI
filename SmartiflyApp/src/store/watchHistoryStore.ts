@@ -17,6 +17,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfileStore } from './profileStore';
 
 // =============================================================================
 // TYPES
@@ -85,10 +86,25 @@ interface WatchHistoryState {
     clearHistory: () => void;
 }
 
+/**
+ * Generate a unique watch history ID namespaced by profile.
+ * Format: `${profileId}-${type}-${streamId}`
+ */
 const generateId = (
     type: WatchContentType,
-    streamId: number
-): string => `${type}-${streamId}`;
+    streamId: number,
+    profileId?: string
+): string => {
+    const pId = profileId || useProfileStore.getState().activeProfileId || 'default';
+    return `${pId}-${type}-${streamId}`;
+};
+
+/**
+ * Get current profile ID for watch history operations.
+ */
+const getCurrentProfileId = (): string => {
+    return useProfileStore.getState().activeProfileId || 'default';
+};
 
 const isCompleted = (progress: number): boolean => progress >= 90;
 
@@ -122,7 +138,10 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
             },
 
             getContinueWatching: (limit = 10) => {
+                const profileId = getCurrentProfileId();
                 const items = Object.values(get().history)
+                    // Filter by current profile (entries start with profileId)
+                    .filter((item) => item.id.startsWith(profileId))
                     .filter((item) => !item.completed && item.progress > 0)
                     .sort((a, b) => b.lastWatched - a.lastWatched)
                     .slice(0, limit);
@@ -131,7 +150,10 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
             },
 
             getRecentlyWatched: (limit = 20) => {
+                const profileId = getCurrentProfileId();
                 const items = Object.values(get().history)
+                    // Filter by current profile (entries start with profileId)
+                    .filter((item) => item.id.startsWith(profileId))
                     .sort((a, b) => b.lastWatched - a.lastWatched)
                     .slice(0, limit);
 
@@ -156,8 +178,9 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
 
             removeFromHistory: (id) => {
                 set((state) => {
-                    const { [id]: removed, ...rest } = state.history;
-                    return { history: rest };
+                    const nextHistory = { ...state.history };
+                    delete nextHistory[id];
+                    return { history: nextHistory };
                 });
             },
 

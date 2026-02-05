@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LiveStackParamList } from '../../navigation/types';
 import { colors } from '../../theme';
@@ -15,7 +15,7 @@ import PlayerScreen from '../../screens/mobile/PlayerScreen';
 
 const Stack = createNativeStackNavigator<LiveStackParamList>();
 
-const PlaceholderScreen: React.FC = () => <View />;
+
 
 const LiveStack: React.FC = () => {
   return (

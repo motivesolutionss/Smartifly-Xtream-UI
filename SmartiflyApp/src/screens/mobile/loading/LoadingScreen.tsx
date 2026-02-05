@@ -12,7 +12,7 @@
  * - Uses dynamic getContentReady() for navigation decision
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -57,6 +57,28 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     const hasStarted = useRef(false);
     const hasNavigated = useRef(false);
 
+    // =============================================================================
+    // FUNCTIONS
+    // =============================================================================
+
+    const startPrefetch = useCallback(async () => {
+        logger.info('Starting content prefetch...');
+        const success = await prefetchAllContent();
+
+        if (!success && error) {
+            logger.error('Prefetch failed', error);
+        }
+    }, [prefetchAllContent, error]);
+
+    const handleRetry = useCallback(async () => {
+        // Reset guards to allow retry
+        hasStarted.current = false;
+        hasNavigated.current = false;
+        // Reset retry count in store before manual retry
+        useStore.setState({ retryCount: 0 });
+        await startPrefetch();
+    }, [startPrefetch]);
+
     // Animations
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0)).current;
@@ -72,7 +94,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         if (hasStarted.current) return;
         hasStarted.current = true;
         startPrefetch();
-    }, []);
+    }, [startPrefetch]);
 
     // Animate progress bar
     useEffect(() => {
@@ -86,7 +108,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
             easing: Easing.out(Easing.cubic),
             useNativeDriver: false,
         }).start();
-    }, [prefetchProgress.current, prefetchProgress.total]);
+    }, [prefetchProgress, progressAnim]);
 
     // Pulse animation for logo
     useEffect(() => {
@@ -108,7 +130,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         );
         pulse.start();
         return () => pulse.stop();
-    }, []);
+    }, [pulseAnim]);
 
     // Fade and scale in animation
     useEffect(() => {
@@ -125,7 +147,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 useNativeDriver: true,
             }),
         ]).start();
-    }, []);
+    }, [fadeAnim, scaleAnim]);
 
     // Navigate when complete (using dynamic getContentReady)
     useEffect(() => {
@@ -160,29 +182,9 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 }, 300);
             });
         }
-    }, [getContentReady, isPrefetching]);
+    }, [getContentReady, isPrefetching, getContentStats, navigation, scaleAnim]);
 
-    // =============================================================================
-    // FUNCTIONS
-    // =============================================================================
 
-    const startPrefetch = async () => {
-        logger.info('Starting content prefetch...');
-        const success = await prefetchAllContent();
-
-        if (!success && error) {
-            logger.error('Prefetch failed', error);
-        }
-    };
-
-    const handleRetry = async () => {
-        // Reset guards to allow retry
-        hasStarted.current = false;
-        hasNavigated.current = false;
-        // Reset retry count in store before manual retry
-        useStore.setState({ retryCount: 0 });
-        await startPrefetch();
-    };
 
     // =============================================================================
     // COMPUTED VALUES

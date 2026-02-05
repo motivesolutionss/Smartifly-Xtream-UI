@@ -20,28 +20,28 @@ import {
 } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import useStore from '../../store';
+import { useProfileStore } from '../../store/profileStore';
+import ProfileAvatar from '../../components/ProfileAvatar';
 import {
+    colors,
     scale,
     scaleFont,
     Icon,
     useTheme,
     textGlow
 } from '../../theme';
+import { TVSettingsScreenProps } from '../../navigation/types';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-type SettingsSection = 'Account' | 'Playback' | 'App' | 'About';
+type SettingsSection = 'Account' | 'Profiles' | 'Playback' | 'App' | 'About';
 
 interface SettingsMenuItem {
     id: SettingsSection;
     label: string;
     icon: string;
-}
-
-interface TVSettingsScreenProps {
-    navigation: any;
 }
 
 // =============================================================================
@@ -60,12 +60,17 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     const logout = useStore((state) => state.logout);
     const selectedPortal = useStore((state) => state.selectedPortal);
 
+    // Profile Store
+    const activeProfile = useProfileStore((state) => state.profiles.find(p => p.id === state.activeProfileId));
+    const profiles = useProfileStore((state) => state.profiles);
+
     // =========================================================================
     // MENU CONFIG
     // =========================================================================
 
     const sections: SettingsMenuItem[] = [
         { id: 'Account', label: 'Account', icon: 'user' },
+        { id: 'Profiles', label: 'Profiles', icon: 'users' },
         { id: 'Playback', label: 'Playback', icon: 'play' },
         { id: 'App', label: 'App Settings', icon: 'settings' },
         { id: 'About', label: 'About', icon: 'info' },
@@ -259,7 +264,62 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
                         {renderDetailItem('Current Server', selectedPortal?.name || 'Unknown')}
 
                         <View style={styles.spacer} />
+                        {renderDetailItem('Portal Switcher', 'Manage Accounts', true, () => {
+                            navigation.replace('TVAccountSwitcher');
+                        })}
                         {renderDetailItem('Terminate Session', 'Sign Out', true, handleLogout, true)}
+                    </ScrollView>
+                );
+
+            case 'Profiles':
+                return (
+                    <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
+                        <View style={styles.profileHeader}>
+                            <View style={[styles.avatarContainer, { width: scale(80), height: scale(80) }]}>
+                                <ProfileAvatar
+                                    avatar={activeProfile?.avatar || 'avatar_01'}
+                                    name={activeProfile?.name || ''}
+                                    size="medium"
+                                />
+                            </View>
+                            <View style={styles.profileInfo}>
+                                <Text style={[styles.profileName, textGlow.soft]}>{activeProfile?.name || 'Unknown'}</Text>
+                                <View style={styles.badgeContainer}>
+                                    <View style={[
+                                        styles.statusBadge,
+                                        activeProfile?.isKidsProfile ? styles.kidsBadge : styles.adultBadge
+                                    ]}>
+                                        <Text style={[
+                                            styles.statusBadgeText,
+                                            activeProfile?.isKidsProfile ? styles.kidsBadgeText : styles.adultBadgeText
+                                        ]}>
+                                            {activeProfile?.isKidsProfile ? 'KIDS MODE' : 'ADULT PROFILE'}
+                                        </Text>
+                                    </View>
+                                    {activeProfile?.pinRequired && (
+                                        <Text style={styles.profileStatus}>
+                                            • PIN Protected
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+                        </View>
+
+                        <Text style={styles.sectionHeader}>Parental Controls</Text>
+                        {renderDetailItem('Content Rating', activeProfile?.maxRating || 'UNRATED')}
+                        {renderDetailItem('Kids Mode', activeProfile?.isKidsProfile ? 'ON' : 'OFF')}
+                        {renderDetailItem('PIN Protection', activeProfile?.pinRequired ? 'Enabled' : 'Disabled')}
+
+                        <View style={styles.spacer} />
+                        {renderDetailItem('Manage Profile', 'Edit Current Profile', true, () => {
+                            navigation.navigate('ProfileEditor', { profileId: activeProfile?.id });
+                        })}
+                        {renderDetailItem('Switch Profile', 'Show All Profiles', true, () => {
+                            navigation.navigate('ProfileSwitcher');
+                        })}
+                        {renderDetailItem('Create New Profile', `${profiles.length}/5 Used`, profiles.length < 5, () => {
+                            navigation.navigate('ProfileEditor', { profileId: undefined });
+                        })}
                     </ScrollView>
                 );
 
@@ -502,6 +562,18 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(16),
         color: '#8E9AAF',
         fontWeight: '600',
+    },
+    kidsBadge: {
+        backgroundColor: '#4CAF5020',
+    },
+    adultBadge: {
+        backgroundColor: colors.primary + '20',
+    },
+    kidsBadgeText: {
+        color: '#4CAF50',
+    },
+    adultBadgeText: {
+        color: colors.primary,
     },
 
     // HUD Detail Rows

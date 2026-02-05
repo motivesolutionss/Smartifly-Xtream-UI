@@ -66,32 +66,9 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
     };
 
     // Format remaining time
-    const formatRemaining = () => {
-        const remaining = item.duration - item.position;
-        if (remaining <= 0) return 'Finished';
 
-        const minutes = Math.floor(remaining / 60);
 
-        // "Finishing soon" for < 2 minutes
-        if (minutes < 2) return 'Finishing soon';
 
-        if (minutes < 60) return `${minutes}m left`;
-
-        const hours = Math.floor(minutes / 60);
-        const mins = minutes % 60;
-        return `${hours}h ${mins}m left`;
-    };
-
-    // Get subtitle (episode info for series)
-    const getSubtitle = () => {
-        if (item.type === 'series' && item.seasonNumber && item.episodeNumber) {
-            return `S${item.seasonNumber} E${item.episodeNumber}${item.episodeTitle ? ` • ${item.episodeTitle}` : ''}`;
-        }
-        if (item.type === 'live') {
-            return 'Live TV';
-        }
-        return formatRemaining();
-    };
 
     return (
         <Pressable
@@ -107,9 +84,10 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
                         width,
                         height,
                         transform: [{ scale: scaleAnim }],
-                        borderColor: isFocused ? colors.accent || '#00E5FF' : 'transparent',
-                        borderWidth: isFocused ? scale(3) : 0,
+
                     },
+                    isFocused ? styles.borderFocusedWidth : styles.borderZero,
+                    isFocused ? styles.borderFocused : styles.borderTransparent,
                     isFocused && styles.shadow,
                 ]}
             >
@@ -287,6 +265,18 @@ const styles = StyleSheet.create({
         color: colors.textMuted || '#666',
         marginTop: scale(2),
     },
+    borderFocused: {
+        borderColor: colors.accent || '#00E5FF',
+    },
+    borderTransparent: {
+        borderColor: 'transparent',
+    },
+    borderFocusedWidth: {
+        borderWidth: scale(3),
+    },
+    borderZero: {
+        borderWidth: 0,
+    }
 });
 
 export default TVContinueCard;

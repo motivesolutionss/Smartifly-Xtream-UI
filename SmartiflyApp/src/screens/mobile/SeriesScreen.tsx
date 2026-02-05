@@ -19,24 +19,31 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import SeriesCard from '../../components/SeriesCard';
 import NavBar from '../../components/NavBar';
 import { colors, spacing, borderRadius } from '../../theme';
 import useStore from '../../store';
 import useFilterStore from '../../store/filterStore';
 import { useDebounce } from '../../hooks';
+import { XtreamSeries } from '../../api/xtream';
+import { SeriesStackParamList } from '../../navigation/types';
+import { useContentFilter } from '../../store/profileStore';
 
 interface Props {
-    navigation: any;
+    navigation: NativeStackNavigationProp<SeriesStackParamList, 'SeriesMain'>;
 }
 
 const SeriesScreen: React.FC<Props> = ({ navigation }) => {
-    const insets = useSafeAreaInsets();
+
 
     // Get PREFETCHED content from store - uses new domain structure
     const content = useStore((state) => state.content);
     const userInfo = useStore((state) => state.userInfo);
+
+    // Profile Store
+    const { filterContent } = useContentFilter();
 
     // Use GLOBAL filter store with domain-specific category (series domain)
     const selectedCategory = useFilterStore((s) => s.selectedCategory.series);
@@ -52,18 +59,20 @@ const SeriesScreen: React.FC<Props> = ({ navigation }) => {
     const categories = useMemo(() => {
         if (!content.series.loaded || !content.series.categories) return [];
 
+        const filteredAllSeries = filterContent(content.series.items);
+
         return content.series.categories.map(cat => ({
             id: cat.category_id,
             name: cat.category_name,
-            count: content.series.items.filter(s => s.category_id === cat.category_id).length,
-        }));
-    }, [content.series.categories, content.series.items, content.series.loaded]);
+            count: filteredAllSeries.filter(s => s.category_id === cat.category_id).length,
+        })).filter(cat => cat.count > 0); // Hide empty categories
+    }, [content.series.categories, content.series.items, content.series.loaded, filterContent]);
 
     // Filtered series - uses debounced query for smooth performance
     const filteredSeries = useMemo(() => {
         if (!content.series.loaded) return [];
 
-        let result = content.series.items;
+        let result = filterContent(content.series.items);
 
         // Filter by category (null = All)
         if (selectedCategory) {
@@ -79,10 +88,10 @@ const SeriesScreen: React.FC<Props> = ({ navigation }) => {
         }
 
         return result;
-    }, [content.series.items, content.series.loaded, selectedCategory, debouncedQuery]);
+    }, [content.series.items, content.series.loaded, selectedCategory, debouncedQuery, filterContent]);
 
     // Memoized series press handler - prevents unnecessary re-renders
-    const handleSeriesPress = useCallback((series: any) => {
+    const handleSeriesPress = useCallback((series: XtreamSeries) => {
         navigation.navigate('SeriesDetail', { series });
     }, [navigation]);
 
@@ -108,7 +117,7 @@ const SeriesScreen: React.FC<Props> = ({ navigation }) => {
                 variant="content"
                 title="Series"
                 username={userInfo?.username}
-                onProfilePress={() => navigation.navigate('Settings')}
+                onProfilePress={() => (navigation as any).navigate('Settings')}
             />
 
             {/* Content Count */}

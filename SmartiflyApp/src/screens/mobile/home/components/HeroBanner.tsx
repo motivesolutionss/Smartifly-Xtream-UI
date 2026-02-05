@@ -16,7 +16,6 @@ import {
     TouchableOpacity,
     StyleSheet,
     ImageBackground,
-    Dimensions,
     ViewStyle,
 } from 'react-native';
 // Note: LinearGradient would require import from 'react-native-linear-gradient'
@@ -24,7 +23,7 @@ import {
 
 import { colors, spacing, borderRadius } from '../../../../theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const HERO_HEIGHT = 480;
 
 // =============================================================================

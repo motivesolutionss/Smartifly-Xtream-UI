@@ -8,10 +8,7 @@ import {
 } from 'react-native';
 import { colors, scale, scaleFont } from '../../../theme';
 import { WatchProgress, useWatchHistoryStore } from '../../../store/watchHistoryStore';
-
-interface TVFavoritesScreenProps {
-    navigation: any;
-}
+import { TVFavoritesScreenProps, LiveStreamItem, MovieItem, SeriesItem } from '../../../navigation/types';
 
 const instructionalSteps = [
     'Browse the Home, Live, Movies, or Series sections',
@@ -33,11 +30,14 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => 
     }, [history]);
 
     const handlePress = (item: WatchProgress) => {
-        const payload: any = item.data || {
+        // Build payload from watch history data
+        // If item.data exists (cached original content), use it
+        // Otherwise construct a LiveStreamItem-compatible object from the WatchProgress fields
+        const payload: LiveStreamItem | MovieItem | SeriesItem = (item.data as LiveStreamItem | MovieItem | SeriesItem) ?? ({
             stream_id: item.streamId,
             name: item.episodeTitle || item.title,
             stream_icon: item.thumbnail,
-        };
+        } as LiveStreamItem);
 
         navigation.navigate('FullscreenPlayer', {
             type: item.type,
@@ -81,13 +81,15 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => 
                     data={favorites}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}
-                    ItemSeparatorComponent={() => <View style={styles.separator} />}
+                    ItemSeparatorComponent={Separator}
                     contentContainerStyle={styles.listContent}
                 />
             )}
         </View>
     );
 };
+
+const Separator = () => <View style={styles.separator} />;
 
 const styles = StyleSheet.create({
     container: {

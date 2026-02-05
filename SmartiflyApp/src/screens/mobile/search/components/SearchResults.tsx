@@ -86,8 +86,8 @@ const ResultItem: React.FC<ResultItemProps> = ({ item, onPress }) => {
             {/* Image */}
             <View style={[
                 styles.resultImage,
-                { width: itemWidth, height: isLive ? 60 : itemHeight - 50 },
-                isLive && styles.resultImageSquare,
+                { width: itemWidth },
+                isLive ? styles.resultImageLive : { height: itemHeight - 50 },
             ]}>
                 <FastImageComponent
                     source={{ uri: item.image }}
@@ -179,7 +179,7 @@ const ResultSection: React.FC<ResultSectionProps> = ({
             </View>
 
             {/* Horizontal List */}
-            <View style={{ height: items[0].type === 'live' ? 140 : 190 }}>
+            <View style={items[0].type === 'live' ? styles.liveSectionContainer : styles.vodSectionContainer}>
                 <FlashList
                     horizontal
                     data={displayItems}
@@ -451,6 +451,16 @@ const styles = StyleSheet.create({
         backgroundColor: skeletonColors.base,
         borderRadius: borderRadius.sm,
         marginTop: spacing.xxs,
+    },
+    liveSectionContainer: {
+        height: 140,
+    },
+    vodSectionContainer: {
+        height: 190,
+    },
+    resultImageLive: {
+        height: 60,
+        borderRadius: borderRadius.md,
     },
 });
 

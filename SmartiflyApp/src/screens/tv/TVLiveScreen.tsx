@@ -9,7 +9,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -17,12 +17,13 @@ import {
     FlatList,
     Pressable,
     StatusBar,
-    BackHandler,
+
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import useStore from '../../store';
 import { colors, scale, scaleFont } from '../../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
+import { XtreamLiveStream } from '../../api/xtream';
+import { TVLiveScreenProps } from '../../navigation/types';
 
 // =============================================================================
 // TYPES
@@ -32,10 +33,6 @@ interface Category {
     id: string;
     name: string;
     count: number;
-}
-
-interface TVLiveScreenProps {
-    navigation: any;
 }
 
 // =============================================================================
@@ -57,18 +54,25 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
     const categories = useMemo((): Category[] => {
         if (!content.live.loaded || !content.live.categories) return [];
 
+        // 1. Single pass to count channels per category (O(N))
+        const countMap: Record<string, number> = {};
+        content.live.items.forEach((ch: XtreamLiveStream) => {
+            const catId = String(ch.category_id);
+            countMap[catId] = (countMap[catId] || 0) + 1;
+        });
+
         const cats: Category[] = [
             { id: 'all', name: 'All Channels', count: content.live.items.length },
         ];
 
+        // 2. Build category list using the map (O(M))
         for (const cat of content.live.categories) {
-            const count = content.live.items.filter(
-                (ch: any) => String(ch.category_id) === String(cat.category_id)
-            ).length;
+            const catId = String(cat.category_id);
+            const count = countMap[catId] || 0;
 
             if (count > 0) {
                 cats.push({
-                    id: String(cat.category_id),
+                    id: catId,
                     name: cat.category_name,
                     count,
                 });
@@ -89,11 +93,11 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
 
         if (selectedCategoryId && selectedCategoryId !== 'all') {
             items = items.filter(
-                (ch: any) => String(ch.category_id) === selectedCategoryId
+                (ch: XtreamLiveStream) => String(ch.category_id) === selectedCategoryId
             );
         }
 
-        return items.map((ch: any) => ({
+        return items.map((ch: XtreamLiveStream) => ({
             id: String(ch.stream_id),
             title: ch.name,
             image: ch.stream_icon,

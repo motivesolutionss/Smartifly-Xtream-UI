@@ -402,13 +402,13 @@ export const glowEffectsTV = {
         elevation: 12,
     } as ViewStyle,
 
-    /** Focus ring glow for TV navigation */
+    /** Focus ring glow for TV navigation - Scaled for high impact */
     focus: {
         shadowColor: shadowColors.accent,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 16,
-        elevation: 10,
+        shadowOpacity: 1.0, // Increased from 0.8
+        shadowRadius: 24,   // Increased from 16
+        elevation: 15,      // Increased from 10
     } as ViewStyle,
 } as const;
 

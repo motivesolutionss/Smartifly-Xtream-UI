@@ -215,10 +215,7 @@ const TVButton: React.FC<TVButtonProps> = ({
         outputRange: [0, 0.3],
     });
 
-    const glowScale = glowAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [1, 1.03],
-    });
+
 
     return (
         <View>
@@ -233,8 +230,8 @@ const TVButton: React.FC<TVButtonProps> = ({
                     <View
                         style={[
                             styles.glow,
+                            styles.glowTransparent,
                             {
-                                backgroundColor: 'transparent',
                                 shadowColor: variantStyles.container.shadowColor,
                             },
                         ]}
@@ -242,7 +239,7 @@ const TVButton: React.FC<TVButtonProps> = ({
                 </Animated.View>
             )}
 
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <Animated.View style={[styles.scaleContainer, { transform: [{ scale: scaleAnim }] }]}>
                 <Pressable
                     onPress={handlePress}
                     onFocus={handleFocus}
@@ -350,6 +347,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.5,
         shadowRadius: scale(16),
         elevation: 0,
+    },
+    glowTransparent: {
+        backgroundColor: 'transparent',
+    },
+    scaleContainer: {
+        width: '100%',
     },
 });
 

@@ -12,8 +12,7 @@ import {
     View,
     Text,
     TouchableOpacity,
-    StyleSheet,
-    Animated,
+    StyleSheet
 } from 'react-native';
 import { Icon, colors, spacing, borderRadius } from '../theme';
 import useFilterStore, { ContentType } from '../store/filterStore';

@@ -14,7 +14,6 @@ import {
     View,
     Text,
     TouchableOpacity,
-    FlatList,
     StyleSheet,
     ViewStyle,
 } from 'react-native';

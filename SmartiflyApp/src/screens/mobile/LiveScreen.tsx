@@ -19,20 +19,23 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ChannelCard from '../../components/ChannelCard';
 import NavBar from '../../components/NavBar';
 import { colors, spacing, borderRadius } from '../../theme';
 import useStore from '../../store';
 import useFilterStore from '../../store/filterStore';
 import { useDebounce } from '../../hooks';
+import { XtreamLiveStream } from '../../api/xtream';
+import { LiveStackParamList } from '../../navigation/types';
 
 interface Props {
-    navigation: any;
+    navigation: NativeStackNavigationProp<LiveStackParamList, 'LiveMain'>;
 }
 
 const LiveScreen: React.FC<Props> = ({ navigation }) => {
-    const insets = useSafeAreaInsets();
+
 
     // Get PREFETCHED content from store - uses new domain structure
     const content = useStore((state) => state.content);
@@ -82,7 +85,7 @@ const LiveScreen: React.FC<Props> = ({ navigation }) => {
     }, [content.live.items, content.live.loaded, selectedCategory, debouncedQuery]);
 
     // Memoized play handler - prevents unnecessary re-renders
-    const handlePlay = useCallback((item: any) => {
+    const handlePlay = useCallback((item: XtreamLiveStream) => {
         navigation.navigate('Player', {
             type: 'live',
             item: {
@@ -115,7 +118,7 @@ const LiveScreen: React.FC<Props> = ({ navigation }) => {
                 variant="content"
                 title="Live TV"
                 username={userInfo?.username}
-                onProfilePress={() => navigation.navigate('Settings')}
+                onProfilePress={() => (navigation as any).navigate('Settings')}
             />
 
             {/* Content Count */}

@@ -9,7 +9,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -17,12 +17,14 @@ import {
     FlatList,
     Pressable,
     StatusBar,
-    BackHandler,
+
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import useStore from '../../store';
 import { colors, scale, scaleFont } from '../../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
+import { XtreamMovie } from '../../api/xtream';
+import { TVMoviesScreenProps } from '../../navigation/types';
+import { useContentFilter } from '../../store/profileStore';
 
 // =============================================================================
 // TYPES
@@ -32,10 +34,6 @@ interface Category {
     id: string;
     name: string;
     count: number;
-}
-
-interface TVMoviesScreenProps {
-    navigation: any;
 }
 
 // =============================================================================
@@ -49,6 +47,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
 
     // Store
     const { content } = useStore();
+    const { filterContent } = useContentFilter();
 
     // ==========================================================================
     // CATEGORIES
@@ -57,18 +56,28 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
     const categories = useMemo((): Category[] => {
         if (!content.movies.loaded || !content.movies.categories) return [];
 
+        // Apply parental control filter to all items first for accurate counts
+        const filteredAllMovies = filterContent(content.movies.items as any[]);
+
+        // 1. Single pass to count items per category (O(N))
+        const countMap: Record<string, number> = {};
+        filteredAllMovies.forEach((m: XtreamMovie) => {
+            const catId = String(m.category_id);
+            countMap[catId] = (countMap[catId] || 0) + 1;
+        });
+
         const cats: Category[] = [
-            { id: 'all', name: 'All Movies', count: content.movies.items.length },
+            { id: 'all', name: 'All Movies', count: filteredAllMovies.length },
         ];
 
+        // 2. Build category list using the map (O(M))
         for (const cat of content.movies.categories) {
-            const count = content.movies.items.filter(
-                (m: any) => String(m.category_id) === String(cat.category_id)
-            ).length;
+            const catId = String(cat.category_id);
+            const count = countMap[catId] || 0;
 
             if (count > 0) {
                 cats.push({
-                    id: String(cat.category_id),
+                    id: catId,
                     name: cat.category_name,
                     count,
                 });
@@ -76,7 +85,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
         }
 
         return cats;
-    }, [content.movies.loaded, content.movies.categories, content.movies.items]);
+    }, [content.movies.loaded, content.movies.categories, content.movies.items, filterContent]);
 
     // ==========================================================================
     // MOVIES (filtered by category)
@@ -85,15 +94,18 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
     const movies = useMemo((): TVContentItem[] => {
         if (!content.movies.loaded) return [];
 
-        let items = content.movies.items;
+        // Apply parental control filter
+        const filteredAllMovies = filterContent(content.movies.items as any[]);
+
+        let items = filteredAllMovies;
 
         if (selectedCategoryId && selectedCategoryId !== 'all') {
             items = items.filter(
-                (m: any) => String(m.category_id) === selectedCategoryId
+                (m: XtreamMovie) => String(m.category_id) === selectedCategoryId
             );
         }
 
-        return items.map((m: any) => ({
+        return items.map((m: XtreamMovie) => ({
             id: String(m.stream_id),
             title: m.name,
             image: m.stream_icon,
@@ -102,7 +114,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
             type: 'movie' as const,
             data: m,
         }));
-    }, [content.movies.items, content.movies.loaded, selectedCategoryId]);
+    }, [content.movies.items, content.movies.loaded, selectedCategoryId, filterContent]);
 
     // ==========================================================================
     // HANDLERS
@@ -165,8 +177,8 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
         <TVContentCard
             item={item}
             onPress={handleMoviePress}
-            width={scale(140)}
-            height={scale(210)}
+            width={scale(180)}
+            height={scale(270)}
         />
     );
 
@@ -174,9 +186,18 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
         <View style={styles.container}>
             <StatusBar hidden />
 
+            {/* Background Gradient / Overlay */}
+            <View style={StyleSheet.absoluteFill}>
+                <View style={[StyleSheet.absoluteFill, styles.bgOverlay]} />
+                <View style={styles.bgGradient} />
+            </View>
+
             {/* Category Panel */}
             <View style={styles.categoryPanel}>
-                <Text style={styles.panelTitle}>Movies</Text>
+                <View style={styles.panelHeader}>
+                    <Text style={styles.panelTitle}>Movies</Text>
+                    <View style={styles.titleUnderline} />
+                </View>
                 <FlatList
                     data={categories}
                     renderItem={renderCategory}
@@ -188,17 +209,27 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
 
             {/* Movies Grid */}
             <View style={styles.moviesPanel}>
-                <Text style={styles.movieCount}>
-                    {movies.length} movies
-                </Text>
+                <View style={styles.gridHeader}>
+                    <Text style={styles.selectedCategoryName}>
+                        {categories.find(c => c.id === (selectedCategoryId || 'all'))?.name}
+                    </Text>
+                    <Text style={styles.movieCount}>
+                        {movies.length} titles available
+                    </Text>
+                </View>
+
                 <FlatList
                     data={movies}
                     renderItem={renderMovie}
                     keyExtractor={(item) => String(item.id)}
-                    numColumns={6}
+                    numColumns={7}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.moviesGrid}
                     columnWrapperStyle={styles.moviesRow}
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={16}
+                    initialNumToRender={21}
+                    windowSize={5}
                 />
             </View>
         </View>
@@ -212,79 +243,129 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: '#050a12',
         flexDirection: 'row',
+    },
+    bgOverlay: {
+        backgroundColor: '#050a12',
+    },
+    bgGradient: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: '50%',
+        opacity: 0.5,
+        backgroundColor: 'rgba(0, 229, 255, 0.03)',
     },
     // Category Panel
     categoryPanel: {
-        width: scale(350),
-        backgroundColor: colors.background,
+        width: scale(320),
+        backgroundColor: 'rgba(10, 20, 35, 0.4)', // Glass effect
         borderRightWidth: 1,
-        borderRightColor: 'rgba(255,255,255,0.1)',
+        borderRightColor: 'rgba(255,255,255,0.06)',
         paddingTop: scale(40),
     },
+    panelHeader: {
+        paddingHorizontal: scale(24),
+        marginBottom: scale(30),
+    },
     panelTitle: {
-        fontSize: scaleFont(30),
-        fontWeight: 'bold',
-        color: colors.textPrimary || '#FFF',
-        paddingHorizontal: scale(20),
-        marginBottom: scale(20),
+        fontSize: scaleFont(34),
+        fontWeight: '900',
+        color: '#FFF',
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+    },
+    titleUnderline: {
+        width: scale(40),
+        height: scale(4),
+        backgroundColor: colors.accent || '#00E5FF',
+        marginTop: scale(8),
+        borderRadius: scale(2),
     },
     categoryList: {
-        paddingHorizontal: scale(12),
+        paddingHorizontal: scale(16),
+        paddingBottom: scale(40),
     },
     categoryItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: scale(12),
-        paddingHorizontal: scale(16),
-        marginBottom: scale(4),
-        borderRadius: scale(8),
+        paddingVertical: scale(14),
+        paddingHorizontal: scale(20),
+        marginBottom: scale(6),
+        borderRadius: scale(12),
+        backgroundColor: 'rgba(255,255,255,0.03)',
     },
     categoryItemSelected: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
     },
     categoryItemFocused: {
         backgroundColor: colors.accent || '#00E5FF',
+        transform: [{ scale: 1.02 }],
+        elevation: 10,
+        shadowColor: colors.accent || '#00E5FF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
     },
     categoryName: {
-        fontSize: scaleFont(20),
-        color: colors.textSecondary || '#AAA',
+        fontSize: scaleFont(18),
+        color: 'rgba(255,255,255,0.5)',
+        fontWeight: '500',
         flex: 1,
     },
     categoryNameSelected: {
-        color: colors.textPrimary || '#FFF',
-        fontWeight: '600',
+        color: '#FFF',
+        fontWeight: '700',
     },
     categoryNameFocused: {
         color: '#000',
-        fontWeight: 'bold',
+        fontWeight: '900',
     },
     categoryCount: {
-        fontSize: scaleFont(16),
-        color: colors.textMuted || '#666',
-        marginLeft: scale(8),
+        fontSize: scaleFont(14),
+        color: 'rgba(255,255,255,0.3)',
+        marginLeft: scale(10),
+        fontVariant: ['tabular-nums'],
     },
     categoryCountFocused: {
-        color: '#000',
+        color: 'rgba(0,0,0,0.6)',
+        fontWeight: 'bold',
     },
     // Movies Panel
     moviesPanel: {
         flex: 1,
         paddingTop: scale(40),
-        paddingHorizontal: scale(20),
+        paddingLeft: scale(30),
+    },
+    gridHeader: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        marginBottom: scale(24),
+        paddingRight: scale(40),
+    },
+    selectedCategoryName: {
+        fontSize: scaleFont(26),
+        fontWeight: '800',
+        color: '#FFF',
+        marginRight: scale(15),
     },
     movieCount: {
-        fontSize: scaleFont(18),
-        color: colors.textMuted || '#666',
-        marginBottom: scale(20),
+        fontSize: scaleFont(16),
+        color: 'rgba(255,255,255,0.4)',
+        fontWeight: '500',
     },
     moviesGrid: {
-        paddingBottom: scale(40),
+        paddingBottom: scale(60),
+        paddingRight: scale(20),
     },
     moviesRow: {
-        marginBottom: scale(20),
+        justifyContent: 'flex-start',
+        marginBottom: scale(30),
     },
 });
 

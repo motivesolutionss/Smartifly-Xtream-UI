@@ -8,7 +8,7 @@
  * - Server ping/latency display
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -213,14 +213,9 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
     const [modalVisible, setModalVisible] = useState(false);
     const [serverStatuses, setServerStatuses] = useState<Map<string, ServerStatus>>(new Map());
 
-    // Check all server statuses when modal opens
-    useEffect(() => {
-        if (modalVisible && checkServerStatus) {
-            checkAllServers();
-        }
-    }, [modalVisible]);
 
-    const checkAllServers = async () => {
+
+    const checkAllServers = useCallback(async () => {
         if (!checkServerStatus) return;
 
         // Set all to checking
@@ -242,7 +237,14 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
                 }));
             }
         }
-    };
+    }, [checkServerStatus, portals]);
+
+    // Check all server statuses when modal opens
+    useEffect(() => {
+        if (modalVisible && checkServerStatus) {
+            checkAllServers();
+        }
+    }, [modalVisible, checkServerStatus, checkAllServers]);
 
     const handleSelectServer = (portal: Portal) => {
         onSelectPortal(portal);
@@ -366,7 +368,7 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
                             )}
                             style={styles.serverList}
                             showsVerticalScrollIndicator={false}
-                            ItemSeparatorComponent={() => <View style={styles.separator} />}
+                            ItemSeparatorComponent={Separator}
                         />
 
                         {/* Modal Footer */}
@@ -380,7 +382,10 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
             </Modal>
         </View>
     );
+
 };
+
+const Separator = () => <View style={styles.separator} />;
 
 // =============================================================================
 // STYLES

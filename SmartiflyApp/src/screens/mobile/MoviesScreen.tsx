@@ -19,24 +19,31 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MovieCard from '../../components/MovieCard';
 import NavBar from '../../components/NavBar';
 import { colors, spacing, borderRadius } from '../../theme';
 import useStore from '../../store';
 import useFilterStore from '../../store/filterStore';
 import { useDebounce } from '../../hooks';
+import { XtreamMovie } from '../../api/xtream';
+import { MoviesStackParamList } from '../../navigation/types';
+import { useContentFilter } from '../../store/profileStore';
 
 interface Props {
-    navigation: any;
+    navigation: NativeStackNavigationProp<MoviesStackParamList, 'MoviesMain'>;
 }
 
 const MoviesScreen: React.FC<Props> = ({ navigation }) => {
-    const insets = useSafeAreaInsets();
+
 
     // Get PREFETCHED content from store - uses new domain structure
     const content = useStore((state) => state.content);
     const userInfo = useStore((state) => state.userInfo);
+
+    // Profile Store
+    const { filterContent } = useContentFilter();
 
     // Use GLOBAL filter store with domain-specific category (movies domain)
     const selectedCategory = useFilterStore((s) => s.selectedCategory.movies);
@@ -52,18 +59,20 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
     const categories = useMemo(() => {
         if (!content.movies.loaded || !content.movies.categories) return [];
 
+        const filteredAllMovies = filterContent(content.movies.items);
+
         return content.movies.categories.map(cat => ({
             id: cat.category_id,
             name: cat.category_name,
-            count: content.movies.items.filter(m => m.category_id === cat.category_id).length,
-        }));
-    }, [content.movies.categories, content.movies.items, content.movies.loaded]);
+            count: filteredAllMovies.filter(m => m.category_id === cat.category_id).length,
+        })).filter(cat => cat.count > 0); // Hide empty categories
+    }, [content.movies.categories, content.movies.items, content.movies.loaded, filterContent]);
 
     // Filtered movies - uses debounced query for smooth performance
     const filteredMovies = useMemo(() => {
         if (!content.movies.loaded) return [];
 
-        let result = content.movies.items;
+        let result = filterContent(content.movies.items);
 
         // Filter by category (null = All)
         if (selectedCategory) {
@@ -79,10 +88,10 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
         }
 
         return result;
-    }, [content.movies.items, content.movies.loaded, selectedCategory, debouncedQuery]);
+    }, [content.movies.items, content.movies.loaded, selectedCategory, debouncedQuery, filterContent]);
 
     // Navigate to movie detail screen instead of direct play
-    const handleMoviePress = useCallback((item: any) => {
+    const handleMoviePress = useCallback((item: XtreamMovie) => {
         navigation.navigate('MovieDetail', {
             movie: {
                 stream_id: item.stream_id,
@@ -93,9 +102,6 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
                 container_extension: item.container_extension,
                 plot: item.plot,
                 genre: item.genre,
-                cast: item.cast,
-                director: item.director,
-                youtube_trailer: item.youtube_trailer,
             },
         });
     }, [navigation]);
@@ -122,7 +128,7 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
                 variant="content"
                 title="Movies"
                 username={userInfo?.username}
-                onProfilePress={() => navigation.navigate('Settings')}
+                onProfilePress={() => (navigation as any).navigate('Settings')}
             />
 
             {/* Content Count */}

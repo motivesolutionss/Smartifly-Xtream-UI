@@ -208,7 +208,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({
         <View style={[styles.gridContainer, style]}>
             {Array.from({ length: rows }).map((_, rowIndex) => (
                 <View key={rowIndex} style={styles.gridRow}>
-                    {Array.from({ length: columns }).map((_, colIndex) => (
+                    {Array.from({ length: columns }).map((__, colIndex) => (
                         <View key={colIndex} style={[styles.gridCard, { width: cardWidth }]}>
                             <SkeletonBox
                                 width={cardWidth}

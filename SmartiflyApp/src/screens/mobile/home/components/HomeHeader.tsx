@@ -16,9 +16,9 @@ import {
     ViewStyle,
     Image,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing, borderRadius } from '../../../../theme';
+
+import { colors, spacing } from '../../../../theme';
 
 // =============================================================================
 // TYPES

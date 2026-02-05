@@ -13,15 +13,14 @@
  * handled by the parent screen, not this component.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
     Pressable,
     StyleSheet,
-    Animated,
 } from 'react-native';
-import { colors, Icon, scale, scaleFont } from '../../../../theme';
+import { Icon, scale, scaleFont } from '../../../../theme';
 
 // =============================================================================
 // TYPES

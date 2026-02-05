@@ -13,7 +13,6 @@ import {
     Text,
     StyleSheet,
     FlatList,
-    Pressable,
 } from 'react-native';
 import { colors, scale, scaleFont } from '../../../../theme';
 import TVContinueCard from './TVContinueCard';

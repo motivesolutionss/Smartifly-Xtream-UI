@@ -17,6 +17,10 @@ import { logger } from '../config';
 import LoginScreen from '../screens/mobile/login/LoginScreen';
 import LoadingScreen from '../screens/mobile/loading/LoadingScreen';
 import PlayerScreen from '../screens/mobile/PlayerScreen';
+// Profile Screens (Parental Controls)
+import { ProfileSwitcherScreen, ProfileEditorScreen } from '../screens/mobile/profiles';
+import DownloadsScreen from '../screens/mobile/DownloadsScreen';
+import { useProfileStore } from '../store/profileStore';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -25,10 +29,18 @@ const MobileNavigator: React.FC = () => {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
 
-  // Determine initial route with SMART CACHE VALIDATION
+  // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
   const getInitialRoute = (): keyof RootStackParamList => {
+    const { profiles, activeProfileId } = useProfileStore.getState();
+
     if (!isAuthenticated) {
       return 'Login';
+    }
+
+    // Check if profile needs to be selected (multiple profiles or no active profile)
+    if (profiles.length > 1 && !activeProfileId) {
+      logger.info('Mobile: Multiple profiles, showing profile switcher');
+      return 'ProfileSwitcher';
     }
 
     // Check if cache is valid (exists, not stale, has data)
@@ -71,6 +83,19 @@ const MobileNavigator: React.FC = () => {
           presentation: 'fullScreenModal',
           animation: 'slide_from_bottom',
         }}
+      />
+      {/* Profile Screens (Parental Controls) */}
+      <Stack.Screen
+        name="ProfileSwitcher"
+        component={ProfileSwitcherScreen}
+      />
+      <Stack.Screen
+        name="ProfileEditor"
+        component={ProfileEditorScreen}
+      />
+      <Stack.Screen
+        name="Downloads"
+        component={DownloadsScreen}
       />
     </Stack.Navigator>
   );

@@ -65,9 +65,10 @@ const TVAnnouncementsScreen: React.FC = () => {
             } else {
                 setAnnouncements([]);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load announcements';
             logger.error('TV: Failed to load announcements', err);
-            setError(err?.message || 'Failed to load announcements');
+            setError(errorMessage);
             setAnnouncements([]);
         } finally {
             setIsLoading(false);

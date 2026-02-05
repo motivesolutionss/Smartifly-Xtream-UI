@@ -13,6 +13,7 @@ import { colors, spacing } from '../../theme';
 import useStore from '../../store';
 import { logger } from '../../config';
 import { useTrackProgress } from '../../store/watchHistoryStore';
+import useDownloadStore from '../../store/downloadStore';
 
 type ParamList = {
     Player: {
@@ -30,6 +31,7 @@ const PlayerScreen: React.FC = () => {
     const resumePosition = route.params.resumePosition ?? 0;
     const { getXtreamAPI } = useStore();
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
+    const { downloads } = useDownloadStore();
     const api = getXtreamAPI();
 
     // Refs and state
@@ -72,11 +74,14 @@ const PlayerScreen: React.FC = () => {
         return null;
     }
 
-    // Get stream URL based on type
     let streamUrl = '';
-    if (type === 'live') {
+    const download = downloads.find(d => d.id === String(item.stream_id || item.id));
+
+    if (download && download.status === 'completed' && download.localPath) {
+        streamUrl = `file://${download.localPath}`;
+        logger.info('Playing from local download', { id: download.id, path: download.localPath });
+    } else if (type === 'live') {
         streamUrl = api.getLiveStreamUrl(item.stream_id, 'm3u8');
-        // FIX #3: Log metadata only, not URLs containing credentials
         logger.debug('Live stream prepared', { streamId: item.stream_id, hasUrl: !!streamUrl });
     } else if (type === 'movie') {
         const extension = item.container_extension || 'mp4';
@@ -84,7 +89,6 @@ const PlayerScreen: React.FC = () => {
         logger.debug('Movie stream prepared', { streamId: item.stream_id, extension, hasUrl: !!streamUrl });
     } else if (episodeUrl) {
         streamUrl = episodeUrl;
-        // FIX #3: Never log URLs containing username/password
         logger.debug('Series episode selected', { hasEpisodeUrl: !!episodeUrl });
     }
 
@@ -161,16 +165,16 @@ const PlayerScreen: React.FC = () => {
                         hasAudio: data.audioTracks?.length > 0,
                     });
                     durationRef.current = data.duration || 0;
-                if (type === 'live' && !hasTrackedLiveRef.current) {
-                    trackLive(item.stream_id || item.id, item.name, item.stream_icon || item.cover, item);
-                    hasTrackedLiveRef.current = true;
-                }
-                if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
-                    videoRef.current.seek(resumePosition);
-                    setHasSeeked(true);
-                }
-                setIsBuffering(false);
-            }}
+                    if (type === 'live' && !hasTrackedLiveRef.current) {
+                        trackLive(item.stream_id || item.id, item.name, item.stream_icon || item.cover, item);
+                        hasTrackedLiveRef.current = true;
+                    }
+                    if (type !== 'live' && resumePosition > 0 && !hasSeeked && videoRef.current) {
+                        videoRef.current.seek(resumePosition);
+                        setHasSeeked(true);
+                    }
+                    setIsBuffering(false);
+                }}
                 onProgress={({ currentTime }) => handleProgress(currentTime)}
                 onBuffer={({ isBuffering: buffering }) => {
                     setIsBuffering(buffering);

@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { StyleSheet } from 'react-native';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
 // Theme
@@ -22,6 +22,10 @@ import TVPlayerScreen from '../screens/tv/player/TVPlayerScreen';
 // Re-importing to fix Metro resolution
 import TVMovieDetailScreen from '../screens/tv/details/TVMovieDetailScreenV2';
 import TVSeriesDetailScreen from '../screens/tv/details/TVSeriesDetailScreen';
+import TVAccountSwitcherScreen from '../screens/tv/account/TVAccountSwitcherScreen';
+// Profile Screens (Parental Controls)
+import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/tv/profiles';
+import { useProfileStore } from '../store/profileStore';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -30,10 +34,22 @@ const TVNavigator: React.FC = () => {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
 
-  // Determine initial route with SMART CACHE VALIDATION
+  // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
   const getInitialRoute = (): keyof RootStackParamList => {
+    const savedAccounts = useStore.getState().savedAccounts;
+    const { profiles, activeProfileId } = useProfileStore.getState();
+
     if (!isAuthenticated) {
+      if (savedAccounts.length > 1) {
+        return 'TVAccountSwitcher';
+      }
       return 'Login';
+    }
+
+    // Check if profile needs to be selected (multiple profiles or no active profile)
+    if (profiles.length > 1 && !activeProfileId) {
+      logger.info('TV: Multiple profiles, showing profile switcher');
+      return 'ProfileSwitcher';
     }
 
     // Check if cache is valid (exists, not stale, has data)
@@ -60,11 +76,16 @@ const TVNavigator: React.FC = () => {
       }}
     >
       <Stack.Screen name="Login" component={TVLoginScreen} />
+      <Stack.Screen name="TVAccountSwitcher" component={TVAccountSwitcherScreen} />
       <Stack.Screen name="Loading" component={TVLoadingScreen} />
       <Stack.Screen name="TVHome" component={TVHomeScreen} />
       <Stack.Screen name="FullscreenPlayer" component={TVPlayerScreen} />
       <Stack.Screen name="TVMovieDetail" component={TVMovieDetailScreen} />
       <Stack.Screen name="TVSeriesDetail" component={TVSeriesDetailScreen} />
+      {/* Profile Screens (Parental Controls) */}
+      <Stack.Screen name="ProfileSwitcher" component={TVProfileSwitcher} />
+      <Stack.Screen name="ProfileEditor" component={TVProfileEditor} />
+      <Stack.Screen name="PinEntry" component={TVPinEntry} />
     </Stack.Navigator>
   );
 };

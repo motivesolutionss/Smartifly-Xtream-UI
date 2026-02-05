@@ -5,7 +5,7 @@
  * Supports Android emulator, iOS simulator, and real device scenarios.
  */
 
-import { Platform } from 'react-native';
+// import { Platform } from 'react-native';
 
 // =============================================================================
 // ENVIRONMENT DETECTION
@@ -17,11 +17,7 @@ import { Platform } from 'react-native';
  */
 const isDevelopment = __DEV__;
 
-/**
- * Determine if running on Android emulator
- * Note: This is a heuristic - may not be 100% reliable
- */
-const isAndroidEmulator = Platform.OS === 'android' && __DEV__;
+
 
 // =============================================================================
 // BACKEND URLS

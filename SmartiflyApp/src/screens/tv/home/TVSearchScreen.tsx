@@ -14,31 +14,35 @@ import TVSearchKeypad from './components/TVSearchKeypad';
 import useStore from '../../../store';
 import TVContentCard from './components/TVContentCard';
 import { useNavigation } from '@react-navigation/native';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface TVSearchScreenProps {
-    navigation: any; // Provided by parent or useNavigation
-}
-
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
     XtreamLiveStream,
     XtreamMovie,
     XtreamSeries,
 } from '../../../api/xtream';
+import { TVSearchScreenProps, RootStackParamList, MovieItem, SeriesItem, LiveStreamItem } from '../../../navigation/types';
+import { useContentFilter } from '../../../store/profileStore';
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+interface SearchResults {
+    live: XtreamLiveStream[];
+    movies: XtreamMovie[];
+    series: XtreamSeries[];
+}
 
 // =============================================================================
 // TV SEARCH SCREEN
 // =============================================================================
 
 const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
-    const navigation = useNavigation();
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const [query, setQuery] = useState('');
     // State for text suggestions
-    const [textSuggestions, setTextSuggestions] = useState<string[]>([]);
-    const [results, setResults] = useState<{ live: any[], movies: any[], series: any[] }>({ live: [], movies: [], series: [] });
+    const [textSuggestions] = useState<string[]>([]);
+    const [results, setResults] = useState<SearchResults>({ live: [], movies: [], series: [] });
     // State for suggested content
     const [suggestedContent, setSuggestedContent] = useState<{
         movies: XtreamMovie[];
@@ -53,29 +57,51 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
     const glowAnim = React.useRef(new Animated.Value(0.6)).current; // Constant subtle glow
 
     // Store access
-    const { searchContent, isLoading: isStoreLoading } = useStore();
+    const { searchContent, content } = useStore();
+    const { filterContent } = useContentFilter();
+
+    // =========================================================================
+    // ACTIONS
+    // =========================================================================
+
+    const performSearch = useCallback((searchText: string) => {
+        setIsSearching(true);
+        try {
+            const result = searchContent(searchText);
+            setResults({
+                live: result.live,
+                movies: filterContent(result.movies),
+                series: filterContent(result.series),
+            });
+        } catch (e) {
+            console.error("Search failed", e);
+        } finally {
+            setIsSearching(false);
+        }
+    }, [searchContent, filterContent]);
 
     // =========================================================================
     // LISTENERS
     // =========================================================================
 
-    // Load suggested content on mount
+    // Load suggested content on mount or when profile changes
     useEffect(() => {
-        const { content } = useStore.getState();
-        const getRandomItems = (items: any[], count: number) => {
+        const getRandomItems = <T extends XtreamLiveStream | XtreamMovie | XtreamSeries>(items: T[], count: number): T[] => {
             if (!items || items.length === 0) return [];
-            const shuffled = [...items].sort(() => 0.5 - Math.random());
+            // Slice first to avoid massive shuffles if list is big, but then shuffle the slice
+            const pool = items.slice(0, 100);
+            const shuffled = [...pool].sort(() => 0.5 - Math.random());
             return shuffled.slice(0, count);
         };
 
         if (content.movies.loaded || content.series.loaded || content.live.loaded) {
             setSuggestedContent({
-                movies: getRandomItems(content.movies.items, 10),
-                series: getRandomItems(content.series.items, 10),
+                movies: filterContent(getRandomItems(content.movies.items, 30)).slice(0, 10),
+                series: filterContent(getRandomItems(content.series.items, 30)).slice(0, 10),
                 live: getRandomItems(content.live.items, 10),
             });
         }
-    }, []);
+    }, [filterContent, content.movies.items, content.movies.loaded, content.series.items, content.series.loaded, content.live.items, content.live.loaded]);
 
     // Debounced search effect
     useEffect(() => {
@@ -88,7 +114,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
         }, 500); // 500ms debounce
 
         return () => clearTimeout(timeoutId);
-    }, [query]);
+    }, [query, performSearch]);
 
     // Pulse animation for the search bar to show it's active
     useEffect(() => {
@@ -106,25 +132,9 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                 }),
             ])
         ).start();
-    }, []);
+    }, [glowAnim]);
 
-    // =========================================================================
-    // ACTIONS
-    // =========================================================================
 
-    const performSearch = (searchText: string) => {
-        setIsSearching(true);
-        // We accept the sync result immediately, or if it's async we await it.
-        // Based on store definition, searchContent returns object synchronously from cache.
-        try {
-            const result = searchContent(searchText);
-            setResults(result);
-        } catch (e) {
-            console.error("Search failed", e);
-        } finally {
-            setIsSearching(false);
-        }
-    };
 
     const handleKeyPress = useCallback((key: string) => {
         setQuery(prev => prev + key);
@@ -142,13 +152,16 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
         setQuery('');
     }, []);
 
-    const handleContentPress = (item: any, type: 'live' | 'movie' | 'series') => {
+    const handleContentPress = (item: XtreamLiveStream | XtreamMovie | XtreamSeries, type: 'live' | 'movie' | 'series') => {
         if (type === 'live') {
-            navigation.navigate('FullscreenPlayer', { type: 'live', item });
+            // Cast to LiveStreamItem - XtreamLiveStream has compatible properties
+            navigation.navigate('FullscreenPlayer', { type: 'live', item: item as unknown as LiveStreamItem });
         } else if (type === 'movie') {
-            navigation.navigate('TVMovieDetail', { movie: item });
+            // Cast to MovieItem - XtreamMovie has compatible properties
+            navigation.navigate('TVMovieDetail', { movie: item as unknown as MovieItem });
         } else if (type === 'series') {
-            navigation.navigate('TVSeriesDetail', { series: item });
+            // Cast to SeriesItem - XtreamSeries has compatible properties
+            navigation.navigate('TVSeriesDetail', { series: item as unknown as SeriesItem });
         }
     };
 
@@ -156,7 +169,24 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
     // RENDER HELPERS
     // =========================================================================
 
-    const renderResultSection = (title: string, data: any[], type: 'live' | 'movie' | 'series') => {
+    // Helper function to safely extract IDs and properties from different content types
+    const getItemId = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string | number => {
+        if ('stream_id' in item) return item.stream_id;
+        if ('series_id' in item) return item.series_id;
+        return 0;
+    };
+
+    const getItemName = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
+        return item.name;
+    };
+
+    const getItemImage = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
+        if ('stream_icon' in item && item.stream_icon) return item.stream_icon;
+        if ('cover' in item && item.cover) return item.cover;
+        return '';
+    };
+
+    const renderResultSection = (title: string, data: (XtreamLiveStream | XtreamMovie | XtreamSeries)[], type: 'live' | 'movie' | 'series') => {
         if (!data || data.length === 0) return null;
 
         return (
@@ -164,14 +194,13 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                 <Text style={styles.sectionTitle}>{title} ({data.length})</Text>
                 <View style={styles.cardsGrid}>
                     {data.slice(0, 12).map((item) => ( // Limit to 12 items per section for perf
-                        <View key={item.stream_id || item.series_id || item.id} style={styles.cardWrapper}>
+                        <View key={getItemId(item)} style={styles.cardWrapper}>
                             <TVContentCard
                                 item={{
-                                    ...item,
-                                    id: item.stream_id || item.series_id || item.id, // Ensure a unique ID
-                                    title: item.name || item.title,
-                                    image: item.stream_icon || item.cover,
-                                    type: type
+                                    id: getItemId(item),
+                                    title: getItemName(item),
+                                    image: getItemImage(item),
+                                    type: type,
                                 }}
                                 onPress={() => handleContentPress(item, type)}
                                 width={scale(160)} // Slightly larger cards to fill space

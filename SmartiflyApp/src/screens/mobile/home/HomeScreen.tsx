@@ -29,6 +29,7 @@ import ContentRow from './components/ContentRow';
 import useStore from '../../../store';
 import useFilterStore from '../../../store/filterStore';
 import { useWatchHistoryStore, WatchProgress } from '../../../store/watchHistoryStore';
+import { useContentFilter } from '../../../store/profileStore';
 
 // Theme and Config
 import { colors, spacing } from '../../../theme';
@@ -53,10 +54,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const content = useStore((state) => state.content);
     const userInfo = useStore((state) => state.userInfo);
     const forceRefresh = useStore((state) => state.forceRefresh);
-    const isPrefetching = useStore((state) => state.isPrefetching);
     const getContentStats = useStore((state) => state.getContentStats);
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const getContinueWatching = useWatchHistoryStore((state) => state.getContinueWatching);
+
+    // Profile Store
+    const { filterContent } = useContentFilter();
 
     // Local state
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -103,7 +106,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             logger.info('Auto-resetting invalid category', { type: selectedType, invalidId: currentCatId });
             setCategory(selectedType, null, null);
         }
-    }, [selectedType, selectedCategory, content.live.loaded, content.movies.loaded, content.series.loaded]);
+    }, [
+        selectedType,
+        selectedCategory,
+        content.live.loaded,
+        content.movies.loaded,
+        content.series.loaded,
+        content.live.categories,
+        content.movies.categories,
+        content.series.categories,
+        setCategory
+    ]);
 
     // =============================================================================
     // CONTENT SECTIONS (from cache - INSTANT!)
@@ -114,8 +127,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         // Check if domains are loaded
         if (!content.movies.loaded && !content.series.loaded) return null;
 
+        const filteredMovies = filterContent(content.movies.items);
+        const filteredSeries = filterContent(content.series.items);
+
         const allContent = [
-            ...(content.movies.loaded ? content.movies.items.slice(0, 10).map(m => ({
+            ...(content.movies.loaded ? filteredMovies.slice(0, 10).map(m => ({
                 id: `movie-${m.stream_id}`,
                 type: 'movie' as const,
                 name: m.name,
@@ -123,8 +139,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rating: m.rating_5based,
                 plot: m.plot,
                 genre: m.genre,
+                data: m,
             })) : []),
-            ...(content.series.loaded ? content.series.items.slice(0, 10).map(s => ({
+            ...(content.series.loaded ? filteredSeries.slice(0, 10).map(s => ({
                 id: `series-${s.series_id}`,
                 type: 'series' as const,
                 name: s.name,
@@ -132,19 +149,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rating: s.rating_5based,
                 plot: s.plot,
                 genre: s.genre,
+                data: s,
             })) : []),
         ];
 
         return allContent.length > 0
             ? allContent[Math.floor(Math.random() * allContent.length)]
             : null;
-    }, [content.movies.loaded, content.movies.items, content.series.loaded, content.series.items]);
+    }, [content.movies.loaded, content.movies.items, content.series.loaded, content.series.items, filterContent]);
 
     // Recently added movies
     const recentMovies = useMemo(() => {
         if (!content.movies.loaded) return [];
 
-        let streams = content.movies.items;
+        let streams = filterContent(content.movies.items);
 
         // Filter by category if one is selected and we're in movies mode
         if (selectedType === 'movies' && selectedCategory) {
@@ -152,7 +170,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }
 
         return [...streams]
-            .sort((a, b) => parseInt(b.added || '0') - parseInt(a.added || '0'))
+            .sort((a, b) => parseInt(b.added || '0', 10) - parseInt(a.added || '0', 10))
             .slice(0, 15)
             .map(m => ({
                 id: String(m.stream_id),
@@ -162,13 +180,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rating: m.rating_5based,
                 data: m,
             }));
-    }, [content.movies.items, content.movies.loaded, selectedType, selectedCategory]);
+    }, [content.movies.items, content.movies.loaded, selectedType, selectedCategory, filterContent]);
 
     // Recently added series
     const recentSeries = useMemo(() => {
         if (!content.series.loaded) return [];
 
-        let streams = content.series.items;
+        let streams = filterContent(content.series.items);
 
         // Filter by category if one is selected and we're in series mode
         if (selectedType === 'series' && selectedCategory) {
@@ -186,13 +204,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rating: s.rating_5based,
                 data: s,
             }));
-    }, [content.series.items, content.series.loaded, selectedType, selectedCategory]);
+    }, [content.series.items, content.series.loaded, selectedType, selectedCategory, filterContent]);
 
     // Top rated movies
     const topRatedMovies = useMemo(() => {
         if (!content.movies.loaded) return [];
 
-        let streams = content.movies.items;
+        let streams = filterContent(content.movies.items);
 
         // Filter by category if one is selected and we're in movies mode
         if (selectedType === 'movies' && selectedCategory) {
@@ -210,7 +228,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rating: m.rating_5based,
                 data: m,
             }));
-    }, [content.movies.items, content.movies.loaded, selectedType, selectedCategory]);
+    }, [content.movies.items, content.movies.loaded, selectedType, selectedCategory, filterContent]);
 
     // Popular live channels
     const popularChannels = useMemo(() => {
@@ -241,6 +259,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         if (!content.movies.loaded || !content.movies.categories) return [];
 
         const categoriesWithContent: { id: string; name: string; items: any[] }[] = [];
+        const filteredAllMovies = filterContent(content.movies.items);
 
         // Iterate through CATEGORIES (not movies) - this ensures all categories are shown
         for (const category of content.movies.categories) {
@@ -251,7 +270,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             if (!catName) continue;
 
             // Get movies in this category (limit to 15)
-            const categoryMovies = content.movies.items
+            const categoryMovies = filteredAllMovies
                 .filter((m: any) => String(m.category_id) === catId)
                 .slice(0, 15)
                 .map((m: any) => ({
@@ -274,13 +293,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }
 
         return categoriesWithContent;
-    }, [content.movies.items, content.movies.categories, content.movies.loaded]);
+    }, [content.movies.items, content.movies.categories, content.movies.loaded, filterContent]);
 
     // Series grouped by category - iterate through ALL categories
     const seriesCategories = useMemo(() => {
         if (!content.series.loaded || !content.series.categories) return [];
 
         const categoriesWithContent: { id: string; name: string; items: any[] }[] = [];
+        const filteredAllSeries = filterContent(content.series.items);
 
         // Iterate through CATEGORIES (not series) - ensures all categories are shown
         for (const category of content.series.categories) {
@@ -291,7 +311,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             if (!catName) continue;
 
             // Get series in this category (limit to 15)
-            const categorySeries = content.series.items
+            const categorySeries = filteredAllSeries
                 .filter((s: any) => String(s.category_id) === catId)
                 .slice(0, 15)
                 .map((s: any) => ({
@@ -314,7 +334,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }
 
         return categoriesWithContent;
-    }, [content.series.items, content.series.categories, content.series.loaded]);
+    }, [content.series.items, content.series.categories, content.series.loaded, filterContent]);
 
     // Live channels grouped by category - iterate through ALL categories
     const liveCategories = useMemo(() => {
@@ -486,6 +506,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     { paddingBottom: insets.bottom + 100 }
                 ]}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
+                    />
+                }
             >
                 {/* Hero Banner */}
                 {featuredContent && (
@@ -503,7 +531,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     <ContentRow
                         title="Continue Watching"
                         type="continue"
-                        items={continueWatching.map((progress) => ({
+                        items={continueWatching.map((progress: WatchProgress) => ({
                             id: progress.id,
                             name: progress.title,
                             image: progress.thumbnail,
@@ -511,7 +539,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                             progress: progress.progress,
                         }))}
                         onItemPress={(item) => {
-                            const entry = continueWatching.find((progress) => progress.id === item.id);
+                            const entry = continueWatching.find((progress: WatchProgress) => progress.id === item.id);
                             if (entry) handleContinuePress(entry);
                         }}
                         showSeeAll={false}

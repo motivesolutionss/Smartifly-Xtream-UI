@@ -45,13 +45,22 @@ export interface Portal {
 
 export interface UserInfo {
     username: string;
-    password: string; // Only kept in memory, never persisted
+    password: string; // Only kept in memory for active session, but persisted in SavedAccounts
     status: string;
-    expDate: string | null; // FIX: Xtream can return null for exp_date
+    expDate: string | null;
     isTrial: boolean;
     activeCons: number;
     maxConnections: number;
     createdAt: string;
+}
+
+export interface SavedAccount {
+    id: string; // Unique ID (e.g., portalId_username)
+    username: string;
+    password: string;
+    portal: Portal;
+    userInfo: UserInfo;
+    lastActive: number;
 }
 
 // =============================================================================
@@ -112,6 +121,9 @@ interface StoreState {
     portals: Portal[];
     selectedPortal: Portal | null;
 
+    // Accounts (Multi-Account Switcher)
+    savedAccounts: SavedAccount[];
+
     // Credentials (for API calls)
     credentials: {
         serverUrl: string;
@@ -152,6 +164,8 @@ interface StoreActions {
     // Auth Actions
     login: (username: string, password: string) => Promise<boolean>;
     logout: () => void;
+    switchAccount: (accountId: string) => Promise<boolean>;
+    removeAccount: (accountId: string) => void;
 
     // Content Actions
     prefetchAllContent: () => Promise<boolean>;
@@ -204,6 +218,7 @@ const initialState: StoreState = {
     serverInfo: null,
     portals: [],
     selectedPortal: null,
+    savedAccounts: [],
     credentials: null,
     content: initialContent, // Now uses structured content, never null
     isLoading: false,
@@ -391,8 +406,8 @@ const useStore = create<Store>()(
                             ? String(authResponse.user_info.exp_date)
                             : null,
                         isTrial: authResponse.user_info.is_trial === '1',
-                        activeCons: parseInt(authResponse.user_info.active_cons) || 0,
-                        maxConnections: parseInt(authResponse.user_info.max_connections) || 1,
+                        activeCons: parseInt(authResponse.user_info.active_cons, 10) || 0,
+                        maxConnections: parseInt(authResponse.user_info.max_connections, 10) || 1,
                         createdAt: authResponse.user_info.created_at,
                     };
 
@@ -411,19 +426,36 @@ const useStore = create<Store>()(
                         },
                         // Reset content to initial state (not null)
                         content: initialContent,
-                        isLoading: false,
-                        error: null,
                         retryCount: 0,
                     });
 
+                    // Update Saved Accounts list
+                    const accountId = `${selectedPortal.id}_${cleanUsername}`;
+                    const existingAccounts = get().savedAccounts;
+                    const otherAccounts = existingAccounts.filter(a => a.id !== accountId);
+
+                    const newAccount: SavedAccount = {
+                        id: accountId,
+                        username: cleanUsername,
+                        password,
+                        portal: selectedPortal,
+                        userInfo,
+                        lastActive: Date.now(),
+                    };
+
+                    set({
+                        savedAccounts: [newAccount, ...otherAccounts].slice(0, 10), // Limit to 10 accounts
+                    });
+
                     return true;
-                } catch (error: any) {
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Connection failed. Please check server and credentials.';
                     logger.error('Login: Exception caught', error);
                     set({
                         isLoading: false,
                         error: createError(
                             'LOGIN_ERROR',
-                            error.message || 'Connection failed. Please check server and credentials.',
+                            errorMessage,
                             'network',
                             true,
                             'Check your internet connection and try again'
@@ -441,7 +473,32 @@ const useStore = create<Store>()(
                 set({
                     ...initialState,
                     portals: get().portals, // Keep portals
+                    savedAccounts: get().savedAccounts, // Keep saved accounts
                 });
+            },
+
+            switchAccount: async (accountId: string) => {
+                const { savedAccounts, login } = get();
+                const account = savedAccounts.find(a => a.id === accountId);
+
+                if (!account) {
+                    logger.error('switchAccount: Account not found', { accountId });
+                    return false;
+                }
+
+                logger.info('switchAccount: Switching to', { username: account.username, portal: account.portal.name });
+
+                // Set the portal first so login() knows which one to use
+                set({ selectedPortal: account.portal });
+
+                // Perform fresh login to validate credentials and get fresh UserInfo
+                return login(account.username, account.password);
+            },
+
+            removeAccount: (accountId: string) => {
+                set(state => ({
+                    savedAccounts: state.savedAccounts.filter(a => a.id !== accountId)
+                }));
             },
 
             // =================================================================
@@ -449,7 +506,7 @@ const useStore = create<Store>()(
             // =================================================================
 
             prefetchAllContent: async () => {
-                const { credentials, getXtreamAPI, retryCount, maxRetries, createError } = get();
+                const { credentials, getXtreamAPI, maxRetries, createError } = get();
 
                 // Validate credentials exist
                 if (!credentials) {
@@ -630,7 +687,8 @@ const useStore = create<Store>()(
                     logger.info(`Prefetch complete: ${safeLiveStreams.length} channels, ${safeVodStreams.length} movies, ${safeSeriesList.length} series`);
                     return true;
 
-                } catch (error: any) {
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Failed to load content after multiple retries';
                     logger.error('Prefetch error', error);
 
                     const currentRetry = get().retryCount;
@@ -660,7 +718,7 @@ const useStore = create<Store>()(
                             isRetrying: false,
                             error: createError(
                                 'PREFETCH_FAILED',
-                                error.message || 'Failed to load content after multiple retries',
+                                errorMessage,
                                 'network',
                                 true,
                                 'Check your internet connection and try again'
@@ -967,6 +1025,8 @@ const useStore = create<Store>()(
                 credentials: state.credentials,
                 // Persist portals
                 portals: state.portals,
+                // Persist saved accounts
+                savedAccounts: state.savedAccounts,
                 // NOTE: contentReady is NOT persisted - computed dynamically via getContentReady()
             }),
         }

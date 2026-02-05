@@ -81,7 +81,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
     style,
 }, ref) => {
     const inputRef = useRef<TextInput>(null);
-    const [isFocused, setIsFocused] = useState(false);
     const [localValue, setLocalValue] = useState(value);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -131,7 +130,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
 
     // Handle focus
     const handleFocus = () => {
-        setIsFocused(true);
         onFocus?.();
 
         Animated.parallel([
@@ -150,7 +148,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
 
     // Handle blur
     const handleBlur = () => {
-        setIsFocused(false);
         onBlur?.();
 
         Animated.timing(focusAnim, {

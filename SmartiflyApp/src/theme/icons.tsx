@@ -93,6 +93,13 @@ export const iconPaths: Record<string, string> = {
     arrowUp: "M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z",
     arrowDown: "M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z",
     layers: "M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z",
+
+    // Download icons
+    download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+    downloadSimple: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+    arrowCounterClockwise: "M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z",
+    trash: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    star: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
 };
 
 export type IconName = keyof typeof iconPaths | string;
@@ -120,10 +127,9 @@ export const Icon: React.FC<IconProps> = ({
     name,
     size = iconSizes.default,
     color = '#FFFFFF',
-    weight = 'regular',
     style,
 }) => {
-    const d = iconPaths[name as string] || iconPaths['info'];
+    const d = iconPaths[name as string] || iconPaths.info;
 
     return (
         <Svg

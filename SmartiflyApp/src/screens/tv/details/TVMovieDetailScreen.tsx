@@ -16,28 +16,22 @@ import {
     StyleSheet,
     Image,
     Pressable,
-    ScrollView,
-    BackHandler,
     Animated,
-    Dimensions,
+    Modal,
 } from 'react-native';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import useStore from '../../../store';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
 import useTVBackHandler from '../../../utils/useTVBackHandler';
 import { logger } from '../../../config';
+import TVDownloadButton from '../../../components/tv/TVDownloadButton';
 
-const { width, height } = Dimensions.get('window');
+
 
 // Types
-interface TVMovieDetailScreenProps {
-    route: {
-        params: {
-            movie: any; // Raw movie item
-        };
-    };
-}
+
 
 const TVMovieDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
@@ -47,11 +41,19 @@ const TVMovieDetailScreen: React.FC = () => {
     // Store & State
     const { getXtreamAPI } = useStore();
     const [info, setInfo] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
 
     // UI State
-    const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | 'back' | null>('play');
+    const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | 'back' | 'download' | null>('play');
     const [isTrailerModalOpen, setIsTrailerModalOpen] = useState(false);
+    const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
+
+    // Helper to extract YouTube ID
+    const getYoutubeId = (url: string) => {
+        if (!url) return null;
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : url;
+    };
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -76,7 +78,7 @@ const TVMovieDetailScreen: React.FC = () => {
             } catch (err) {
                 logger.error('TVMovieDetail: Failed to fetch info', err);
             } finally {
-                if (isMounted) setLoading(false);
+                // Loading handling if needed
             }
         };
 
@@ -98,7 +100,7 @@ const TVMovieDetailScreen: React.FC = () => {
         ]).start();
 
         return () => { isMounted = false; };
-    }, [movie.stream_id, getXtreamAPI]);
+    }, [movie.stream_id, getXtreamAPI, fadeAnim, contentSlideAnim]);
 
     // ==========================================================================
     // BACK HANDLERS
@@ -146,6 +148,7 @@ const TVMovieDetailScreen: React.FC = () => {
     const genre = movieData.genre;
     const duration = movieData.duration;
     const year = movieData.releasedate || movie.added;
+    const youtube_trailer = movieData.youtube_trailer;
 
     // ==========================================================================
     // RENDER HELPERS
@@ -191,7 +194,10 @@ const TVMovieDetailScreen: React.FC = () => {
     };
 
     return (
-        <View style={styles.container}>
+        <View
+            style={styles.container}
+            importantForAccessibility={isTrailerModalOpen ? 'no-hide-descendants' : 'auto'}
+        >
             {/* 1. Full Screen Backdrop */}
             <Image
                 source={{ uri: backdrop }}
@@ -225,101 +231,150 @@ const TVMovieDetailScreen: React.FC = () => {
                 styles.contentContainer,
                 { opacity: fadeAnim, transform: [{ translateY: contentSlideAnim }] }
             ]}>
+                {/* Left Column: Poster */}
+                <View style={styles.leftColumn}>
+                    <Image
+                        source={{ uri: poster }}
+                        style={styles.poster}
+                        resizeMode="cover"
+                    />
+                </View>
 
-                {/* Meta Tags Row */}
-                <View style={styles.metaTagsRow}>
-                    {rating && (
-                        <View style={styles.ratingBadge}>
-                            <Icon name="star" size={scale(14)} color="#000" style={{ marginRight: scale(4) }} />
-                            <Text style={styles.ratingText}>{rating}</Text>
+                {/* Right Column: Info */}
+                <View style={styles.rightColumn}>
+                    {/* Meta Tags Row */}
+                    <View style={styles.metaTagsRow}>
+                        {rating && (
+                            <View style={styles.ratingBadge}>
+                                <Icon name="star" size={scale(14)} color="#000" style={{ marginRight: scale(4) }} />
+                                <Text style={styles.ratingText}>{rating}</Text>
+                            </View>
+                        )}
+                        {year && <Text style={styles.metaText}>{year}</Text>}
+                        {duration && (
+                            <>
+                                <View style={styles.metaDivider} />
+                                <Text style={styles.metaText}>{duration}</Text>
+                            </>
+                        )}
+                        {genre && (
+                            <>
+                                <View style={styles.metaDivider} />
+                                <Text style={styles.metaText}>{genre}</Text>
+                            </>
+                        )}
+                        <View style={styles.hdBadge}>
+                            <Text style={styles.hdText}>HD</Text>
                         </View>
-                    )}
-                    {year && <Text style={styles.metaText}>{year}</Text>}
-                    {duration && (
-                        <>
-                            <View style={styles.metaDivider} />
-                            <Text style={styles.metaText}>{duration}</Text>
-                        </>
-                    )}
-                    {genre && (
-                        <>
-                            <View style={styles.metaDivider} />
-                            <Text style={styles.metaText}>{genre}</Text>
-                        </>
-                    )}
-                    <View style={styles.hdBadge}>
-                        <Text style={styles.hdText}>HD</Text>
                     </View>
-                </View>
 
-                {/* Main Title */}
-                <Text style={styles.title} numberOfLines={2}>
-                    {name}
-                </Text>
+                    {/* Main Title */}
+                    <Text style={styles.title} numberOfLines={2}>
+                        {name}
+                    </Text>
 
-                {/* Plot / Description */}
-                <Text style={styles.plot} numberOfLines={4}>
-                    {plot}
-                </Text>
+                    {/* Plot / Description */}
+                    <Text style={styles.plot} numberOfLines={4}>
+                        {plot}
+                    </Text>
 
-                {/* Credits */}
-                <View style={styles.creditsRow}>
-                    {director && (
-                        <Text style={styles.creditText}>
-                            <Text style={{ opacity: 0.6 }}>Directed by </Text>
-                            {director}
-                        </Text>
-                    )}
-                    {cast && (
-                        <Text style={[styles.creditText, { marginLeft: scale(30) }]} numberOfLines={1}>
-                            <Text style={{ opacity: 0.6 }}>Starring </Text>
-                            {cast}
-                        </Text>
-                    )}
-                </View>
+                    {/* Credits */}
+                    <View style={styles.creditsRow}>
+                        {director && (
+                            <View style={styles.creditItem}>
+                                <Text style={styles.creditLabel}>Directed by </Text>
+                                <Text style={styles.creditValue}>{director}</Text>
+                            </View>
+                        )}
+                        {cast && (
+                            <View style={[styles.creditItem, { marginLeft: scale(30) }]}>
+                                <Text style={styles.creditLabel}>Starring </Text>
+                                <Text style={styles.creditValue} numberOfLines={1}>{cast}</Text>
+                            </View>
+                        )}
+                    </View>
 
-                {/* Action Buttons */}
-                <View style={styles.actionsContainer}>
-                    {renderButton(
-                        'play',
-                        'Watch Now',
-                        'play-circle',
-                        handlePlay,
-                        true
-                    )}
-                    {renderButton(
-                        'trailer',
-                        'Trailer',
-                        'film',
-                        () => setIsTrailerModalOpen(true)
-                    )}
-                    {renderButton(
-                        'back',
-                        'Go Back',
-                        'arrow-left',
-                        () => navigation.goBack()
-                    )}
+                    {/* Action Buttons */}
+                    <View style={styles.actionsContainer}>
+                        {renderButton(
+                            'play',
+                            'Watch Now',
+                            'playCircle',
+                            handlePlay,
+                            true
+                        )}
+                        <TVDownloadButton
+                            item={{
+                                id: String(movie.stream_id),
+                                name: movie.name || name,
+                                stream_icon: movie.stream_icon || poster,
+                                container_extension: movie.container_extension || info?.movie_data?.container_extension,
+                                type: 'movie',
+                            }}
+                            onFocus={() => setFocusedButton('download')}
+                            onBlur={() => setFocusedButton(null)}
+                            isFocused={focusedButton === 'download'}
+                        />
+                        {youtube_trailer && renderButton(
+                            'trailer',
+                            'Trailer',
+                            'filmStrip',
+                            () => setIsTrailerModalOpen(true)
+                        )}
+                        {renderButton(
+                            'back',
+                            'Go Back',
+                            'arrow-left',
+                            () => navigation.goBack()
+                        )}
+                    </View>
                 </View>
 
             </Animated.View>
 
             {/* 4. Modal (Simple Overlay) */}
-            {isTrailerModalOpen && (
+            {/* 4. YouTube Trailer Modal */}
+            <Modal
+                visible={isTrailerModalOpen && !!youtube_trailer}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsTrailerModalOpen(false)}
+                onShow={() => setIsTrailerPlaying(false)} // Reset playing state on show
+            >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <Icon name="film" size={scale(60)} color={colors.primary} style={{ marginBottom: scale(20) }} />
-                        <Text style={styles.modalTitle}>Trailer Unavailable</Text>
-                        <Text style={styles.modalSubtitle}>Preview functionality is coming soon.</Text>
-                        <Pressable
-                            onPress={() => setIsTrailerModalOpen(false)}
-                            style={styles.modalButton}
-                            hasTVPreferredFocus
-                        >
-                            <Text style={styles.modalButtonText}>Close</Text>
-                        </Pressable>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>{name} - Trailer</Text>
+                            <Pressable
+                                onPress={() => setIsTrailerModalOpen(false)}
+                                style={({ pressed }) => [
+                                    styles.closeButton,
+                                    pressed && { transform: [{ scale: 0.95 }] }
+                                ]}
+                                hasTVPreferredFocus
+                            >
+                                <Icon name="close" size={scale(24)} color="#FFF" />
+                            </Pressable>
+                        </View>
+                        <View style={styles.youtubeContainer}>
+                            <YoutubePlayer
+                                height={scale(450)}
+                                width={scale(800)}
+                                play={isTrailerPlaying}
+                                videoId={getYoutubeId(youtube_trailer)}
+                                onReady={() => setIsTrailerPlaying(true)}
+                                initialPlayerParams={{
+                                    autoplay: 1,
+                                    modestbranding: 1,
+                                    rel: 0,
+                                    controls: 1,
+                                }}
+                                onError={(e: any) => logger.error('Youtube Player Error', e)}
+                            />
+                        </View>
                     </View>
                 </View>
-            )}
+            </Modal>
         </View>
     );
 };
@@ -340,16 +395,33 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         flex: 1,
-        justifyContent: 'center', // Vertically center content on the left
-        paddingLeft: scale(60),
-        paddingRight: scale(600), // Keep right side clear for the image
-        paddingBottom: scale(60),
+        flexDirection: 'row',
+        paddingHorizontal: scale(60),
+        alignItems: 'center',
+    },
+    leftColumn: {
+        marginRight: scale(60),
+    },
+    poster: {
+        width: scale(300),
+        aspectRatio: 2 / 3,
+        borderRadius: scale(16),
+        borderWidth: 3,
+        borderColor: 'rgba(255,255,255,0.1)',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 15,
+    },
+    rightColumn: {
+        flex: 1,
+        justifyContent: 'center',
     },
     // Meta Row
     metaTagsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: scale(24),
+        marginBottom: scale(20),
     },
     ratingBadge: {
         flexDirection: 'row',
@@ -396,7 +468,7 @@ const styles = StyleSheet.create({
         lineHeight: scaleFont(72),
         fontWeight: '900',
         color: '#FFF',
-        marginBottom: scale(24),
+        marginBottom: scale(20),
         textShadowColor: 'rgba(0,0,0,0.5)',
         textShadowOffset: { width: 0, height: 4 },
         textShadowRadius: 10,
@@ -405,20 +477,31 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(18),
         lineHeight: scaleFont(28),
         color: '#B0B0B0',
-        marginBottom: scale(32),
-        maxWidth: scale(700),
+        marginBottom: scale(24),
+        maxWidth: scale(800),
     },
     creditsRow: {
         flexDirection: 'row',
-        marginBottom: scale(48),
+        marginBottom: scale(32),
         borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.1)',
         paddingTop: scale(20),
-        maxWidth: scale(700),
+        maxWidth: scale(800),
     },
-    creditText: {
+    creditItem: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    creditLabel: {
         fontSize: scaleFont(14),
         color: '#FFF',
+        opacity: 0.6,
+        fontWeight: '600',
+    },
+    creditValue: {
+        fontSize: scaleFont(14),
+        color: '#FFF',
+        fontWeight: '500',
     },
     // Buttons
     actionsContainer: {
@@ -461,41 +544,44 @@ const styles = StyleSheet.create({
     // Modal
     modalOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.85)',
+        backgroundColor: 'rgba(0,0,0,0.9)',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 100,
+        zIndex: 1000,
     },
     modalContent: {
         backgroundColor: '#1a1a1a',
-        padding: scale(60),
-        borderRadius: scale(20),
-        alignItems: 'center',
+        padding: scale(30),
+        borderRadius: scale(16),
+        width: scale(860),
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.1)',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 20,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: scale(20),
     },
     modalTitle: {
         fontSize: scaleFont(24),
         fontWeight: 'bold',
         color: '#FFF',
-        marginBottom: scale(8),
     },
-    modalSubtitle: {
-        fontSize: scaleFont(16),
-        color: '#AAA',
-        marginBottom: scale(30),
-    },
-    modalButton: {
+    closeButton: {
+        padding: scale(10),
         backgroundColor: 'rgba(255,255,255,0.1)',
-        paddingVertical: scale(12),
-        paddingHorizontal: scale(30),
-        borderRadius: scale(8),
+        borderRadius: scale(24),
     },
-    modalButtonText: {
-        color: '#FFF',
-        fontSize: scaleFont(16),
-        fontWeight: 'bold',
-    },
+    youtubeContainer: {
+        borderRadius: scale(12),
+        overflow: 'hidden',
+        backgroundColor: '#000',
+    }
 });
 
 export default TVMovieDetailScreen;

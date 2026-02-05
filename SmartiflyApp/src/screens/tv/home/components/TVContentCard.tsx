@@ -6,15 +6,15 @@ import {
     Image,
     Pressable,
     Animated,
+    ActivityIndicator,
 } from 'react-native';
+import useEPG from '../../../../hooks/useEPG';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import {
-    colors,
     scale,
     scaleFont,
     useTheme,
     glowEffectsTV,
-    textGlow
 } from '../../../../theme';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
 import { prefetchImage } from '../../../../utils/image';
@@ -47,6 +47,14 @@ interface TVContentCardProps {
 // TV CONTENT CARD COMPONENT
 // =============================================================================
 
+// Helper for time formatting
+const formatTime = (ts: number) => {
+    const d = new Date(ts * 1000);
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    return `${hh}:${mm}`;
+};
+
 const TVContentCard: React.FC<TVContentCardProps> = ({
     item,
     onPress,
@@ -61,6 +69,9 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     const variant: ContentVariant = item.type || 'movie';
     const isLive = variant === 'live';
     const imageUri = item.image || FALLBACK_POSTER;
+
+    // EPG Hook
+    const { currentProgram, progress, loading: epgLoading } = useEPG(isLive ? item.id : undefined, isFocused);
 
     useEffect(() => {
         prefetchImage(imageUri);
@@ -125,18 +136,15 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 
             <Animated.View
                 style={[
-                    styles.imageContainer,
                     {
                         width,
                         height: finalHeight,
                         transform: [{ scale: scaleAnim }],
-                        borderColor: isFocused
-                            ? (isLive ? theme.colors.live : theme.colors.primary)
-                            : 'rgba(255,255,255,0.05)',
-                        borderWidth: isFocused ? scale(3) : 1,
-                        borderRadius: isLive ? scale(12) : scale(8),
-                        backgroundColor: isLive ? '#FFF' : theme.colors.backgroundSecondary,
                     },
+                    isFocused ? styles.focusedBorder : styles.unfocusedBorder,
+                    isLive ? styles.roundedLive : styles.roundedPrimary,
+                    isFocused ? (isLive ? styles.focusedLive : styles.focusedPrimary) : styles.unfocused,
+                    isLive ? styles.bgWhite : styles.bgSecondary,
                     isFocused && {
                         shadowColor: isLive ? theme.colors.live : theme.colors.primary,
                         ...glowEffectsTV.focus,
@@ -160,11 +168,39 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                                 <LinearGradient id="gradCard" x1="0" y1="0" x2="0" y2="1">
                                     <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
                                     <Stop offset="0.7" stopColor="#000000" stopOpacity="0.2" />
-                                    <Stop offset="1" stopColor="#000000" stopOpacity="0.8" />
+                                    <Stop offset="1" stopColor="#000000" stopOpacity="0.9" />
                                 </LinearGradient>
                             </Defs>
                             <Rect width="100%" height="100%" fill="url(#gradCard)" />
                         </Svg>
+
+                        {/* EPG Info on Focus */}
+                        {isFocused && (
+                            <View style={styles.epgOverlay}>
+                                {epgLoading ? (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                ) : currentProgram ? (
+                                    <>
+                                        <Text style={styles.epgTitle} numberOfLines={1}>
+                                            {currentProgram.title}
+                                        </Text>
+                                        <View style={styles.progressBarContainer}>
+                                            <View
+                                                style={[
+                                                    styles.progressBarFill,
+                                                    { width: `${progress}%`, backgroundColor: theme.colors.live }
+                                                ]}
+                                            />
+                                        </View>
+                                        <Text style={styles.epgTime}>
+                                            {formatTime(currentProgram.start_timestamp)} - {formatTime(currentProgram.stop_timestamp)}
+                                        </Text>
+                                    </>
+                                ) : (
+                                    <Text style={styles.epgTitle}>No Info Available</Text>
+                                )}
+                            </View>
+                        )}
                     </View>
                 )}
 
@@ -173,12 +209,13 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                     <View style={[
                         styles.badge,
                         badge.isLive && styles.liveBadge,
-                        { backgroundColor: badge.isLive ? badge.color : 'rgba(0,0,0,0.85)' }
+                        badge.isLive && styles.liveBadge,
+                        badge.isLive ? { backgroundColor: badge.color } : styles.bgTransparent
                     ]}>
                         {badge.isLive && <View style={styles.liveDot} />}
                         <Text style={[
                             styles.badgeText,
-                            { color: '#FFF' }
+                            styles.textWhite
                         ]}>
                             {badge.text}
                         </Text>
@@ -195,7 +232,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                 )}
             </Animated.View>
 
-        </Pressable>
+        </Pressable >
     );
 };
 
@@ -278,6 +315,73 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         letterSpacing: 0.5,
     },
+    // EPG Styles
+    epgOverlay: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: scale(12),
+        justifyContent: 'flex-end',
+    },
+    epgTitle: {
+        color: '#FFF',
+        fontSize: scaleFont(13),
+        fontWeight: 'bold',
+        marginBottom: scale(6),
+        textShadowColor: 'rgba(0,0,0,0.8)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+    },
+    epgTime: {
+        color: '#DDD',
+        fontSize: scaleFont(10),
+        marginTop: scale(4),
+        fontWeight: '600',
+    },
+    progressBarContainer: {
+        height: scale(4),
+        backgroundColor: 'rgba(255,255,255,0.3)',
+        borderRadius: scale(2),
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: scale(2),
+    },
+    focusedLive: {
+        borderColor: '#E50914', // Fallback will be overridden by theme.colors.live in inline style if needed, but best to use style hook or logic
+    },
+    focusedPrimary: {
+        borderColor: '#00E5FF',
+    },
+    unfocused: {
+        borderColor: 'rgba(255,255,255,0.05)',
+    },
+    bgWhite: {
+        backgroundColor: '#FFF',
+    },
+    bgSecondary: {
+        backgroundColor: '#222', // Fallback for theme.colors.backgroundSecondary
+    },
+    textWhite: {
+        color: '#FFF',
+    },
+    focusedBorder: {
+        borderWidth: scale(3),
+    },
+    unfocusedBorder: {
+        borderWidth: 1,
+    },
+    roundedLive: {
+        borderRadius: scale(12),
+    },
+    roundedPrimary: {
+        borderRadius: scale(8),
+    },
+    bgTransparent: {
+        backgroundColor: 'rgba(0,0,0,0.85)',
+    }
 });
 
 export default TVContentCard;

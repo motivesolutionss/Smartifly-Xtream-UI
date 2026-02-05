@@ -186,8 +186,8 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
                 <Animated.View
                     style={[
                         styles.cardGlow,
+                        isFocused ? { opacity: glowOpacity } : styles.glowOpacityUnfocused,
                         {
-                            opacity: isFocused ? glowOpacity : 0.4,
                             shadowColor: accentColor,
                         },
                     ]}
@@ -263,14 +263,7 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
 }) => {
     const [serverStatuses, setServerStatuses] = useState<Map<string, ServerStatus>>(new Map());
 
-    // Check server statuses on mount
-    React.useEffect(() => {
-        if (checkServerStatus && portals.length > 0) {
-            checkAllServers();
-        }
-    }, [portals.length]);
-
-    const checkAllServers = async () => {
+    const checkAllServers = useCallback(async () => {
         if (!checkServerStatus) return;
 
         const checkingStatuses = new Map<string, ServerStatus>();
@@ -290,7 +283,14 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
                 }));
             }
         }
-    };
+    }, [checkServerStatus, portals]);
+
+    // Check server statuses on mount
+    React.useEffect(() => {
+        if (checkServerStatus && portals.length > 0) {
+            checkAllServers();
+        }
+    }, [checkServerStatus, portals.length, checkAllServers]);
 
     // Loading state
     if (isLoading) {
@@ -415,6 +415,9 @@ const styles = StyleSheet.create({
         shadowOpacity: 1,
         shadowRadius: scale(30),
         elevation: 0,
+    },
+    glowOpacityUnfocused: {
+        opacity: 0.4,
     },
     card: {
         flexDirection: 'row',

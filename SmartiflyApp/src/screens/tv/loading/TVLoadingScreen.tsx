@@ -25,14 +25,7 @@ import {
 import useStore from '../../../store';
 import { logger } from '../../../config';
 import { colors, scale, scaleFont } from '../../../theme';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface TVLoadingScreenProps {
-    navigation: any;
-}
+import { TVLoadingScreenProps } from '../../../navigation/types';
 
 // TV Safe Area
 const TV_SAFE_AREA = {
@@ -158,6 +151,22 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
 
+    const startPrefetch = React.useCallback(async () => {
+        logger.info('Starting TV content prefetch...');
+        const success = await prefetchAllContent();
+
+        if (!success && error) {
+            logger.error('Prefetch failed', error);
+        }
+    }, [prefetchAllContent, error]);
+
+    const handleRetry = React.useCallback(async () => {
+        hasStarted.current = false;
+        hasNavigated.current = false;
+        useStore.setState({ retryCount: 0 });
+        await startPrefetch();
+    }, [startPrefetch]);
+
     // =============================================================================
     // EFFECTS
     // =============================================================================
@@ -167,7 +176,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         if (hasStarted.current) return;
         hasStarted.current = true;
         startPrefetch();
-    }, []);
+    }, [startPrefetch]);
 
     // Animate progress bar
     useEffect(() => {
@@ -181,7 +190,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
             easing: Easing.out(Easing.cubic),
             useNativeDriver: false,
         }).start();
-    }, [prefetchProgress.current, prefetchProgress.total]);
+    }, [prefetchProgress, progressAnim]);
 
     // Pulse animation for logo
     useEffect(() => {
@@ -203,7 +212,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         );
         pulse.start();
         return () => pulse.stop();
-    }, []);
+    }, [pulseAnim]);
 
     // Glow animation
     useEffect(() => {
@@ -225,7 +234,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
         );
         glow.start();
         return () => glow.stop();
-    }, []);
+    }, [glowAnim]);
 
     // Fade and scale in animation
     useEffect(() => {
@@ -242,7 +251,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 useNativeDriver: true,
             }),
         ]).start();
-    }, []);
+    }, [fadeAnim, scaleAnim]);
 
     // Navigate when complete
     useEffect(() => {
@@ -276,27 +285,13 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 }, 300);
             });
         }
-    }, [getContentReady, isPrefetching]);
+    }, [getContentReady, isPrefetching, getContentStats, navigation, scaleAnim]);
 
     // =============================================================================
     // FUNCTIONS
     // =============================================================================
 
-    const startPrefetch = async () => {
-        logger.info('Starting TV content prefetch...');
-        const success = await prefetchAllContent();
 
-        if (!success && error) {
-            logger.error('Prefetch failed', error);
-        }
-    };
-
-    const handleRetry = async () => {
-        hasStarted.current = false;
-        hasNavigated.current = false;
-        useStore.setState({ retryCount: 0 });
-        await startPrefetch();
-    };
 
     // =============================================================================
     // COMPUTED VALUES

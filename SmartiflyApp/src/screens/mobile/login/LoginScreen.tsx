@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,8 +10,7 @@ import {
     Keyboard,
     StatusBar,
     ActivityIndicator,
-    Image,
-    Dimensions
+    Image
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Components
@@ -26,10 +25,8 @@ import {
     colors,
     spacing,
     borderRadius,
-    typography,
     fontFamily,
     shadows,
-    glowEffects,
     Icon
 } from '../../../theme';
 import { logger } from '../../../config';
@@ -47,7 +44,7 @@ interface FormErrors {
     general?: string;
 }
 
-const { width, height } = Dimensions.get('window');
+
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     // -------------------------------------------------------------------------
@@ -58,7 +55,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     // Store with aliases for compatibility
     const {
         login,
-        isAuthenticated,
         isLoading,
         error: authError,
         selectedPortal: activePortal,
@@ -70,7 +66,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [errors, setErrors] = useState<FormErrors>({});
-    const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+    const [_, setKeyboardVisible] = useState(false);
 
     // Server fetch state
     const [isFetchingPortals, setIsFetchingPortals] = useState(false);
@@ -117,7 +113,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     }, [authError]);
 
     // Fetch portals on mount if empty
-    const fetchPortals = async () => {
+    const fetchPortals = useCallback(async () => {
         setIsFetchingPortals(true);
         setPortalError(undefined);
 
@@ -153,18 +149,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
             } else {
                 setPortalError('No servers found');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load servers';
             logger.error('Failed to fetch portals', err);
-            setPortalError(err.message || 'Failed to load servers');
+            setPortalError(errorMessage);
         } finally {
             setIsFetchingPortals(false);
         }
-    };
+    }, [activePortal, setPortals, setActivePortal]);
 
     // ALWAYS fetch on mount to ensure freshness
     useEffect(() => {
         fetchPortals();
-    }, []);
+    }, [fetchPortals]);
 
     // -------------------------------------------------------------------------
     // HANDLERS
@@ -213,11 +210,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                 // Navigate to loading screen which handles prefetching
                 navigation.replace('Loading');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Login failed. Please try again.';
             logger.error('Login failed', err);
             setErrors(prev => ({
                 ...prev,
-                general: err.message || 'Login failed. Please try again.'
+                general: errorMessage
             }));
         }
     };
@@ -237,10 +235,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
             {/* Ambient Glow */}
             <View style={styles.ambientGlow} />
 
-            <View style={[{ paddingTop: insets.top, paddingBottom: insets.bottom, flex: 1 }]}>
+            <View style={[styles.mainContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={{ flex: 1 }}
+                    style={styles.keyboardView}
                     keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
                 >
                     <ScrollView
@@ -293,8 +291,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                                     error={errors.username}
                                     autoCapitalize="none"
                                     returnKeyType="next"
-                                    onSubmitEditing={() => inputs.current['password']?.focus()}
-                                    ref={(input) => { if (input) inputs.current['username'] = input; }}
+                                    onSubmitEditing={() => inputs.current.password?.focus()}
+                                    ref={(input) => { if (input) inputs.current.username = input; }}
                                 />
                             </View>
 
@@ -311,7 +309,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                                     error={errors.password}
                                     returnKeyType="done"
                                     onSubmitEditing={handleLogin}
-                                    ref={(input) => { if (input) inputs.current['password'] = input; }}
+                                    ref={(input) => { if (input) inputs.current.password = input; }}
                                 />
                             </View>
 
@@ -496,6 +494,12 @@ const styles = StyleSheet.create({
         color: colors.primary,
         fontSize: 14,
         fontWeight: 'bold',
+    },
+    keyboardView: {
+        flex: 1,
+    },
+    mainContainer: {
+        flex: 1,
     },
 });
 

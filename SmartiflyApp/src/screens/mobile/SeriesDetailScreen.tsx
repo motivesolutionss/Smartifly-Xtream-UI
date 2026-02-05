@@ -16,9 +16,11 @@ import FastImageComponent from '../../components/FastImageComponent';
 import { colors, spacing, borderRadius, Icon } from '../../theme';
 import useStore from '../../store';
 import { logger } from '../../config';
+import { SeriesItem, EpisodeItem } from '../../navigation/types';
+import DownloadButton from '../../components/DownloadButton';
 
 type ParamList = {
-    SeriesDetail: { series: any };
+    SeriesDetail: { series: SeriesItem };
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -62,11 +64,12 @@ const SeriesDetailScreen: React.FC = () => {
                         setSelectedSeason(seasons[0]);
                     }
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
                 // Safe error logging - avoid dumping huge Xtream error objects
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error('Failed to fetch series info', {
                     seriesId: series.series_id,
-                    message: error?.message || 'Unknown error',
+                    message: errorMessage,
                 });
             } finally {
                 if (isMountedRef.current) {
@@ -84,7 +87,7 @@ const SeriesDetailScreen: React.FC = () => {
     }, [series.series_id, getXtreamAPI]); // Proper dependencies
 
     // Memoized episode play handler
-    const handlePlayEpisode = useCallback((episode: any) => {
+    const handlePlayEpisode = useCallback((episode: EpisodeItem) => {
         const api = getXtreamAPI();
         if (!api) return;
 
@@ -119,7 +122,7 @@ const SeriesDetailScreen: React.FC = () => {
             : [];
 
     // Render episode item for FlatList (virtualized for performance)
-    const renderEpisodeItem = useCallback(({ item: episode }: { item: any }) => (
+    const renderEpisodeItem = useCallback(({ item: episode }: { item: EpisodeItem }) => (
         <TouchableOpacity
             style={styles.episodeCard}
             onPress={() => handlePlayEpisode(episode)}
@@ -136,9 +139,19 @@ const SeriesDetailScreen: React.FC = () => {
                     <Text style={styles.episodeDuration}>{episode.info.duration}</Text>
                 )}
             </View>
+            <DownloadButton
+                item={{
+                    id: String(episode.id),
+                    name: `${series.name} - ${episode.title}`,
+                    stream_icon: episode.info?.movie_image || series.cover,
+                    container_extension: episode.container_extension || 'mp4',
+                    type: 'series',
+                }}
+                style={styles.episodeDownloadButton}
+            />
             <Text style={styles.playIcon}>▶</Text>
         </TouchableOpacity>
-    ), [handlePlayEpisode, series.cover]);
+    ), [handlePlayEpisode, series.cover, series.name]);
 
     return (
         <View style={styles.container}>
@@ -463,6 +476,11 @@ const styles = StyleSheet.create({
         color: colors.textPrimary,
         fontSize: 14,
         fontWeight: '500',
+    },
+    episodeDownloadButton: {
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        paddingHorizontal: spacing.sm,
     },
     episodeDuration: {
         color: colors.textMuted,

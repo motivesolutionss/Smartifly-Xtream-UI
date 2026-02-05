@@ -12,7 +12,7 @@
 // EXPORTS
 // =============================================================================
 
-import { ThemeProvider, useTheme } from './ThemeProvider';
+
 import { colors as themeColors } from './colors';
 import { Platform } from 'react-native';
 import { typographyMobile, getTypography } from './typography';

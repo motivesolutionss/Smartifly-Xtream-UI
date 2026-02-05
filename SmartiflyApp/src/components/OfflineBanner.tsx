@@ -5,7 +5,7 @@
  * Allows users to browse cached content
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
     View,
     Text,
@@ -19,7 +19,7 @@ interface OfflineBannerProps {
     connectionType: string | null;
 }
 
-const OfflineBanner: React.FC<OfflineBannerProps> = ({ isOffline, connectionType }) => {
+const OfflineBanner: React.FC<OfflineBannerProps> = ({ isOffline }) => {
     // Use useState for Animated values - this is the standard React Native pattern
     const [slideAnim] = React.useState(() => new Animated.Value(isOffline ? 0 : -100));
 

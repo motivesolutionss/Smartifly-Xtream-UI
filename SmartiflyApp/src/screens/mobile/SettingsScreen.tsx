@@ -1,9 +1,9 @@
 /**
- * Smartifly Settings Screen
- * 
- * User settings and account management screen.
- * Displays account info, playback settings, app settings, and logout option.
- */
+* Smartifly Settings Screen
+* 
+* User settings and account management screen.
+* Displays account info, playback settings, app settings, and logout option.
+*/
 
 import React from 'react';
 import {
@@ -20,9 +20,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 // Store
 import useStore from '../../store';
+import { useProfileStore } from '../../store/profileStore';
 
 // Theme
 import { colors, spacing, borderRadius } from '../../theme';
+import ProfileAvatar from '../../components/ProfileAvatar';
 
 // =============================================================================
 // SETTINGS ITEM COMPONENT
@@ -109,16 +111,20 @@ const SettingsScreen: React.FC = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
 
-    // Get user info from store
+    // Get user info and profiles from store
     const userInfo = useStore((state) => state.userInfo);
     const logout = useStore((state) => state.logout);
     const selectedPortal = useStore((state) => state.selectedPortal);
+
+    // Profiles
+    const activeProfile = useProfileStore((state) => state.profiles.find(p => p.id === state.activeProfileId));
+    const profiles = useProfileStore((state) => state.profiles);
 
     // Format expiry date
     const formatExpiry = (expDate: string | null | undefined) => {
         if (!expDate) return 'Unknown';
         try {
-            const date = new Date(parseInt(expDate) * 1000);
+            const date = new Date(parseInt(expDate, 10) * 1000);
             return date.toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'long',
@@ -133,7 +139,7 @@ const SettingsScreen: React.FC = () => {
     const getDaysRemaining = (expDate: string | null | undefined) => {
         if (!expDate) return 0;
         try {
-            const expiry = new Date(parseInt(expDate) * 1000);
+            const expiry = new Date(parseInt(expDate, 10) * 1000);
             const now = new Date();
             const diff = expiry.getTime() - now.getTime();
             const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -239,6 +245,45 @@ const SettingsScreen: React.FC = () => {
                     />
                 </SettingsSection>
 
+                {/* Profiles Section */}
+                <SettingsSection title="PROFILES">
+                    <TouchableOpacity
+                        style={styles.activeProfileItem}
+                        onPress={() => navigation.navigate('ProfileSwitcher')}
+                    >
+                        <ProfileAvatar
+                            avatar={activeProfile?.avatar || 'avatar_01'}
+                            name={activeProfile?.name || ''}
+                            size="small"
+                        />
+                        <View style={styles.activeProfileInfo}>
+                            <Text style={styles.activeProfileName}>{activeProfile?.name || 'Main'}</Text>
+                            <Text style={styles.activeProfileType}>
+                                {activeProfile?.isKidsProfile ? 'Kids Profile' : 'Adult Profile'}
+                            </Text>
+                        </View>
+                        <Text style={styles.settingsItemArrow}>›</Text>
+                    </TouchableOpacity>
+
+                    <SettingsItem
+                        icon="👥"
+                        title="Switch Profile"
+                        onPress={() => navigation.navigate('ProfileSwitcher')}
+                    />
+                    <SettingsItem
+                        icon="👤"
+                        title="Edit Current Profile"
+                        onPress={() => navigation.navigate('ProfileEditor', { profileId: activeProfile?.id })}
+                    />
+                    {profiles.length < 5 && (
+                        <SettingsItem
+                            icon="➕"
+                            title="Add New Profile"
+                            onPress={() => navigation.navigate('ProfileEditor', {})}
+                        />
+                    )}
+                </SettingsSection>
+
                 {/* Playback Settings */}
                 <SettingsSection title="PLAYBACK">
                     <SettingsItem
@@ -285,6 +330,12 @@ const SettingsScreen: React.FC = () => {
 
                 {/* Storage */}
                 <SettingsSection title="STORAGE">
+                    <SettingsItem
+                        icon="📥"
+                        title="Manage Downloads"
+                        subtitle="Offline movies and shows"
+                        onPress={() => navigation.navigate('Downloads')}
+                    />
                     <SettingsItem
                         icon="🗂️"
                         title="Clear Cache"
@@ -444,6 +495,28 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.textMuted,
         marginTop: spacing.xxs,
+    },
+    activeProfileItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.base,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.backgroundSecondary,
+    },
+    activeProfileInfo: {
+        flex: 1,
+        marginLeft: spacing.md,
+    },
+    activeProfileName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    activeProfileType: {
+        fontSize: 12,
+        color: colors.textMuted,
+        marginTop: 2,
     },
 
     // Section

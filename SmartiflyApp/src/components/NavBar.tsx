@@ -25,20 +25,7 @@ import { colors, spacing, borderRadius, Icon } from '../theme';
 import CategoryFilter from './CategoryFilter';
 import CategoryModal from './CategoryModal';
 
-// =============================================================================
-// NAV ITEM CONFIG
-// =============================================================================
 
-const NAV_ITEMS = [
-    { id: 'HomeStack', label: 'Home', icon: 'house' },
-    { id: 'SearchStack', label: 'Search', icon: 'magnifyingGlass' }, // Changed to SearchStack
-    { id: 'LiveStack', label: 'Live TV', icon: 'television' },
-    { id: 'MoviesStack', label: 'Movies', icon: 'filmStrip' },
-    { id: 'SeriesStack', label: 'Series', icon: 'monitorPlay' },
-    // { id: 'Sports', label: 'Sports', icon: 'target' },
-    { id: 'FavoritesStack', label: 'Favorites', icon: 'heart' },
-    // { id: 'SettingsStack', label: 'Settings', icon: 'gear' },
-];
 
 // =============================================================================
 // NAVBAR COMPONENT

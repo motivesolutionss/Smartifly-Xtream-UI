@@ -13,7 +13,7 @@ import useStore from '../../../store';
 import { getAnnouncements } from '../../../api/backend';
 import { logger } from '../../../config';
 
-const AnnouncementsScreen: React.FC<any> = ({ navigation }) => {
+const AnnouncementsScreen: React.FC<any> = () => {
     const insets = useSafeAreaInsets();
     const userInfo = useStore((state) => state.userInfo);
 
@@ -54,9 +54,10 @@ const AnnouncementsScreen: React.FC<any> = ({ navigation }) => {
             } else {
                 setAnnouncements([]);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load announcements';
             logger.error('Failed to load announcements', err);
-            setError(err?.message || 'Failed to load announcements');
+            setError(errorMessage);
             setAnnouncements([]);
         } finally {
             setIsLoading(false);

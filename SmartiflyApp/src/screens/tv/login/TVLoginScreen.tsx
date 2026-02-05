@@ -212,7 +212,6 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
     // Store & State
     const {
         login,
-        isAuthenticated,
         isLoading,
         error: authError,
         selectedPortal: activePortal,
@@ -266,7 +265,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
                 useNativeDriver: true,
             }),
         ]).start();
-    }, []);
+    }, [fadeAnim, logoScaleAnim, slideAnim]);
 
     // Clear errors on input change
     useEffect(() => {
@@ -326,9 +325,10 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
             } else {
                 setPortalError('No servers found');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load servers';
             logger.error('Failed to fetch portals', err);
-            setPortalError(err.message || 'Failed to load servers');
+            setPortalError(errorMessage);
         } finally {
             setIsFetchingPortals(false);
         }
@@ -343,7 +343,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
     // HANDLERS
     // -------------------------------------------------------------------------
 
-    const validateForm = (): boolean => {
+    const validateForm = useCallback((): boolean => {
         const newErrors: FormErrors = {};
         let isValid = true;
 
@@ -369,7 +369,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
 
         setErrors(newErrors);
         return isValid;
-    };
+    }, [username, password, activePortal]);
 
     const handleLogin = useCallback(async () => {
         setErrors(prev => ({ ...prev, general: undefined }));
@@ -384,13 +384,15 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
             if (success) {
                 navigation.replace('Loading');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Login failed';
             logger.error('Login failed', err);
             setErrors(prev => ({
-                general: `${err.message || 'Login failed'} ${activePortal?.url ? `(${activePortal.url})` : ''}`
+                ...prev,
+                general: `${errorMessage} ${activePortal?.url ? `(${activePortal.url})` : ''}`
             }));
         }
-    }, [username, password, login, navigation]);
+    }, [username, password, login, navigation, validateForm, activePortal]);
 
     const handleServerSelect = useCallback((portal: Portal) => {
         setActivePortal(portal);
@@ -528,7 +530,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
                             variant="accent"
                             size="medium"
                             leftIcon="arrow-left"
-                            style={{ flex: 1 }}
+                            style={styles.flex1}
                         />
                         <TVButton
                             title="Start Watching"
@@ -538,7 +540,7 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
                             variant="primary"
                             size="medium"
                             leftIcon="play"
-                            style={{ flex: 1 }}
+                            style={styles.flex1}
                         />
                     </View>
 
@@ -794,6 +796,9 @@ const styles = StyleSheet.create({
     },
     centeredFooter: {
         marginTop: scale(16),
+    },
+    flex1: {
+        flex: 1,
     },
     formSection: {
         width: '50%',

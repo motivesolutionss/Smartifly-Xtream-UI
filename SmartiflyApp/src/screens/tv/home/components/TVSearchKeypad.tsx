@@ -129,12 +129,12 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
 
     return (
         <View style={styles.container}>
-            {rows.map((row, rowIndex) => (
+            {rows.map((row, _rowIndex) => (
                 <View key={row.id} style={styles.row}>
                     {(row as any).type === 'control' ? (
                         // Special handling for control row
                         (row.keys as any[]).map((key: any) => (
-                            <View key={key.id} style={{ flex: key.width }}>
+                            <View key={key.id} style={key.width === 1 ? styles.flex1 : { flex: key.width }}>
                                 <SearchKey
                                     label={key.label}
                                     onPress={key.action}
@@ -145,7 +145,7 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
                     ) : (
                         // Standard grid rows
                         (row.keys as string[]).map((char) => (
-                            <View key={char} style={{ flex: 1 }}>
+                            <View key={char} style={styles.flex1}>
                                 <SearchKey
                                     label={char}
                                     onPress={() => onKeyPress(char)}
@@ -213,6 +213,9 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#FFFFFF',
     },
+    flex1: {
+        flex: 1,
+    }
 });
 
 export default TVSearchKeypad;

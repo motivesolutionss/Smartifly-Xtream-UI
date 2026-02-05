@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import CustomTabBar from './components/CustomTabBar';
 import { BottomTabParamList } from './types';
 
@@ -17,10 +17,12 @@ import SettingsStack from './stacks/SettingsStack';
 
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
+const renderTabBar = (props: BottomTabBarProps) => <CustomTabBar {...props} />;
+
 const BottomTabNavigator: React.FC = () => {
   return (
     <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={renderTabBar}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
