@@ -8,6 +8,7 @@ import {
     Animated,
     findNodeHandle,
 } from 'react-native';
+import FastImageComponent from '../../../../components/FastImageComponent';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { colors, scale, scaleFont } from '../../../../theme';
 import { prefetchImage } from '../../../../utils/image';
@@ -84,43 +85,57 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
 
     return (
         <View style={styles.container}>
-            {/* Background Image with Gradient */}
-            <View style={StyleSheet.absoluteFill}>
-                <Image
+            {/* Background Image - Right-aligned 70% width */}
+            <View style={styles.backdropContainer}>
+                <FastImageComponent
                     source={{ uri: item.backdrop || (item as any).image }}
                     style={styles.backdropImage}
                     resizeMode="cover"
+                    priority="high"
                 />
-
-                {/* Left to Right Gradient */}
-                <View style={styles.leftGradient}>
+                {/* Left Edge Fade - Inside backdrop container */}
+                <View style={styles.backdropLeftFade}>
                     <Svg height="100%" width="100%">
                         <Defs>
-                            <LinearGradient id="gradLeft" x1="0" y1="0" x2="1" y2="0">
+                            <LinearGradient id="gradBackdropLeft" x1="0" y1="0" x2="1" y2="0">
                                 <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="1" />
-                                <Stop offset="0.3" stopColor={colors.background || "#141414"} stopOpacity="0.5" />
-                                <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.2" />
+                                <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.5" />
                                 <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="0" />
                             </LinearGradient>
                         </Defs>
-                        <Rect width="100%" height="100%" fill="url(#gradLeft)" />
+                        <Rect width="100%" height="100%" fill="url(#gradBackdropLeft)" />
                     </Svg>
                 </View>
+            </View>
 
-                {/* Bottom Gradient */}
-                <View style={styles.bottomGradient}>
-                    <Svg height="100%" width="100%">
-                        <Defs>
-                            <LinearGradient id="gradBottom" x1="0" y1="0" x2="0" y2="1">
-                                <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="0" />
-                                <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.3" />
-                                <Stop offset="0.8" stopColor={colors.background || "#141414"} stopOpacity="0.8" />
-                                <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="1" />
-                            </LinearGradient>
-                        </Defs>
-                        <Rect width="100%" height="100%" fill="url(#gradBottom)" />
-                    </Svg>
-                </View>
+            {/* Left to Right Gradient - Full screen overlay */}
+            <View style={styles.leftGradient}>
+                <Svg height="100%" width="100%">
+                    <Defs>
+                        <LinearGradient id="gradLeft" x1="0" y1="0" x2="1" y2="0">
+                            <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="1" />
+                            <Stop offset="0.4" stopColor={colors.background || "#141414"} stopOpacity="0.8" />
+                            <Stop offset="0.7" stopColor={colors.background || "#141414"} stopOpacity="0.3" />
+                            <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="0" />
+                        </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#gradLeft)" />
+                </Svg>
+            </View>
+
+            {/* Bottom Gradient - Full screen overlay */}
+            <View style={styles.bottomGradient}>
+                <Svg height="100%" width="100%">
+                    <Defs>
+                        <LinearGradient id="gradBottom" x1="0" y1="0" x2="0" y2="1">
+                            <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="0" />
+                            <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.3" />
+                            <Stop offset="0.8" stopColor={colors.background || "#141414"} stopOpacity="0.8" />
+                            <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="1" />
+                        </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#gradBottom)" />
+                </Svg>
             </View>
 
             {/* App Logo - Moved to content container */}
@@ -263,7 +278,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        height: scale(600),
+        height: scale(680),
         position: 'relative',
         marginBottom: scale(40),
     },
@@ -278,6 +293,13 @@ const styles = StyleSheet.create({
     backdropImage: {
         width: '100%',
         height: '100%',
+    },
+    backdropLeftFade: {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: '30%',
     },
     leftGradient: {
         position: 'absolute',
@@ -387,11 +409,9 @@ const styles = StyleSheet.create({
     },
     buttonFocused: {
         backgroundColor: 'rgba(255, 255, 255, 0.75)',
-        transform: [{ scale: 1.05 }],
     },
     buttonFocusedSecondary: {
         backgroundColor: 'rgba(109, 109, 110, 0.9)',
-        transform: [{ scale: 1.05 }],
         borderWidth: scale(3),
         borderColor: '#FFF',
     },
@@ -443,7 +463,6 @@ const styles = StyleSheet.create({
     iconButtonFocused: {
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         borderColor: '#FFF',
-        transform: [{ scale: 1.1 }],
     },
     iconButtonText: {
         fontSize: scaleFont(28),
@@ -483,4 +502,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default TVHeroBanner;
+export default React.memo(TVHeroBanner);

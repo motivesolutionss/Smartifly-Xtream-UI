@@ -1,11 +1,15 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     View,
     Text,
     Pressable,
     StyleSheet,
-    Animated,
 } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+} from 'react-native-reanimated';
 import { colors, scale, scaleFont } from '../../../../theme';
 
 // =============================================================================
@@ -32,46 +36,49 @@ interface KeyButtonProps {
 // KEY COMPONENT
 // =============================================================================
 
-const SearchKey: React.FC<KeyButtonProps> = ({
+// Spring config - SAME as TVContentCard for consistency
+const SPRING_CONFIG = {
+    damping: 15,
+    stiffness: 200,
+    mass: 0.5,
+};
+
+const SearchKey: React.FC<KeyButtonProps> = React.memo(({
     label,
     onPress,
     icon,
     isControl
 }) => {
     const [focused, setFocused] = useState(false);
-    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    // Reanimated shared value for 60fps UI-thread animations
+    const scaleValue = useSharedValue(1);
+
+    // Animated style - runs on UI thread
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scaleValue.value }],
+    }));
 
     const handleFocus = () => {
+        scaleValue.value = withSpring(1.05, SPRING_CONFIG);
         setFocused(true);
-        // Zoom removed as per request
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            tension: 100,
-            friction: 5,
-        }).start();
     };
 
     const handleBlur = () => {
+        scaleValue.value = withSpring(1, SPRING_CONFIG);
         setFocused(false);
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            tension: 100,
-            friction: 5,
-        }).start();
     };
 
     return (
-        <Animated.View style={[styles.keyWrapper, { transform: [{ scale: scaleAnim }] }]}>
+        <Animated.View style={[styles.keyWrapper, animatedStyle]}>
             <Pressable
                 onPress={onPress}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
                 style={[
                     styles.key,
-                    isControl && styles.controlKey, // Apply control style base first
-                    focused && styles.focusedKey, // Apply focus state last to override
+                    isControl && styles.controlKey,
+                    focused && styles.focusedKey,
                 ]}
             >
                 {icon ? (
@@ -82,7 +89,7 @@ const SearchKey: React.FC<KeyButtonProps> = ({
             </Pressable>
         </Animated.View>
     );
-};
+});
 
 // =============================================================================
 // MAIN KEYPAD COMPONENT
@@ -95,7 +102,7 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
     onClear
 }) => {
     // 6-Column Grid Layout
-    const rows = [
+    const rows = useMemo(() => ([
         // Row 1: a-f
         { id: 'r1', keys: 'abcdef'.split('') },
         // Row 2: g-l
@@ -125,7 +132,7 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
                 { id: 'backspace', label: '⌫', action: onBackspace, width: 1 } // Using flex 1 for equal split
             ]
         },
-    ];
+    ]), [onSpace, onClear, onBackspace]);
 
     return (
         <View style={styles.container}>
@@ -218,4 +225,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default TVSearchKeypad;
+export default React.memo(TVSearchKeypad);

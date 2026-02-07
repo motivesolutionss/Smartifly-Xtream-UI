@@ -35,7 +35,7 @@ const MovieDetailScreen: React.FC = () => {
     const navigation = useNavigation();
     const route = useRoute<RouteProp<ParamList, 'MovieDetail'>>();
     const { movie } = route.params;
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const [movieInfo, setMovieInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [trailerVisible, setTrailerVisible] = useState(false);

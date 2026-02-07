@@ -29,7 +29,7 @@ const SeriesDetailScreen: React.FC = () => {
     const navigation = useNavigation();
     const route = useRoute<RouteProp<ParamList, 'SeriesDetail'>>();
     const { series } = route.params;
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const [seriesInfo, setSeriesInfo] = useState<any>(null);
     const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);

@@ -53,15 +53,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     const insets = useSafeAreaInsets();
 
     // Store with aliases for compatibility
-    const {
-        login,
-        isLoading,
-        error: authError,
-        selectedPortal: activePortal,
-        portals: savedPortals,
-        selectPortal: setActivePortal,
-        setPortals,
-    } = useStore();
+    const login = useStore((state) => state.login);
+    const isLoading = useStore((state) => state.isLoading);
+    const authError = useStore((state) => state.error);
+    const activePortal = useStore((state) => state.selectedPortal);
+    const savedPortals = useStore((state) => state.portals);
+    const setActivePortal = useStore((state) => state.selectPortal);
+    const setPortals = useStore((state) => state.setPortals);
 
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');

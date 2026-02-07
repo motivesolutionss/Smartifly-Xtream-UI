@@ -5,7 +5,7 @@
  * Displays storage usage, download queue, and completed items.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     View,
     Text,
@@ -21,7 +21,10 @@ import FastImageComponent from '../../components/FastImageComponent';
 
 const DownloadsScreen: React.FC = () => {
     const navigation = useNavigation();
-    const { downloads, storageUsage, removeDownload, clearAll } = useDownloadStore();
+    const downloads = useDownloadStore((state) => state.downloads);
+    const storageUsage = useDownloadStore((state) => state.storageUsage);
+    const removeDownload = useDownloadStore((state) => state.removeDownload);
+    const clearAll = useDownloadStore((state) => state.clearAll);
 
     // Calculate human-readable size
     const formatSize = (bytes?: number) => {
@@ -86,7 +89,10 @@ const DownloadsScreen: React.FC = () => {
         </View>
     );
 
-    const storageAppPercent = (storageUsage.appUsed / storageUsage.total) * 100;
+    const storageAppPercent = useMemo(() => {
+        if (!storageUsage.total) return 0;
+        return (storageUsage.appUsed / storageUsage.total) * 100;
+    }, [storageUsage.appUsed, storageUsage.total]);
 
     return (
         <View style={stylePresets.screenContainer}>

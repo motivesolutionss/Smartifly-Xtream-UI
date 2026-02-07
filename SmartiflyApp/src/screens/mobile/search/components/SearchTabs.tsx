@@ -1,15 +1,10 @@
 /**
  * Smartifly SearchTabs Component
- * 
- * Tab bar for filtering search results:
- * - All (combined results)
- * - Live TV
- * - Movies
- * - Series
- * - With result counts
+ *
+ * Tab bar for filtering search results.
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
     View,
     Text,
@@ -18,28 +13,14 @@ import {
     StyleSheet,
     ViewStyle,
 } from 'react-native';
-
-// =============================================================================
-// THEME
-// =============================================================================
-
-import { colors, spacing, borderRadius } from '../../../../theme';
-
-// =============================================================================
-// THEME
-// =============================================================================
-// Local definitions removed in favor of theme imports
-
-// =============================================================================
-// TYPES
-// =============================================================================
+import { colors, spacing, borderRadius, Icon, IconName } from '../../../../theme';
 
 export type SearchTabType = 'all' | 'live' | 'movies' | 'series';
 
 export interface SearchTabItem {
     id: SearchTabType;
     label: string;
-    icon: string;
+    icon: IconName;
     color: string;
     count?: number;
 }
@@ -56,20 +37,12 @@ export interface SearchTabsProps {
     style?: ViewStyle;
 }
 
-// =============================================================================
-// DEFAULT TABS
-// =============================================================================
-
 const DEFAULT_TABS: SearchTabItem[] = [
-    { id: 'all', label: 'All', icon: '🔍', color: colors.accent },
-    { id: 'live', label: 'Live', icon: '📺', color: colors.live },
-    { id: 'movies', label: 'Movies', icon: '🎬', color: colors.movies },
-    { id: 'series', label: 'Series', icon: '📀', color: colors.series },
+    { id: 'all', label: 'All', icon: 'magnifyingGlass', color: colors.accent },
+    { id: 'live', label: 'Live', icon: 'television', color: colors.live },
+    { id: 'movies', label: 'Movies', icon: 'filmStrip', color: colors.movies },
+    { id: 'series', label: 'Series', icon: 'monitorPlay', color: colors.series },
 ];
-
-// =============================================================================
-// SEARCH TABS COMPONENT
-// =============================================================================
 
 const SearchTabs: React.FC<SearchTabsProps> = ({
     activeTab,
@@ -77,7 +50,6 @@ const SearchTabs: React.FC<SearchTabsProps> = ({
     counts,
     style,
 }) => {
-    // Calculate total for "All" tab
     const allCount = counts
         ? (counts.live || 0) + (counts.movies || 0) + (counts.series || 0)
         : undefined;
@@ -109,27 +81,34 @@ const SearchTabs: React.FC<SearchTabsProps> = ({
                             onPress={() => onTabChange(tab.id)}
                             activeOpacity={0.7}
                         >
-                            {/* Icon */}
-                            <Text style={styles.tabIcon}>{tab.icon}</Text>
+                            <Icon
+                                name={tab.icon}
+                                size={14}
+                                color={isActive ? colors.textPrimary : colors.textSecondary}
+                            />
 
-                            {/* Label */}
-                            <Text style={[
-                                styles.tabLabel,
-                                isActive && styles.tabLabelActive,
-                            ]}>
+                            <Text
+                                style={[
+                                    styles.tabLabel,
+                                    isActive && styles.tabLabelActive,
+                                ]}
+                            >
                                 {tab.label}
                             </Text>
 
-                            {/* Count Badge */}
                             {count !== undefined && count > 0 && (
-                                <View style={[
-                                    styles.countBadge,
-                                    isActive && styles.countBadgeActive,
-                                ]}>
-                                    <Text style={[
-                                        styles.countText,
-                                        isActive && styles.countTextActive,
-                                    ]}>
+                                <View
+                                    style={[
+                                        styles.countBadge,
+                                        isActive && styles.countBadgeActive,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.countText,
+                                            isActive && styles.countTextActive,
+                                        ]}
+                                    >
                                         {count > 99 ? '99+' : count}
                                     </Text>
                                 </View>
@@ -141,10 +120,6 @@ const SearchTabs: React.FC<SearchTabsProps> = ({
         </View>
     );
 };
-
-// =============================================================================
-// PILL VARIANT
-// =============================================================================
 
 export interface SearchPillsProps {
     activeTab: SearchTabType;
@@ -185,22 +160,26 @@ export const SearchPills: React.FC<SearchPillsProps> = ({
                         key={tab.id}
                         style={[
                             styles.pill,
-                            isActive && [styles.pillActive, { backgroundColor: tab.color + '20', borderColor: tab.color }],
+                            isActive && [styles.pillActive, { backgroundColor: `${tab.color}20`, borderColor: tab.color }],
                         ]}
                         onPress={() => onTabChange(tab.id)}
                         activeOpacity={0.7}
                     >
-                        <Text style={[
-                            styles.pillLabel,
-                            isActive && [styles.pillLabelActive, { color: tab.color }],
-                        ]}>
+                        <Text
+                            style={[
+                                styles.pillLabel,
+                                isActive && [styles.pillLabelActive, { color: tab.color }],
+                            ]}
+                        >
                             {tab.label}
                         </Text>
                         {count !== undefined && count > 0 && (
-                            <Text style={[
-                                styles.pillCount,
-                                isActive && [styles.pillCountActive, { color: tab.color }],
-                            ]}>
+                            <Text
+                                style={[
+                                    styles.pillCount,
+                                    isActive && [styles.pillCountActive, { color: tab.color }],
+                                ]}
+                            >
                                 ({count})
                             </Text>
                         )}
@@ -210,10 +189,6 @@ export const SearchPills: React.FC<SearchPillsProps> = ({
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -236,9 +211,6 @@ const styles = StyleSheet.create({
     },
     tabActive: {
         borderColor: 'transparent',
-    },
-    tabIcon: {
-        fontSize: 14,
     },
     tabLabel: {
         fontSize: 14,
@@ -268,8 +240,6 @@ const styles = StyleSheet.create({
     countTextActive: {
         color: colors.textPrimary,
     },
-
-    // Pills variant
     pillsContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -287,9 +257,7 @@ const styles = StyleSheet.create({
         borderColor: colors.border,
         gap: spacing.xxs,
     },
-    pillActive: {
-        // backgroundColor and borderColor set dynamically
-    },
+    pillActive: {},
     pillLabel: {
         fontSize: 13,
         fontWeight: '500',
@@ -302,9 +270,7 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.textMuted,
     },
-    pillCountActive: {
-        // color set dynamically
-    },
+    pillCountActive: {},
 });
 
-export default SearchTabs;
+export default memo(SearchTabs);

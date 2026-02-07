@@ -1,19 +1,21 @@
 /**
- * FastImageComponent - Using standard React Native Image
+ * FastImageComponent - Using @d11/react-native-fast-image
  * 
- * Replacement for react-native-fast-image to fix compatibility issues
+ * Optimized image component with caching and performance benefits
  */
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ImageStyle, StyleProp, ActivityIndicator, Image, ImageSourcePropType } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, StyleProp, ActivityIndicator } from 'react-native';
+import FastImage, { ImageStyle, OnLoadEvent, OnProgressEvent } from '@d11/react-native-fast-image';
 import { colors } from '../theme';
-import { prefetchImage } from '../utils/image';
 
 interface Props {
-    source: ImageSourcePropType;
+    source: any; // Using any for compatibility with both URI objects and local requires
     style?: StyleProp<ImageStyle>;
     showLoader?: boolean;
-    fallbackSource?: ImageSourcePropType;
-    resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
+    fallbackSource?: any;
+    resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
+    priority?: 'low' | 'normal' | 'high';
+    cache?: 'immutable' | 'web' | 'cacheOnly';
 }
 
 const FastImageComponent: React.FC<Props> = ({
@@ -22,37 +24,62 @@ const FastImageComponent: React.FC<Props> = ({
     showLoader = false,
     fallbackSource,
     resizeMode = 'cover',
+    priority = 'normal',
+    cache = 'immutable',
 }) => {
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
 
-    const handleLoadStart = () => setLoading(true);
-    const handleLoadEnd = () => setLoading(false);
+    const handleLoadStart = () => {
+        if (showLoader) {
+            setLoading(true);
+        }
+    };
+
+    const handleLoad = (event: OnLoadEvent) => {
+        if (showLoader) {
+            setLoading(false);
+        }
+    };
+
     const handleError = () => {
-        setLoading(false);
+        if (showLoader) {
+            setLoading(false);
+        }
         setError(true);
     };
 
-    const finalSource = error && fallbackSource ? fallbackSource : source;
-    const uri = typeof finalSource === 'object' && finalSource && 'uri' in finalSource
-        ? finalSource.uri
-        : undefined;
+    // Construct the source object properly for FastImage
+    const finalSource = error && fallbackSource
+        ? fallbackSource
+        : (typeof source === 'string' ? { uri: source } : source);
 
-    useEffect(() => {
-        if (typeof uri === 'string') {
-            prefetchImage(uri);
+    // Apply priority and cache to the source if it's a URI object
+    const fastImageSource = (finalSource && typeof finalSource === 'object' && finalSource.uri)
+        ? {
+            ...finalSource,
+            priority: FastImage.priority[priority],
+            cache: FastImage.cacheControl[cache],
         }
-    }, [uri]);
+        : finalSource;
+
+    const fastResizeMode = resizeMode === 'stretch'
+        ? FastImage.resizeMode.stretch
+        : resizeMode === 'contain'
+            ? FastImage.resizeMode.contain
+            : resizeMode === 'center'
+                ? FastImage.resizeMode.center
+                : FastImage.resizeMode.cover;
 
     return (
         <View style={[styles.container, style]}>
-            <Image
-                style={[StyleSheet.absoluteFill, style]}
-                source={finalSource}
+            <FastImage
+                style={StyleSheet.absoluteFill}
+                source={fastImageSource}
                 onLoadStart={handleLoadStart}
-                onLoadEnd={handleLoadEnd}
+                onLoad={handleLoad}
                 onError={handleError}
-                resizeMode={resizeMode}
+                resizeMode={fastResizeMode}
             />
 
             {showLoader && loading && !error && (
@@ -62,8 +89,8 @@ const FastImageComponent: React.FC<Props> = ({
             )}
 
             {error && !fallbackSource && (
-                <View style={[styles.errorContainer, style]}>
-                    {/* Error placeholder */}
+                <View style={styles.errorContainer}>
+                    {/* Error placeholder could be an icon */}
                 </View>
             )}
         </View>
@@ -89,4 +116,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default FastImageComponent;
+export default React.memo(FastImageComponent);

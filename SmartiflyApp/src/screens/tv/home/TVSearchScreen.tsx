@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    ActivityIndicator,
     ScrollView,
     Animated,
     TouchableOpacity,
@@ -22,6 +21,8 @@ import {
 } from '../../../api/xtream';
 import { TVSearchScreenProps, RootStackParamList, MovieItem, SeriesItem, LiveStreamItem } from '../../../navigation/types';
 import { useContentFilter } from '../../../store/profileStore';
+import { scheduleIdleWork } from '../../../utils/idle';
+import TVLoadingState from '../components/TVLoadingState';
 
 // =============================================================================
 // TYPES
@@ -51,13 +52,15 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
     }>({ movies: [], series: [], live: [] });
 
     const [isSearching, setIsSearching] = useState(false);
+    const [isPrepared, setIsPrepared] = useState(false);
 
 
     // Animation for the "focused" search bar state (since it's always the active input method here)
     const glowAnim = React.useRef(new Animated.Value(0.6)).current; // Constant subtle glow
 
     // Store access
-    const { searchContent, content } = useStore();
+    const searchContent = useStore((state) => state.searchContent);
+    const content = useStore((state) => state.content);
     const { filterContent } = useContentFilter();
 
     // =========================================================================
@@ -86,22 +89,51 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
 
     // Load suggested content on mount or when profile changes
     useEffect(() => {
-        const getRandomItems = <T extends XtreamLiveStream | XtreamMovie | XtreamSeries>(items: T[], count: number): T[] => {
-            if (!items || items.length === 0) return [];
-            // Slice first to avoid massive shuffles if list is big, but then shuffle the slice
-            const pool = items.slice(0, 100);
-            const shuffled = [...pool].sort(() => 0.5 - Math.random());
-            return shuffled.slice(0, count);
-        };
-
-        if (content.movies.loaded || content.series.loaded || content.live.loaded) {
-            setSuggestedContent({
-                movies: filterContent(getRandomItems(content.movies.items, 30)).slice(0, 10),
-                series: filterContent(getRandomItems(content.series.items, 30)).slice(0, 10),
-                live: getRandomItems(content.live.items, 10),
-            });
+        if (!content.movies.loaded && !content.series.loaded && !content.live.loaded) {
+            setSuggestedContent({ movies: [], series: [], live: [] });
+            setIsPrepared(false);
+            return;
         }
-    }, [filterContent, content.movies.items, content.movies.loaded, content.series.items, content.series.loaded, content.live.items, content.live.loaded]);
+
+        setIsPrepared(false);
+        const task = scheduleIdleWork(() => {
+            const getRandomItems = <T,>(items: T[], count: number): T[] => {
+                if (!items || items.length === 0) return [];
+                const max = Math.min(items.length, count);
+                const result: T[] = [];
+                const used = new Set<number>();
+                while (result.length < max) {
+                    const idx = Math.floor(Math.random() * items.length);
+                    if (!used.has(idx)) {
+                        used.add(idx);
+                        result.push(items[idx]);
+                    }
+                }
+                return result;
+            };
+
+            const moviePool = filterContent(content.movies.items.slice(0, 200));
+            const seriesPool = filterContent(content.series.items.slice(0, 200));
+            const livePool = content.live.items.slice(0, 120);
+
+            setSuggestedContent({
+                movies: getRandomItems(moviePool, 10),
+                series: getRandomItems(seriesPool, 10),
+                live: getRandomItems(livePool, 10),
+            });
+            setIsPrepared(true);
+        });
+
+        return () => task.cancel();
+    }, [
+        filterContent,
+        content.movies.items,
+        content.movies.loaded,
+        content.series.items,
+        content.series.loaded,
+        content.live.items,
+        content.live.loaded
+    ]);
 
     // Debounced search effect
     useEffect(() => {
@@ -152,7 +184,10 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
         setQuery('');
     }, []);
 
-    const handleContentPress = (item: XtreamLiveStream | XtreamMovie | XtreamSeries, type: 'live' | 'movie' | 'series') => {
+    const handleContentPress = useCallback((
+        item: XtreamLiveStream | XtreamMovie | XtreamSeries,
+        type: 'live' | 'movie' | 'series'
+    ) => {
         if (type === 'live') {
             // Cast to LiveStreamItem - XtreamLiveStream has compatible properties
             navigation.navigate('FullscreenPlayer', { type: 'live', item: item as unknown as LiveStreamItem });
@@ -163,28 +198,34 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
             // Cast to SeriesItem - XtreamSeries has compatible properties
             navigation.navigate('TVSeriesDetail', { series: item as unknown as SeriesItem });
         }
-    };
+    }, [navigation]);
 
     // =========================================================================
     // RENDER HELPERS
     // =========================================================================
 
     // Helper function to safely extract IDs and properties from different content types
-    const getItemId = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string | number => {
+    const getItemId = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string | number => {
         if ('stream_id' in item) return item.stream_id;
         if ('series_id' in item) return item.series_id;
         return 0;
-    };
+    }, []);
 
-    const getItemName = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
+    const getItemName = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
         return item.name;
-    };
+    }, []);
 
-    const getItemImage = (item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
+    const getItemImage = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
         if ('stream_icon' in item && item.stream_icon) return item.stream_icon;
         if ('cover' in item && item.cover) return item.cover;
         return '';
-    };
+    }, []);
+
+    const limitedResults = useMemo(() => ({
+        movies: results.movies.slice(0, 12),
+        series: results.series.slice(0, 12),
+        live: results.live.slice(0, 12),
+    }), [results]);
 
     const renderResultSection = (title: string, data: (XtreamLiveStream | XtreamMovie | XtreamSeries)[], type: 'live' | 'movie' | 'series') => {
         if (!data || data.length === 0) return null;
@@ -193,7 +234,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
             <View style={styles.resultSection}>
                 <Text style={styles.sectionTitle}>{title} ({data.length})</Text>
                 <View style={styles.cardsGrid}>
-                    {data.slice(0, 12).map((item) => ( // Limit to 12 items per section for perf
+                    {data.map((item) => (
                         <View key={getItemId(item)} style={styles.cardWrapper}>
                             <TVContentCard
                                 item={{
@@ -291,12 +332,14 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
             {/* RIGHT: RESULTS (3/4 Width) - Expanded */}
             <View style={styles.rightPanel}>
                 {isSearching ? (
-                    <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color={colors.primary} />
-                    </View>
+                    <TVLoadingState style={styles.centerContainer} />
+                ) : !isPrepared ? (
+                    <TVLoadingState style={styles.centerContainer} />
                 ) : (
                     <ScrollView
                         showsVerticalScrollIndicator={false}
+                        bounces={false}
+                        overScrollMode="never"
                         contentContainerStyle={styles.resultsContent}
                     >
                         {query.length < 2 ? (
@@ -332,9 +375,9 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                                     </View>
                                 ) : (
                                     <>
-                                        {renderResultSection('Movies', results.movies, 'movie')}
-                                        {renderResultSection('Series', results.series, 'series')}
-                                        {renderResultSection('Live TV', results.live, 'live')}
+                                        {renderResultSection('Movies', limitedResults.movies, 'movie')}
+                                        {renderResultSection('Series', limitedResults.series, 'series')}
+                                        {renderResultSection('Live TV', limitedResults.live, 'live')}
                                     </>
                                 )}
                             </>
@@ -486,7 +529,7 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(18),
         textAlign: 'center',
         lineHeight: scale(28),
-    }
+    },
 });
 
 export default TVSearchScreen;

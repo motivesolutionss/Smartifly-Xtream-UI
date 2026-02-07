@@ -20,7 +20,7 @@ import TVLoadingScreen from '../screens/tv/loading/TVLoadingScreen';
 import TVHomeScreen from '../screens/tv/home/TVHomeScreen';
 import TVPlayerScreen from '../screens/tv/player/TVPlayerScreen';
 // Re-importing to fix Metro resolution
-import TVMovieDetailScreen from '../screens/tv/details/TVMovieDetailScreenV2';
+import TVMovieDetailScreen from '../screens/tv/details/TVMovieDetailScreen';
 import TVSeriesDetailScreen from '../screens/tv/details/TVSeriesDetailScreen';
 import TVAccountSwitcherScreen from '../screens/tv/account/TVAccountSwitcherScreen';
 // Profile Screens (Parental Controls)
@@ -71,6 +71,7 @@ const TVNavigator: React.FC = () => {
         headerShown: false,
         animation: 'fade',
         animationDuration: 300,
+        freezeOnBlur: true,
         contentStyle: { backgroundColor: colors.background },
         gestureEnabled: false,
       }}

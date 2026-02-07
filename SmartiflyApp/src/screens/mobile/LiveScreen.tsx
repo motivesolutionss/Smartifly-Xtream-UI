@@ -12,8 +12,6 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
-    FlatList,
-    TouchableOpacity,
     StyleSheet,
     TextInput,
     ActivityIndicator,
@@ -23,6 +21,7 @@ import { FlashList } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ChannelCard from '../../components/ChannelCard';
 import NavBar from '../../components/NavBar';
+import CategoryList from '../../components/CategoryList';
 import { colors, spacing, borderRadius } from '../../theme';
 import useStore from '../../store';
 import useFilterStore from '../../store/filterStore';
@@ -51,6 +50,16 @@ const LiveScreen: React.FC<Props> = ({ navigation }) => {
     // Debounce search input (300ms) - big performance win for large lists
     const debouncedQuery = useDebounce(searchQuery, 300);
 
+    // O(n) category count map - PERFORMANCE FIX
+    const categoryCountMap = useMemo(() => {
+        if (!content.live.loaded) return {};
+        const countMap: Record<string, number> = {};
+        content.live.items.forEach(s => {
+            countMap[s.category_id] = (countMap[s.category_id] || 0) + 1;
+        });
+        return countMap;
+    }, [content.live.items, content.live.loaded]);
+
     // Transform categories from store format (using new domain structure)
     const categories = useMemo(() => {
         if (!content.live.loaded || !content.live.categories) return [];
@@ -58,9 +67,9 @@ const LiveScreen: React.FC<Props> = ({ navigation }) => {
         return content.live.categories.map(cat => ({
             id: cat.category_id,
             name: cat.category_name,
-            count: content.live.items.filter(s => s.category_id === cat.category_id).length,
+            count: categoryCountMap[cat.category_id] || 0,
         }));
-    }, [content.live.categories, content.live.items, content.live.loaded]);
+    }, [content.live.categories, content.live.loaded, categoryCountMap]);
 
     // Filtered channels - uses debounced query for smooth performance
     const filteredChannels = useMemo(() => {
@@ -141,31 +150,12 @@ const LiveScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Categories */}
             {categories.length > 0 && (
-                <FlatList
-                    horizontal
-                    data={[{ id: null, name: 'All', count: content.live.items.length }, ...categories]}
-                    keyExtractor={(item) => String(item.id ?? 'all')}
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.categoryList}
-                    contentContainerStyle={styles.categoryListContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={[
-                                styles.categoryChip,
-                                selectedCategory === item.id && styles.categoryChipActive,
-                            ]}
-                            onPress={() => handleCategorySelect(item.id, item.name)}
-                        >
-                            <Text
-                                style={[
-                                    styles.categoryChipText,
-                                    selectedCategory === item.id && styles.categoryChipTextActive,
-                                ]}
-                            >
-                                {item.name}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
+                <CategoryList
+                    categories={categories}
+                    totalCount={content.live.items.length}
+                    selectedCategory={selectedCategory}
+                    onCategorySelect={handleCategorySelect}
+                    activeColor={colors.live}
                 />
             )}
 

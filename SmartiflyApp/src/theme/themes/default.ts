@@ -15,8 +15,8 @@ export const defaultTheme: Theme = {
         tertiary: '#00FFB3',
 
         // Backgrounds
-        background: '#0B1220',
-        backgroundSecondary: '#0F1A2E',
+        background: '#0A1423',
+        backgroundSecondary: '#0E1D33',
         backgroundTertiary: '#142238',
         backgroundElevated: '#1A2D4A',
         backgroundInput: '#0D1526',

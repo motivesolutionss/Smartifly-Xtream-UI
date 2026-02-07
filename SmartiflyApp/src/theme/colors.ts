@@ -55,7 +55,7 @@ export type Gradients = {
 };
 
 export const gradients: Gradients = {
-    heroOverlay: ['transparent', 'rgba(11, 18, 32, 0.4)', 'rgba(11, 18, 32, 0.95)'],
+    heroOverlay: ['transparent', 'rgba(10, 20, 35, 0.4)', 'rgba(10, 20, 35, 0.95)'],
     cardHover: ['transparent', 'rgba(0, 229, 255, 0.1)'],
     primaryButton: [colors.primary, colors.primaryDark],
     accentButton: [colors.accent, colors.accentDark],

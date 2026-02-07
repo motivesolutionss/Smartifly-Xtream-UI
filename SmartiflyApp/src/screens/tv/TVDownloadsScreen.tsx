@@ -7,7 +7,7 @@
  * @enterprise-grade
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -27,14 +27,22 @@ interface TVDownloadsScreenProps {
 }
 
 const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navigation }) => {
-    const { downloads, removeDownload, refreshStorageMetrics, storageUsage } = useDownloadStore();
+    const downloads = useDownloadStore((state) => state.downloads);
+    const removeDownload = useDownloadStore((state) => state.removeDownload);
+    const refreshStorageMetrics = useDownloadStore((state) => state.refreshStorageMetrics);
+    const storageUsage = useDownloadStore((state) => state.storageUsage);
     const nav = useNavigation<any>();
     const [focusedId, setFocusedId] = React.useState<string | null>(null);
 
 
     // Filter to show only completed downloads
-    const completedDownloads = downloads.filter((d: DownloadItem) => d.status === 'completed');
-    const downloadingItems = downloads.filter((d: DownloadItem) => d.status === 'downloading' || d.status === 'pending');
+    const completedDownloads = useMemo(() => (
+        downloads.filter((d: DownloadItem) => d.status === 'completed')
+    ), [downloads]);
+
+    const downloadingItems = useMemo(() => (
+        downloads.filter((d: DownloadItem) => d.status === 'downloading' || d.status === 'pending')
+    ), [downloads]);
 
     React.useEffect(() => {
         refreshStorageMetrics();

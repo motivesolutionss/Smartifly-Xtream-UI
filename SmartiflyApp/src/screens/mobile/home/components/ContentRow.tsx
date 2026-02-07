@@ -10,7 +10,7 @@
  * Uses Phosphor icons for modern UI.
  */
 
-import React from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -198,25 +198,33 @@ const ContentRow: React.FC<ContentRowProps> = ({
     accentColor,
 }) => {
     // Limit items displayed
-    const displayData = items ? items.slice(0, maxItems) : [];
+    const displayData = useMemo(() => (items ? items.slice(0, maxItems) : []), [items, maxItems]);
+    const cardVariant = type === 'live' ? 'channel' : 'poster';
 
     // Don't render if no data and not loading
     if (!isLoading && displayData.length === 0) {
         return null;
     }
 
+    const handleItemPress = useCallback((item: ContentItem) => {
+        onItemPress?.(item);
+    }, [onItemPress]);
+
     // Render individual content card
-    const renderItem: ListRenderItem<ContentItem> = ({ item }) => (
-        <ContentCard
-            item={item}
-            onPress={() => onItemPress?.(item)}
-            variant={type === 'live' ? 'channel' : 'poster'}
-            showRating={type !== 'live'}
-        />
+    const renderItem = useCallback<ListRenderItem<ContentItem>>(
+        ({ item }) => (
+            <ContentCard
+                item={item}
+                onPress={handleItemPress}
+                variant={cardVariant}
+                showRating={type !== 'live'}
+            />
+        ),
+        [cardVariant, handleItemPress, type]
     );
 
     // Key extractor
-    const keyExtractor = (item: ContentItem) => String(item.id);
+    const keyExtractor = useCallback((item: ContentItem) => String(item.id), []);
 
     return (
         <View style={[styles.container, style]}>
@@ -344,4 +352,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default ContentRow;
+export default memo(ContentRow);

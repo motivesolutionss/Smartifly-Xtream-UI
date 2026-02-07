@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { createDebouncedStorage } from '../utils/storage';
 
 // Safe access to react-native-blob-util to prevent crashes if not linked
 const getBlobUtil = () => {
@@ -108,6 +109,11 @@ type DownloadStore = DownloadState & DownloadActions;
 // =============================================================================
 
 const DEFAULT_EXPIRY_DAYS = 30;
+const DOWNLOAD_STORAGE_DEBOUNCE_MS = 1000;
+
+const downloadStorage = createJSONStorage(() =>
+    createDebouncedStorage(AsyncStorage, DOWNLOAD_STORAGE_DEBOUNCE_MS)
+);
 
 // =============================================================================
 // STORE
@@ -309,7 +315,7 @@ export const useDownloadStore = create<DownloadStore>()(
         }),
         {
             name: 'smartifly-downloads',
-            storage: createJSONStorage(() => AsyncStorage),
+            storage: downloadStorage,
             // Don't persist large metadata if not needed, but metadata is small here
             partialize: (state) => ({
                 downloads: state.downloads.filter(d => d.status === 'completed' || d.status === 'paused'),

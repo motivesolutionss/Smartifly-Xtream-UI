@@ -1,13 +1,17 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    Image,
     Pressable,
-    Animated,
     ActivityIndicator,
 } from 'react-native';
+import FastImageComponent from '../../../../components/FastImageComponent';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+} from 'react-native-reanimated';
 import useEPG from '../../../../hooks/useEPG';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import {
@@ -41,11 +45,19 @@ interface TVContentCardProps {
     onPress: (item: TVContentItem) => void;
     width?: number;
     height?: number;
+    disableZoom?: boolean;
 }
 
 // =============================================================================
 // TV CONTENT CARD COMPONENT
 // =============================================================================
+
+// Spring config for smooth, responsive focus
+const SPRING_CONFIG = {
+    damping: 15,
+    stiffness: 200,
+    mass: 0.5,
+};
 
 // Helper for time formatting
 const formatTime = (ts: number) => {
@@ -60,41 +72,51 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     onPress,
     width = scale(200),
     height = scale(280),
+    disableZoom = false,
 }) => {
     const { theme } = useTheme();
     const [isFocused, setIsFocused] = useState(false);
-    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    // Reanimated shared value for 60fps UI-thread animations
+    const scaleValue = useSharedValue(1);
 
     // Visual differentiation based on content type
     const variant: ContentVariant = item.type || 'movie';
     const isLive = variant === 'live';
     const imageUri = item.image || FALLBACK_POSTER;
 
-    // EPG Hook
-    const { currentProgram, progress, loading: epgLoading } = useEPG(isLive ? item.id : undefined, isFocused);
+    // EPG Hook (skip if channel has no EPG mapping)
+    const epgChannelId = isLive ? item.data?.epg_channel_id : null;
+    const hasEpg = isLive && typeof epgChannelId === 'string' ? epgChannelId.trim().length > 0 : !!epgChannelId;
+    const { currentProgram, progress, loading: epgLoading } = useEPG(hasEpg ? item.id : undefined, isFocused);
 
     useEffect(() => {
-        prefetchImage(imageUri);
-    }, [imageUri]);
+        if (isFocused) {
+            prefetchImage(imageUri);
+        }
+    }, [imageUri, isFocused]);
+
+    // Animated style - runs on UI thread for 60fps
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: disableZoom ? 1 : scaleValue.value }],
+    }));
 
     const handleFocus = () => {
+        // Start animation immediately on UI thread if zoom is NOT disabled
+        if (!disableZoom) {
+            scaleValue.value = withSpring(1.05, SPRING_CONFIG);
+        }
+        // Defer state update to prevent render stutter
         setIsFocused(true);
-        Animated.spring(scaleAnim, {
-            toValue: 1.1,
-            useNativeDriver: true,
-            friction: 5,
-            tension: 40,
-        }).start();
     };
 
     const handleBlur = () => {
+        // Start animation immediately on UI thread
+        if (!disableZoom) {
+            scaleValue.value = withSpring(1, SPRING_CONFIG);
+        }
+        // Defer state update
         setIsFocused(false);
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            friction: 5,
-            tension: 40,
-        }).start();
     };
 
     // Badge logic
@@ -121,37 +143,25 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                 { width, height: finalHeight }
             ]}
         >
-            {/* FOCUS AURA (Glow behind card) */}
-            {isFocused && (
-                <View style={[
-                    styles.focusAura,
-                    {
-                        width: width + scale(40),
-                        height: finalHeight + scale(20),
-                        backgroundColor: isLive ? theme.colors.live : theme.colors.primary,
-                        borderRadius: isLive ? scale(24) : scale(16),
-                    }
-                ]} />
-            )}
-
             <Animated.View
                 style={[
+                    animatedStyle,
                     {
                         width,
                         height: finalHeight,
-                        transform: [{ scale: scaleAnim }],
                     },
                     isFocused ? styles.focusedBorder : styles.unfocusedBorder,
                     isLive ? styles.roundedLive : styles.roundedPrimary,
                     isFocused ? (isLive ? styles.focusedLive : styles.focusedPrimary) : styles.unfocused,
                     isLive ? styles.bgWhite : styles.bgSecondary,
-                    isFocused && {
-                        shadowColor: isLive ? theme.colors.live : theme.colors.primary,
+                    isFocused && !disableZoom && {
+                        // Use accent glow for VOD cards to avoid red focus halo
+                        shadowColor: isLive ? theme.colors.live : theme.colors.accent,
                         ...glowEffectsTV.focus,
                     }
                 ]}
             >
-                <Image
+                <FastImageComponent
                     source={{ uri: imageUri }}
                     style={[
                         styles.image,
@@ -161,7 +171,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                 />
 
                 {/* Live Card Overlay */}
-                {isLive && (
+                {isLive && isFocused && (
                     <View style={StyleSheet.absoluteFill}>
                         <Svg height="100%" width="100%">
                             <Defs>
@@ -174,11 +184,13 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                             <Rect width="100%" height="100%" fill="url(#gradCard)" />
                         </Svg>
 
-                        {/* EPG Info on Focus */}
-                        {isFocused && (
+                        {hasEpg && (
                             <View style={styles.epgOverlay}>
+                                <Text style={styles.channelName} numberOfLines={1}>
+                                    {item.title}
+                                </Text>
                                 {epgLoading ? (
-                                    <ActivityIndicator size="small" color="#FFF" />
+                                    <ActivityIndicator size="small" color="#FFF" style={{ marginVertical: scale(4) }} />
                                 ) : currentProgram ? (
                                     <>
                                         <Text style={styles.epgTitle} numberOfLines={1}>
@@ -196,9 +208,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                                             {formatTime(currentProgram.start_timestamp)} - {formatTime(currentProgram.stop_timestamp)}
                                         </Text>
                                     </>
-                                ) : (
-                                    <Text style={styles.epgTitle}>No Info Available</Text>
-                                )}
+                                ) : null}
                             </View>
                         )}
                     </View>
@@ -208,7 +218,6 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
                 {badge && (
                     <View style={[
                         styles.badge,
-                        badge.isLive && styles.liveBadge,
                         badge.isLive && styles.liveBadge,
                         badge.isLive ? { backgroundColor: badge.color } : styles.bgTransparent
                     ]}>
@@ -321,23 +330,35 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        padding: scale(12),
+        padding: scale(10),
         justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.4)', // Subtle background for text readability
+    },
+    channelName: {
+        color: '#FFF',
+        fontSize: scaleFont(14),
+        fontWeight: '900',
+        textTransform: 'uppercase',
+        marginBottom: scale(2),
+        letterSpacing: 0.5,
     },
     epgTitle: {
-        color: '#FFF',
-        fontSize: scaleFont(13),
-        fontWeight: 'bold',
-        marginBottom: scale(6),
+        color: 'rgba(255,255,255,0.9)',
+        fontSize: scaleFont(12),
+        fontWeight: '600',
+        marginBottom: scale(4),
         textShadowColor: 'rgba(0,0,0,0.8)',
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 2,
     },
     epgTime: {
-        color: '#DDD',
+        color: '#AAA',
         fontSize: scaleFont(10),
         marginTop: scale(4),
-        fontWeight: '600',
+        fontWeight: '500',
+    },
+    noInfoContainer: {
+        opacity: 0.7,
     },
     progressBarContainer: {
         height: scale(4),
@@ -384,4 +405,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default TVContentCard;
+export default React.memo(TVContentCard);

@@ -12,11 +12,11 @@ import {
     FlatList,
     Pressable,
     StatusBar,
-    ActivityIndicator,
 } from 'react-native';
 import { colors, scale, scaleFont } from '../../theme';
 import { getAnnouncements } from '../../api/backend';
 import { logger } from '../../config';
+import TVLoadingState from './components/TVLoadingState';
 
 interface Announcement {
     id: string;
@@ -82,9 +82,7 @@ const TVAnnouncementsScreen: React.FC = () => {
     const listEmpty = useMemo(() => {
         if (isLoading) {
             return (
-                <View style={styles.emptyState}>
-                    <ActivityIndicator color={colors.primary} />
-                </View>
+                <TVLoadingState style={styles.emptyState} />
             );
         }
 

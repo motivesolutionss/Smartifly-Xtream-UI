@@ -18,6 +18,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfileStore } from './profileStore';
+import { createDebouncedStorage } from '../utils/storage';
 
 // =============================================================================
 // TYPES
@@ -108,6 +109,42 @@ const getCurrentProfileId = (): string => {
 
 const isCompleted = (progress: number): boolean => progress >= 90;
 
+// =============================================================================
+// PERSISTENCE OPTIMIZATIONS
+// =============================================================================
+
+const WATCH_HISTORY_DEBOUNCE_MS = 1000;
+
+const watchHistoryStorage = createJSONStorage(() =>
+    createDebouncedStorage(AsyncStorage, WATCH_HISTORY_DEBOUNCE_MS)
+);
+
+const sanitizeHistoryForStorage = (
+    history: Record<string, WatchProgress>
+): Record<string, WatchProgress> => {
+    const sanitized: Record<string, WatchProgress> = {};
+    for (const [id, item] of Object.entries(history)) {
+        sanitized[id] = {
+            id: item.id,
+            type: item.type,
+            streamId: item.streamId,
+            seriesId: item.seriesId,
+            seasonNumber: item.seasonNumber,
+            episodeNumber: item.episodeNumber,
+            progress: item.progress,
+            position: item.position,
+            duration: item.duration,
+            lastWatched: item.lastWatched,
+            title: item.title,
+            episodeTitle: item.episodeTitle,
+            thumbnail: item.thumbnail,
+            completed: item.completed,
+            source: item.source,
+        };
+    }
+    return sanitized;
+};
+
 export const useWatchHistoryStore = create<WatchHistoryState>()(
     persist(
         (set, get) => ({
@@ -190,8 +227,10 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
         }),
         {
             name: 'smartifly-watch-history',
-            storage: createJSONStorage(() => AsyncStorage),
-            partialize: (state) => ({ history: state.history }),
+            storage: watchHistoryStorage,
+            partialize: (state) => ({
+                history: sanitizeHistoryForStorage(state.history),
+            }),
         }
     )
 );

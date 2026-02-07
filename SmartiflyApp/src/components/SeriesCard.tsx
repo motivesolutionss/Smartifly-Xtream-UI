@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, TouchableOpacity, View, Text } from 'react-native';
 import FastImageComponent from './FastImageComponent';
-import { colors, borderRadius, spacing } from '../theme';
+import { colors, borderRadius, spacing, Icon } from '../theme';
 
 interface SeriesCardProps {
     item: any;
@@ -9,7 +9,6 @@ interface SeriesCardProps {
 }
 
 const SeriesCard = ({ item, onPress }: SeriesCardProps) => {
-    // Extract season count if available (Xtream provides this in some responses)
     const seasonCount = item.num_seasons || item.episode_run_time || null;
 
     return (
@@ -17,17 +16,16 @@ const SeriesCard = ({ item, onPress }: SeriesCardProps) => {
             <FastImageComponent
                 source={{ uri: item.cover || 'https://via.placeholder.com/120x180?text=No+Image' }}
                 style={styles.poster}
-                showLoader={true}
+                showLoader={false}
             />
 
-            {/* Rating badge (top-right) */}
             {item.rating_5based > 0 && (
                 <View style={styles.ratingBadge}>
-                    <Text style={styles.ratingText}>★ {item.rating_5based?.toFixed(1)}</Text>
+                    <Icon name="star" size={10} color={colors.warning} />
+                    <Text style={styles.ratingText}>{item.rating_5based?.toFixed(1)}</Text>
                 </View>
             )}
 
-            {/* Season count badge (bottom-left) - UX enhancement for discoverability */}
             {seasonCount && (
                 <View style={styles.seasonBadge}>
                     <Text style={styles.seasonText}>
@@ -59,6 +57,9 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 4,
         right: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
         backgroundColor: colors.overlay,
         paddingHorizontal: 6,
         paddingVertical: 2,
@@ -71,7 +72,7 @@ const styles = StyleSheet.create({
     },
     seasonBadge: {
         position: 'absolute',
-        bottom: 36, // Above the title
+        bottom: 36,
         left: 4,
         backgroundColor: colors.series,
         paddingHorizontal: 6,
@@ -87,7 +88,6 @@ const styles = StyleSheet.create({
         color: colors.textPrimary,
         fontSize: 12,
         marginTop: spacing.xs,
-        // Removed fixed height to allow text to wrap naturally
         textAlign: 'center',
     },
 });

@@ -14,11 +14,11 @@ import {
     View,
     Text,
     StyleSheet,
-    Image,
     Pressable,
     Animated,
     Modal,
 } from 'react-native';
+import FastImageComponent from '../../../components/FastImageComponent';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -28,18 +28,13 @@ import useTVBackHandler from '../../../utils/useTVBackHandler';
 import { logger } from '../../../config';
 import TVDownloadButton from '../../../components/tv/TVDownloadButton';
 
-
-
-// Types
-
-
 const TVMovieDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { movie } = route.params;
 
     // Store & State
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const [info, setInfo] = useState<any>(null);
 
     // UI State
@@ -199,10 +194,11 @@ const TVMovieDetailScreen: React.FC = () => {
             importantForAccessibility={isTrailerModalOpen ? 'no-hide-descendants' : 'auto'}
         >
             {/* 1. Full Screen Backdrop */}
-            <Image
+            <FastImageComponent
                 source={{ uri: backdrop }}
                 style={styles.backdrop}
                 resizeMode="cover"
+                priority="high"
             />
 
             {/* 2. Gradient Overlay (Cinema Mode) */}
@@ -233,7 +229,7 @@ const TVMovieDetailScreen: React.FC = () => {
             ]}>
                 {/* Left Column: Poster */}
                 <View style={styles.leftColumn}>
-                    <Image
+                    <FastImageComponent
                         source={{ uri: poster }}
                         style={styles.poster}
                         resizeMode="cover"
@@ -314,6 +310,7 @@ const TVMovieDetailScreen: React.FC = () => {
                             onFocus={() => setFocusedButton('download')}
                             onBlur={() => setFocusedButton(null)}
                             isFocused={focusedButton === 'download'}
+                            style={{ marginRight: scale(20) }}
                         />
                         {youtube_trailer && renderButton(
                             'trailer',
@@ -332,7 +329,6 @@ const TVMovieDetailScreen: React.FC = () => {
 
             </Animated.View>
 
-            {/* 4. Modal (Simple Overlay) */}
             {/* 4. YouTube Trailer Modal */}
             <Modal
                 visible={isTrailerModalOpen && !!youtube_trailer}
@@ -360,8 +356,8 @@ const TVMovieDetailScreen: React.FC = () => {
                             <YoutubePlayer
                                 height={scale(450)}
                                 width={scale(800)}
-                                play={isTrailerPlaying}
                                 videoId={getYoutubeId(youtube_trailer)}
+                                play={isTrailerPlaying}
                                 onReady={() => setIsTrailerPlaying(true)}
                                 initialPlayerParams={{
                                     autoplay: 1,

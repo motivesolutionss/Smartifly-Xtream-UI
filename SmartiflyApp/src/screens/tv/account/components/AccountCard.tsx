@@ -33,20 +33,18 @@ const AccountCard: React.FC<AccountCardProps> = ({
 
     const handleFocus = () => {
         setIsFocused(true);
-        Animated.spring(scaleAnim, {
-            toValue: 1.1,
-            friction: 5,
-            tension: 40,
+        Animated.timing(scaleAnim, {
+            toValue: 1.08,
+            duration: 100,
             useNativeDriver: true,
         }).start();
     };
 
     const handleBlur = () => {
         setIsFocused(false);
-        Animated.spring(scaleAnim, {
+        Animated.timing(scaleAnim, {
             toValue: 1,
-            friction: 5,
-            tension: 40,
+            duration: 100,
             useNativeDriver: true,
         }).start();
     };

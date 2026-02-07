@@ -5,7 +5,7 @@
  * Uses react-native-blob-util for background downloads.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     Pressable,
     Text,
@@ -40,10 +40,14 @@ const TVDownloadButton: React.FC<TVDownloadButtonProps> = ({
     onBlur,
     isFocused = false
 }) => {
-    const { downloads, addDownload, removeDownload } = useDownloadStore();
-    const { getXtreamAPI } = useStore();
+    const downloads = useDownloadStore((state) => state.downloads);
+    const addDownload = useDownloadStore((state) => state.addDownload);
+    const removeDownload = useDownloadStore((state) => state.removeDownload);
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
 
-    const download = downloads.find(d => d.id === item.id);
+    const download = useMemo(() => (
+        downloads.find(d => d.id === item.id)
+    ), [downloads, item.id]);
 
     const handleDownload = async () => {
         if (download) {
@@ -189,4 +193,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default TVDownloadButton;
+export default React.memo(TVDownloadButton);

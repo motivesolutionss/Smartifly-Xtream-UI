@@ -12,11 +12,10 @@ import {
     View,
     Text,
     StyleSheet,
-    Image,
     Pressable,
-    Animated,
     TouchableOpacity,
 } from 'react-native';
+import FastImageComponent from '../../../../components/FastImageComponent';
 import { colors, scale, scaleFont } from '../../../../theme';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
 import { WatchProgress } from '../../../../store/watchHistoryStore';
@@ -34,6 +33,17 @@ interface TVContinueCardProps {
 }
 
 // =============================================================================
+// CONSTANTS
+// =============================================================================
+
+// Spring config for smooth, responsive focus
+const SPRING_CONFIG = {
+    damping: 15,
+    stiffness: 200,
+    mass: 0.5,
+};
+
+// =============================================================================
 // COMPONENT
 // =============================================================================
 
@@ -45,24 +55,12 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
     height = scale(130), // Landscape ratio for continue
 }) => {
     const [isFocused, setIsFocused] = useState(false);
-    const [scaleAnim] = useState(new Animated.Value(1));
-
     const handleFocus = () => {
         setIsFocused(true);
-        Animated.spring(scaleAnim, {
-            toValue: 1.06,
-            friction: 5,
-            useNativeDriver: true,
-        }).start();
     };
 
     const handleBlur = () => {
         setIsFocused(false);
-        Animated.spring(scaleAnim, {
-            toValue: 1,
-            friction: 5,
-            useNativeDriver: true,
-        }).start();
     };
 
     // Format remaining time
@@ -77,14 +75,12 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
             onBlur={handleBlur}
             style={[styles.container, { width }]}
         >
-            <Animated.View
+            <View
                 style={[
                     styles.imageContainer,
                     {
                         width,
                         height,
-                        transform: [{ scale: scaleAnim }],
-
                     },
                     isFocused ? styles.borderFocusedWidth : styles.borderZero,
                     isFocused ? styles.borderFocused : styles.borderTransparent,
@@ -92,7 +88,7 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
                 ]}
             >
                 {/* Thumbnail */}
-                <Image
+                <FastImageComponent
                     source={{ uri: item.thumbnail || FALLBACK_POSTER }}
                     style={styles.image}
                     resizeMode="cover"
@@ -138,7 +134,7 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
                         {item.type === 'live' ? 'LIVE' : item.type === 'series' ? 'SERIES' : 'MOVIE'}
                     </Text>
                 </View>
-            </Animated.View>
+            </View>
 
         </Pressable>
     );
@@ -279,4 +275,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default TVContinueCard;
+export default React.memo(TVContinueCard);

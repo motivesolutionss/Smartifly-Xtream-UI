@@ -7,7 +7,7 @@
  * @enterprise-grade
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
     View,
     Text,
@@ -17,6 +17,14 @@ import {
 import { colors, scale, scaleFont } from '../../../../theme';
 import TVContinueCard from './TVContinueCard';
 import { WatchProgress } from '../../../../store/watchHistoryStore';
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+const CARD_WIDTH = scale(220);
+const CARD_MARGIN = scale(24);
+const ITEM_WIDTH = CARD_WIDTH + CARD_MARGIN;
 
 // =============================================================================
 // TYPES
@@ -39,6 +47,22 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
     onPressItem,
     onRemoveItem,
 }) => {
+    const renderItem = useCallback(({ item }: { item: WatchProgress }) => (
+        <TVContinueCard
+            item={item}
+            onPress={onPressItem}
+            onRemove={onRemoveItem}
+        />
+    ), [onPressItem, onRemoveItem]);
+
+    const getItemLayout = useCallback((_: any, index: number) => ({
+        length: ITEM_WIDTH,
+        offset: ITEM_WIDTH * index,
+        index,
+    }), []);
+
+    const keyExtractor = useCallback((item: WatchProgress) => item.id, []);
+
     if (data.length === 0) return null;
 
     return (
@@ -48,17 +72,17 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
             <FlatList
                 horizontal
                 data={data}
-                renderItem={({ item }) => (
-                    <TVContinueCard
-                        item={item}
-                        onPress={onPressItem}
-                        onRemove={onRemoveItem}
-                    />
-                )}
-                keyExtractor={(item) => item.id}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                getItemLayout={getItemLayout}
                 contentContainerStyle={styles.listContent}
                 showsHorizontalScrollIndicator={false}
-                removeClippedSubviews={false}
+                // Performance optimizations
+                removeClippedSubviews={false} // Restored for consistent focus sounds
+                windowSize={5}
+                initialNumToRender={6}
+                maxToRenderPerBatch={3}
+                updateCellsBatchingPeriod={50}
             />
         </View>
     );
@@ -70,7 +94,7 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        marginBottom: scale(10), // Reduced from 40
+        marginBottom: scale(10),
         width: '100%',
     },
     title: {
@@ -86,4 +110,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default TVContinueRail;
+export default React.memo(TVContinueRail);

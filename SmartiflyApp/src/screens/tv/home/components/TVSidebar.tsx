@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     View,
     StyleSheet,
@@ -71,25 +71,58 @@ const TVSidebar: React.FC<TVSidebarProps> = ({
     // State
     const [focusedId, setFocusedId] = useState<SidebarRoute | null>(null);
     const { theme } = useTheme();
-    const navTimer = useRef<any>(null);
+    const lastActiveRouteRef = useRef<SidebarRoute>(activeRoute);
+    const suppressedFocusRef = useRef<SidebarRoute | null>(null);
+    const suppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const suppressAllFocusRef = useRef(false);
+    const suppressAllTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const handleFocus = (id: SidebarRoute) => {
-        setFocusedId(id);
-
-        // Debounce navigation slightly to let focus animations finish (approx 150ms)
-        if (navTimer.current) clearTimeout(navTimer.current);
-
-        navTimer.current = setTimeout(() => {
-            onNavigate(id);
-        }, 150);
-    };
-
-    // Clear timer on unmount
+    // Keep focus highlight in sync with active route to avoid focus bounce
     useEffect(() => {
-        return () => {
-            if (navTimer.current) clearTimeout(navTimer.current);
-        };
-    }, []);
+        if (focusedId !== activeRoute) {
+            setFocusedId(activeRoute);
+        }
+    }, [activeRoute, focusedId]);
+
+    // Suppress stale focus callbacks from the previous route after switching
+    useEffect(() => {
+        if (lastActiveRouteRef.current !== activeRoute) {
+            suppressedFocusRef.current = lastActiveRouteRef.current;
+            lastActiveRouteRef.current = activeRoute;
+
+            if (suppressTimeoutRef.current) {
+                clearTimeout(suppressTimeoutRef.current);
+            }
+            suppressTimeoutRef.current = setTimeout(() => {
+                suppressedFocusRef.current = null;
+            }, 150);
+
+            suppressAllFocusRef.current = true;
+            if (suppressAllTimeoutRef.current) {
+                clearTimeout(suppressAllTimeoutRef.current);
+            }
+            suppressAllTimeoutRef.current = setTimeout(() => {
+                suppressAllFocusRef.current = false;
+            }, 400);
+        }
+    }, [activeRoute]);
+
+    const handleNavigate = useCallback((id: SidebarRoute) => {
+        if (activeRoute !== id) {
+            onNavigate(id);
+        }
+    }, [activeRoute, onNavigate]);
+
+    const handleFocus = useCallback((id: SidebarRoute) => {
+        setFocusedId(id);
+        if (suppressAllFocusRef.current) {
+            return;
+        }
+        if (suppressedFocusRef.current === id && activeRoute !== id) {
+            return;
+        }
+        handleNavigate(id);
+    }, [activeRoute, handleNavigate]);
 
     const renderItem = (item: MenuItem) => {
         const isActive = activeRoute === item.id;
@@ -103,9 +136,10 @@ const TVSidebar: React.FC<TVSidebarProps> = ({
             <Pressable
                 key={item.id}
                 ref={item.id === 'Search' ? searchRef : undefined}
-                onPress={() => onNavigate(item.id)}
+                onPress={() => handleNavigate(item.id)}
                 onFocus={() => handleFocus(item.id)}
                 onBlur={() => setFocusedId(null)}
+                hasTVPreferredFocus={isActive}
                 style={[
                     styles.menuItem,
                     isFocused && styles.menuItemFocused,
@@ -124,9 +158,6 @@ const TVSidebar: React.FC<TVSidebarProps> = ({
                         color={isFocused ? '#FFF' : (isActive ? activeColor : inactiveColor)}
                     />
                 </View>
-                {isFocused && (
-                    <View style={[styles.focusAura, { backgroundColor: activeColor }]} />
-                )}
             </Pressable>
         );
     };
@@ -200,4 +231,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default TVSidebar;
+export default React.memo(TVSidebar);

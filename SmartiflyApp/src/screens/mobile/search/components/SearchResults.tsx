@@ -1,14 +1,10 @@
 /**
  * Smartifly SearchResults Component
- * 
- * Displays search results categorized by type:
- * - Live channels
- * - Movies
- * - Series
- * - With "See All" expansion
+ *
+ * Renders search results grouped by content type.
  */
 
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import {
     View,
     Text,
@@ -18,17 +14,11 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import FastImageComponent from '../../../../components/FastImageComponent';
-import { colors, spacing, borderRadius } from '../../../../theme';
+import { colors, spacing, borderRadius, Icon, IconName } from '../../../../theme';
 
-// Skeleton specific overrides
 const skeletonColors = {
     base: colors.skeleton,
-    highlight: colors.skeletonHighlight,
 };
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 export interface SearchResultItem {
     id: string | number;
@@ -39,7 +29,7 @@ export interface SearchResultItem {
     year?: string;
     category?: string;
     seasonCount?: number;
-    data?: any; // The original data object for navigation
+    data?: any;
 }
 
 export interface SearchResultsData {
@@ -58,59 +48,56 @@ export interface SearchResultsProps {
     style?: ViewStyle;
 }
 
-// =============================================================================
-// RESULT ITEM COMPONENT
-// =============================================================================
-
 interface ResultItemProps {
     item: SearchResultItem;
-    onPress: () => void;
+    onPress: (item: SearchResultItem) => void;
 }
 
-const ResultItem: React.FC<ResultItemProps> = ({ item, onPress }) => {
+const ResultItem: React.FC<ResultItemProps> = memo(({ item, onPress }) => {
     const isLive = item.type === 'live';
     const itemWidth = isLive ? 100 : 110;
     const itemHeight = isLive ? 100 : 165;
 
     const accentColor =
-        item.type === 'live' ? colors.live :
-            item.type === 'movie' ? colors.movies :
-                colors.series;
+        item.type === 'live'
+            ? colors.live
+            : item.type === 'movie'
+                ? colors.movies
+                : colors.series;
 
     return (
         <TouchableOpacity
             style={[styles.resultItem, { width: itemWidth }]}
-            onPress={onPress}
+            onPress={() => onPress(item)}
             activeOpacity={0.7}
         >
-            {/* Image */}
-            <View style={[
-                styles.resultImage,
-                { width: itemWidth },
-                isLive ? styles.resultImageLive : { height: itemHeight - 50 },
-            ]}>
+            <View
+                style={[
+                    styles.resultImage,
+                    { width: itemWidth },
+                    isLive ? styles.resultImageLive : { height: itemHeight - 50 },
+                ]}
+            >
                 <FastImageComponent
                     source={{ uri: item.image }}
                     style={StyleSheet.absoluteFill}
                     resizeMode="cover"
                 />
 
-                {/* Live Badge */}
                 {isLive && (
                     <View style={[styles.liveBadge, { backgroundColor: accentColor }]}>
                         <Text style={styles.liveBadgeText}>LIVE</Text>
                     </View>
                 )}
 
-                {/* Rating Badge */}
                 {item.rating !== undefined && item.rating > 0 && !isLive && (
                     <View style={styles.ratingBadge}>
-                        <Text style={styles.ratingText}>★ {item.rating.toFixed(1)}</Text>
+                        <Icon name="star" size={10} color={colors.qualityUHD} />
+                        <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
                     </View>
                 )}
             </View>
 
-            {/* Info */}
             <View style={styles.resultInfo}>
                 <Text style={styles.resultName} numberOfLines={2}>
                     {item.name}
@@ -118,21 +105,17 @@ const ResultItem: React.FC<ResultItemProps> = ({ item, onPress }) => {
                 {(item.year || item.seasonCount) && (
                     <Text style={styles.resultMeta} numberOfLines={1}>
                         {item.year}
-                        {item.seasonCount && ` • ${item.seasonCount}S`}
+                        {item.seasonCount && ` - ${item.seasonCount}S`}
                     </Text>
                 )}
             </View>
         </TouchableOpacity>
     );
-};
-
-// =============================================================================
-// RESULT SECTION COMPONENT
-// =============================================================================
+});
 
 interface ResultSectionProps {
     title: string;
-    icon: string;
+    icon: IconName;
     color: string;
     items: SearchResultItem[];
     onItemPress: (item: SearchResultItem) => void;
@@ -140,7 +123,7 @@ interface ResultSectionProps {
     maxItems: number;
 }
 
-const ResultSection: React.FC<ResultSectionProps> = ({
+const ResultSection: React.FC<ResultSectionProps> = memo(({
     title,
     icon,
     color,
@@ -151,17 +134,15 @@ const ResultSection: React.FC<ResultSectionProps> = ({
 }) => {
     if (items.length === 0) return null;
 
-    // Use actual items length when showing all (cleaner than magic number 999)
     const displayItems = maxItems >= items.length ? items : items.slice(0, maxItems);
     const hasMore = items.length > maxItems;
 
     return (
         <View style={styles.section}>
-            {/* Header */}
             <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleRow}>
                     <View style={[styles.sectionDot, { backgroundColor: color }]} />
-                    <Text style={styles.sectionIcon}>{icon}</Text>
+                    <Icon name={icon} size={16} color={colors.textPrimary} />
                     <Text style={styles.sectionTitle}>{title}</Text>
                     <View style={styles.sectionCount}>
                         <Text style={styles.sectionCountText}>{items.length}</Text>
@@ -173,23 +154,22 @@ const ResultSection: React.FC<ResultSectionProps> = ({
                         onPress={onSeeAllPress}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                        <Text style={[styles.seeAllText, { color }]}>See All →</Text>
+                        <Text style={[styles.seeAllText, { color }]}>See All</Text>
                     </TouchableOpacity>
                 )}
             </View>
 
-            {/* Horizontal List */}
             <View style={items[0].type === 'live' ? styles.liveSectionContainer : styles.vodSectionContainer}>
                 <FlashList
                     horizontal
                     data={displayItems}
-                    // @ts-ignore: estimatedItemSize is valid but types are missing
+                    // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
                     estimatedItemSize={110}
                     keyExtractor={(item) => `${item.type}-${item.id}`}
                     renderItem={({ item }) => (
                         <ResultItem
                             item={item}
-                            onPress={() => onItemPress(item)}
+                            onPress={onItemPress}
                         />
                     )}
                     showsHorizontalScrollIndicator={false}
@@ -198,11 +178,7 @@ const ResultSection: React.FC<ResultSectionProps> = ({
             </View>
         </View>
     );
-};
-
-// =============================================================================
-// SEARCH RESULTS COMPONENT
-// =============================================================================
+});
 
 const SearchResults: React.FC<SearchResultsProps> = ({
     results,
@@ -219,70 +195,61 @@ const SearchResults: React.FC<SearchResultsProps> = ({
         return null;
     }
 
-    // When showAll is true, show all items (use length as max)
-    const getMaxItems = (items: SearchResultItem[]) =>
-        showAll ? items.length : maxItemsPerCategory;
+    const maxItemsBySection = useMemo(() => ({
+        live: showAll ? results.live.length : maxItemsPerCategory,
+        movies: showAll ? results.movies.length : maxItemsPerCategory,
+        series: showAll ? results.series.length : maxItemsPerCategory,
+    }), [maxItemsPerCategory, results.live.length, results.movies.length, results.series.length, showAll]);
 
     return (
         <View style={[styles.container, style]}>
-            {/* Results Count */}
             <View style={styles.resultsHeader}>
                 <Text style={styles.resultsCount}>
                     {totalResults} results for "{query}"
                 </Text>
             </View>
 
-            {/* Live Channels */}
             <ResultSection
                 title="Live Channels"
-                icon="📺"
+                icon="television"
                 color={colors.live}
                 items={results.live}
                 onItemPress={onItemPress}
                 onSeeAllPress={() => onSeeAllPress('live')}
-                maxItems={getMaxItems(results.live)}
+                maxItems={maxItemsBySection.live}
             />
 
-            {/* Movies */}
             <ResultSection
                 title="Movies"
-                icon="🎬"
+                icon="filmStrip"
                 color={colors.movies}
                 items={results.movies}
                 onItemPress={onItemPress}
                 onSeeAllPress={() => onSeeAllPress('movies')}
-                maxItems={getMaxItems(results.movies)}
+                maxItems={maxItemsBySection.movies}
             />
 
-            {/* Series */}
             <ResultSection
                 title="Series"
-                icon="📀"
+                icon="monitorPlay"
                 color={colors.series}
                 items={results.series}
                 onItemPress={onItemPress}
                 onSeeAllPress={() => onSeeAllPress('series')}
-                maxItems={getMaxItems(results.series)}
+                maxItems={maxItemsBySection.series}
             />
         </View>
     );
 };
 
-// =============================================================================
-// LOADING SKELETON
-// =============================================================================
-
 export const SearchResultsSkeleton: React.FC<{ style?: ViewStyle }> = ({ style }) => (
     <View style={[styles.container, style]}>
-        {/* Skeleton Sections */}
         {['live', 'movies', 'series'].map((type) => (
             <View key={type} style={styles.section}>
-                {/* Header Skeleton */}
                 <View style={styles.sectionHeader}>
                     <View style={styles.skeletonHeader} />
                 </View>
 
-                {/* Items Skeleton */}
                 <View style={styles.skeletonRow}>
                     {Array.from({ length: 5 }).map((_, i) => (
                         <View key={i} style={styles.skeletonItem}>
@@ -296,10 +263,6 @@ export const SearchResultsSkeleton: React.FC<{ style?: ViewStyle }> = ({ style }
         ))}
     </View>
 );
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -332,9 +295,6 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-    },
-    sectionIcon: {
-        fontSize: 16,
     },
     sectionTitle: {
         fontSize: 17,
@@ -371,9 +331,6 @@ const styles = StyleSheet.create({
         backgroundColor: colors.backgroundTertiary,
         position: 'relative',
     },
-    resultImageSquare: {
-        borderRadius: borderRadius.md,
-    },
     liveBadge: {
         position: 'absolute',
         top: spacing.xxs,
@@ -392,6 +349,9 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: spacing.xxs,
         right: spacing.xxs,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
         backgroundColor: colors.overlay,
         paddingHorizontal: spacing.xxs,
         paddingVertical: 2,
@@ -416,8 +376,6 @@ const styles = StyleSheet.create({
         color: colors.textMuted,
         marginTop: 2,
     },
-
-    // Skeleton
     skeletonHeader: {
         width: 150,
         height: 18,
@@ -464,4 +422,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default SearchResults;
+export default memo(SearchResults);

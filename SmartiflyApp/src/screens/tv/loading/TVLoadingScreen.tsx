@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import useStore from '../../../store';
 import { logger } from '../../../config';
-import { colors, scale, scaleFont } from '../../../theme';
+import { colors, scale, scaleFont, Icon } from '../../../theme';
 import { TVLoadingScreenProps } from '../../../navigation/types';
 
 // TV Safe Area
@@ -61,9 +61,9 @@ const LoadingStepIndicator: React.FC<StepIndicatorProps> = ({ steps, currentStep
                             {isActive ? (
                                 <ActivityIndicator size="small" color={colors.accent} />
                             ) : isComplete ? (
-                                <Text style={styles.stepCheck}>✓</Text>
+                                <Icon name="checkMark" size={scale(24)} color="#FFFFFF" />
                             ) : (
-                                <Text style={styles.stepIcon}>{step.icon}</Text>
+                                <Icon name={step.icon} size={scale(24)} color="rgba(255, 255, 255, 0.6)" />
                             )}
                         </Animated.View>
                         <Text style={[
@@ -309,12 +309,12 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
     const contentReady = getContentReady();
 
     const steps = [
-        { number: 1, label: 'Live TV', icon: '📺' },
-        { number: 2, label: 'Channels', icon: '📡' },
-        { number: 3, label: 'Movies', icon: '🎬' },
-        { number: 4, label: 'VOD', icon: '🎥' },
-        { number: 5, label: 'Series', icon: '📺' },
-        { number: 6, label: 'Complete', icon: '✨' },
+        { number: 1, label: 'Live TV', icon: 'broadcast' },
+        { number: 2, label: 'Channels', icon: 'server' },
+        { number: 3, label: 'Movies', icon: 'movie' },
+        { number: 4, label: 'VOD', icon: 'monitorPlay' },
+        { number: 5, label: 'Series', icon: 'layers' },
+        { number: 6, label: 'Complete', icon: 'checkCircle' },
     ];
 
     const glowOpacity = glowAnim.interpolate({
@@ -352,21 +352,22 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
             >
                 {/* LEFT SECTION - Logo & Branding */}
                 <View style={styles.leftSection}>
-                    {/* Wing Logo Icon */}
-                    <View style={styles.logoContainer}>
-                        <Image
-                            source={require('../../../assets/smartifly_icon.png')}
-                            style={styles.logoIcon}
-                            resizeMode="contain"
-                        />
-                    </View>
-
-                    {/* Text Logo */}
+                    {/* Text Logo (Top) */}
                     <Image
-                        source={require('../../../assets/smartifly_icon_6.png')}
+                        source={require('../../../assets/smartifly_original_icon.png')}
                         style={styles.logoText}
                         resizeMode="contain"
                     />
+
+                    {/* Wing Logo Icon (Bottom) */}
+                    <Image
+                        source={require('../../../assets/smartifly_icon.png')}
+                        style={styles.logoIcon}
+                        resizeMode="contain"
+                    />
+
+                    {/* Tagline for Premium feel */}
+                    <Text style={styles.tagline}>Elevating Entertainment</Text>
 
                     {/* Footer Info */}
                     <View style={styles.footerInfo}>
@@ -521,12 +522,13 @@ const styles = StyleSheet.create({
         shadowRadius: scale(40),
     },
     logoIcon: {
-        width: scale(180),
-        height: scale(180),
+        width: scale(700),
+        height: scale(250),
+        marginTop: scale(-50), // Pull up to be "near" the top logo
     },
     logoText: {
-        width: scale(550),
-        height: scale(180),
+        width: scale(250),
+        height: scale(250),
         marginTop: 0,
     },
     BRAND_NAME_PLACEHOLDER: {
@@ -610,21 +612,24 @@ const styles = StyleSheet.create({
         marginBottom: scale(8),
     },
     percentageNumber: {
-        fontSize: scaleFont(72),
-        fontWeight: '800',
+        fontSize: scaleFont(110),
+        fontWeight: '900',
         color: '#FFFFFF',
+        letterSpacing: -2,
     },
     percentageSymbol: {
-        fontSize: scaleFont(32),
+        fontSize: scaleFont(42),
         fontWeight: '700',
         color: colors.accent || '#00E5FF',
         marginLeft: scale(4),
     },
     currentTask: {
-        fontSize: scaleFont(18),
+        fontSize: scaleFont(20),
         color: colors.accent || '#00E5FF',
         fontWeight: '600',
-        marginBottom: scale(40),
+        marginBottom: scale(50),
+        textTransform: 'uppercase',
+        letterSpacing: 2,
     },
 
     // Step Indicators
@@ -742,7 +747,7 @@ const styles = StyleSheet.create({
     // Bottom Hint
     bottomHint: {
         position: 'absolute',
-        bottom: scale(20),
+        bottom: scale(30),
         left: 0,
         right: 0,
         flexDirection: 'row',
@@ -750,16 +755,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     hintIndicator: {
-        width: scale(8),
-        height: scale(8),
-        borderRadius: scale(4),
-        backgroundColor: '#10B981',
-        marginRight: scale(12),
+        width: scale(10),
+        height: scale(10),
+        borderRadius: scale(5),
+        backgroundColor: colors.accent || '#00E5FF',
+        marginRight: scale(16),
+        shadowColor: colors.accent || '#00E5FF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: scale(10),
     },
     hintText: {
-        fontSize: scaleFont(12),
-        color: 'rgba(255, 255, 255, 0.4)',
-        letterSpacing: 3,
+        fontSize: scaleFont(14),
+        color: 'rgba(255, 255, 255, 0.5)',
+        letterSpacing: 4,
+        fontWeight: '600',
     },
 });
 

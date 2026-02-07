@@ -8,12 +8,10 @@
  * - Uses domain.loaded flag to properly show loading vs empty states
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useDeferredValue } from 'react';
 import {
     View,
     Text,
-    FlatList,
-    TouchableOpacity,
     StyleSheet,
     TextInput,
     ActivityIndicator,
@@ -23,6 +21,7 @@ import { FlashList } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MovieCard from '../../components/MovieCard';
 import NavBar from '../../components/NavBar';
+import CategoryList from '../../components/CategoryList';
 import { colors, spacing, borderRadius } from '../../theme';
 import useStore from '../../store';
 import useFilterStore from '../../store/filterStore';
@@ -36,11 +35,8 @@ interface Props {
 }
 
 const MoviesScreen: React.FC<Props> = ({ navigation }) => {
-
-
-    // Get PREFETCHED content from store - uses new domain structure
-    const content = useStore((state) => state.content);
-    const userInfo = useStore((state) => state.userInfo);
+    const moviesDomain = useStore((state) => state.content.movies);
+    const username = useStore((state) => state.userInfo?.username);
 
     // Profile Store
     const { filterContent } = useContentFilter();
@@ -52,43 +48,63 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
     // Local UI state for search only
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Debounce search input (300ms) - big performance win for large VOD lists
+    // Debounce + defer keeps typing smooth while large lists are filtered
     const debouncedQuery = useDebounce(searchQuery, 300);
+    const deferredQuery = useDeferredValue(debouncedQuery);
+
+    // Pre-filter content for profile restrictions
+    const filteredAllMovies = useMemo(() => {
+        if (!moviesDomain.loaded) return [];
+        return filterContent(moviesDomain.items);
+    }, [moviesDomain.items, moviesDomain.loaded, filterContent]);
+
+    // O(n) category count map - PERFORMANCE FIX
+    const categoryCountMap = useMemo(() => {
+        const countMap: Record<string, number> = {};
+        filteredAllMovies.forEach(m => {
+            countMap[m.category_id] = (countMap[m.category_id] || 0) + 1;
+        });
+        return countMap;
+    }, [filteredAllMovies]);
+
+    const searchableMovies = useMemo(() => (
+        filteredAllMovies.map((movie) => ({
+            movie,
+            nameLower: (movie.name ?? '').toLowerCase(),
+            categoryId: String(movie.category_id),
+        }))
+    ), [filteredAllMovies]);
 
     // Transform categories from store format (using new domain structure)
     const categories = useMemo(() => {
-        if (!content.movies.loaded || !content.movies.categories) return [];
+        if (!moviesDomain.loaded || !moviesDomain.categories) return [];
 
-        const filteredAllMovies = filterContent(content.movies.items);
-
-        return content.movies.categories.map(cat => ({
-            id: cat.category_id,
-            name: cat.category_name,
-            count: filteredAllMovies.filter(m => m.category_id === cat.category_id).length,
-        })).filter(cat => cat.count > 0); // Hide empty categories
-    }, [content.movies.categories, content.movies.items, content.movies.loaded, filterContent]);
+        return moviesDomain.categories
+            .map(cat => ({
+                id: cat.category_id,
+                name: cat.category_name,
+                count: categoryCountMap[cat.category_id] || 0,
+            }))
+            .filter(cat => cat.count > 0); // Hide empty categories
+    }, [moviesDomain.categories, moviesDomain.loaded, categoryCountMap]);
 
     // Filtered movies - uses debounced query for smooth performance
     const filteredMovies = useMemo(() => {
-        if (!content.movies.loaded) return [];
+        if (!moviesDomain.loaded) return [];
 
-        let result = filterContent(content.movies.items);
+        const query = deferredQuery.trim().toLowerCase();
+        const hasQuery = query.length > 0;
+        const hasCategory = !!selectedCategory;
+        const activeCategory = String(selectedCategory ?? '');
 
-        // Filter by category (null = All)
-        if (selectedCategory) {
-            result = result.filter(movie => String(movie.category_id) === String(selectedCategory));
+        const result: XtreamMovie[] = [];
+        for (const entry of searchableMovies) {
+            if (hasCategory && entry.categoryId !== activeCategory) continue;
+            if (hasQuery && !entry.nameLower.includes(query)) continue;
+            result.push(entry.movie);
         }
-
-        // Filter by debounced search query
-        if (debouncedQuery.trim()) {
-            const query = debouncedQuery.toLowerCase();
-            result = result.filter(movie =>
-                movie.name.toLowerCase().includes(query)
-            );
-        }
-
         return result;
-    }, [content.movies.items, content.movies.loaded, selectedCategory, debouncedQuery, filterContent]);
+    }, [deferredQuery, moviesDomain.loaded, searchableMovies, selectedCategory]);
 
     // Navigate to movie detail screen instead of direct play
     const handleMoviePress = useCallback((item: XtreamMovie) => {
@@ -111,8 +127,12 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
         setCategory('movies', categoryId, categoryName);
     }, [setCategory]);
 
+    const renderMovieItem = useCallback(({ item }: { item: XtreamMovie }) => (
+        <MovieCard item={item} onPress={handleMoviePress} />
+    ), [handleMoviePress]);
+
     // FIX: Check domain.loaded flag, not just content existence
-    if (!content.movies.loaded) {
+    if (!moviesDomain.loaded) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -127,7 +147,7 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
             <NavBar
                 variant="content"
                 title="Movies"
-                username={userInfo?.username}
+                username={username}
                 onProfilePress={() => (navigation as any).navigate('Settings')}
             />
 
@@ -151,31 +171,12 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
 
             {/* Categories */}
             {categories.length > 0 && (
-                <FlatList
-                    horizontal
-                    data={[{ id: null, name: 'All', count: content.movies.items.length }, ...categories]}
-                    keyExtractor={(item) => String(item.id ?? 'all')}
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.categoryList}
-                    contentContainerStyle={styles.categoryListContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={[
-                                styles.categoryChip,
-                                selectedCategory === item.id && styles.categoryChipActive,
-                            ]}
-                            onPress={() => handleCategorySelect(item.id, item.name)}
-                        >
-                            <Text
-                                style={[
-                                    styles.categoryChipText,
-                                    selectedCategory === item.id && styles.categoryChipTextActive,
-                                ]}
-                            >
-                                {item.name}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
+                <CategoryList
+                    categories={categories}
+                    totalCount={filteredAllMovies.length}
+                    selectedCategory={selectedCategory}
+                    onCategorySelect={handleCategorySelect}
+                    activeColor={colors.movies}
                 />
             )}
 
@@ -196,9 +197,8 @@ const MoviesScreen: React.FC<Props> = ({ navigation }) => {
                     removeClippedSubviews
                     keyboardDismissMode="on-drag"
                     showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => (
-                        <MovieCard item={item} onPress={handleMoviePress} />
-                    )}
+                    drawDistance={300}
+                    renderItem={renderMovieItem}
                 />
             )}
         </View>

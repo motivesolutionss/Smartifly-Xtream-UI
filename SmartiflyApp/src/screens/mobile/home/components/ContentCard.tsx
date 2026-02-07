@@ -1,38 +1,21 @@
 /**
  * Smartifly Content Card Component
- * 
- * Individual content card for displaying:
- * - Live channels
- * - Movies
- * - Series
- * 
- * Features:
- * - Poster image with loading state
- * - Type badges (LIVE, HD, NEW)
- * - Rating display
- * - Title with line clamp
+ *
+ * Shared card used by Home rails for Live, Movies, and Series.
  */
 
-import React, { useState } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
     View,
     Text,
-    Image,
     TouchableOpacity,
     StyleSheet,
     ViewStyle,
     ImageStyle,
 } from 'react-native';
 
-import { colors, spacing, borderRadius } from '../../../../theme';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-// =============================================================================
-// TYPES
-// =============================================================================
+import FastImageComponent from '../../../../components/FastImageComponent';
+import { colors, spacing, borderRadius, Icon } from '../../../../theme';
 
 export type ContentType = 'live' | 'movie' | 'series';
 
@@ -52,7 +35,7 @@ export interface ContentItem {
 
 export interface ContentCardProps {
     item: ContentItem;
-    onPress?: () => void;
+    onPress?: (item: ContentItem) => void;
     variant?: 'poster' | 'thumbnail' | 'channel';
     showTitle?: boolean;
     showRating?: boolean;
@@ -60,21 +43,11 @@ export interface ContentCardProps {
     imageStyle?: ImageStyle;
 }
 
-// =============================================================================
-// SIZE CONFIGURATIONS
-// =============================================================================
-
 const cardSizes = {
     poster: { width: 120, height: 180 },
-    posterLarge: { width: 140, height: 210 },
     thumbnail: { width: 160, height: 90 },
-    thumbnailWide: { width: 200, height: 113 },
     channel: { width: 100, height: 100 },
-};
-
-// =============================================================================
-// COMPONENT
-// =============================================================================
+} as const;
 
 const ContentCard: React.FC<ContentCardProps> = ({
     item,
@@ -85,65 +58,42 @@ const ContentCard: React.FC<ContentCardProps> = ({
     style,
     imageStyle,
 }) => {
-    const [imageLoaded, setImageLoaded] = useState(false);
-    const [imageError, setImageError] = useState(false);
-
-    // Get size based on variant
     const size = variant === 'channel'
         ? cardSizes.channel
         : variant === 'thumbnail'
             ? cardSizes.thumbnail
             : cardSizes.poster;
 
-    // Get placeholder text for error state
-    const getPlaceholderText = () => {
-        if (item.name.length > 0) {
-            return item.name.substring(0, 2).toUpperCase();
-        }
-        return '??';
-    };
-
-
+    const placeholderText = useMemo(() => {
+        if (!item.name) return 'NA';
+        return item.name.slice(0, 2).toUpperCase();
+    }, [item.name]);
 
     return (
         <TouchableOpacity
             style={[styles.container, { width: size.width }, style]}
-            onPress={onPress}
+            onPress={() => onPress?.(item)}
             activeOpacity={0.8}
         >
-            {/* Image Container */}
-            <View style={[
-                styles.imageContainer,
-                { width: size.width, height: size.height },
-                variant === 'channel' && styles.channelContainer,
-            ]}>
-                {/* Placeholder/Loading */}
-                {(!imageLoaded || imageError) && (
+            <View
+                style={[
+                    styles.imageContainer,
+                    { width: size.width, height: size.height },
+                    variant === 'channel' && styles.channelContainer,
+                ]}
+            >
+                {item.image ? (
+                    <FastImageComponent
+                        source={{ uri: item.image }}
+                        style={[styles.fastImage, { width: size.width, height: size.height }, imageStyle]}
+                        showLoader
+                    />
+                ) : (
                     <View style={[styles.placeholder, { width: size.width, height: size.height }]}>
-                        {imageError ? (
-                            <Text style={styles.placeholderText}>{getPlaceholderText()}</Text>
-                        ) : (
-                            <View style={styles.loadingShimmer} />
-                        )}
+                        <Text style={styles.placeholderText}>{placeholderText}</Text>
                     </View>
                 )}
 
-                {/* Actual Image */}
-                {item.image && !imageError && (
-                    <Image
-                        source={{ uri: item.image }}
-                        style={[
-                            styles.image,
-                            { width: size.width, height: size.height },
-                            imageStyle,
-                        ]}
-                        resizeMode="cover"
-                        onLoad={() => setImageLoaded(true)}
-                        onError={() => setImageError(true)}
-                    />
-                )}
-
-                {/* Live Badge */}
                 {item.type === 'live' && (
                     <View style={styles.liveBadge}>
                         <View style={styles.liveDot} />
@@ -151,72 +101,48 @@ const ContentCard: React.FC<ContentCardProps> = ({
                     </View>
                 )}
 
-                {/* Quality Badge */}
                 {!!item.quality && item.type !== 'live' && (
-                    <View style={[
-                        styles.qualityBadge,
-                        item.quality === '4K' && styles.qualityBadge4K,
-                    ]}>
+                    <View style={[styles.qualityBadge, item.quality === '4K' && styles.qualityBadge4K]}>
                         <Text style={styles.qualityText}>{item.quality}</Text>
                     </View>
                 )}
 
-                {/* New Badge */}
                 {!!item.isNew && (
                     <View style={styles.newBadge}>
                         <Text style={styles.newBadgeText}>NEW</Text>
                     </View>
                 )}
 
-                {/* Rating Badge */}
                 {showRating && (item.rating ?? 0) > 0 && (
                     <View style={styles.ratingBadge}>
-                        <Text style={styles.ratingIcon}>★</Text>
+                        <Icon name="star" size={10} color={colors.qualityUHD} />
                         <Text style={styles.ratingText}>{item.rating!.toFixed(1)}</Text>
                     </View>
                 )}
 
-                {/* Progress Bar (Continue Watching) */}
                 {typeof item.progress === 'number' && item.progress > 0 && item.type !== 'live' && (
                     <View style={styles.progressContainer}>
-                        <View
-                            style={[
-                                styles.progressBar,
-                                { width: `${Math.min(item.progress, 100)}%` }
-                            ]}
-                        />
+                        <View style={[styles.progressBar, { width: `${Math.min(item.progress, 100)}%` }]} />
                     </View>
                 )}
 
-                {/* Gradient Overlay (for poster variant) */}
-                {variant === 'poster' && (
-                    <View style={styles.gradientOverlay} />
-                )}
+                {variant === 'poster' && <View style={styles.gradientOverlay} />}
             </View>
 
-            {/* Title */}
             {showTitle && (
                 <View style={styles.titleContainer}>
                     <Text style={styles.title} numberOfLines={2}>
                         {item.name}
                     </Text>
-                    {!!item.year && variant === 'poster' && (
-                        <Text style={styles.year}>{item.year}</Text>
-                    )}
+                    {!!item.year && variant === 'poster' && <Text style={styles.year}>{item.year}</Text>}
                     {(item.episodeCount ?? 0) > 0 && item.type === 'series' && (
-                        <Text style={styles.episodeCount}>
-                            {item.episodeCount} Episodes
-                        </Text>
+                        <Text style={styles.episodeCount}>{item.episodeCount} Episodes</Text>
                     )}
                 </View>
             )}
         </TouchableOpacity>
     );
 };
-
-// =============================================================================
-// SKELETON LOADER
-// =============================================================================
 
 export interface ContentCardSkeletonProps {
     variant?: 'poster' | 'thumbnail' | 'channel';
@@ -235,19 +161,36 @@ export const ContentCardSkeleton: React.FC<ContentCardSkeletonProps> = ({
 
     return (
         <View style={[styles.container, { width: size.width }, style]}>
-            <View style={[
-                styles.skeletonImage,
-                { width: size.width, height: size.height },
-                variant === 'channel' && styles.skeletonChannel,
-            ]} />
+            <View
+                style={[
+                    styles.skeletonImage,
+                    { width: size.width, height: size.height },
+                    variant === 'channel' && styles.skeletonChannel,
+                ]}
+            />
             <View style={styles.skeletonTitle} />
         </View>
     );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
+const areEqual = (prev: ContentCardProps, next: ContentCardProps) => (
+    prev.item.id === next.item.id &&
+    prev.item.name === next.item.name &&
+    prev.item.image === next.item.image &&
+    prev.item.type === next.item.type &&
+    prev.item.rating === next.item.rating &&
+    prev.item.progress === next.item.progress &&
+    prev.item.quality === next.item.quality &&
+    prev.item.isNew === next.item.isNew &&
+    prev.item.year === next.item.year &&
+    prev.item.episodeCount === next.item.episodeCount &&
+    prev.variant === next.variant &&
+    prev.showTitle === next.showTitle &&
+    prev.showRating === next.showRating &&
+    prev.onPress === next.onPress &&
+    prev.style === next.style &&
+    prev.imageStyle === next.imageStyle
+);
 
 const styles = StyleSheet.create({
     container: {
@@ -262,7 +205,7 @@ const styles = StyleSheet.create({
     channelContainer: {
         borderRadius: borderRadius.md,
     },
-    image: {
+    fastImage: {
         position: 'absolute',
         top: 0,
         left: 0,
@@ -280,11 +223,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: colors.textMuted,
     },
-    loadingShimmer: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: colors.skeleton,
-    },
     gradientOverlay: {
         position: 'absolute',
         bottom: 0,
@@ -292,10 +230,7 @@ const styles = StyleSheet.create({
         right: 0,
         height: 40,
         backgroundColor: 'transparent',
-        // Add gradient if using react-native-linear-gradient
     },
-
-    // Badges
     liveBadge: {
         position: 'absolute',
         top: spacing.xs,
@@ -363,10 +298,6 @@ const styles = StyleSheet.create({
         borderRadius: borderRadius.sm,
         gap: 2,
     },
-    ratingIcon: {
-        fontSize: 10,
-        color: colors.qualityUHD,
-    },
     ratingText: {
         fontSize: 10,
         fontWeight: '600',
@@ -384,8 +315,6 @@ const styles = StyleSheet.create({
         height: '100%',
         backgroundColor: colors.primary,
     },
-
-    // Title
     titleContainer: {
         marginTop: spacing.xs,
         paddingRight: spacing.xxs,
@@ -406,8 +335,6 @@ const styles = StyleSheet.create({
         color: colors.textMuted,
         marginTop: 2,
     },
-
-    // Skeleton
     skeletonImage: {
         borderRadius: borderRadius.lg,
         backgroundColor: colors.skeleton,
@@ -424,4 +351,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default ContentCard;
+export default memo(ContentCard, areEqual);

@@ -1,126 +1,150 @@
 /**
  * Smartifly Category Modal Component
- * 
- * Full-screen modal for selecting content categories.
- * Netflix-style with:
- * - Blurred/dimmed background
- * - Scrollable category list
- * - X button at bottom to close
+ *
+ * Virtualized full-screen modal for selecting categories.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     View,
     Text,
     TouchableOpacity,
     StyleSheet,
     Modal,
-    ScrollView,
     Pressable,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Icon, colors, spacing, shadowColors } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useFilterStore from '../store/filterStore';
 import useStore from '../store';
 
-// =============================================================================
-// TYPES
-// =============================================================================
+type CategoryDomain = 'live' | 'movies' | 'series';
 
-interface CategoryItem {
-    category_id: string;
-    category_name: string;
+interface CategoryOption {
+    id: string | null;
+    name: string;
+    domain: CategoryDomain;
+    isAll?: boolean;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const domainLabel: Record<CategoryDomain, string> = {
+    live: 'Live TV',
+    movies: 'Movies',
+    series: 'Series',
+};
 
 const CategoryModal: React.FC = () => {
     const insets = useSafeAreaInsets();
-
     const {
         selectedType,
         selectedCategory,
         isCategoryModalVisible,
         setCategory,
+        setType,
+        clearFilters,
         setCategoryModalVisible,
     } = useFilterStore();
-
     const content = useStore((state) => state.content);
 
-    // Get categories based on selected content type
-    const categories = useMemo((): CategoryItem[] => {
-        // Helper to safely get categories array
-        const safeMap = (cats: any) => {
-            if (!Array.isArray(cats)) return [];
-            return cats.map(cat => ({
-                category_id: String(cat.category_id || ''),
-                category_name: String(cat.category_name || ''),
-            }));
+    const currentDomain = selectedType ?? null;
+    const currentCategory = selectedType ? selectedCategory[selectedType] : null;
+
+    const categories = useMemo((): CategoryOption[] => {
+        const safeMap = (domain: CategoryDomain, rawCategories: unknown): CategoryOption[] => {
+            if (!Array.isArray(rawCategories)) return [];
+            return rawCategories
+                .map((cat: any) => ({
+                    id: String(cat?.category_id ?? ''),
+                    name: String(cat?.category_name ?? ''),
+                    domain,
+                }))
+                .filter((cat) => cat.id && cat.name);
         };
 
-        switch (selectedType) {
-            case 'live':
-                return content.live.loaded ? safeMap(content.live.categories) : [];
-            case 'movies':
-                return content.movies.loaded ? safeMap(content.movies.categories) : [];
-            case 'series':
-                return content.series.loaded ? safeMap(content.series.categories) : [];
-            default:
-                // If no type selected, show all categories combined
-                return [
-                    ...(content.live.loaded ? safeMap(content.live.categories) : []),
-                    ...(content.movies.loaded ? safeMap(content.movies.categories) : []),
-                    ...(content.series.loaded ? safeMap(content.series.categories) : []),
-                ];
+        if (currentDomain) {
+            const domainCategories =
+                currentDomain === 'live'
+                    ? content.live.categories
+                    : currentDomain === 'movies'
+                        ? content.movies.categories
+                        : content.series.categories;
+
+            return [
+                { id: null, name: 'All', domain: currentDomain, isAll: true },
+                ...safeMap(currentDomain, domainCategories),
+            ];
         }
-    }, [content, selectedType]);
 
-    // Get the domain key based on selectedType
-    const getDomain = (): 'live' | 'movies' | 'series' => {
-        switch (selectedType) {
-            case 'live': return 'live';
-            case 'movies': return 'movies';
-            case 'series': return 'series';
-            default: return 'live'; // fallback
-        }
-    };
+        return [
+            { id: null, name: 'All categories', domain: 'live', isAll: true },
+            ...safeMap('live', content.live.categories),
+            ...safeMap('movies', content.movies.categories),
+            ...safeMap('series', content.series.categories),
+        ];
+    }, [
+        content.live.categories,
+        content.movies.categories,
+        content.series.categories,
+        currentDomain,
+    ]);
 
-    // Get current category for the active domain
-    const currentCategory = (() => {
-        switch (selectedType) {
-            case 'live': return selectedCategory.live;
-            case 'movies': return selectedCategory.movies;
-            case 'series': return selectedCategory.series;
-            default: return null;
-        }
-    })();
-
-    // Handle category selection using domain-scoped setter
-    const handleCategorySelect = (category: CategoryItem | null) => {
-        const domain = getDomain();
-        if (category) {
-            setCategory(domain, category.category_id, category.category_name);
-        } else {
-            setCategory(domain, null, null);
-        }
-    };
-
-    // Handle close
-    const handleClose = () => {
-        setCategoryModalVisible(false);
-    };
-
-    // Get title based on selected type
     const getTitle = () => {
-        switch (selectedType) {
-            case 'live': return 'Live TV Categories';
-            case 'movies': return 'Movie Categories';
-            case 'series': return 'Series Categories';
-            default: return 'All Categories';
-        }
+        if (!currentDomain) return 'All Categories';
+        return `${domainLabel[currentDomain]} Categories`;
     };
+
+    const handleClose = useCallback(() => {
+        setCategoryModalVisible(false);
+    }, [setCategoryModalVisible]);
+
+    const handleCategorySelect = useCallback((option: CategoryOption) => {
+        if (option.isAll) {
+            if (currentDomain) {
+                setCategory(currentDomain, null, null);
+            } else {
+                clearFilters();
+            }
+            return;
+        }
+
+        if (!currentDomain || currentDomain !== option.domain) {
+            setType(option.domain);
+        }
+        setCategory(option.domain, option.id, option.name);
+    }, [clearFilters, currentDomain, setCategory, setType]);
+
+    const isSelected = useCallback((option: CategoryOption) => {
+        if (option.isAll) {
+            return currentCategory === null;
+        }
+        return currentDomain === option.domain && currentCategory === option.id;
+    }, [currentCategory, currentDomain]);
+
+    const renderItem = useCallback(({ item }: { item: CategoryOption }) => {
+        const selected = isSelected(item);
+
+        return (
+            <TouchableOpacity
+                style={styles.categoryItem}
+                onPress={() => handleCategorySelect(item)}
+                activeOpacity={0.7}
+            >
+                <View style={styles.categoryTextRow}>
+                    <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
+                        {item.name}
+                    </Text>
+                    {!currentDomain && !item.isAll && (
+                        <Text style={styles.domainTag}>{domainLabel[item.domain]}</Text>
+                    )}
+                </View>
+
+                {selected && (
+                    <Icon name="check" size={20} color={colors.textPrimary} />
+                )}
+            </TouchableOpacity>
+        );
+    }, [currentDomain, handleCategorySelect, isSelected]);
 
     return (
         <Modal
@@ -132,68 +156,27 @@ const CategoryModal: React.FC = () => {
             <View style={styles.overlay}>
                 <Pressable style={styles.backdrop} onPress={handleClose} />
 
-                <View style={[
-                    styles.content,
-                    { paddingTop: insets.top + spacing.xl }
-                ]}>
-                    {/* Header */}
+                <View style={[styles.content, { paddingTop: insets.top + spacing.xl }]}>
                     <Text style={styles.title}>{getTitle()}</Text>
 
-                    {/* Category List */}
-                    <ScrollView
-                        style={styles.scrollView}
-                        contentContainerStyle={styles.scrollContent}
+                    <FlashList
+                        data={categories}
+                        keyExtractor={(item, index) => item.id ? `${item.domain}-${item.id}` : `all-${index}`}
+                        renderItem={renderItem}
+                        // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                        estimatedItemSize={56}
                         showsVerticalScrollIndicator={false}
-                    >
-                        {/* "All" option */}
-                        <TouchableOpacity
-                            style={styles.categoryItem}
-                            onPress={() => handleCategorySelect(null)}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={[
-                                styles.categoryText,
-                                !currentCategory && styles.categoryTextSelected,
-                            ]}>
-                                All
-                            </Text>
-                            {!currentCategory && (
-                                <Icon name="check" size={20} color={colors.textPrimary} weight="bold" />
-                            )}
-                        </TouchableOpacity>
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.md }]}
+                    />
 
-                        {/* Category items */}
-                        {categories.map((category) => {
-                            const isSelected = currentCategory === category.category_id;
-                            return (
-                                <TouchableOpacity
-                                    key={category.category_id}
-                                    style={styles.categoryItem}
-                                    onPress={() => handleCategorySelect(category)}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={[
-                                        styles.categoryText,
-                                        isSelected && styles.categoryTextSelected,
-                                    ]}>
-                                        {category.category_name}
-                                    </Text>
-                                    {isSelected && (
-                                        <Icon name="check" size={20} color={colors.textPrimary} weight="bold" />
-                                    )}
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </ScrollView>
-
-                    {/* Close Button at Bottom */}
                     <View style={[styles.closeContainer, { paddingBottom: insets.bottom + spacing.lg }]}>
                         <TouchableOpacity
                             style={styles.closeButton}
                             onPress={handleClose}
                             activeOpacity={0.8}
                         >
-                            <Icon name="x" size={24} color={colors.background} weight="bold" />
+                            <Icon name="x" size={24} color={colors.background} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -201,10 +184,6 @@ const CategoryModal: React.FC = () => {
         </Modal>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     overlay: {
@@ -227,26 +206,38 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: spacing.xl,
+    listContent: {
+        paddingBottom: spacing.base,
     },
     categoryItem: {
+        minHeight: 56,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: spacing.lg,
+        paddingVertical: spacing.md,
+    },
+    categoryTextRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        flexShrink: 1,
     },
     categoryText: {
         fontSize: 22,
         fontWeight: '400',
         color: colors.textMuted,
+        flexShrink: 1,
     },
     categoryTextSelected: {
         color: colors.textPrimary,
         fontWeight: '600',
+    },
+    domainTag: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: colors.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
     },
     closeContainer: {
         alignItems: 'center',

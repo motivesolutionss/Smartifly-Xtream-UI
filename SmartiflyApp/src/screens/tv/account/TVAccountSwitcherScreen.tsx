@@ -18,7 +18,9 @@ import AccountCard from './components/AccountCard';
 import { logger } from '../../../config';
 
 const TVAccountSwitcherScreen: React.FC = ({ navigation }: any) => {
-    const { savedAccounts, switchAccount, removeAccount } = useStore();
+    const savedAccounts = useStore((state) => state.savedAccounts);
+    const switchAccount = useStore((state) => state.switchAccount);
+    const removeAccount = useStore((state) => state.removeAccount);
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(scale(30))).current;

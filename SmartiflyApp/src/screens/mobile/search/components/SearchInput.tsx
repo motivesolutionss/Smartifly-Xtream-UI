@@ -1,16 +1,17 @@
 /**
  * Smartifly SearchInput Component
- * 
- * Enhanced search input with:
- * - Auto-focus support
- * - Clear button
- * - Debounced input
- * - Cancel button
- * - Loading indicator
- * - Voice search placeholder
+ *
+ * Debounced search input with optional cancel and loading indicator.
  */
 
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, {
+    useState,
+    useRef,
+    useEffect,
+    useCallback,
+    forwardRef,
+    useImperativeHandle,
+} from 'react';
 import {
     View,
     Text,
@@ -21,21 +22,7 @@ import {
     ActivityIndicator,
     ViewStyle,
 } from 'react-native';
-
-// =============================================================================
-// THEME
-// =============================================================================
-
-import { colors, spacing, borderRadius } from '../../../../theme';
-
-// =============================================================================
-// THEME
-// =============================================================================
-// Local definitions removed in favor of theme imports
-
-// =============================================================================
-// TYPES
-// =============================================================================
+import { colors, spacing, borderRadius, Icon } from '../../../../theme';
 
 export interface SearchInputProps {
     value: string;
@@ -60,10 +47,6 @@ export interface SearchInputRef {
     clear: () => void;
 }
 
-// =============================================================================
-// SEARCH INPUT COMPONENT
-// =============================================================================
-
 const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
     value,
     onChangeText,
@@ -81,14 +64,12 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
     style,
 }, ref) => {
     const inputRef = useRef<TextInput>(null);
-    const [localValue, setLocalValue] = useState(value);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [localValue, setLocalValue] = useState(value);
 
-    // Animation values
     const focusAnim = useRef(new Animated.Value(0)).current;
     const cancelAnim = useRef(new Animated.Value(0)).current;
 
-    // Expose methods via ref
     useImperativeHandle(ref, () => ({
         focus: () => inputRef.current?.focus(),
         blur: () => inputRef.current?.blur(),
@@ -97,108 +78,107 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
             onChangeText('');
             onClear?.();
         },
-    }));
+    }), [onChangeText, onClear]);
 
-    // Sync local value with prop
     useEffect(() => {
         setLocalValue(value);
     }, [value]);
 
-    // Debounced change handler
-    const handleChangeText = (text: string) => {
-        setLocalValue(text);
+    useEffect(() => () => {
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
+    }, []);
 
-        // Clear previous timeout
+    const emitChange = useCallback((text: string) => {
         if (debounceRef.current) {
             clearTimeout(debounceRef.current);
         }
 
-        // Set new timeout
+        if (debounceMs <= 0) {
+            onChangeText(text);
+            return;
+        }
+
         debounceRef.current = setTimeout(() => {
             onChangeText(text);
         }, debounceMs);
-    };
+    }, [debounceMs, onChangeText]);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (debounceRef.current) {
-                clearTimeout(debounceRef.current);
-            }
-        };
-    }, []);
+    const handleChangeText = useCallback((text: string) => {
+        setLocalValue(text);
+        emitChange(text);
+    }, [emitChange]);
 
-    // Handle focus
-    const handleFocus = () => {
+    const handleFocus = useCallback(() => {
         onFocus?.();
 
         Animated.parallel([
             Animated.timing(focusAnim, {
                 toValue: 1,
-                duration: 200,
+                duration: 180,
                 useNativeDriver: false,
             }),
             Animated.timing(cancelAnim, {
                 toValue: showCancel ? 1 : 0,
-                duration: 200,
+                duration: 180,
                 useNativeDriver: false,
             }),
         ]).start();
-    };
+    }, [cancelAnim, focusAnim, onFocus, showCancel]);
 
-    // Handle blur
-    const handleBlur = () => {
+    const handleBlur = useCallback(() => {
         onBlur?.();
 
         Animated.timing(focusAnim, {
             toValue: 0,
-            duration: 200,
+            duration: 180,
             useNativeDriver: false,
         }).start();
 
-        // Keep cancel visible if there's text
         if (!localValue) {
             Animated.timing(cancelAnim, {
                 toValue: 0,
-                duration: 200,
+                duration: 180,
                 useNativeDriver: false,
             }).start();
         }
-    };
+    }, [cancelAnim, focusAnim, localValue, onBlur]);
 
-    // Handle clear
-    const handleClear = () => {
+    const handleClear = useCallback(() => {
         setLocalValue('');
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
         onChangeText('');
         onClear?.();
         inputRef.current?.focus();
-    };
+    }, [onChangeText, onClear]);
 
-    // Handle cancel
-    const handleCancel = () => {
+    const handleCancel = useCallback(() => {
         setLocalValue('');
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
         onChangeText('');
         inputRef.current?.blur();
         onCancel?.();
 
         Animated.timing(cancelAnim, {
             toValue: 0,
-            duration: 200,
+            duration: 180,
             useNativeDriver: false,
         }).start();
-    };
+    }, [cancelAnim, onCancel, onChangeText]);
 
-    // Handle submit
-    const handleSubmit = () => {
-        // Clear debounce and submit immediately
+    const handleSubmit = useCallback(() => {
         if (debounceRef.current) {
             clearTimeout(debounceRef.current);
         }
         onChangeText(localValue);
         onSubmit?.(localValue);
-    };
+    }, [localValue, onChangeText, onSubmit]);
 
-    // Animated styles
     const borderColor = focusAnim.interpolate({
         inputRange: [0, 1],
         outputRange: [colors.border, colors.borderFocus],
@@ -221,18 +201,19 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
 
     return (
         <View style={[styles.container, style]}>
-            {/* Input Container */}
-            <Animated.View style={[
-                styles.inputContainer,
-                {
-                    borderColor,
-                    backgroundColor,
-                },
-            ]}>
-                {/* Search Icon */}
-                <Text style={styles.searchIcon}>🔍</Text>
+            <Animated.View
+                style={[
+                    styles.inputContainer,
+                    {
+                        borderColor,
+                        backgroundColor,
+                    },
+                ]}
+            >
+                <View style={styles.iconWrap}>
+                    <Icon name="magnifyingGlass" size={18} color={colors.textMuted} />
+                </View>
 
-                {/* Input */}
                 <TextInput
                     ref={inputRef}
                     style={styles.input}
@@ -250,7 +231,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
                     selectionColor={colors.accent}
                 />
 
-                {/* Loading Indicator */}
                 {isLoading && (
                     <ActivityIndicator
                         size="small"
@@ -259,7 +239,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
                     />
                 )}
 
-                {/* Clear Button */}
                 {localValue.length > 0 && !isLoading && (
                     <TouchableOpacity
                         style={styles.clearButton}
@@ -267,31 +246,31 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <View style={styles.clearButtonInner}>
-                            <Text style={styles.clearIcon}>✕</Text>
+                            <Icon name="x" size={10} color={colors.background} />
                         </View>
                     </TouchableOpacity>
                 )}
 
-                {/* Voice Button (placeholder) */}
                 {showVoice && localValue.length === 0 && !isLoading && (
                     <TouchableOpacity
                         style={styles.voiceButton}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                        <Text style={styles.voiceIcon}>🎤</Text>
+                        <Icon name="broadcast" size={18} color={colors.textMuted} />
                     </TouchableOpacity>
                 )}
             </Animated.View>
 
-            {/* Cancel Button */}
             {showCancel && (
-                <Animated.View style={[
-                    styles.cancelContainer,
-                    {
-                        width: cancelWidth,
-                        opacity: cancelOpacity,
-                    },
-                ]}>
+                <Animated.View
+                    style={[
+                        styles.cancelContainer,
+                        {
+                            width: cancelWidth,
+                            opacity: cancelOpacity,
+                        },
+                    ]}
+                >
                     <TouchableOpacity
                         style={styles.cancelButton}
                         onPress={handleCancel}
@@ -303,10 +282,6 @@ const SearchInput = forwardRef<SearchInputRef, SearchInputProps>(({
         </View>
     );
 });
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -322,10 +297,8 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         paddingHorizontal: spacing.md,
     },
-    searchIcon: {
-        fontSize: 18,
+    iconWrap: {
         marginRight: spacing.sm,
-        opacity: 0.7,
     },
     input: {
         flex: 1,
@@ -347,17 +320,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    clearIcon: {
-        fontSize: 10,
-        color: colors.background,
-        fontWeight: '700',
-    },
     voiceButton: {
         marginLeft: spacing.sm,
-    },
-    voiceIcon: {
-        fontSize: 18,
-        opacity: 0.7,
     },
     cancelContainer: {
         overflow: 'hidden',

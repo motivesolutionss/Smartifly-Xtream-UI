@@ -13,12 +13,12 @@ import {
     Text,
     StyleSheet,
     ActivityIndicator,
-    Image,
     Pressable,
     FlatList,
     BackHandler,
     Modal,
 } from 'react-native';
+import FastImageComponent from '../../../components/FastImageComponent';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -30,16 +30,13 @@ import { prefetchImage } from '../../../utils/image';
 import useDownloadStore from '../../../store/downloadStore';
 import downloadService from '../../../services/downloadService';
 
-// Types
-
-
 const TVSeriesDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { series } = route.params;
 
     // Store
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
 
     // State
     const [info, setInfo] = useState<any>(null);
@@ -283,7 +280,7 @@ const TVSeriesDetailScreen: React.FC = () => {
                     isFocused && styles.episodeCardFocused
                 ]}
             >
-                <Image
+                <FastImageComponent
                     source={{ uri: image }}
                     style={styles.episodeThumb}
                     resizeMode="cover"
@@ -321,10 +318,11 @@ const TVSeriesDetailScreen: React.FC = () => {
             importantForAccessibility={isTrailerOpen ? 'no-hide-descendants' : 'auto'}
         >
             {/* 1. Full Screen Backdrop */}
-            <Image
+            <FastImageComponent
                 source={{ uri: backdrop }}
                 style={styles.backdrop}
                 resizeMode="cover"
+                priority="high"
             />
 
             {/* 2. Gradient Overlay (Cinema Mode) */}
@@ -351,10 +349,11 @@ const TVSeriesDetailScreen: React.FC = () => {
             <View style={styles.contentContainer}>
                 {/* Left Column: Series Info */}
                 <View style={styles.leftColumn}>
-                    <Image
+                    <FastImageComponent
                         source={{ uri: poster }}
                         style={styles.poster}
                         resizeMode="cover"
+                        priority="high"
                     />
 
                     <View style={styles.infoContainer}>

@@ -29,9 +29,9 @@ const PlayerScreen: React.FC = () => {
     const route = useRoute<RouteProp<ParamList, 'Player'>>();
     const { type, item, episodeUrl } = route.params;
     const resumePosition = route.params.resumePosition ?? 0;
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
-    const { downloads } = useDownloadStore();
+    const downloads = useDownloadStore((state) => state.downloads);
     const api = getXtreamAPI();
 
     // Refs and state
@@ -75,7 +75,9 @@ const PlayerScreen: React.FC = () => {
     }
 
     let streamUrl = '';
-    const download = downloads.find(d => d.id === String(item.stream_id || item.id));
+    const download = React.useMemo(() => (
+        downloads.find(d => d.id === String(item.stream_id || item.id))
+    ), [downloads, item.stream_id, item.id]);
 
     if (download && download.status === 'completed' && download.localPath) {
         streamUrl = `file://${download.localPath}`;

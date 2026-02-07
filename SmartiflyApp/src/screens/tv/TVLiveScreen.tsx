@@ -9,7 +9,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -19,11 +19,14 @@ import {
     StatusBar,
 
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import useStore from '../../store';
 import { colors, scale, scaleFont } from '../../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
 import { XtreamLiveStream } from '../../api/xtream';
 import { TVLiveScreenProps } from '../../navigation/types';
+import { scheduleIdleWork } from '../../utils/idle';
+import TVLoadingState from './components/TVLoadingState';
 
 // =============================================================================
 // TYPES
@@ -36,6 +39,17 @@ interface Category {
 }
 
 // =============================================================================
+// LIST CONFIG
+// =============================================================================
+
+const GRID_COLUMNS = 7;
+const GRID_INITIAL_ROWS = 3;
+const GRID_INITIAL_RENDER = GRID_COLUMNS * GRID_INITIAL_ROWS;
+const GRID_MAX_RENDER_BATCH = GRID_COLUMNS * 2;
+const GRID_WINDOW_SIZE = 5;
+const GRID_BATCH_PERIOD = 16;
+
+// =============================================================================
 // TV LIVE SCREEN
 // =============================================================================
 
@@ -43,68 +57,79 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
     // State
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [categoryMap, setCategoryMap] = useState<Record<string, XtreamLiveStream[]>>({});
+    const [isPrepared, setIsPrepared] = useState(false);
 
     // Store
-    const { content } = useStore();
+    const content = useStore((state) => state.content);
 
     // ==========================================================================
     // CATEGORIES
     // ==========================================================================
 
-    const categories = useMemo((): Category[] => {
-        if (!content.live.loaded || !content.live.categories) return [];
-
-        // 1. Single pass to count channels per category (O(N))
-        const countMap: Record<string, number> = {};
-        content.live.items.forEach((ch: XtreamLiveStream) => {
-            const catId = String(ch.category_id);
-            countMap[catId] = (countMap[catId] || 0) + 1;
-        });
-
-        const cats: Category[] = [
-            { id: 'all', name: 'All Channels', count: content.live.items.length },
-        ];
-
-        // 2. Build category list using the map (O(M))
-        for (const cat of content.live.categories) {
-            const catId = String(cat.category_id);
-            const count = countMap[catId] || 0;
-
-            if (count > 0) {
-                cats.push({
-                    id: catId,
-                    name: cat.category_name,
-                    count,
-                });
-            }
+    useEffect(() => {
+        if (!content.live.loaded || !content.live.categories) {
+            setCategories([]);
+            setCategoryMap({});
+            setIsPrepared(false);
+            return;
         }
 
-        return cats;
+        setIsPrepared(false);
+        const task = scheduleIdleWork(() => {
+            const items = content.live.items;
+            const nextMap: Record<string, XtreamLiveStream[]> = {
+                all: items,
+            };
+            const countMap: Record<string, number> = {};
+
+            for (const ch of items) {
+                const catId = String(ch.category_id);
+                countMap[catId] = (countMap[catId] || 0) + 1;
+                if (!nextMap[catId]) nextMap[catId] = [];
+                nextMap[catId].push(ch);
+            }
+
+            const nextCategories: Category[] = [
+                { id: 'all', name: 'All Channels', count: items.length },
+            ];
+
+            for (const cat of content.live.categories) {
+                const catId = String(cat.category_id);
+                const count = countMap[catId] || 0;
+                if (count > 0) {
+                    nextCategories.push({
+                        id: catId,
+                        name: cat.category_name,
+                        count,
+                    });
+                }
+            }
+
+            setCategoryMap(nextMap);
+            setCategories(nextCategories);
+            setIsPrepared(true);
+        });
+
+        return () => {
+            task.cancel();
+        };
     }, [content.live.loaded, content.live.categories, content.live.items]);
 
     // ==========================================================================
     // CHANNELS (filtered by category)
     // ==========================================================================
 
-    const channels = useMemo((): TVContentItem[] => {
-        if (!content.live.loaded) return [];
-
-        let items = content.live.items;
+    const channels = useMemo((): XtreamLiveStream[] => {
+        if (!content.live.loaded || !isPrepared) return [];
 
         if (selectedCategoryId && selectedCategoryId !== 'all') {
-            items = items.filter(
-                (ch: XtreamLiveStream) => String(ch.category_id) === selectedCategoryId
-            );
+            return categoryMap[selectedCategoryId] || [];
         }
 
-        return items.map((ch: XtreamLiveStream) => ({
-            id: String(ch.stream_id),
-            title: ch.name,
-            image: ch.stream_icon,
-            type: 'live' as const,
-            data: ch,
-        }));
-    }, [content.live.items, content.live.loaded, selectedCategoryId]);
+        return categoryMap.all || [];
+    }, [content.live.loaded, isPrepared, selectedCategoryId, categoryMap]);
 
     // ==========================================================================
     // HANDLERS
@@ -114,7 +139,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
     // to switch sections instead of navigating
 
 
-    const handleChannelPress = (item: TVContentItem) => {
+    const handleChannelPress = useCallback((item: TVContentItem) => {
         // Navigate to FullscreenPlayer with the raw item data (which has stream_id)
         if (item.data) {
             navigation.navigate('FullscreenPlayer', {
@@ -122,17 +147,17 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                 item: item.data
             });
         }
-    };
+    }, [navigation]);
 
-    const handleCategorySelect = (categoryId: string) => {
+    const handleCategorySelect = useCallback((categoryId: string) => {
         setSelectedCategoryId(categoryId);
-    };
+    }, []);
 
     // ==========================================================================
     // RENDER
     // ==========================================================================
 
-    const renderCategory = ({ item }: { item: Category }) => {
+    const renderCategory = useCallback(({ item }: { item: Category }) => {
         const isSelected = selectedCategoryId === item.id ||
             (selectedCategoryId === null && item.id === 'all');
         const isFocused = focusedCategoryId === item.id;
@@ -163,16 +188,23 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                 </Text>
             </Pressable>
         );
-    };
+    }, [focusedCategoryId, selectedCategoryId, handleCategorySelect]);
 
-    const renderChannel = ({ item }: { item: TVContentItem }) => (
+    const renderChannel = useCallback(({ item }: { item: XtreamLiveStream }) => (
         <TVContentCard
-            item={item}
+            item={{
+                id: String(item.stream_id),
+                title: item.name,
+                image: item.stream_icon,
+                type: 'live',
+                data: item,
+            }}
             onPress={handleChannelPress}
             width={scale(160)} // Increased size
             height={scale(110)}
+            disableZoom={true}
         />
-    );
+    ), [handleChannelPress]);
 
     return (
         <View style={styles.container}>
@@ -187,6 +219,10 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                     keyExtractor={(item) => item.id}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.categoryList}
+                    removeClippedSubviews={true}
+                    initialNumToRender={12}
+                    maxToRenderPerBatch={12}
+                    windowSize={5}
                 />
             </View>
 
@@ -195,15 +231,27 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                 <Text style={styles.channelCount}>
                     {channels.length} channels
                 </Text>
-                <FlatList
+                <FlashList
                     key={`grid-${7}`} // Force re-render on column change
                     data={channels}
                     renderItem={renderChannel}
-                    keyExtractor={(item) => String(item.id)}
-                    numColumns={7} // Increased columns
+                    keyExtractor={(item) => String(item.stream_id)}
+                    numColumns={GRID_COLUMNS} // Increased columns
+                    // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                    estimatedItemSize={scale(140)}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.channelsGrid}
                     columnWrapperStyle={styles.channelsRow}
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={GRID_MAX_RENDER_BATCH}
+                    initialNumToRender={GRID_INITIAL_RENDER}
+                    windowSize={GRID_WINDOW_SIZE}
+                    updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+                    ListEmptyComponent={
+                        !isPrepared ? (
+                            <TVLoadingState style={styles.loadingState} />
+                        ) : null
+                    }
                 />
             </View>
         </View>
@@ -223,9 +271,7 @@ const styles = StyleSheet.create({
     // Category Panel
     categoryPanel: {
         width: scale(350),
-        backgroundColor: colors.background,
-        borderRightWidth: 1,
-        borderRightColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'transparent',
         paddingTop: scale(40),
     },
     panelTitle: {
@@ -290,6 +336,10 @@ const styles = StyleSheet.create({
     },
     channelsRow: {
         marginBottom: scale(20),
+    },
+    loadingState: {
+        paddingVertical: scale(40),
+        alignItems: 'center',
     },
 });
 

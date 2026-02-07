@@ -9,7 +9,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -19,12 +19,15 @@ import {
     StatusBar,
 
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import useStore from '../../store';
 import { colors, scale, scaleFont } from '../../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
 import { XtreamMovie } from '../../api/xtream';
 import { TVMoviesScreenProps } from '../../navigation/types';
 import { useContentFilter } from '../../store/profileStore';
+import { scheduleIdleWork } from '../../utils/idle';
+import TVLoadingState from './components/TVLoadingState';
 
 // =============================================================================
 // TYPES
@@ -37,6 +40,17 @@ interface Category {
 }
 
 // =============================================================================
+// LIST CONFIG
+// =============================================================================
+
+const GRID_COLUMNS = 7;
+const GRID_INITIAL_ROWS = 3;
+const GRID_INITIAL_RENDER = GRID_COLUMNS * GRID_INITIAL_ROWS;
+const GRID_MAX_RENDER_BATCH = GRID_COLUMNS * 2;
+const GRID_WINDOW_SIZE = 5;
+const GRID_BATCH_PERIOD = 16;
+
+// =============================================================================
 // TV MOVIES SCREEN
 // =============================================================================
 
@@ -44,77 +58,83 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
     // State
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [categoryMap, setCategoryMap] = useState<Record<string, XtreamMovie[]>>({});
+    const [isPrepared, setIsPrepared] = useState(false);
 
     // Store
-    const { content } = useStore();
+    const content = useStore((state) => state.content);
     const { filterContent } = useContentFilter();
 
     // ==========================================================================
     // CATEGORIES
     // ==========================================================================
 
-    const categories = useMemo((): Category[] => {
-        if (!content.movies.loaded || !content.movies.categories) return [];
-
-        // Apply parental control filter to all items first for accurate counts
-        const filteredAllMovies = filterContent(content.movies.items as any[]);
-
-        // 1. Single pass to count items per category (O(N))
-        const countMap: Record<string, number> = {};
-        filteredAllMovies.forEach((m: XtreamMovie) => {
-            const catId = String(m.category_id);
-            countMap[catId] = (countMap[catId] || 0) + 1;
-        });
-
-        const cats: Category[] = [
-            { id: 'all', name: 'All Movies', count: filteredAllMovies.length },
-        ];
-
-        // 2. Build category list using the map (O(M))
-        for (const cat of content.movies.categories) {
-            const catId = String(cat.category_id);
-            const count = countMap[catId] || 0;
-
-            if (count > 0) {
-                cats.push({
-                    id: catId,
-                    name: cat.category_name,
-                    count,
-                });
-            }
+    useEffect(() => {
+        if (!content.movies.loaded || !content.movies.categories) {
+            setCategories([]);
+            setCategoryMap({});
+            setIsPrepared(false);
+            return;
         }
 
-        return cats;
+        setIsPrepared(false);
+        const task = scheduleIdleWork(() => {
+            const filteredAllMovies = filterContent(content.movies.items as any[]);
+            const nextMap: Record<string, XtreamMovie[]> = {
+                all: filteredAllMovies,
+            };
+
+            for (const movie of filteredAllMovies) {
+                const catId = String(movie.category_id);
+                if (!nextMap[catId]) nextMap[catId] = [];
+                nextMap[catId].push(movie);
+            }
+
+            const nextCategories: Category[] = [
+                { id: 'all', name: 'All Movies', count: filteredAllMovies.length },
+            ];
+
+            for (const cat of content.movies.categories) {
+                const catId = String(cat.category_id);
+                const count = nextMap[catId]?.length || 0;
+
+                if (count > 0) {
+                    nextCategories.push({
+                        id: catId,
+                        name: cat.category_name,
+                        count,
+                    });
+                }
+            }
+
+            setCategoryMap(nextMap);
+            setCategories(nextCategories);
+            setIsPrepared(true);
+        });
+
+        return () => {
+            task.cancel();
+        };
     }, [content.movies.loaded, content.movies.categories, content.movies.items, filterContent]);
 
     // ==========================================================================
     // MOVIES (filtered by category)
     // ==========================================================================
 
-    const movies = useMemo((): TVContentItem[] => {
-        if (!content.movies.loaded) return [];
+    const movies = useMemo((): XtreamMovie[] => {
+        if (!content.movies.loaded || !isPrepared) return [];
 
-        // Apply parental control filter
-        const filteredAllMovies = filterContent(content.movies.items as any[]);
+        const key = selectedCategoryId && selectedCategoryId !== 'all'
+            ? selectedCategoryId
+            : 'all';
 
-        let items = filteredAllMovies;
+        return categoryMap[key] || [];
+    }, [content.movies.loaded, isPrepared, selectedCategoryId, categoryMap]);
 
-        if (selectedCategoryId && selectedCategoryId !== 'all') {
-            items = items.filter(
-                (m: XtreamMovie) => String(m.category_id) === selectedCategoryId
-            );
-        }
-
-        return items.map((m: XtreamMovie) => ({
-            id: String(m.stream_id),
-            title: m.name,
-            image: m.stream_icon,
-            rating: m.rating_5based,
-            quality: m.container_extension === 'mp4' ? 'HD' : undefined,
-            type: 'movie' as const,
-            data: m,
-        }));
-    }, [content.movies.items, content.movies.loaded, selectedCategoryId, filterContent]);
+    const selectedCategoryName = useMemo(() => {
+        return categories.find((c) => c.id === (selectedCategoryId || 'all'))?.name;
+    }, [categories, selectedCategoryId]);
 
     // ==========================================================================
     // HANDLERS
@@ -124,23 +144,23 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
     // to switch sections instead of navigating
 
 
-    const handleMoviePress = (item: TVContentItem) => {
+    const handleMoviePress = useCallback((item: TVContentItem) => {
         if (item.data) {
             navigation.navigate('TVMovieDetail', {
                 movie: item.data
             });
         }
-    };
+    }, [navigation]);
 
-    const handleCategorySelect = (categoryId: string) => {
+    const handleCategorySelect = useCallback((categoryId: string) => {
         setSelectedCategoryId(categoryId);
-    };
+    }, []);
 
     // ==========================================================================
     // RENDER
     // ==========================================================================
 
-    const renderCategory = ({ item }: { item: Category }) => {
+    const renderCategory = useCallback(({ item }: { item: Category }) => {
         const isSelected = selectedCategoryId === item.id ||
             (selectedCategoryId === null && item.id === 'all');
         const isFocused = focusedCategoryId === item.id;
@@ -171,26 +191,30 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
                 </Text>
             </Pressable>
         );
-    };
+    }, [focusedCategoryId, selectedCategoryId, handleCategorySelect]);
 
-    const renderMovie = ({ item }: { item: TVContentItem }) => (
+    const renderMovie = useCallback(({ item }: { item: XtreamMovie }) => (
         <TVContentCard
-            item={item}
+            item={{
+                id: String(item.stream_id),
+                title: item.name,
+                image: item.stream_icon,
+                rating: item.rating_5based,
+                quality: item.container_extension === 'mp4' ? 'HD' : undefined,
+                type: 'movie',
+                data: item,
+            }}
             onPress={handleMoviePress}
             width={scale(180)}
             height={scale(270)}
+            disableZoom={true}
         />
-    );
+    ), [handleMoviePress]);
 
     return (
         <View style={styles.container}>
             <StatusBar hidden />
 
-            {/* Background Gradient / Overlay */}
-            <View style={StyleSheet.absoluteFill}>
-                <View style={[StyleSheet.absoluteFill, styles.bgOverlay]} />
-                <View style={styles.bgGradient} />
-            </View>
 
             {/* Category Panel */}
             <View style={styles.categoryPanel}>
@@ -204,6 +228,10 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
                     keyExtractor={(item) => item.id}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.categoryList}
+                    removeClippedSubviews={true}
+                    initialNumToRender={12}
+                    maxToRenderPerBatch={12}
+                    windowSize={5}
                 />
             </View>
 
@@ -211,43 +239,47 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation }) => {
             <View style={styles.moviesPanel}>
                 <View style={styles.gridHeader}>
                     <Text style={styles.selectedCategoryName}>
-                        {categories.find(c => c.id === (selectedCategoryId || 'all'))?.name}
+                        {selectedCategoryName}
                     </Text>
                     <Text style={styles.movieCount}>
                         {movies.length} titles available
                     </Text>
                 </View>
 
-                <FlatList
+                <FlashList
                     data={movies}
                     renderItem={renderMovie}
-                    keyExtractor={(item) => String(item.id)}
-                    numColumns={7}
+                    keyExtractor={(item) => String(item.stream_id)}
+                    numColumns={GRID_COLUMNS}
+                    // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                    estimatedItemSize={scale(300)}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.moviesGrid}
                     columnWrapperStyle={styles.moviesRow}
                     removeClippedSubviews={true}
-                    maxToRenderPerBatch={16}
-                    initialNumToRender={21}
-                    windowSize={5}
+                    maxToRenderPerBatch={GRID_MAX_RENDER_BATCH}
+                    initialNumToRender={GRID_INITIAL_RENDER}
+                    windowSize={GRID_WINDOW_SIZE}
+                    updateCellsBatchingPeriod={GRID_BATCH_PERIOD}
+                    ListEmptyComponent={
+                        !isPrepared ? (
+                            <TVLoadingState style={styles.loadingState} />
+                        ) : null
+                    }
                 />
             </View>
         </View>
     );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#050a12',
+        backgroundColor: colors.background,
         flexDirection: 'row',
     },
     bgOverlay: {
-        backgroundColor: '#050a12',
+        backgroundColor: colors.background,
     },
     bgGradient: {
         position: 'absolute',
@@ -261,9 +293,7 @@ const styles = StyleSheet.create({
     // Category Panel
     categoryPanel: {
         width: scale(320),
-        backgroundColor: 'rgba(10, 20, 35, 0.4)', // Glass effect
-        borderRightWidth: 1,
-        borderRightColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: 'transparent',
         paddingTop: scale(40),
     },
     panelHeader: {
@@ -366,6 +396,10 @@ const styles = StyleSheet.create({
     moviesRow: {
         justifyContent: 'flex-start',
         marginBottom: scale(30),
+    },
+    loadingState: {
+        paddingVertical: scale(40),
+        alignItems: 'center',
     },
 });
 

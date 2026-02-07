@@ -37,9 +37,9 @@ const TVPlayerScreen: React.FC = () => {
     const { type, item, episodeUrl } = route.params || {};
     const resumePosition = route.params?.resumePosition ?? 0;
 
-    const { getXtreamAPI } = useStore();
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
-    const { downloads } = useDownloadStore();
+    const downloads = useDownloadStore((state) => state.downloads);
     const api = getXtreamAPI();
 
     // Refs and state

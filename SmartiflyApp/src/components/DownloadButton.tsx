@@ -5,7 +5,7 @@
  * and completion states using react-native-blob-util.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     TouchableOpacity,
     Text,
@@ -32,10 +32,14 @@ interface DownloadButtonProps {
 }
 
 const DownloadButton: React.FC<DownloadButtonProps> = ({ item, style }) => {
-    const { downloads, addDownload, removeDownload } = useDownloadStore();
-    const { getXtreamAPI } = useStore();
+    const downloads = useDownloadStore((state) => state.downloads);
+    const addDownload = useDownloadStore((state) => state.addDownload);
+    const removeDownload = useDownloadStore((state) => state.removeDownload);
+    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
 
-    const download = downloads.find(d => d.id === item.id);
+    const download = useMemo(() => (
+        downloads.find(d => d.id === item.id)
+    ), [downloads, item.id]);
 
     const handleDownload = async () => {
         if (download) {
@@ -158,4 +162,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default DownloadButton;
+export default React.memo(DownloadButton);
