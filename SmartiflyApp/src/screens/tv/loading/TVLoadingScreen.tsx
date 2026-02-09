@@ -134,6 +134,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
     const isPrefetching = useStore((state) => state.isPrefetching);
     const prefetchProgress = useStore((state) => state.prefetchProgress);
     const getContentReady = useStore((state) => state.getContentReady);
+    const verifyFatherControl = useStore((state) => state.verifyFatherControl);
     const error = useStore((state) => state.error);
     const getContentStats = useStore((state) => state.getContentStats);
     const isRetrying = useStore((state) => state.isRetrying);
@@ -153,12 +154,27 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
 
     const startPrefetch = React.useCallback(async () => {
         logger.info('Starting TV content prefetch...');
+        const isLicenseOK = await verifyFatherControl();
+        if (!isLicenseOK) {
+            const { fatherControl } = useStore.getState();
+            navigation.reset({
+                index: 0,
+                routes: [{
+                    name: 'Blocked',
+                    params: {
+                        status: fatherControl.status,
+                        message: fatherControl.message,
+                    },
+                }],
+            });
+            return;
+        }
         const success = await prefetchAllContent();
 
         if (!success && error) {
             logger.error('Prefetch failed', error);
         }
-    }, [prefetchAllContent, error]);
+    }, [prefetchAllContent, error, navigation, verifyFatherControl]);
 
     const handleRetry = React.useCallback(async () => {
         hasStarted.current = false;

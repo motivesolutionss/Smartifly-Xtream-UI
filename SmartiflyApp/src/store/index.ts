@@ -24,6 +24,7 @@ import XtreamAPI, {
     XtreamMovie,
     XtreamSeries,
 } from '../api/xtream';
+import { getAnnouncements } from '../api/backend';
 import { logger } from '../config';
 
 // Import filterStore for resetting on auth events
@@ -155,6 +156,21 @@ interface StoreState {
 
     // Cache Settings
     cacheMaxAge: number; // in milliseconds (6 hours default)
+
+    // Announcements
+    announcements: any[];
+    announcementsLoading: boolean;
+    announcementsError: string | null;
+
+    // Master Control State
+    fatherControl: {
+        status: string;
+        message: string | null;
+        broadcasts: any[];
+        client: string;
+        config: any;
+        isVerified: boolean;
+    };
 }
 
 interface StoreActions {
@@ -185,6 +201,9 @@ interface StoreActions {
     // Network Actions
     setNetworkState: (isConnected: boolean, connectionType: string | null) => void;
 
+    // Announcements
+    fetchAnnouncements: (options?: { force?: boolean }) => Promise<void>;
+
     // Helpers
     getLiveStreamsByCategory: (categoryId: string) => XtreamLiveStream[];
     getMoviesByCategory: (categoryId: string) => XtreamMovie[];
@@ -202,6 +221,9 @@ interface StoreActions {
 
     // Error Helpers
     createError: (code: string, message: string, category: AppError['category'], retryable: boolean, suggestion?: string) => AppError;
+    // Father Actions
+    checkDeviceBan: () => Promise<boolean>; // Returns true if device is OK, false if banned
+    verifyFatherControl: () => Promise<boolean>;
 }
 
 type Store = StoreState & StoreActions;
@@ -241,6 +263,18 @@ const initialState: StoreState = {
     isConnected: true,
     connectionType: null,
     cacheMaxAge: SIX_HOURS_MS,
+    announcements: [],
+    announcementsLoading: false,
+    announcementsError: null,
+    
+    fatherControl: {
+        status: 'idle',
+         message: null,
+        broadcasts: [],
+        client: 'Unknown',
+        config: {},
+        isVerified: false,
+     },
 };
 
 // =============================================================================
@@ -959,6 +993,37 @@ const useStore = create<Store>()(
             },
 
             // =================================================================
+            // ANNOUNCEMENTS
+            // =================================================================
+
+            fetchAnnouncements: async (options) => {
+                const { announcements, announcementsLoading } = get();
+                const force = options?.force === true;
+
+                if (announcementsLoading) {
+                    return;
+                }
+
+                if (!force && announcements.length > 0) {
+                    return;
+                }
+
+                set({ announcementsLoading: true, announcementsError: null });
+                const startTime = Date.now();
+
+                try {
+                    const response = await getAnnouncements({ status: 'PUBLISHED' });
+                    const list = Array.isArray(response) ? response : [];
+                    set({ announcements: list, announcementsLoading: false });
+                    logger.info('Announcements fetch time', { ms: Date.now() - startTime });
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : 'Failed to load announcements';
+                    logger.error('Failed to load announcements', err);
+                    set({ announcements: [], announcementsLoading: false, announcementsError: errorMessage });
+                }
+            },
+
+            // =================================================================
             // RESET
             // =================================================================
 
@@ -981,7 +1046,64 @@ const useStore = create<Store>()(
                 }
                 set({ ...initialState, hasHydrated: hydrated });
             },
+// =================================================================
+                // FATHER ACTIONS (MASTER CONTROL)
+                // =================================================================
 
+                checkDeviceBan: async () => {
+                    const MasterService = (await import('../services/MasterService')).default;
+
+                    logger.info('Father: Checking device ban status...');
+                    const result = await MasterService.deviceCheck();
+
+                    logger.info('Father: Device check result', result);
+
+                    if (result.status === 'BANNED') {
+                        set({
+                            fatherControl: {
+                                isVerified: false,
+                                status: 'BANNED',
+                                message: result.message || 'Device banned',
+                                broadcasts: [],
+                                client: 'Unknown',
+                                config: {},
+                            }
+                        });
+                        return false; // Device is banned
+                    }
+
+                    // Device is OK - don't modify fatherControl state yet (license check will do that)
+                    return true;
+                },
+
+                verifyFatherControl: async () => {
+                    const MasterService = (await import('../services/MasterService')).default;
+
+                    try {
+                        logger.info('Father: Starting boot check-in...');
+                        const response = await MasterService.bootCheck();
+
+                        logger.info('Father: Check-in result', response);
+
+                        const isVerified = response.status === 'OK';
+
+                        set({
+                            fatherControl: {
+                                isVerified,
+                                status: response.status,
+                                config: response.config || {},
+                                broadcasts: response.broadcasts || [],
+                                client: response.client || 'Unknown',
+                                message: response.message || null
+                            }
+                        });
+
+                        return isVerified;
+                    } catch (error) {
+                        console.error('Father Control Sync Failed:', error);
+                        return false;
+                    }
+                },
             // =================================================================
             // ERROR HELPERS
             // =================================================================

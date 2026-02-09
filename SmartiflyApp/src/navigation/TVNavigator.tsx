@@ -13,6 +13,7 @@ import { colors } from '../theme';
 import useStore from '../store';
 import { logger } from '../config';
 import SmartiflyPreloaderScreen from '../screens/common/SmartiflyPreloaderScreen';
+import BlockedScreen from '../screens/mobile/BlockedScreen';
 
 // TV Screens
 import TVLoginScreen from '../screens/tv/login/TVLoginScreen';
@@ -33,18 +34,35 @@ const TVNavigator: React.FC = () => {
   const hasHydrated = useStore((state) => state.hasHydrated);
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
+  const checkDeviceBan = useStore((state) => state.checkDeviceBan);
+  const fetchAnnouncements = useStore((state) => state.fetchAnnouncements);
+  const fatherControl = useStore((state) => state.fatherControl);
   const savedAccountsCount = useStore((state) => state.savedAccounts.length);
   const profiles = useProfileStore((state) => state.profiles);
   const activeProfileId = useProfileStore((state) => state.activeProfileId);
   const [showPreloader, setShowPreloader] = useState(true);
+  const [deviceCheckDone, setDeviceCheckDone] = useState(false);
+  const [announcementsPrefetchDone, setAnnouncementsPrefetchDone] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowPreloader(false), 1400);
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    checkDeviceBan().finally(() => setDeviceCheckDone(true));
+  }, [checkDeviceBan]);
+
+  useEffect(() => {
+    fetchAnnouncements().finally(() => setAnnouncementsPrefetchDone(true));
+  }, [fetchAnnouncements]);
+
   // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
   const initialRoute = useMemo<keyof RootStackParamList>(() => {
+    if (fatherControl.status === 'BANNED') {
+      return 'Blocked';
+    }
+
     if (!isAuthenticated) {
       if (savedAccountsCount > 1) {
         return 'TVAccountSwitcher';
@@ -66,10 +84,10 @@ const TVNavigator: React.FC = () => {
 
     logger.debug('TV: Cache valid, proceeding to Home');
     return 'TVHome';
-  }, [isAuthenticated, savedAccountsCount, profiles.length, activeProfileId, isCacheValid]);
+  }, [fatherControl.status, isAuthenticated, savedAccountsCount, profiles.length, activeProfileId, isCacheValid]);
 
   // Hydration gate prevents initial route decisions before persisted state is ready.
-  if (!hasHydrated || showPreloader) {
+  if (!hasHydrated || showPreloader || !deviceCheckDone || !announcementsPrefetchDone) {
     return <SmartiflyPreloaderScreen />;
   }
 
@@ -85,6 +103,10 @@ const TVNavigator: React.FC = () => {
         gestureEnabled: false,
       }}
     >
+      <Stack.Screen name="Blocked" component={BlockedScreen} initialParams={{
+        status: fatherControl.status,
+        message: fatherControl.message ?? undefined,
+      }} />
       <Stack.Screen name="Login" component={TVLoginScreen} />
       <Stack.Screen name="TVAccountSwitcher" component={TVAccountSwitcherScreen} />
       <Stack.Screen name="Loading" component={TVLoadingScreen} />

@@ -14,10 +14,9 @@ import {
     StatusBar,
 } from 'react-native';
 import { colors, scale, scaleFont } from '../../theme';
-import { getAnnouncements } from '../../api/backend';
-import { logger } from '../../config';
 import TVLoadingState from './components/TVLoadingState';
 import { TVAnnouncementsScreenProps } from '../../navigation/types';
+import useStore from '../../store';
 
 interface Announcement {
     id: string;
@@ -26,14 +25,17 @@ interface Announcement {
     createdAt?: string;
     type?: string;
     priority?: string;
+    isBroadcast?: boolean;
 }
 
 
 const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntryRef }) => {
-    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const announcements = useStore((state) => state.announcements) as Announcement[];
+    const isLoading = useStore((state) => state.announcementsLoading);
+    const error = useStore((state) => state.announcementsError);
+    const fetchAnnouncements = useStore((state) => state.fetchAnnouncements);
     const [focusedId, setFocusedId] = useState<string | null>(null);
+    const fatherControl = useStore((state) => state.fatherControl);
 
     const formatDate = useCallback((dateString?: string) => {
         if (!dateString) return '';
@@ -58,25 +60,9 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
             .trim();
     }, []);
 
-    const fetchAnnouncements = useCallback(async () => {
-        setError(null);
-        setIsLoading(true);
-        try {
-            const response = await getAnnouncements({ status: 'PUBLISHED' });
-            if (Array.isArray(response)) {
-                setAnnouncements(response);
-            } else {
-                setAnnouncements([]);
-            }
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to load announcements';
-            logger.error('TV: Failed to load announcements', err);
-            setError(errorMessage);
-            setAnnouncements([]);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const refreshAnnouncements = useCallback(() => {
+        fetchAnnouncements({ force: true });
+    }, [fetchAnnouncements]);
 
     useEffect(() => {
         fetchAnnouncements();
@@ -94,7 +80,7 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
                 <View style={styles.emptyState}>
                     <Text style={styles.emptyText}>{error}</Text>
                     <Pressable
-                        onPress={fetchAnnouncements}
+                        onPress={refreshAnnouncements}
                         ref={focusEntryRef}
                         style={styles.retryButton}
                     >
@@ -110,6 +96,19 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
             </View>
         );
     }, [error, fetchAnnouncements, isLoading, focusEntryRef]);
+
+    const combinedAnnouncements = useMemo<Announcement[]>(() => {
+        const broadcasts = (fatherControl.broadcasts || []).map((b: any) => ({
+            id: `broadcast_${b.id}`,
+            title: b.title || 'SYSTEM BROADCAST',
+            content: b.message || b.content,
+            createdAt: b.createdAt,
+            type: b.type,
+            priority: 'HIGH',
+            isBroadcast: true,
+        }));
+        return [...broadcasts, ...announcements];
+    }, [announcements, fatherControl.broadcasts]);
 
     const renderItem = ({ item, index }: { item: Announcement; index: number }) => {
         const isFocused = focusedId === item.id;
@@ -141,7 +140,7 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
             <StatusBar hidden />
             <Text style={styles.screenTitle}>Announcements</Text>
             <FlatList
-                data={announcements}
+                data={combinedAnnouncements}
                 keyExtractor={(item) => item.id}
                 renderItem={renderItem}
                 contentContainerStyle={styles.listContent}

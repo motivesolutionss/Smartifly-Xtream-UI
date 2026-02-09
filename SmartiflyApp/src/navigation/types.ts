@@ -197,6 +197,7 @@ export type RootStackParamList = {
     ProfileEditor: { profileId?: string };
     PinEntry: { profileId: string; returnTo: keyof RootStackParamList };
     Downloads: undefined;
+    Blocked: { message?: string; status?: string } | undefined;
 };
 
 // TV Screen Props - for standalone screens

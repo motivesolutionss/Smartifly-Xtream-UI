@@ -4,23 +4,22 @@
  * Displays system announcements and notifications.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NavBar from '../../../components/NavBar';
 import { colors, spacing, borderRadius } from '../../../theme';
 import useStore from '../../../store';
-import { getAnnouncements } from '../../../api/backend';
-import { logger } from '../../../config';
 import { FlashList } from '@shopify/flash-list';
 
 const AnnouncementsScreen: React.FC<any> = () => {
     const insets = useSafeAreaInsets();
     const userInfo = useStore((state) => state.userInfo);
-
-    const [announcements, setAnnouncements] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const fatherControl = useStore((state) => state.fatherControl);
+    const announcements = useStore((state) => state.announcements);
+    const isLoading = useStore((state) => state.announcementsLoading);
+    const error = useStore((state) => state.announcementsError);
+    const fetchAnnouncements = useStore((state) => state.fetchAnnouncements);
 
     const formatDate = useCallback((dateString?: string) => {
         if (!dateString) return '';
@@ -45,37 +44,37 @@ const AnnouncementsScreen: React.FC<any> = () => {
             .trim();
     }, []);
 
-    const fetchAnnouncements = useCallback(async () => {
-        setError(null);
-        setIsLoading(true);
-        try {
-            const response = await getAnnouncements({ status: 'PUBLISHED' });
-            if (Array.isArray(response)) {
-                setAnnouncements(response);
-            } else {
-                setAnnouncements([]);
-            }
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to load announcements';
-            logger.error('Failed to load announcements', err);
-            setError(errorMessage);
-            setAnnouncements([]);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
+    const refreshAnnouncements = useCallback(() => {
+        fetchAnnouncements({ force: true });
+    }, [fetchAnnouncements]);
 
     useEffect(() => {
         fetchAnnouncements();
     }, [fetchAnnouncements]);
 
+    const combinedData = useMemo(() => {
+        const list = [...announcements];
+        if (Array.isArray(fatherControl.broadcasts)) {
+            const officialBroadcasts = fatherControl.broadcasts.map((b: any) => ({
+                id: `father-broadcast-${b.id}`,
+                title: 'Global System Message',
+                content: b.message,
+                createdAt: b.createdAt,
+                isOfficial: true,
+                type: b.type,
+            }));
+            list.unshift(...officialBroadcasts);
+        }
+        return list;
+    }, [announcements, fatherControl.broadcasts]);
+
     const normalizedAnnouncements = useMemo(() => (
-        announcements.map((item) => ({
+        combinedData.map((item) => ({
             ...item,
             formattedDate: formatDate(item.createdAt),
             sanitizedContent: sanitizeContent(item.content),
         }))
-    ), [announcements, formatDate, sanitizeContent]);
+    ), [combinedData, formatDate, sanitizeContent]);
 
     const renderItem = useCallback(({ item }: { item: any }) => (
         <View style={styles.card}>
@@ -132,7 +131,7 @@ const AnnouncementsScreen: React.FC<any> = () => {
                 refreshControl={
                     <RefreshControl
                         refreshing={isLoading}
-                        onRefresh={fetchAnnouncements}
+                        onRefresh={refreshAnnouncements}
                         tintColor={colors.primary}
                     />
                 }

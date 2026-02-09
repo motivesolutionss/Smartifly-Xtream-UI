@@ -22,6 +22,8 @@ import PlayerScreen from '../screens/mobile/PlayerScreen';
 import { ProfileSwitcherScreen, ProfileEditorScreen } from '../screens/mobile/profiles';
 import DownloadsScreen from '../screens/mobile/DownloadsScreen';
 import { useProfileStore } from '../store/profileStore';
+import BlockedScreen from '../screens/mobile/BlockedScreen';
+
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -30,17 +32,34 @@ const MobileNavigator: React.FC = () => {
   const hasHydrated = useStore((state) => state.hasHydrated);
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
+  const checkDeviceBan = useStore((state) => state.checkDeviceBan);
+  const fetchAnnouncements = useStore((state) => state.fetchAnnouncements);
+  const fatherControl = useStore((state) => state.fatherControl);
   const profiles = useProfileStore((state) => state.profiles);
   const activeProfileId = useProfileStore((state) => state.activeProfileId);
   const [showPreloader, setShowPreloader] = useState(true);
+  const [deviceCheckDone, setDeviceCheckDone] = useState(false);
+  const [announcementsPrefetchDone, setAnnouncementsPrefetchDone] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowPreloader(false), 1400);
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    checkDeviceBan().finally(() => setDeviceCheckDone(true));
+  }, [checkDeviceBan]);
+
+  useEffect(() => {
+    fetchAnnouncements().finally(() => setAnnouncementsPrefetchDone(true));
+  }, [fetchAnnouncements]);
+
   // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
   const initialRoute = useMemo<keyof RootStackParamList>(() => {
+    if (fatherControl.status === 'BANNED') {
+      return 'Blocked';
+    }
+
     if (!isAuthenticated) {
       return 'Login';
     }
@@ -59,10 +78,10 @@ const MobileNavigator: React.FC = () => {
 
     logger.debug('Mobile: Cache valid, proceeding to Home');
     return 'MainTabs';
-  }, [isAuthenticated, profiles.length, activeProfileId, isCacheValid]);
+  }, [fatherControl.status, isAuthenticated, profiles.length, activeProfileId, isCacheValid]);
 
   // Hydration gate prevents initial route decisions before persisted state is ready.
-  if (!hasHydrated || showPreloader) {
+  if (!hasHydrated || showPreloader || !deviceCheckDone || !announcementsPrefetchDone) {
     return <SmartiflyPreloaderScreen />;
   }
 
@@ -76,6 +95,14 @@ const MobileNavigator: React.FC = () => {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
+      <Stack.Screen
+        name="Blocked"
+        component={BlockedScreen}
+        initialParams={{
+          status: fatherControl.status,
+          message: fatherControl.message ?? undefined,
+        }}
+      />
       <Stack.Screen
         name="Login"
         component={LoginScreen}
