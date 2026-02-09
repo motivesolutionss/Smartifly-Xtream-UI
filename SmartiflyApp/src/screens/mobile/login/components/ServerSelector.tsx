@@ -134,7 +134,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
 interface ServerItemProps {
     portal: Portal;
     isSelected: boolean;
-    onSelect: () => void;
+    onSelectPortal: (portal: Portal) => void;
     status?: ServerStatus;
 }
 
@@ -142,55 +142,61 @@ interface ServerItemProps {
 const ServerItem: React.FC<ServerItemProps> = React.memo(({
     portal,
     isSelected,
-    onSelect,
+    onSelectPortal,
     status,
-}) => (
-    <TouchableOpacity
-        style={[
-            styles.serverItem,
-            isSelected && styles.serverItemSelected,
-        ]}
-        onPress={onSelect}
-        activeOpacity={0.7}
-    >
-        {/* Server Icon */}
-        <View style={[
-            styles.serverIcon,
-            isSelected && styles.serverIconSelected,
-        ]}>
-            <Icon name="server" size={20} color={isSelected ? colors.background : colors.textMuted} />
-        </View>
+}) => {
+    const handleSelect = useCallback(() => {
+        onSelectPortal(portal);
+    }, [onSelectPortal, portal]);
 
-        {/* Server Info */}
-        <View style={styles.serverInfo}>
-            <Text style={[
-                styles.serverName,
-                isSelected && styles.serverNameSelected,
+    return (
+        <TouchableOpacity
+            style={[
+                styles.serverItem,
+                isSelected && styles.serverItemSelected,
+            ]}
+            onPress={handleSelect}
+            activeOpacity={0.7}
+        >
+            {/* Server Icon */}
+            <View style={[
+                styles.serverIcon,
+                isSelected && styles.serverIconSelected,
             ]}>
-                {portal.name}
-            </Text>
-            <Text style={styles.serverUrl} numberOfLines={1}>
-                {portal.url.replace(/https?:\/\//, '').replace(/\/$/, '')}
-            </Text>
-        </View>
+                <Icon name="server" size={20} color={isSelected ? colors.background : colors.textMuted} />
+            </View>
 
-        {/* Status / Selection Indicator */}
-        <View style={styles.serverRight}>
-            {status && (
-                <StatusIndicator
-                    status={status.status}
-                    latency={status.latency}
-                    size="medium"
-                />
-            )}
-            {isSelected && (
-                <View style={styles.checkmark}>
-                    <Icon name="check" size={14} color={colors.background} weight="bold" />
-                </View>
-            )}
-        </View>
-    </TouchableOpacity>
-), (prev, next) => {
+            {/* Server Info */}
+            <View style={styles.serverInfo}>
+                <Text style={[
+                    styles.serverName,
+                    isSelected && styles.serverNameSelected,
+                ]}>
+                    {portal.name}
+                </Text>
+                <Text style={styles.serverUrl} numberOfLines={1}>
+                    {portal.url.replace(/https?:\/\//, '').replace(/\/$/, '')}
+                </Text>
+            </View>
+
+            {/* Status / Selection Indicator */}
+            <View style={styles.serverRight}>
+                {status && (
+                    <StatusIndicator
+                        status={status.status}
+                        latency={status.latency}
+                        size="medium"
+                    />
+                )}
+                {isSelected && (
+                    <View style={styles.checkmark}>
+                        <Icon name="check" size={14} color={colors.background} weight="bold" />
+                    </View>
+                )}
+            </View>
+        </TouchableOpacity>
+    );
+}, (prev, next) => {
     return prev.isSelected === next.isSelected &&
         prev.portal.id === next.portal.id &&
         prev.status?.status === next.status?.status &&
@@ -246,16 +252,27 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
         }
     }, [modalVisible, checkServerStatus, checkAllServers]);
 
-    const handleSelectServer = (portal: Portal) => {
+    const handleSelectServer = useCallback((portal: Portal) => {
         onSelectPortal(portal);
         setModalVisible(false);
-    };
+    }, [onSelectPortal]);
 
-    const openModal = () => {
+    const openModal = useCallback(() => {
         if (!isLoading && portals.length > 0) {
             setModalVisible(true);
         }
-    };
+    }, [isLoading, portals.length]);
+
+    const renderServerItem = useCallback(({ item }: { item: Portal }) => (
+        <ServerItem
+            portal={item}
+            isSelected={selectedPortal?.id === item.id}
+            onSelectPortal={handleSelectServer}
+            status={serverStatuses.get(item.id)}
+        />
+    ), [handleSelectServer, selectedPortal?.id, serverStatuses]);
+
+    const keyExtractor = useCallback((item: Portal) => item.id, []);
 
     // Render loading state
     if (isLoading) {
@@ -357,18 +374,15 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
                         {/* Server List */}
                         <FlatList
                             data={portals}
-                            keyExtractor={(item) => item.id}
-                            renderItem={({ item }) => (
-                                <ServerItem
-                                    portal={item}
-                                    isSelected={selectedPortal?.id === item.id}
-                                    onSelect={() => handleSelectServer(item)}
-                                    status={serverStatuses.get(item.id)}
-                                />
-                            )}
+                            keyExtractor={keyExtractor}
+                            renderItem={renderServerItem}
                             style={styles.serverList}
                             showsVerticalScrollIndicator={false}
                             ItemSeparatorComponent={Separator}
+                            removeClippedSubviews
+                            initialNumToRender={10}
+                            maxToRenderPerBatch={10}
+                            windowSize={5}
                         />
 
                         {/* Modal Footer */}

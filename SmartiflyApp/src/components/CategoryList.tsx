@@ -9,7 +9,6 @@
 
 import React, { memo, useCallback } from 'react';
 import {
-    View,
     Text,
     FlatList,
     TouchableOpacity,

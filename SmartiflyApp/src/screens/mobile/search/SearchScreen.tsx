@@ -1,534 +1,416 @@
-/**
- * Smartifly SearchScreen
- * 
- * Global search across all content:
- * - Auto-focus search input
- * - Debounced search with cancellation guard
- * - Tab filtering (All, Live, Movies, Series)
- * - Persisted recent searches history
- * - Categorized results
- * - Empty states
- * - Uses domain structure for content access
- */
-
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     View,
-    ScrollView,
+    Text,
     StyleSheet,
-    StatusBar,
+    TextInput,
+    TouchableOpacity,
+    ScrollView,
+    ActivityIndicator,
     Keyboard,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Components
-import SearchInput, { SearchInputRef } from './components/SearchInput';
-import SearchTabs, { SearchTabType } from './components/SearchTabs';
-import RecentSearches, { RecentSearch, TrendingSearches } from './components/RecentSearches';
-import SearchResults, { SearchResultItem, SearchResultsData, SearchResultsSkeleton } from './components/SearchResults';
-import EmptySearchState from './components/EmptySearchState';
-import { useContentFilter } from '../../../store/profileStore';
-
-// Store and utilities
+import { colors, spacing, borderRadius, Icon } from '../../../theme';
+import NavBar from '../../../components/NavBar';
+import ContentRow, { RowType } from '../home/components/ContentRow';
+import { ContentItem } from '../home/components/ContentCard';
 import useStore from '../../../store';
-import { colors, spacing } from '../../../theme';
-import { logger } from '../../../config';
+import { useContentFilter } from '../../../store/profileStore';
+import { scheduleIdleWork } from '../../../utils/idle';
+import type { SearchScreenProps } from '../../../navigation/types';
+import type { XtreamLiveStream, XtreamMovie, XtreamSeries } from '../../../api/xtream';
 
 // =============================================================================
-// TYPES & CONSTANTS
+// TYPES
 // =============================================================================
 
-interface SearchScreenProps {
-    navigation: any;
+interface SearchResults {
+    live: XtreamLiveStream[];
+    movies: XtreamMovie[];
+    series: XtreamSeries[];
 }
 
-const TRENDING_SEARCHES = [
-    'News',
-    'Sports',
-    'Movies 2024',
-    'Action',
-];
-
-const RECENT_SEARCHES_KEY = '@smartifly_recent_searches';
+interface SuggestedContent {
+    movies: XtreamMovie[];
+    series: XtreamSeries[];
+    live: XtreamLiveStream[];
+}
 
 // =============================================================================
-// SEARCH SCREEN COMPONENT
+// CONFIG
 // =============================================================================
+
+const SEARCH_DEBOUNCE_MS = 400;
+const SEARCH_MIN_CHARS = 2;
+const RESULT_LIMIT = 12;
+const SUGGESTION_LIMIT = 10;
+const MOVIE_POOL_LIMIT = 200;
+const SERIES_POOL_LIMIT = 200;
+const LIVE_POOL_LIMIT = 120;
 
 const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const insets = useSafeAreaInsets();
-    const searchInputRef = useRef<SearchInputRef>(null);
 
-    // Search cancellation token - prevents out-of-order results
-    const searchTokenRef = useRef(0);
-    const searchFrameRef = useRef<number | null>(null);
-
-    // Search state
-    const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState<SearchTabType>('all');
-    const [isSearching, setIsSearching] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
-
-    // Results state
-    const [results, setResults] = useState<SearchResultsData>({
-        live: [],
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<SearchResults>({ live: [], movies: [], series: [] });
+    const [suggestedContent, setSuggestedContent] = useState<SuggestedContent>({
         movies: [],
         series: [],
+        live: [],
     });
+    const [isSearching, setIsSearching] = useState(false);
+    const [isPrepared, setIsPrepared] = useState(false);
 
-    // Recent searches state
-    const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
-
-    // Store integration - uses new domain structure
-    const content = useStore((state) => state.content);
+    const searchContent = useStore((state) => state.searchContent);
+    const moviesLoaded = useStore((state) => state.content.movies.loaded);
+    const moviesItems = useStore((state) => state.content.movies.items);
+    const seriesLoaded = useStore((state) => state.content.series.loaded);
+    const seriesItems = useStore((state) => state.content.series.items);
+    const liveLoaded = useStore((state) => state.content.live.loaded);
+    const liveItems = useStore((state) => state.content.live.items);
     const { filterContent } = useContentFilter();
-    const liveSearchPool = useMemo(() => {
-        if (!content.live.loaded) return [];
-        return content.live.items.map((item) => ({
-            item,
-            nameLower: (item.name ?? '').toLowerCase(),
-        }));
-    }, [content.live.items, content.live.loaded]);
 
-    const movieSearchPool = useMemo(() => {
-        if (!content.movies.loaded) return [];
-        return filterContent(content.movies.items).map((item) => ({
-            item,
-            nameLower: (item.name ?? '').toLowerCase(),
-        }));
-    }, [content.movies.items, content.movies.loaded, filterContent]);
-
-    const seriesSearchPool = useMemo(() => {
-        if (!content.series.loaded) return [];
-        return filterContent(content.series.items).map((item) => ({
-            item,
-            nameLower: (item.name ?? '').toLowerCase(),
-        }));
-    }, [content.series.items, content.series.loaded, filterContent]);
-
-    // =============================================================================
-    // RECENT SEARCHES PERSISTENCE
-    // =============================================================================
-
-    // Load recent searches on mount
-    useEffect(() => {
-        const loadRecentSearches = async () => {
-            try {
-                const stored = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
-                if (stored) {
-                    const parsed = JSON.parse(stored);
-                    if (Array.isArray(parsed)) {
-                        setRecentSearches(parsed);
-                    }
-                }
-            } catch (error: unknown) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                logger.error('Failed to load recent searches', {
-                    message: errorMessage,
-                });
-            }
-        };
-        loadRecentSearches();
-    }, []);
-
-    // Persist recent searches whenever they change
-    const persistRecentSearches = useCallback(async (searches: RecentSearch[]) => {
-        try {
-            await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            logger.error('Failed to persist recent searches', {
-                message: errorMessage,
-            });
-        }
-    }, []);
-
-    // =============================================================================
-    // =============================================================================
-    // RECENT SEARCHES HELPERS
-    // =============================================================================
-
-    // Add to recent searches (with persistence)
-    const addToRecentSearches = useCallback((query: string, resultCount: number) => {
-        setRecentSearches(prev => {
-            // Remove duplicate
-            const filtered = prev.filter(s => s.query.toLowerCase() !== query.toLowerCase());
-
-            // Add new search at the beginning
-            const newSearch: RecentSearch = {
-                id: Date.now().toString(),
-                query,
-                timestamp: Date.now(),
-                resultCount,
-            };
-
-            const updated = [newSearch, ...filtered].slice(0, 20);
-
-            // Persist to AsyncStorage
-            persistRecentSearches(updated);
-
-            return updated;
-        });
-    }, [persistRecentSearches]);
-
-    // Delete recent search
-    const handleDeleteSearch = useCallback((id: string) => {
-        setRecentSearches(prev => {
-            const updated = prev.filter(s => s.id !== id);
-            persistRecentSearches(updated);
-            return updated;
-        });
-    }, [persistRecentSearches]);
-
-    // Clear all recent searches
-    const handleClearSearches = useCallback(() => {
-        setRecentSearches([]);
-        persistRecentSearches([]);
-    }, [persistRecentSearches]);
-
-    // =============================================================================
-    // SEARCH LOGIC
-    // =============================================================================
-
-    useEffect(() => () => {
-        if (searchFrameRef.current !== null) {
-            cancelAnimationFrame(searchFrameRef.current);
-        }
-    }, []);
-
-    // Perform search with cancellation guard
-    const performSearch = useCallback((query: string) => {
-        // Increment search token for this search
-        const currentToken = ++searchTokenRef.current;
-
-        if (searchFrameRef.current !== null) {
-            cancelAnimationFrame(searchFrameRef.current);
-            searchFrameRef.current = null;
-        }
-
-        if (!query.trim()) {
+    const performSearch = useCallback((searchText: string) => {
+        const trimmed = searchText.trim();
+        if (!trimmed) {
             setResults({ live: [], movies: [], series: [] });
-            setHasSearched(false);
-            setIsSearching(false);
             return;
         }
 
         setIsSearching(true);
-        setHasSearched(true);
+        try {
+            const result = searchContent(trimmed);
+            setResults({
+                live: result.live,
+                movies: filterContent(result.movies),
+                series: filterContent(result.series),
+            });
+        } catch (error) {
+            console.warn('[Search] Search failed', error);
+        } finally {
+            setIsSearching(false);
+        }
+    }, [filterContent, searchContent]);
 
-        searchFrameRef.current = requestAnimationFrame(() => {
-            const lowerQuery = query.trim().toLowerCase();
+    // Load suggested content (profile-aware)
+    useEffect(() => {
+        if (!moviesLoaded && !seriesLoaded && !liveLoaded) {
+            setSuggestedContent({ movies: [], series: [], live: [] });
+            setIsPrepared(false);
+            return;
+        }
 
-            const buildLive = (): SearchResultItem[] => {
-                const out: SearchResultItem[] = [];
-                for (const entry of liveSearchPool) {
-                    if (!entry.nameLower.includes(lowerQuery)) continue;
-                    out.push({
-                        id: String(entry.item.stream_id),
-                        name: entry.item.name,
-                        image: entry.item.stream_icon,
-                        type: 'live',
-                        category: String(entry.item.category_id || ''),
-                        data: entry.item,
-                    });
-                    if (out.length >= 20) break;
+        setIsPrepared(false);
+        const task = scheduleIdleWork(() => {
+            const getRandomItems = <T,>(items: T[], count: number): T[] => {
+                if (!items || items.length === 0) return [];
+                const max = Math.min(items.length, count);
+                const result: T[] = [];
+                const used = new Set<number>();
+                while (result.length < max) {
+                    const idx = Math.floor(Math.random() * items.length);
+                    if (!used.has(idx)) {
+                        used.add(idx);
+                        result.push(items[idx]);
+                    }
                 }
-                return out;
+                return result;
             };
 
-            const buildMovies = (): SearchResultItem[] => {
-                const out: SearchResultItem[] = [];
-                for (const entry of movieSearchPool) {
-                    if (!entry.nameLower.includes(lowerQuery)) continue;
-                    out.push({
-                        id: String(entry.item.stream_id),
-                        name: entry.item.name,
-                        image: entry.item.stream_icon,
-                        type: 'movie',
-                        rating: entry.item.rating_5based,
-                        category: String(entry.item.category_id || ''),
-                        data: entry.item,
-                    });
-                    if (out.length >= 20) break;
-                }
-                return out;
-            };
+            const moviePool = filterContent(moviesItems.slice(0, MOVIE_POOL_LIMIT));
+            const seriesPool = filterContent(seriesItems.slice(0, SERIES_POOL_LIMIT));
+            const livePool = liveItems.slice(0, LIVE_POOL_LIMIT);
 
-            const buildSeries = (): SearchResultItem[] => {
-                const out: SearchResultItem[] = [];
-                for (const entry of seriesSearchPool) {
-                    if (!entry.nameLower.includes(lowerQuery)) continue;
-                    out.push({
-                        id: String(entry.item.series_id),
-                        name: entry.item.name,
-                        image: entry.item.cover,
-                        type: 'series',
-                        rating: entry.item.rating_5based,
-                        year: entry.item.releaseDate ? entry.item.releaseDate.split('-')[0] : '',
-                        data: entry.item,
-                    });
-                    if (out.length >= 20) break;
-                }
-                return out;
-            };
-
-            const liveResults = buildLive();
-            const movieResults = buildMovies();
-            const seriesResults = buildSeries();
-
-            if (currentToken === searchTokenRef.current) {
-                const total = liveResults.length + movieResults.length + seriesResults.length;
-                setIsSearching(false);
-                setResults({
-                    live: liveResults,
-                    movies: movieResults,
-                    series: seriesResults,
-                });
-
-                if (total > 0) {
-                    addToRecentSearches(query, total);
-                }
-            }
+            setSuggestedContent({
+                movies: getRandomItems(moviePool, SUGGESTION_LIMIT),
+                series: getRandomItems(seriesPool, SUGGESTION_LIMIT),
+                live: getRandomItems(livePool, SUGGESTION_LIMIT),
+            });
+            setIsPrepared(true);
         });
-    }, [addToRecentSearches, liveSearchPool, movieSearchPool, seriesSearchPool]);
 
-    // Debounced search handler
-    const handleSearchChange = useCallback((text: string) => {
-        setSearchQuery(text);
-        if (text.trim()) {
-            performSearch(text);
-        } else {
-            setResults({ live: [], movies: [], series: [] });
-            setHasSearched(false);
-        }
-    }, [performSearch]);
+        return () => task.cancel();
+    }, [filterContent, liveItems, liveLoaded, moviesItems, moviesLoaded, seriesItems, seriesLoaded]);
 
-    // Submit search
-    const handleSearchSubmit = useCallback((text: string) => {
-        Keyboard.dismiss();
-        if (text.trim()) {
-            performSearch(text);
-        }
-    }, [performSearch]);
+    // Debounced search
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            if (query.trim().length >= SEARCH_MIN_CHARS) {
+                performSearch(query);
+            } else {
+                setResults({ live: [], movies: [], series: [] });
+            }
+        }, SEARCH_DEBOUNCE_MS);
 
-    // =============================================================================
-    // RECENT SEARCHES
-    // =============================================================================
-
-
-
-    // Use recent search
-    const handleRecentSearchPress = useCallback((query: string) => {
-        setSearchQuery(query);
-        performSearch(query);
-    }, [performSearch]);
-
-    // =============================================================================
-    // RESULTS HANDLING
-    // =============================================================================
-
-    // Filter results by tab
-    const filteredResults = useMemo((): SearchResultsData => {
-        switch (activeTab) {
-            case 'live':
-                return { live: results.live, movies: [], series: [] };
-            case 'movies':
-                return { live: [], movies: results.movies, series: [] };
-            case 'series':
-                return { live: [], movies: [], series: results.series };
-            default:
-                return results;
-        }
-    }, [results, activeTab]);
-
-    // Result counts for tabs
-    const resultCounts = useMemo(() => ({
-        live: results.live.length,
-        movies: results.movies.length,
-        series: results.series.length,
-    }), [results]);
-
-    // Total results
-    const totalResults = results.live.length + results.movies.length + results.series.length;
-
-    // Handle result item press
-    const handleResultPress = useCallback((item: SearchResultItem) => {
-        Keyboard.dismiss();
-
-        // Ensure we pass the correct data structure expected by Player/Detail screens
-        if (item.type === 'live' && item.data) {
-            navigation.navigate('Player', {
-                type: 'live',
-                item: item.data
-            });
-        } else if (item.type === 'movie' && item.data) {
-            navigation.navigate('Player', {
-                type: 'movie',
-                item: {
-                    ...item.data,
-                    stream_id: item.data.stream_id,
-                    extension: item.data.container_extension
-                }
-            });
-        } else if (item.type === 'series' && item.data) {
-            navigation.navigate('SeriesDetail', {
-                series: item.data
-            });
-        }
-    }, [navigation]);
-
-    // Handle "See All" press
-    const handleSeeAllPress = useCallback((type: 'live' | 'movies' | 'series') => {
-        setActiveTab(type);
-    }, []);
-
-    // =============================================================================
-    // CANCEL / CLOSE
-    // =============================================================================
-
-    const handleCancel = useCallback(() => {
-        Keyboard.dismiss();
-        setSearchQuery('');
-        setResults({ live: [], movies: [], series: [] });
-        setHasSearched(false);
-        navigation.goBack();
-    }, [navigation]);
+        return () => clearTimeout(timeoutId);
+    }, [performSearch, query]);
 
     const handleClear = useCallback(() => {
-        setSearchQuery('');
-        setResults({ live: [], movies: [], series: [] });
-        setHasSearched(false);
+        setQuery('');
+        Keyboard.dismiss();
     }, []);
 
-    // =============================================================================
-    // RENDER
-    // =============================================================================
+    const handleContentPress = useCallback((item: ContentItem) => {
+        if (item.type === 'live') {
+            const live = item.data as XtreamLiveStream | undefined;
+            if (!live) return;
+            navigation.navigate('Player', {
+                type: 'live',
+                item: {
+                    stream_id: live.stream_id,
+                    name: live.name,
+                    stream_icon: live.stream_icon,
+                    category_id: live.category_id,
+                },
+            });
+            return;
+        }
 
-    const showRecentSearches = !hasSearched && recentSearches.length > 0;
-    const showTrending = !hasSearched && !searchQuery;
-    const showResults = hasSearched && totalResults > 0;
-    const showNoResults = hasSearched && totalResults === 0 && !isSearching;
-    const showInitial = !hasSearched && !searchQuery && recentSearches.length === 0;
+        if (item.type === 'movie') {
+            const movie = item.data as XtreamMovie | undefined;
+            if (!movie) return;
+            navigation.navigate('MovieDetail', {
+                movie: {
+                    stream_id: movie.stream_id,
+                    name: movie.name,
+                    stream_icon: movie.stream_icon,
+                    rating: movie.rating,
+                    rating_5based: movie.rating_5based,
+                    container_extension: movie.container_extension,
+                    plot: movie.plot,
+                    genre: movie.genre,
+                    youtube_trailer: movie.youtube_trailer,
+                },
+            });
+            return;
+        }
+
+        if (item.type === 'series') {
+            const series = item.data as XtreamSeries | undefined;
+            if (!series) return;
+            navigation.navigate('SeriesDetail', { series });
+        }
+    }, [navigation]);
+
+    const limitedResults = useMemo(() => ({
+        movies: results.movies.slice(0, RESULT_LIMIT),
+        series: results.series.slice(0, RESULT_LIMIT),
+        live: results.live.slice(0, RESULT_LIMIT),
+    }), [results]);
+
+    const moviesResultItems = useMemo<ContentItem[]>(() => (
+        limitedResults.movies.map((movie) => ({
+            id: String(movie.stream_id),
+            name: movie.name,
+            image: movie.stream_icon,
+            type: 'movie',
+            rating: movie.rating_5based,
+            data: movie,
+        }))
+    ), [limitedResults.movies]);
+
+    const seriesResultItems = useMemo<ContentItem[]>(() => (
+        limitedResults.series.map((series) => ({
+            id: String(series.series_id),
+            name: series.name,
+            image: series.cover,
+            type: 'series',
+            rating: series.rating_5based,
+            data: series,
+        }))
+    ), [limitedResults.series]);
+
+    const liveResultItems = useMemo<ContentItem[]>(() => (
+        limitedResults.live.map((live) => ({
+            id: String(live.stream_id),
+            name: live.name,
+            image: live.stream_icon,
+            type: 'live',
+            data: live,
+        }))
+    ), [limitedResults.live]);
+
+    const suggestedMovies = useMemo<ContentItem[]>(() => (
+        suggestedContent.movies.map((movie) => ({
+            id: String(movie.stream_id),
+            name: movie.name,
+            image: movie.stream_icon,
+            type: 'movie',
+            rating: movie.rating_5based,
+            data: movie,
+        }))
+    ), [suggestedContent.movies]);
+
+    const suggestedSeries = useMemo<ContentItem[]>(() => (
+        suggestedContent.series.map((series) => ({
+            id: String(series.series_id),
+            name: series.name,
+            image: series.cover,
+            type: 'series',
+            rating: series.rating_5based,
+            data: series,
+        }))
+    ), [suggestedContent.series]);
+
+    const suggestedLive = useMemo<ContentItem[]>(() => (
+        suggestedContent.live.map((live) => ({
+            id: String(live.stream_id),
+            name: live.name,
+            image: live.stream_icon,
+            type: 'live',
+            data: live,
+        }))
+    ), [suggestedContent.live]);
+
+    const hasResults = useMemo(() => (
+        moviesResultItems.length > 0 || seriesResultItems.length > 0 || liveResultItems.length > 0
+    ), [liveResultItems.length, moviesResultItems.length, seriesResultItems.length]);
+
+    const renderSection = useCallback((title: string, type: RowType, items: ContentItem[], accentColor?: string) => {
+        if (!items.length) return null;
+        return (
+            <ContentRow
+                title={title}
+                type={type}
+                items={items}
+                onItemPress={handleContentPress}
+                showSeeAll={false}
+                maxItems={RESULT_LIMIT}
+                accentColor={accentColor}
+            />
+        );
+    }, [handleContentPress]);
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+            <NavBar
+                variant="content"
+                title="Search"
+                showBack
+                showSearch={false}
+            />
 
-            {/* Header */}
-            <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-                {/* Search Input */}
-                <SearchInput
-                    ref={searchInputRef}
-                    value={searchQuery}
-                    onChangeText={handleSearchChange}
-                    onSubmit={handleSearchSubmit}
-                    onClear={handleClear}
-                    onCancel={handleCancel}
-                    placeholder="Search movies, series, channels..."
+            <View style={styles.searchBarWrapper}>
+                <Icon name="magnifyingGlass" size={20} color={colors.textMuted} />
+                <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Search movies, series, live TV"
+                    placeholderTextColor={colors.textMuted}
+                    style={styles.searchInput}
+                    returnKeyType="search"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     autoFocus
-                    showCancel
-                    isLoading={isSearching}
-                    debounceMs={300}
+                    onSubmitEditing={() => performSearch(query)}
                 />
+                {query.length > 0 && (
+                    <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
+                        <Icon name="x" size={18} color={colors.textMuted} />
+                    </TouchableOpacity>
+                )}
             </View>
 
-            {/* Tabs (show when there are results) */}
-            {hasSearched && (
-                <SearchTabs
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                    counts={resultCounts}
-                />
-            )}
-
-            {/* Content */}
             <ScrollView
-                style={styles.content}
-                contentContainerStyle={[
-                    styles.contentContainer,
-                    { paddingBottom: insets.bottom + spacing.lg },
-                ]}
+                style={styles.resultsScroll}
+                contentContainerStyle={[styles.resultsContent, { paddingBottom: insets.bottom + spacing.xl }]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
             >
-                {/* Loading State */}
-                {isSearching && !showResults && (
-                    <SearchResultsSkeleton />
-                )}
-
-                {/* Initial State */}
-                {showInitial && (
-                    <EmptySearchState
-                        type="initial"
-                        suggestions={TRENDING_SEARCHES}
-                        onSuggestionPress={handleRecentSearchPress}
-                    />
-                )}
-
-                {/* Recent Searches */}
-                {showRecentSearches && (
-                    <RecentSearches
-                        searches={recentSearches}
-                        onSearchPress={handleRecentSearchPress}
-                        onDeleteSearch={handleDeleteSearch}
-                        onClearAll={handleClearSearches}
-                    />
-                )}
-
-                {/* Trending Searches */}
-                {showTrending && (
-                    <TrendingSearches
-                        searches={TRENDING_SEARCHES}
-                        onSearchPress={handleRecentSearchPress}
-                    />
-                )}
-
-                {/* Search Results */}
-                {showResults && (
-                    <SearchResults
-                        results={filteredResults}
-                        query={searchQuery}
-                        onItemPress={handleResultPress}
-                        onSeeAllPress={handleSeeAllPress}
-                        showAll={activeTab !== 'all'}
-                    />
-                )}
-
-                {/* No Results */}
-                {showNoResults && (
-                    <EmptySearchState
-                        type="no-results"
-                        query={searchQuery}
-                        suggestions={TRENDING_SEARCHES}
-                        onSuggestionPress={handleRecentSearchPress}
-                    />
+                {isSearching ? (
+                    <View style={styles.centerContent}>
+                        <ActivityIndicator size="small" color={colors.primary} />
+                        <Text style={styles.helperText}>Searching...</Text>
+                    </View>
+                ) : query.trim().length < SEARCH_MIN_CHARS ? (
+                    <>
+                        <Text style={styles.sectionHeading}>Suggested For You</Text>
+                        {!isPrepared && (
+                            <View style={styles.centerContent}>
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            </View>
+                        )}
+                        {isPrepared && !suggestedMovies.length && !suggestedSeries.length && !suggestedLive.length && (
+                            <View style={styles.centerContent}>
+                                <Text style={styles.helperText}>
+                                    Type at least {SEARCH_MIN_CHARS} characters to search
+                                </Text>
+                            </View>
+                        )}
+                        {renderSection('Popular Movies', 'movies', suggestedMovies, colors.movies)}
+                        {renderSection('Trending Series', 'series', suggestedSeries, colors.series)}
+                        {renderSection('Live Channels', 'live', suggestedLive, colors.live)}
+                    </>
+                ) : !hasResults ? (
+                    <View style={styles.centerContent}>
+                        <Text style={styles.helperText}>No results found for "{query}"</Text>
+                    </View>
+                ) : (
+                    <>
+                        {renderSection('Movies', 'movies', moviesResultItems, colors.movies)}
+                        {renderSection('Series', 'series', seriesResultItems, colors.series)}
+                        {renderSection('Live TV', 'live', liveResultItems, colors.live)}
+                    </>
                 )}
             </ScrollView>
         </View>
     );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
     },
-    header: {
-        paddingHorizontal: spacing.base,
-        paddingBottom: spacing.md,
-        backgroundColor: colors.background,
+    searchBarWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: spacing.base,
+        marginBottom: spacing.base,
+        paddingHorizontal: spacing.md,
+        backgroundColor: colors.backgroundInput,
+        borderRadius: borderRadius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        minHeight: 52,
+        gap: spacing.sm,
     },
-    content: {
+    searchInput: {
+        flex: 1,
+        color: colors.textPrimary,
+        fontSize: 16,
+        paddingVertical: spacing.sm,
+    },
+    clearButton: {
+        padding: spacing.xs,
+    },
+    resultsScroll: {
         flex: 1,
     },
-    contentContainer: {
-        flexGrow: 1,
+    resultsContent: {
+        paddingTop: spacing.xs,
+        paddingBottom: spacing.xl,
+    },
+    sectionHeading: {
+        color: colors.textPrimary,
+        fontSize: 18,
+        fontWeight: '600',
+        marginHorizontal: spacing.base,
+        marginBottom: spacing.md,
+        marginTop: spacing.sm,
+    },
+    centerContent: {
+        paddingVertical: spacing.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    helperText: {
+        color: colors.textMuted,
+        fontSize: 14,
+        marginTop: spacing.sm,
+        textAlign: 'center',
     },
 });
 
 export default SearchScreen;
+

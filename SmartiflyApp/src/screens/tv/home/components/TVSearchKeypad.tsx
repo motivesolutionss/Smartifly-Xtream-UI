@@ -21,6 +21,7 @@ interface TVSearchKeypadProps {
     onBackspace: () => void;
     onSpace: () => void;
     onClear: () => void;
+    firstKeyRef?: React.Ref<View>;
 }
 
 interface KeyButtonProps {
@@ -30,6 +31,7 @@ interface KeyButtonProps {
     icon?: string;
     width?: number; // Optional customization
     isControl?: boolean;
+    pressableRef?: React.Ref<View>;
 }
 
 // =============================================================================
@@ -47,7 +49,8 @@ const SearchKey: React.FC<KeyButtonProps> = React.memo(({
     label,
     onPress,
     icon,
-    isControl
+    isControl,
+    pressableRef
 }) => {
     const [focused, setFocused] = useState(false);
 
@@ -72,6 +75,7 @@ const SearchKey: React.FC<KeyButtonProps> = React.memo(({
     return (
         <Animated.View style={[styles.keyWrapper, animatedStyle]}>
             <Pressable
+                ref={pressableRef}
                 onPress={onPress}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
@@ -95,12 +99,13 @@ const SearchKey: React.FC<KeyButtonProps> = React.memo(({
 // MAIN KEYPAD COMPONENT
 // =============================================================================
 
-const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
+const TVSearchKeypad = ({
     onKeyPress,
     onBackspace,
     onSpace,
-    onClear
-}) => {
+    onClear,
+    firstKeyRef
+}: TVSearchKeypadProps) => {
     // 6-Column Grid Layout
     const rows = useMemo(() => ([
         // Row 1: a-f
@@ -136,7 +141,7 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
 
     return (
         <View style={styles.container}>
-            {rows.map((row, _rowIndex) => (
+            {rows.map((row, rowIndex) => (
                 <View key={row.id} style={styles.row}>
                     {(row as any).type === 'control' ? (
                         // Special handling for control row
@@ -151,11 +156,12 @@ const TVSearchKeypad: React.FC<TVSearchKeypadProps> = ({
                         ))
                     ) : (
                         // Standard grid rows
-                        (row.keys as string[]).map((char) => (
+                        (row.keys as string[]).map((char, colIndex) => (
                             <View key={char} style={styles.flex1}>
                                 <SearchKey
                                     label={char}
                                     onPress={() => onKeyPress(char)}
+                                    pressableRef={rowIndex === 0 && colIndex === 0 ? firstKeyRef : undefined}
                                 />
                             </View>
                         ))

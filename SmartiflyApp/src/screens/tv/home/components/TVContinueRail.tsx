@@ -1,19 +1,14 @@
 /**
  * TV Continue Watching Rail Component
- * 
- * Special rail for Continue Watching with landscape cards.
- * Uses TVContinueCard instead of TVContentCard.
- * 
- * @enterprise-grade
+ *
+ * Performance upgrades:
+ * - stable callbacks + safeData memo
+ * - removeClippedSubviews on Android (usually big win)
+ * - better batching defaults for TV
  */
 
-import React, { useCallback } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    FlatList,
-} from 'react-native';
+import React, { memo, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, Platform } from 'react-native';
 import { colors, scale, scaleFont } from '../../../../theme';
 import TVContinueCard from './TVContinueCard';
 import { WatchProgress } from '../../../../store/watchHistoryStore';
@@ -23,7 +18,7 @@ import { WatchProgress } from '../../../../store/watchHistoryStore';
 // =============================================================================
 
 const CARD_WIDTH = scale(220);
-const CARD_MARGIN = scale(24);
+const CARD_MARGIN = scale(16);
 const ITEM_WIDTH = CARD_WIDTH + CARD_MARGIN;
 
 // =============================================================================
@@ -31,83 +26,78 @@ const ITEM_WIDTH = CARD_WIDTH + CARD_MARGIN;
 // =============================================================================
 
 interface TVContinueRailProps {
-    title: string;
-    data: WatchProgress[];
-    onPressItem: (item: WatchProgress) => void;
-    onRemoveItem?: (item: WatchProgress) => void;
+  title: string;
+  data: WatchProgress[];
+  onPressItem: (item: WatchProgress) => void;
+  onRemoveItem?: (item: WatchProgress) => void;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
-
 const TVContinueRail: React.FC<TVContinueRailProps> = ({
-    title,
-    data,
-    onPressItem,
-    onRemoveItem,
+  title,
+  data,
+  onPressItem,
+  onRemoveItem,
 }) => {
-    const renderItem = useCallback(({ item }: { item: WatchProgress }) => (
-        <TVContinueCard
-            item={item}
-            onPress={onPressItem}
-            onRemove={onRemoveItem}
-        />
-    ), [onPressItem, onRemoveItem]);
+  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-    const getItemLayout = useCallback((_: any, index: number) => ({
-        length: ITEM_WIDTH,
-        offset: ITEM_WIDTH * index,
-        index,
-    }), []);
+  const renderItem = useCallback(
+    ({ item }: { item: WatchProgress }) => (
+      <TVContinueCard item={item} onPress={onPressItem} onRemove={onRemoveItem} />
+    ),
+    [onPressItem, onRemoveItem]
+  );
 
-    const keyExtractor = useCallback((item: WatchProgress) => item.id, []);
+  const getItemLayout = useCallback((_: unknown, index: number) => {
+    return { length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index };
+  }, []);
 
-    if (data.length === 0) return null;
+  const keyExtractor = useCallback((item: WatchProgress) => String(item.id), []);
 
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>{title}</Text>
+  const onScrollToIndexFailed = useCallback(() => {
+    // noop – avoids rare crashes on some android tv devices
+  }, []);
 
-            <FlatList
-                horizontal
-                data={data}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                getItemLayout={getItemLayout}
-                contentContainerStyle={styles.listContent}
-                showsHorizontalScrollIndicator={false}
-                // Performance optimizations
-                removeClippedSubviews={false} // Restored for consistent focus sounds
-                windowSize={5}
-                initialNumToRender={6}
-                maxToRenderPerBatch={3}
-                updateCellsBatchingPeriod={50}
-            />
-        </View>
-    );
+  if (safeData.length === 0) return null;
+
+  return (
+    <View style={styles.container} renderToHardwareTextureAndroid>
+      <Text style={styles.title}>{title}</Text>
+
+      <FlatList
+        horizontal
+        data={safeData}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
+        contentContainerStyle={styles.listContent}
+        showsHorizontalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS === 'android'}
+        windowSize={5}
+        initialNumToRender={6}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={16}
+        onScrollToIndexFailed={onScrollToIndexFailed}
+      />
+    </View>
+  );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
-
 const styles = StyleSheet.create({
-    container: {
-        marginBottom: scale(10),
-        width: '100%',
-    },
-    title: {
-        fontSize: scaleFont(24),
-        fontWeight: 'bold',
-        color: colors.textPrimary || '#EEE',
-        marginBottom: scale(8),
-        marginLeft: scale(30),
-    },
-    listContent: {
-        paddingHorizontal: scale(30),
-        paddingRight: scale(80),
-    },
+  container: {
+    marginBottom: scale(10),
+    width: '100%',
+  },
+  title: {
+    fontSize: scaleFont(24),
+    fontWeight: 'bold',
+    color: colors.textPrimary || '#EEE',
+    marginBottom: scale(8),
+    marginLeft: scale(30),
+  },
+  listContent: {
+    paddingHorizontal: scale(30),
+    paddingRight: scale(80),
+  },
 });
 
-export default React.memo(TVContinueRail);
+export default memo(TVContinueRail);

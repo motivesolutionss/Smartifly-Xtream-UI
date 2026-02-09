@@ -1,22 +1,23 @@
 /**
  * TV Continue Watching Card Component
- * 
- * Special card for Continue Watching rail.
- * Shows progress bar and episode info for series.
- * 
- * @enterprise-grade
+ *
+ * Performance upgrades:
+ * - No React state for focus (no re-render on focus)
+ * - Reanimated border/glow + tiny zoom (optional)
+ * - Remove nested TouchableOpacity (bad on TV focus)
+ * - Show "Remove" only when focused (cheap + clear)
  */
 
-import React, { useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    Pressable,
-    TouchableOpacity,
-} from 'react-native';
+import React, { memo, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import FastImageComponent from '../../../../components/FastImageComponent';
-import { colors, scale, scaleFont } from '../../../../theme';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { colors, scale, scaleFont, useTheme } from '../../../../theme';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
 import { WatchProgress } from '../../../../store/watchHistoryStore';
 
@@ -25,254 +26,235 @@ import { WatchProgress } from '../../../../store/watchHistoryStore';
 // =============================================================================
 
 interface TVContinueCardProps {
-    item: WatchProgress;
-    onPress: (item: WatchProgress) => void;
-    onRemove?: (item: WatchProgress) => void;
-    width?: number;
-    height?: number;
+  item: WatchProgress;
+  onPress: (item: WatchProgress) => void;
+  onRemove?: (item: WatchProgress) => void;
+  width?: number;
+  height?: number;
 }
 
 // =============================================================================
-// CONSTANTS
+// ANIMATION CONFIG
 // =============================================================================
 
-// Spring config for smooth, responsive focus
-const SPRING_CONFIG = {
-    damping: 15,
-    stiffness: 200,
-    mass: 0.5,
+const SPRING = {
+  damping: 18,
+  stiffness: 220,
+  mass: 0.6,
 };
-
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const FOCUS_BORDER_WIDTH = scale(3);
+const FOCUS_SHADOW_RADIUS = scale(10);
 
 const TVContinueCard: React.FC<TVContinueCardProps> = ({
-    item,
-    onPress,
-    onRemove,
-    width = scale(220), // Wider for continue watching
-    height = scale(130), // Landscape ratio for continue
+  item,
+  onPress,
+  onRemove,
+  width = scale(220),
+  height = scale(130),
 }) => {
-    const [isFocused, setIsFocused] = useState(false);
-    const handleFocus = () => {
-        setIsFocused(true);
+  const { theme } = useTheme();
+
+  // UI-thread focus state
+  const focused = useSharedValue(0);
+  const zoom = useSharedValue(1);
+  const removeOpacity = useSharedValue(0);
+
+  const isLive = item.type === 'live';
+  const imageUri = item.thumbnail || FALLBACK_POSTER;
+
+  const containerSize = useMemo(() => ({ width }), [width]);
+  const cardSize = useMemo(() => ({ width, height }), [width, height]);
+
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    const f = focused.value === 1;
+
+    return {
+      transform: [{ scale: zoom.value }],
+      borderWidth: f ? FOCUS_BORDER_WIDTH : 1,
+      borderColor: f ? (theme.colors.accent || '#00E5FF') : 'rgba(255,255,255,0.10)',
+      // lightweight glow – noticeable but not heavy
+      shadowOpacity: f ? 0.55 : 0,
+      shadowRadius: f ? FOCUS_SHADOW_RADIUS : 0,
+      shadowOffset: { width: 0, height: 0 },
+      shadowColor: theme.colors.accent || '#00E5FF',
+      elevation: f ? 12 : 0,
     };
+  }, [theme.colors.accent]);
 
-    const handleBlur = () => {
-        setIsFocused(false);
-    };
+  const removeAnimatedStyle = useAnimatedStyle(() => {
+    return { opacity: removeOpacity.value };
+  });
 
-    // Format remaining time
+  const handleFocus = useCallback(() => {
+    focused.value = 1;
+    removeOpacity.value = withTiming(1, { duration: 120 });
+    zoom.value = withSpring(1.03, SPRING);
+  }, [focused, removeOpacity, zoom]);
 
+  const handleBlur = useCallback(() => {
+    focused.value = 0;
+    removeOpacity.value = withTiming(0, { duration: 120 });
+    zoom.value = withSpring(1, SPRING);
+  }, [focused, removeOpacity, zoom]);
 
+  const handlePress = useCallback(() => onPress(item), [onPress, item]);
 
+  const handleRemove = useCallback(() => {
+    if (onRemove) onRemove(item);
+  }, [onRemove, item]);
 
-    return (
-        <Pressable
-            onPress={() => onPress(item)}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            style={[styles.container, { width }]}
-        >
-            <View
-                style={[
-                    styles.imageContainer,
-                    {
-                        width,
-                        height,
-                    },
-                    isFocused ? styles.borderFocusedWidth : styles.borderZero,
-                    isFocused ? styles.borderFocused : styles.borderTransparent,
-                    isFocused && styles.shadow,
-                ]}
+  return (
+    <Pressable
+      onPress={handlePress}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      style={[styles.container, containerSize]}
+    >
+      <Animated.View style={[styles.card, cardSize, cardAnimatedStyle]}>
+        <FastImageComponent source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+
+        <View style={styles.overlay} pointerEvents="none" />
+
+        {/* Remove button (only visible on focus) */}
+        {onRemove ? (
+          <Animated.View style={[styles.removeWrap, removeAnimatedStyle]}>
+            <Pressable
+              // TV behavior: doesn't steal focus; but still clickable if user presses OK on it
+              onPress={handleRemove}
+              style={styles.removeButton}
+              accessibilityLabel="Remove from continue watching"
             >
-                {/* Thumbnail */}
-                <FastImageComponent
-                    source={{ uri: item.thumbnail || FALLBACK_POSTER }}
-                    style={styles.image}
-                    resizeMode="cover"
-                />
+              <Text style={styles.removeText}>Remove</Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
 
-                {/* Dark overlay for text readability */}
-                <View style={styles.overlay} />
+        {/* Play icon */}
+        <View style={styles.playIconContainer} pointerEvents="none">
+          <View style={styles.playIcon}>
+            <Text style={styles.playIconText}>▶</Text>
+          </View>
+        </View>
 
-                {/* Play icon overlay */}
-                {onRemove && (
-                    <TouchableOpacity
-                        style={styles.removeButton}
-                        onPress={() => onRemove(item)}
-                    >
-                        <Text style={styles.removeText}>Remove</Text>
-                    </TouchableOpacity>
-                )}
-                <View style={styles.playIconContainer}>
-                    <View style={styles.playIcon}>
-                        <Text style={styles.playIconText}>▶</Text>
-                    </View>
-                </View>
+        {/* Progress bar */}
+        {!isLive && item.progress > 0 ? (
+          <View style={styles.progressContainer} pointerEvents="none">
+            <View style={[styles.progressBar, { width: `${item.progress}%` }]} />
+          </View>
+        ) : null}
 
-                {/* Progress bar */}
-                {item.type !== 'live' && item.progress > 0 && (
-                    <View style={styles.progressContainer}>
-                        <View
-                            style={[
-                                styles.progressBar,
-                                { width: `${item.progress}%` }
-                            ]}
-                        />
-                    </View>
-                )}
-
-                {/* Type badge */}
-                <View style={[
-                    styles.typeBadge,
-                    item.type === 'live' && styles.liveBadge,
-                ]}>
-                    {item.type === 'live' && <View style={styles.liveDot} />}
-                    <Text style={styles.typeBadgeText}>
-                        {item.type === 'live' ? 'LIVE' : item.type === 'series' ? 'SERIES' : 'MOVIE'}
-                    </Text>
-                </View>
-            </View>
-
-        </Pressable>
-    );
+        {/* Type badge */}
+        <View style={[styles.typeBadge, isLive && styles.liveBadge]} pointerEvents="none">
+          {isLive && <View style={styles.liveDot} />}
+          <Text style={styles.typeBadgeText}>
+            {isLive ? 'LIVE' : item.type === 'series' ? 'SERIES' : 'MOVIE'}
+          </Text>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
-
 const styles = StyleSheet.create({
-    container: {
-        marginRight: scale(16),
-    },
-    imageContainer: {
-        borderRadius: scale(8),
-        overflow: 'hidden',
-        backgroundColor: colors.backgroundSecondary || '#222',
-    },
-    image: {
-        width: '100%',
-        height: '100%',
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    },
-    shadow: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 6,
-        elevation: 10,
-        zIndex: 10,
-    },
-    // Play icon
-    playIconContainer: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    playIcon: {
-        width: scale(40),
-        height: scale(40),
-        borderRadius: scale(20),
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    playIconText: {
-        fontSize: scaleFont(16),
-        color: '#000',
-        marginLeft: scale(2),
-    },
-    // Progress bar
-    progressContainer: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: scale(4),
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    },
-    progressBar: {
-        height: '100%',
-        backgroundColor: colors.primary || '#E50914',
-    },
-    // Type badge
-    typeBadge: {
-        position: 'absolute',
-        top: scale(6),
-        left: scale(6),
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        paddingHorizontal: scale(6),
-        paddingVertical: scale(2),
-        borderRadius: scale(4),
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    liveBadge: {
-        backgroundColor: colors.live || '#E50914',
-    },
-    liveDot: {
-        width: scale(5),
-        height: scale(5),
-        borderRadius: scale(3),
-        backgroundColor: '#FFF',
-        marginRight: scale(4),
-    },
-    typeBadgeText: {
-        fontSize: scaleFont(9),
-        fontWeight: 'bold',
-        color: '#FFF',
-        letterSpacing: 0.5,
-    },
-    removeButton: {
-        position: 'absolute',
-        top: scale(6),
-        right: scale(10),
-        paddingHorizontal: scale(12),
-        paddingVertical: scale(4),
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: scale(12),
-    },
-    removeText: {
-        fontSize: scaleFont(10),
-        color: colors.error || '#EF4444',
-        fontWeight: '600',
-    },
-    // Meta
-    metaContainer: {
-        marginTop: scale(10),
-        paddingRight: scale(4),
-    },
-    title: {
-        fontSize: scaleFont(14),
-        fontWeight: '600',
-        color: colors.textSecondary || '#AAA',
-    },
-    titleFocused: {
-        color: colors.textPrimary || '#FFF',
-    },
-    subtitle: {
-        fontSize: scaleFont(11),
-        color: colors.textMuted || '#666',
-        marginTop: scale(2),
-    },
-    borderFocused: {
-        borderColor: colors.accent || '#00E5FF',
-    },
-    borderTransparent: {
-        borderColor: 'transparent',
-    },
-    borderFocusedWidth: {
-        borderWidth: scale(3),
-    },
-    borderZero: {
-        borderWidth: 0,
-    }
+  container: {
+    marginRight: scale(16),
+  },
+  card: {
+    borderRadius: scale(10),
+    overflow: 'hidden',
+    backgroundColor: colors.backgroundSecondary || '#222',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+
+  // Play icon
+  playIconContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playIcon: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playIconText: {
+    fontSize: scaleFont(16),
+    color: '#000',
+    marginLeft: scale(2),
+  },
+
+  // Progress bar
+  progressContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: scale(4),
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: colors.primary || '#E50914',
+  },
+
+  // Type badge
+  typeBadge: {
+    position: 'absolute',
+    top: scale(6),
+    left: scale(6),
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    paddingHorizontal: scale(6),
+    paddingVertical: scale(2),
+    borderRadius: scale(4),
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveBadge: {
+    backgroundColor: colors.live || '#E50914',
+  },
+  liveDot: {
+    width: scale(5),
+    height: scale(5),
+    borderRadius: scale(3),
+    backgroundColor: '#FFF',
+    marginRight: scale(4),
+  },
+  typeBadgeText: {
+    fontSize: scaleFont(9),
+    fontWeight: 'bold',
+    color: '#FFF',
+    letterSpacing: 0.5,
+  },
+
+  // Remove button
+  removeWrap: {
+    position: 'absolute',
+    top: scale(6),
+    right: scale(8),
+  },
+  removeButton: {
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(4),
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    borderRadius: scale(12),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  removeText: {
+    fontSize: scaleFont(10),
+    color: colors.error || '#EF4444',
+    fontWeight: '700',
+  },
 });
 
-export default React.memo(TVContinueCard);
+export default memo(TVContinueCard);

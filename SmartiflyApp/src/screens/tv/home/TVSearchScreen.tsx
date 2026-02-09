@@ -38,7 +38,8 @@ interface SearchResults {
 // TV SEARCH SCREEN
 // =============================================================================
 
-const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
+
+const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const [query, setQuery] = useState('');
     // State for text suggestions
@@ -58,9 +59,14 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
     // Animation for the "focused" search bar state (since it's always the active input method here)
     const glowAnim = React.useRef(new Animated.Value(0.6)).current; // Constant subtle glow
 
-    // Store access
+    // Store access (narrow selectors to avoid re-render on other domains)
     const searchContent = useStore((state) => state.searchContent);
-    const content = useStore((state) => state.content);
+    const moviesLoaded = useStore((state) => state.content.movies.loaded);
+    const moviesItems = useStore((state) => state.content.movies.items);
+    const seriesLoaded = useStore((state) => state.content.series.loaded);
+    const seriesItems = useStore((state) => state.content.series.items);
+    const liveLoaded = useStore((state) => state.content.live.loaded);
+    const liveItems = useStore((state) => state.content.live.items);
     const { filterContent } = useContentFilter();
 
     // =========================================================================
@@ -89,7 +95,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
 
     // Load suggested content on mount or when profile changes
     useEffect(() => {
-        if (!content.movies.loaded && !content.series.loaded && !content.live.loaded) {
+        if (!moviesLoaded && !seriesLoaded && !liveLoaded) {
             setSuggestedContent({ movies: [], series: [], live: [] });
             setIsPrepared(false);
             return;
@@ -112,9 +118,9 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                 return result;
             };
 
-            const moviePool = filterContent(content.movies.items.slice(0, 200));
-            const seriesPool = filterContent(content.series.items.slice(0, 200));
-            const livePool = content.live.items.slice(0, 120);
+            const moviePool = filterContent(moviesItems.slice(0, 200));
+            const seriesPool = filterContent(seriesItems.slice(0, 200));
+            const livePool = liveItems.slice(0, 120);
 
             setSuggestedContent({
                 movies: getRandomItems(moviePool, 10),
@@ -127,12 +133,12 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
         return () => task.cancel();
     }, [
         filterContent,
-        content.movies.items,
-        content.movies.loaded,
-        content.series.items,
-        content.series.loaded,
-        content.live.items,
-        content.live.loaded
+        moviesItems,
+        moviesLoaded,
+        seriesItems,
+        seriesLoaded,
+        liveItems,
+        liveLoaded
     ]);
 
     // Debounced search effect
@@ -305,6 +311,8 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = () => {
                     onBackspace={handleBackspace}
                     onSpace={handleSpace}
                     onClear={handleClear}
+                    // @ts-ignore - Prop exists in TVSearchKeypad but TS server sometimes fails to resolve it
+                    firstKeyRef={focusEntryRef}
                 />
 
 

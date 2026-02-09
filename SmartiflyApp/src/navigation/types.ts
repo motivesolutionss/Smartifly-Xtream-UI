@@ -7,6 +7,7 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { View } from 'react-native';
 
 // =============================================================================
 // CONTENT TYPES (for passing data between screens)
@@ -16,7 +17,6 @@ export interface LiveStreamItem {
     stream_id: number;
     name: string;
     stream_icon?: string;
-    epg_channel_id?: string;
     category_id?: string;
     tv_archive?: number;
 }
@@ -75,6 +75,7 @@ export interface EpisodeItem {
 export type HomeStackParamList = {
     HomeMain: undefined;
     Search: undefined;
+    Browse: { type: 'live' | 'movies' | 'series' };
     Player: {
         type: 'live' | 'movie' | 'series';
         item: LiveStreamItem | MovieItem | SeriesItem;
@@ -208,6 +209,7 @@ export type TVSeriesDetailScreenProps = NativeStackScreenProps<RootStackParamLis
 // These screens receive navigation from TVHomeScreen and need to navigate to other routes
 export interface TVEmbeddedScreenProps {
     navigation: TVHomeScreenProps['navigation'];
+    focusEntryRef?: (node: View | null) => void;
 }
 
 // Types for embedded screens
@@ -217,11 +219,14 @@ export type TVSeriesScreenProps = TVEmbeddedScreenProps;
 export type TVSettingsScreenProps = TVEmbeddedScreenProps;
 export type TVFavoritesScreenProps = TVEmbeddedScreenProps;
 export type TVSearchScreenProps = TVEmbeddedScreenProps;
+export type TVAnnouncementsScreenProps = TVEmbeddedScreenProps;
+export type TVDownloadsScreenProps = TVEmbeddedScreenProps;
 
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export type FullscreenPlayerScreenProps = NativeStackScreenProps<RootStackParamList, 'FullscreenPlayer'>;
 export type HomeScreenProps = NativeStackScreenProps<HomeStackParamList, 'HomeMain'>;
 export type SearchScreenProps = NativeStackScreenProps<HomeStackParamList, 'Search'>;
+export type BrowseScreenProps = NativeStackScreenProps<HomeStackParamList, 'Browse'>;
 export type HomePlayerScreenProps = NativeStackScreenProps<HomeStackParamList, 'Player'>;
 export type LiveScreenProps = NativeStackScreenProps<LiveStackParamList, 'LiveMain'>;
 export type LivePlayerScreenProps = NativeStackScreenProps<LiveStackParamList, 'Player'>;

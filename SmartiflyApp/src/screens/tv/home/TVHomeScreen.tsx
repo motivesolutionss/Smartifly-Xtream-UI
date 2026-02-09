@@ -1,20 +1,10 @@
 /**
  * Smartifly TV Home Screen - Netflix-Grade Edition
- * 
- * 100% MANIFEST-DRIVEN home screen.
- * Uses useHomeRails resolver - ZERO manual rail ordering.
- * 
- * Architecture:
- * - HomeRailConfig.ts → defines WHAT appears
- * - useHomeRails.ts → resolves config into renderable data
- * - TVHomeScreen.tsx → Switch-based Shell Architecture for Persistent Sidebar
- * 
- * Benefits:
- * - Single source of truth (config)
- * - Persistent Sidebar across main sections
- * - Smooth content switching
- * 
- * @enterprise-grade
+ *
+ * Performance upgrades:
+ * - Home stays mounted (no reload on sidebar navigation)
+ * - While loading, render ONLY the placeholder (avoid rendering heavy FlashList underneath)
+ * - Reduce unnecessary allocations in render paths
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -24,19 +14,22 @@ import {
     StyleSheet,
     BackHandler,
     StatusBar,
-    Animated,
-    Easing,
+    findNodeHandle,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect } from '@react-navigation/native';
+
 import useStore from '../../../store';
 import { colors, scale, scaleFont } from '../../../theme';
+
 import TVSidebar, { SidebarRoute } from './components/TVSidebar';
-import TVHeroBanner from './components/TVHeroBanner';
+import TVHeroBanner, { TVHeroItem } from './components/TVHeroBanner';
 import TVContentRail from './components/TVContentRail';
 import TVContinueRail from './components/TVContinueRail';
 import { TVContentItem } from './components/TVContentCard';
+
 import useWatchHistoryStore, { WatchProgress } from '../../../store/watchHistoryStore';
+
 import TVLiveScreen from '../TVLiveScreen';
 import TVMoviesScreen from '../TVMoviesScreen';
 import TVSeriesScreen from '../TVSeriesScreen';
@@ -45,13 +38,14 @@ import TVAnnouncementsScreen from '../TVAnnouncementsScreen';
 import TVSettingsScreen from '../TVSettingsScreen';
 import TVFavoritesScreen from './TVFavoritesScreen';
 import TVDownloadsScreen from '../TVDownloadsScreen';
+
 import TVLoadingState from '../components/TVLoadingState';
 import { prefetchImages } from '../../../utils/image';
+import { FALLBACK_POSTER } from './HomeRailConfig';
+
 // Netflix-grade resolver
 import { useHomeRails } from './hooks/useHomeRails';
 import { TVHomeScreenProps, MovieItem, SeriesItem } from '../../../navigation/types';
-
-// Content Screens (Rendered internally as Sections)
 
 // =============================================================================
 // TYPES
@@ -65,22 +59,14 @@ interface HeroDetails {
     year?: string;
 }
 
-// =============================================================================
-// PREFETCH CONFIG
-// =============================================================================
-
-const PREFETCH_RAILS_LIMIT = 4;
-const PREFETCH_ITEMS_PER_RAIL = 6;
-const HOME_DRAW_DISTANCE = scale(900);
-const PLACEHOLDER_RAIL_COUNT = 3;
-const PLACEHOLDER_CARDS_PER_RAIL = 6;
+const isUsableUri = (value?: string): boolean => {
+    if (!value || typeof value !== 'string') return false;
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return /^(https?:\/\/|\/\/|file:\/\/|content:\/\/|data:|asset:)/i.test(trimmed);
+};
 
 type HomeSection =
-    | {
-        key: string;
-        type: 'hero';
-        item: any;
-    }
     | {
         key: string;
         type: 'continue';
@@ -93,6 +79,21 @@ type HomeSection =
         rail: { id: string; title: string; items: TVContentItem[] };
         lift: boolean;
     };
+
+// =============================================================================
+// PREFETCH CONFIG
+// =============================================================================
+
+const PREFETCH_RAILS_LIMIT = 4;
+const PREFETCH_ITEMS_PER_RAIL = 6;
+const HOME_DRAW_DISTANCE = scale(900);
+
+const PLACEHOLDER_RAIL_COUNT = 3;
+const PLACEHOLDER_CARDS_PER_RAIL = 6;
+
+const HERO_BANNER_HEIGHT = scale(680);
+const HERO_BANNER_MARGIN = scale(40);
+const RAIL_SECTION_ESTIMATE = scale(340);
 
 // =============================================================================
 // HOME PLACEHOLDERS
@@ -114,25 +115,29 @@ const HomePlaceholderRail: React.FC<{ index: number }> = ({ index }) => (
     </View>
 );
 
+const HeroSkeleton: React.FC<{ contentOffset?: number }> = ({ contentOffset = 0 }) => (
+    <View style={styles.placeholderHero}>
+        <View style={styles.placeholderHeroBackdrop} />
+        <View style={[styles.placeholderHeroContent, contentOffset ? { left: contentOffset } : null]}>
+            <View style={[styles.placeholderLine, { width: scale(140) }]} />
+            <View style={[styles.placeholderLine, { width: scale(360), height: scale(18) }]} />
+            <View style={[styles.placeholderLine, { width: scale(280), height: scale(18) }]} />
+            <View style={[styles.placeholderLine, { width: scale(220), height: scale(18) }]} />
+
+            <View style={styles.placeholderButtonRow}>
+                <View style={styles.placeholderButtonPrimary} />
+                <View style={styles.placeholderButtonSecondary} />
+            </View>
+        </View>
+    </View>
+);
+
 const TVHomePlaceholder: React.FC = () => (
     <View style={styles.placeholderContainerInner}>
         <Text style={styles.placeholderLabel}>Loading Home...</Text>
         <TVLoadingState size="large" style={styles.placeholderSpinner} />
 
-        <View style={styles.placeholderHero}>
-            <View style={styles.placeholderHeroBackdrop} />
-            <View style={styles.placeholderHeroContent}>
-                <View style={[styles.placeholderLine, { width: scale(140) }]} />
-                <View style={[styles.placeholderLine, { width: scale(360), height: scale(18) }]} />
-                <View style={[styles.placeholderLine, { width: scale(280), height: scale(18) }]} />
-                <View style={[styles.placeholderLine, { width: scale(220), height: scale(18) }]} />
-
-                <View style={styles.placeholderButtonRow}>
-                    <View style={styles.placeholderButtonPrimary} />
-                    <View style={styles.placeholderButtonSecondary} />
-                </View>
-            </View>
-        </View>
+        <HeroSkeleton />
 
         {Array.from({ length: PLACEHOLDER_RAIL_COUNT }).map((_, index) => (
             <HomePlaceholderRail key={`placeholder-rail-${index}`} index={index} />
@@ -140,252 +145,264 @@ const TVHomePlaceholder: React.FC = () => (
     </View>
 );
 
-
+const HeroPlaceholder: React.FC = React.memo(() => (
+    <View style={styles.heroPlaceholderWrapper}>
+        <HeroSkeleton contentOffset={scale(30)} />
+    </View>
+));
 
 // =============================================================================
-// TV HOME SCREEN COMPONENT
+// HOME SECTION (always mounted; visibility handled by parent)
 // =============================================================================
 
-const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
-    // =========================================================================
-    // STATE
-    // =========================================================================
-    const [activeRoute, setActiveRoute] = useState<SidebarRoute>('Home');
-    const [heroDetails, setHeroDetails] = useState<HeroDetails | null>(null);
+type HomeSectionProps = {
+    navigation: TVHomeScreenProps['navigation'];
+    searchRef: React.RefObject<View | null>;
+    heroPlayRef?: React.Ref<View>;
+};
 
-    // Refs for explicit navigation
-    const searchRef = useRef<View>(null);
-
-    // =========================================================================
-    // RESOLVER - Single source of truth for home content
-    // =========================================================================
+const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, searchRef, heroPlayRef }) => {
     const { rails, continueWatching, hero, isLoading } = useHomeRails();
+
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
+    const cacheValid = useStore((state) => state.isCacheValid());
     const removeFromHistory = useWatchHistoryStore((state) => state.removeFromHistory);
 
-    // Animations for section switching
-    const fadeAnim = useRef(new Animated.Value(1)).current; // Start at 1 for initial skeleton visibility
-    const slideAnim = useRef(new Animated.Value(0)).current; // Start at 0 for initial mount
-
-    // Flag to skip initial animation on mount
-    const isFirstMount = useRef(true);
-
-    useEffect(() => {
-        if (isFirstMount.current) {
-            isFirstMount.current = false;
-            return;
-        }
-
-        // Reset and animate in when route changes
-        fadeAnim.setValue(0);
-        slideAnim.setValue(20);
-
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 400,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 400,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-            })
-        ]).start();
-    }, [activeRoute]);
+    const [heroDetails, setHeroDetails] = useState<HeroDetails | null>(null);
+    const [heroDetailsStatus, setHeroDetailsStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
+    const [stableHero, setStableHero] = useState<TVHeroItem | null>(null);
+    const [heroUnlocked, setHeroUnlocked] = useState(false);
+    const heroDetailsCache = useRef<Record<string, HeroDetails>>({});
+    const heroDetailsKeyRef = useRef<string>('');
+    const stableHeroKeyRef = useRef<string>('');
+    const prefetchedImages = useRef<Set<string>>(new Set());
+    const heroId = hero ? String(hero.id) : '';
+    const heroType = hero?.type;
+    const heroMovieId = heroType === 'movie' ? hero?.data?.stream_id : undefined;
+    const heroSeriesId = heroType === 'series' ? hero?.data?.series_id : undefined;
 
     // =========================================================================
-    // HERO DETAILS FETCH
+    // HERO DETAILS FETCH (Home only)
     // =========================================================================
     useEffect(() => {
         let isMounted = true;
+
+        if (!heroId || !heroType) {
+            setHeroDetails(null);
+            setHeroDetailsStatus('idle');
+            heroDetailsKeyRef.current = '';
+            return () => {
+                isMounted = false;
+            };
+        }
+
+        heroDetailsKeyRef.current = heroId;
+
+        const cached = heroDetailsCache.current[heroId];
+        if (cached) {
+            setHeroDetails(cached);
+            setHeroDetailsStatus('ready');
+            return () => {
+                isMounted = false;
+            };
+        }
+
+        setHeroDetails(null);
+        setHeroDetailsStatus('loading');
+
         const fetchHeroDetails = async () => {
-            if (!hero || !getXtreamAPI) return;
-
             try {
-                const api = getXtreamAPI();
-                if (!api) return;
+                const api = getXtreamAPI?.();
+                if (!api) throw new Error('API unavailable');
 
-                let details: any = {};
+                let details: HeroDetails = {};
 
-                if (hero.type === 'movie') {
-                    const info = await api.getVodInfo(hero.data.stream_id);
+                if (heroType === 'movie') {
+                    if (!heroMovieId) throw new Error('Missing movie id');
+                    const info = await api.getVodInfo(heroMovieId);
                     if (info?.info) {
                         details = {
                             description: info.info.plot,
                             rating: info.info.rating,
                             backdrop: info.info.backdrop_path?.[0],
-                            tags: info.info.genre ? info.info.genre.split(',').map((g: string) => g.trim()) : [],
+                            tags: info.info.genre
+                                ? info.info.genre.split(',').map((g: string) => g.trim())
+                                : [],
                             year: info.info.releasedate ? info.info.releasedate.split('-')[0] : '',
                         };
                     }
-                } else if (hero.type === 'series') {
-                    const info = await api.getSeriesInfo(hero.data.series_id);
+                } else if (heroType === 'series') {
+                    if (!heroSeriesId) throw new Error('Missing series id');
+                    const info = await api.getSeriesInfo(heroSeriesId);
                     if (info?.info) {
                         details = {
                             description: info.info.plot,
                             rating: info.info.rating,
                             backdrop: info.info.backdrop_path?.[0],
-                            tags: info.info.genre ? info.info.genre.split(',').map((g: string) => g.trim()) : [],
+                            tags: info.info.genre
+                                ? info.info.genre.split(',').map((g: string) => g.trim())
+                                : [],
                             year: info.info.releaseDate ? info.info.releaseDate.split('-')[0] : '',
                         };
                     }
                 }
 
-                if (isMounted) {
+                if (isMounted && heroDetailsKeyRef.current === heroId) {
+                    heroDetailsCache.current[heroId] = details;
                     setHeroDetails(details);
+                    setHeroDetailsStatus('ready');
                 }
             } catch (err) {
                 console.warn('[TVHome] Error fetching hero details:', err);
+                if (isMounted && heroDetailsKeyRef.current === heroId) {
+                    heroDetailsCache.current[heroId] = {};
+                    setHeroDetails({});
+                    setHeroDetailsStatus('ready');
+                }
             }
         };
 
-        setHeroDetails(null);
         fetchHeroDetails();
 
-        return () => { isMounted = false; };
-    }, [hero, getXtreamAPI]);
+        return () => {
+            isMounted = false;
+        };
+    }, [heroId, heroType, heroMovieId, heroSeriesId, getXtreamAPI]);
 
-    // =========================================================================
-    // BACK HANDLER
-    // =========================================================================
-    useFocusEffect(
-        React.useCallback(() => {
-            const onBackPress = () => {
-                // If on a sub-screen, go back to Home section
-                if (activeRoute !== 'Home') {
-                    setActiveRoute('Home');
-                    return true;
+    const handleContentPress = useCallback(
+        (item: TVContentItem | any) => {
+            if (item.type === 'live') {
+                if (item.data) {
+                    navigation.navigate('FullscreenPlayer', { type: 'live', item: item.data });
                 }
-                return false;
-            };
-
-            const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-            return () => subscription.remove();
-        }, [activeRoute])
+            } else if (item.type === 'movie') {
+                if (item.data) {
+                    navigation.navigate('TVMovieDetail', { movie: item.data });
+                }
+            } else if (item.type === 'series') {
+                if (item.data) {
+                    navigation.navigate('TVSeriesDetail', { series: item.data });
+                }
+            }
+        },
+        [navigation]
     );
 
-    // =========================================================================
-    // HANDLERS
-    // =========================================================================
+    const handleContinuePress = useCallback(
+        (item: WatchProgress) => {
+            if (item.type === 'movie') {
+                const movieItem =
+                    (item.data as MovieItem) ??
+                    ({
+                        stream_id: item.streamId,
+                        name: item.title,
+                        stream_icon: item.thumbnail,
+                    } as MovieItem);
 
-    const handleNavigate = useCallback((route: SidebarRoute) => {
-        setActiveRoute(route);
-        // We now switch sections internally instead of navigating away
-    }, []);
-
-    const handleContentPress = useCallback((item: TVContentItem | any) => {
-
-        if (item.type === 'live') {
-            if (item.data) {
                 navigation.navigate('FullscreenPlayer', {
-                    type: 'live',
-                    item: item.data
+                    type: 'movie',
+                    item: movieItem,
+                    resumePosition: item.position,
                 });
-            }
-        } else if (item.type === 'movie') {
-            if (item.data) {
-                navigation.navigate('TVMovieDetail', {
-                    movie: item.data
-                });
-            }
-        } else if (item.type === 'series') {
-            if (item.data) {
-                navigation.navigate('TVSeriesDetail', {
-                    series: item.data
-                });
-            }
-        }
-    }, [navigation]);
+            } else if (item.type === 'series') {
+                const seriesItem =
+                    (item.data as SeriesItem) ??
+                    ({
+                        series_id: item.streamId,
+                        name: item.episodeTitle || item.title,
+                    } as SeriesItem);
 
-    const handleContinuePress = useCallback((item: WatchProgress) => {
-        if (item.type === 'movie') {
-            // Cast to MovieItem - item.data contains the original movie data, or construct from WatchProgress
-            const movieItem = (item.data as MovieItem) ?? ({
-                stream_id: item.streamId,
-                name: item.title,
-                stream_icon: item.thumbnail,
-            } as MovieItem);
-            navigation.navigate('FullscreenPlayer', {
-                type: 'movie',
-                item: movieItem,
-                resumePosition: item.position,
-            });
-        } else if (item.type === 'series') {
-            // Cast to SeriesItem - item.data contains the original series data, or construct from WatchProgress
-            const seriesItem = (item.data as SeriesItem) ?? ({
-                series_id: item.streamId,
-                name: item.episodeTitle || item.title,
-            } as SeriesItem);
-            navigation.navigate('FullscreenPlayer', {
-                type: 'series',
-                item: seriesItem,
-                resumePosition: item.position,
-            });
-        }
-    }, [navigation]);
+                navigation.navigate('FullscreenPlayer', {
+                    type: 'series',
+                    item: seriesItem,
+                    resumePosition: item.position,
+                });
+            }
+        },
+        [navigation]
+    );
 
     const handleHeroPlay = useCallback(() => {
-        if (hero) {
-            handleContentPress(hero);
-        }
-    }, [hero, handleContentPress]);
+        if (stableHero) handleContentPress(stableHero as any);
+    }, [stableHero, handleContentPress]);
 
     const handleHeroInfo = useCallback(() => {
-        if (hero) {
-            handleContentPress(hero);
-        }
-    }, [hero, handleContentPress]);
+        if (stableHero) handleContentPress(stableHero as any);
+    }, [stableHero, handleContentPress]);
 
-    const heroItem = useMemo(() => {
-        if (!hero) return null;
+    const heroSlotItem = heroUnlocked ? stableHero : null;
+
+    const heroItem = useMemo<TVHeroItem | null>(() => {
+        if (!hero || heroDetailsStatus !== 'ready') return null;
+
+        const details = heroDetails ?? {};
+        const resolvedBackdrop = isUsableUri(details.backdrop)
+            ? String(details.backdrop)
+            : isUsableUri(hero.backdrop)
+                ? hero.backdrop
+                : FALLBACK_POSTER;
+
         return {
             ...hero,
-            ...heroDetails,
-            backdrop: heroDetails?.backdrop || hero.backdrop,
+            ...details,
+            description: details.description || hero.description,
+            rating: details.rating ?? hero.rating,
+            tags: details.tags?.length ? details.tags : hero.tags,
+            year: details.year,
+            backdrop: resolvedBackdrop,
         };
-    }, [hero, heroDetails]);
+    }, [hero, heroDetails, heroDetailsStatus]);
 
-    // =========================================================================
-    // PREFETCH (first visible rails)
-    // =========================================================================
+    const heroKey = heroItem ? `${heroItem.id}-${heroItem.backdrop}` : '';
 
     useEffect(() => {
-        const uris: Array<string | undefined> = [];
+        if (!heroItem || !cacheValid) return;
 
-        if (heroItem?.backdrop) {
-            uris.push(heroItem.backdrop);
+        if (stableHeroKeyRef.current !== heroKey) {
+            stableHeroKeyRef.current = heroKey;
         }
 
-        if (continueWatching.length > 0) {
-            for (const item of continueWatching.slice(0, PREFETCH_ITEMS_PER_RAIL)) {
-                uris.push(item.thumbnail);
-            }
+        setStableHero(heroItem);
+        if (!heroUnlocked) {
+            setHeroUnlocked(true);
+        }
+    }, [heroItem, heroKey, cacheValid, heroUnlocked]);
+
+    // =========================================================================
+    // PREFETCH (Home only, after data is ready)
+    // =========================================================================
+    useEffect(() => {
+        if (isLoading) return;
+
+        const next: string[] = [];
+        const push = (u?: string) => {
+            if (!u) return;
+            if (prefetchedImages.current.has(u)) return;
+            prefetchedImages.current.add(u);
+            next.push(u);
+        };
+
+        push(stableHero?.backdrop);
+        push(heroItem?.backdrop);
+
+        for (const item of continueWatching.slice(0, PREFETCH_ITEMS_PER_RAIL)) {
+            push(item.thumbnail);
         }
 
         for (const rail of rails.slice(0, PREFETCH_RAILS_LIMIT)) {
             const items = (rail.items as TVContentItem[]).slice(0, PREFETCH_ITEMS_PER_RAIL);
-            for (const item of items) {
-                uris.push(item.image);
-            }
+            for (const item of items) push(item.image);
         }
 
-        prefetchImages(uris);
-    }, [heroItem?.backdrop, continueWatching, rails]);
+        if (next.length > 0) {
+            prefetchImages(next);
+        }
+    }, [isLoading, stableHero?.backdrop, heroItem?.backdrop, continueWatching, rails]);
 
     const homeSections = useMemo<HomeSection[]>(() => {
         const sections: HomeSection[] = [];
 
-        if (heroItem) {
-            sections.push({
-                key: `hero-${heroItem.id}`,
-                type: 'hero',
-                item: heroItem,
-            });
-        }
-
-        let liftNext = !!heroItem;
+        let liftNext = true;
 
         if (continueWatching.length > 0) {
             sections.push({
@@ -412,181 +429,239 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         }
 
         return sections;
-    }, [heroItem, continueWatching, rails]);
+    }, [continueWatching, rails]);
 
     const getItemType = useCallback((item: HomeSection) => item.type, []);
+    const overrideItemLayout = useCallback(
+        (layout: { size?: number; span?: number }, item: HomeSection) => {
+            switch (item.type) {
+                case 'continue':
+                case 'rail':
+                default:
+                    layout.size = RAIL_SECTION_ESTIMATE;
+                    break;
+            }
+        },
+        []
+    );
 
-    const renderHomeItem = useCallback(({ item }: { item: HomeSection }) => {
-        switch (item.type) {
-            case 'hero':
-                return (
-                    <TVHeroBanner
-                        item={item.item}
-                        onPlay={handleHeroPlay}
-                        onInfo={handleHeroInfo}
-                        sidebarTargetRef={searchRef}
-                    />
-                );
-            case 'continue':
-                return (
-                    <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
-                        <TVContinueRail
-                            title="Continue Watching"
-                            data={item.data}
-                            onPressItem={handleContinuePress}
-                            onRemoveItem={(entry) => removeFromHistory(entry.id)}
-                        />
-                    </View>
-                );
-            case 'rail':
-                return (
-                    <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
-                        <TVContentRail
-                            title={item.rail.title}
-                            data={item.rail.items}
-                            onPressItem={handleContentPress}
-                        />
-                    </View>
-                );
-            default:
-                return null;
+    const renderHeroHeader = useCallback(() => {
+        if (!heroSlotItem) {
+            return <HeroPlaceholder />;
         }
-    }, [
-        handleHeroPlay,
-        handleHeroInfo,
-        handleContinuePress,
-        handleContentPress,
-        removeFromHistory,
-    ]);
+        return (
+            <TVHeroBanner
+                item={heroSlotItem}
+                onPlay={handleHeroPlay}
+                onInfo={handleHeroInfo}
+                sidebarTargetRef={searchRef}
+                primaryActionRef={heroPlayRef}
+            />
+        );
+    }, [heroSlotItem, handleHeroPlay, handleHeroInfo, searchRef, heroPlayRef]);
 
-    // =========================================================================
-    // SECTION RENDERERS
-    // =========================================================================
+    const renderHomeItem = useCallback(
+        ({ item }: { item: HomeSection }) => {
+            switch (item.type) {
+                case 'continue':
+                    return (
+                        <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
+                            <TVContinueRail
+                                title="Continue Watching"
+                                data={item.data}
+                                onPressItem={handleContinuePress}
+                                onRemoveItem={(entry) => removeFromHistory(entry.id)}
+                            />
+                        </View>
+                    );
 
-    const renderHomeSection = () => (
+                case 'rail':
+                    return (
+                        <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
+                            <TVContentRail
+                                title={item.rail.title}
+                                data={item.rail.items}
+                                onPressItem={handleContentPress}
+                            />
+                        </View>
+                    );
+
+                default:
+                    return null;
+            }
+        },
+        [handleContinuePress, handleContentPress, removeFromHistory]
+    );
+
+    // ✅ While loading: render ONLY placeholder (avoid heavy list underneath)
+    if (isLoading) {
+        return (
+            <View style={styles.homeSection}>
+                <View style={styles.placeholderOverlayLocal}>
+                    <TVHomePlaceholder />
+                </View>
+            </View>
+        );
+    }
+
+    return (
         <View style={styles.homeSection}>
             <FlashList
-                style={[
-                    styles.scrollView,
-                    // Apply margin to avoid overlap with absolute sidebar
-                    { marginLeft: scale(130) }
-                ]}
+                style={styles.scrollViewWithSidebarGap}
                 contentContainerStyle={styles.scrollContent}
                 data={homeSections}
                 renderItem={renderHomeItem}
                 keyExtractor={(item) => item.key}
-                // @ts-ignore: estimatedItemSize is valid but types are missing in this version
-                estimatedItemSize={scale(360)}
+                ListHeaderComponent={renderHeroHeader}
+                // @ts-ignore
+                estimatedItemSize={RAIL_SECTION_ESTIMATE}
                 getItemType={getItemType}
+                overrideItemLayout={overrideItemLayout}
                 drawDistance={HOME_DRAW_DISTANCE}
                 showsVerticalScrollIndicator={false}
             />
         </View>
     );
+});
 
-    const renderContent = () => {
-        const contentStyle = {
-            flex: 1,
-            // All content sections need to respect the sidebar space
-            marginLeft: scale(130)
-        };
+// =============================================================================
+// TV HOME SCREEN COMPONENT (Shell)
+// =============================================================================
 
-        switch (activeRoute) {
-            case 'Live':
-                return (
-                    <View style={contentStyle}>
-                        <TVLiveScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Movies':
-                return (
-                    <View style={contentStyle}>
-                        <TVMoviesScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Series':
-                return (
-                    <View style={contentStyle}>
-                        <TVSeriesScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Announcements':
-                return (
-                    <View style={contentStyle}>
-                        <TVAnnouncementsScreen />
-                    </View>
-                );
-            case 'Search':
-                return (
-                    <View style={contentStyle}>
-                        <TVSearchScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Favorites':
-                return (
-                    <View style={contentStyle}>
-                        <TVFavoritesScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Downloads':
-                return (
-                    <View style={contentStyle}>
-                        <TVDownloadsScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Settings':
-                return (
-                    <View style={contentStyle}>
-                        <TVSettingsScreen navigation={navigation} />
-                    </View>
-                );
-            case 'Home':
-            default:
-                return renderHomeSection();
+const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
+    const [activeRoute, setActiveRoute] = useState<SidebarRoute>('Home');
+    // Stable node handles for sidebar right-navigation
+    const [focusTargets, setFocusTargets] = useState<Partial<Record<SidebarRoute, number | null>>>({});
+
+    // Refs for explicit navigation
+    const searchRef = useRef<View | null>(null);
+    const updateFocusTarget = useCallback((route: SidebarRoute, node: View | null) => {
+        if (!node) {
+            setFocusTargets((prev) => (prev[route] ? { ...prev, [route]: null } : prev));
+            return;
         }
-    };
 
-    const showHomePlaceholder = activeRoute === 'Home' && isLoading;
+        const handle = findNodeHandle(node);
+        if (handle) {
+            setFocusTargets((prev) => (prev[route] === handle ? prev : { ...prev, [route]: handle }));
+            return;
+        }
 
-    // =========================================================================
-    // MAIN RENDER
-    // =========================================================================
+        requestAnimationFrame(() => {
+            const delayedHandle = findNodeHandle(node);
+            setFocusTargets((prev) => (prev[route] === delayedHandle ? prev : { ...prev, [route]: delayedHandle ?? null }));
+        });
+    }, []);
+
+    const homeFocusRef = useCallback((node: View | null) => updateFocusTarget('Home', node), [updateFocusTarget]);
+    const liveFocusRef = useCallback((node: View | null) => updateFocusTarget('Live', node), [updateFocusTarget]);
+    const moviesFocusRef = useCallback((node: View | null) => updateFocusTarget('Movies', node), [updateFocusTarget]);
+    const seriesFocusRef = useCallback((node: View | null) => updateFocusTarget('Series', node), [updateFocusTarget]);
+    const searchFocusRef = useCallback((node: View | null) => updateFocusTarget('Search', node), [updateFocusTarget]);
+    const favoritesFocusRef = useCallback((node: View | null) => updateFocusTarget('Favorites', node), [updateFocusTarget]);
+    const downloadsFocusRef = useCallback((node: View | null) => updateFocusTarget('Downloads', node), [updateFocusTarget]);
+    const settingsFocusRef = useCallback((node: View | null) => updateFocusTarget('Settings', node), [updateFocusTarget]);
+    const announcementsFocusRef = useCallback((node: View | null) => updateFocusTarget('Announcements', node), [updateFocusTarget]);
+
+    // BACK HANDLER
+    useFocusEffect(
+        React.useCallback(() => {
+            const onBackPress = () => {
+                if (activeRoute !== 'Home') {
+                    setActiveRoute('Home');
+                    return true;
+                }
+                return false;
+            };
+
+            const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+            return () => subscription.remove();
+        }, [activeRoute])
+    );
+
+    const handleNavigate = useCallback((route: SidebarRoute) => {
+        setActiveRoute(route);
+    }, []);
+
+    const renderPinnedSection = useCallback(
+        (route: SidebarRoute, node: React.ReactNode, withSidebarGap = true) => {
+            const isActive = activeRoute === route;
+            return (
+                <View
+                    pointerEvents={isActive ? 'auto' : 'none'}
+                    accessibilityElementsHidden={!isActive}
+                    importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
+                    style={[
+                        styles.sectionBase,
+                        withSidebarGap && styles.sectionWithSidebar,
+                        isActive ? styles.sectionVisible : styles.sectionHidden,
+                    ]}
+                >
+                    {node}
+                </View>
+            );
+        },
+        [activeRoute]
+    );
+
+    const renderActiveSection = useCallback(
+        (route: SidebarRoute, node: React.ReactNode, withSidebarGap = true) => {
+            if (activeRoute !== route) return null;
+            return (
+                <View
+                    pointerEvents="auto"
+                    style={[
+                        styles.sectionBase,
+                        withSidebarGap && styles.sectionWithSidebar,
+                        styles.sectionVisible,
+                    ]}
+                >
+                    {node}
+                </View>
+            );
+        },
+        [activeRoute]
+    );
 
     return (
         <View style={styles.container}>
             <StatusBar translucent backgroundColor="transparent" />
 
             {/* Sidebar Overlay (Fixed Position) */}
-            <View style={[styles.sidebarWrapper, { width: scale(130) }]}>
+            <View style={styles.sidebarWrapper}>
                 <TVSidebar
                     activeRoute={activeRoute}
                     onNavigate={handleNavigate}
-                    isExpanded={false} // Deprecated but kept for interface type safety if needed
+                    isExpanded={false}
                     onExpand={() => { }}
                     onCollapse={() => { }}
                     searchRef={searchRef}
+                    // @ts-ignore - Prop exists in TVSidebar but TS server sometimes fails to resolve it after interface updates
+                    focusTargets={focusTargets}
                 />
             </View>
 
             {/* Main Content Area */}
-            <Animated.View style={[
-                styles.contentContainer,
-                {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                }
-            ]}>
-                {renderContent()}
-            </Animated.View>
+            <View style={styles.contentContainer}>
+                {renderPinnedSection(
+                    'Home',
+                    <HomeSection
+                        navigation={navigation}
+                        searchRef={searchRef}
+                        heroPlayRef={homeFocusRef}
+                    />,
+                    false
+                )}
+                {renderPinnedSection('Live', <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />)}
+                {renderPinnedSection('Movies', <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />)}
+                {renderPinnedSection('Series', <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />)}
 
-            {showHomePlaceholder && (
-                <View
-                    pointerEvents="none"
-                    style={styles.placeholderOverlay}
-                >
-                    <TVHomePlaceholder />
-                </View>
-            )}
+                {renderActiveSection('Announcements', <TVAnnouncementsScreen navigation={navigation} focusEntryRef={announcementsFocusRef} />)}
+                {renderActiveSection('Search', <TVSearchScreen navigation={navigation} focusEntryRef={searchFocusRef} />)}
+                {renderActiveSection('Favorites', <TVFavoritesScreen navigation={navigation} focusEntryRef={favoritesFocusRef} />)}
+                {renderActiveSection('Downloads', <TVDownloadsScreen navigation={navigation} focusEntryRef={downloadsFocusRef} />)}
+                {renderActiveSection('Settings', <TVSettingsScreen navigation={navigation} focusEntryRef={settingsFocusRef} />)}
+            </View>
         </View>
     );
 };
@@ -606,27 +681,52 @@ const styles = StyleSheet.create({
         left: 0,
         top: 0,
         bottom: 0,
-        zIndex: 100, // Stays above content
+        zIndex: 100,
+        width: scale(130),
     },
     contentContainer: {
         flex: 1,
         height: '100%',
         backgroundColor: colors.background,
-    },
-    loadingState: {
-        paddingVertical: scale(60),
-        alignItems: 'center',
+        position: 'relative',
     },
     homeSection: {
         flex: 1,
     },
-    placeholderOverlay: {
+    sectionBase: {
         position: 'absolute',
         top: 0,
-        left: scale(130),
         right: 0,
         bottom: 0,
+        left: 0,
+    },
+    sectionVisible: {
+        opacity: 1,
         zIndex: 2,
+        display: 'flex',
+    },
+    sectionHidden: {
+        opacity: 0,
+        zIndex: 1,
+        display: 'none',
+    },
+    sectionWithSidebar: {
+        marginLeft: scale(130),
+    },
+
+    // Home list styles
+    scrollViewWithSidebarGap: {
+        flex: 1,
+        marginLeft: scale(130),
+    },
+    scrollContent: {
+        paddingBottom: scale(50),
+    },
+
+    // Placeholder styles
+    placeholderOverlayLocal: {
+        flex: 1,
+        marginLeft: scale(130),
         backgroundColor: colors.background,
     },
     placeholderContainerInner: {
@@ -647,10 +747,13 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         marginBottom: scale(24),
     },
+    heroPlaceholderWrapper: {
+        width: '100%',
+    },
     placeholderHero: {
         width: '100%',
-        height: scale(480),
-        marginBottom: scale(40),
+        height: HERO_BANNER_HEIGHT,
+        marginBottom: HERO_BANNER_MARGIN,
         position: 'relative',
     },
     placeholderHeroBackdrop: {
@@ -713,18 +816,14 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.12)',
     },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: scale(50),
-    },
+
+    // Rail wrappers
     railsWrapper: {
         zIndex: 10,
     },
     railsLift: {
-        marginTop: -scale(60), // Pull up over hero banner gradient
-    }
+        marginTop: -scale(60),
+    },
 });
 
 export default TVHomeScreen;

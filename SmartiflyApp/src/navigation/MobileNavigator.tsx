@@ -5,13 +5,14 @@
  * Uses the migrated mobile screens with auth-guarded routing.
  */
 
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import { RootStackParamList } from './types';
 import { colors } from '../theme';
 import useStore from '../store';
 import { logger } from '../config';
+import SmartiflyPreloaderScreen from '../screens/common/SmartiflyPreloaderScreen';
 
 // Mobile Screens
 import LoginScreen from '../screens/mobile/login/LoginScreen';
@@ -26,13 +27,20 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const MobileNavigator: React.FC = () => {
   // Get authentication and content state from store
+  const hasHydrated = useStore((state) => state.hasHydrated);
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
+  const profiles = useProfileStore((state) => state.profiles);
+  const activeProfileId = useProfileStore((state) => state.activeProfileId);
+  const [showPreloader, setShowPreloader] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowPreloader(false), 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
-  const getInitialRoute = (): keyof RootStackParamList => {
-    const { profiles, activeProfileId } = useProfileStore.getState();
-
+  const initialRoute = useMemo<keyof RootStackParamList>(() => {
     if (!isAuthenticated) {
       return 'Login';
     }
@@ -51,9 +59,12 @@ const MobileNavigator: React.FC = () => {
 
     logger.debug('Mobile: Cache valid, proceeding to Home');
     return 'MainTabs';
-  };
+  }, [isAuthenticated, profiles.length, activeProfileId, isCacheValid]);
 
-  const initialRoute = getInitialRoute();
+  // Hydration gate prevents initial route decisions before persisted state is ready.
+  if (!hasHydrated || showPreloader) {
+    return <SmartiflyPreloaderScreen />;
+  }
 
   return (
     <Stack.Navigator

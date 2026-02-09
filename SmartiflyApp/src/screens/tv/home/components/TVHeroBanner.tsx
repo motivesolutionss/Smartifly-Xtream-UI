@@ -1,505 +1,771 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    Image,
-    Pressable,
-    Animated,
-    findNodeHandle,
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  Pressable,
+  Animated,
+  findNodeHandle,
 } from 'react-native';
 import FastImageComponent from '../../../../components/FastImageComponent';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import AnimatedRe, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 import { colors, scale, scaleFont } from '../../../../theme';
 import { prefetchImage } from '../../../../utils/image';
+import { FALLBACK_POSTER } from '../HomeRailConfig';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 export interface TVHeroItem {
-    id: string | number;
-    title: string;
-    description?: string;
-    backdrop: string; // URL
-    logo?: string; // Optional logo image
-    tags?: string[];
-    rating?: number;
-    year?: string;
-    quality?: string;
-    maturityRating?: string; // e.g., "TV-MA", "PG-13"
+  id: string | number;
+  title: string;
+  description?: string;
+  backdrop: string;
+  logo?: string;
+  tags?: string[];
+  rating?: number;
+  year?: string;
+  quality?: string;
+  maturityRating?: string;
 }
 
 interface TVHeroBannerProps {
-    item: TVHeroItem;
-    onPlay: () => void;
-    onInfo: () => void;
-    onAddToList?: () => void;
-    sidebarTargetRef?: React.RefObject<any>;
+  item: TVHeroItem;
+  onPlay: () => void;
+  onInfo: () => void;
+  onAddToList?: () => void;
+  sidebarTargetRef?: React.RefObject<View | null>;
+  primaryActionRef?: React.Ref<View>;
 }
 
 // =============================================================================
-// TV HERO BANNER COMPONENT (Netflix Style)
+// MEMOIZED GRADIENT LAYERS (safe)
+// =============================================================================
+
+const HeroGradients = React.memo(function HeroGradients({ bg }: { bg: string }) {
+  return (
+    <>
+      <View style={styles.backdropLeftFade} pointerEvents="none">
+        <Svg height="100%" width="100%">
+          <Defs>
+            <LinearGradient id="gradBackdropLeft" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor={bg} stopOpacity="1" />
+              <Stop offset="0.5" stopColor={bg} stopOpacity="0.5" />
+              <Stop offset="1" stopColor={bg} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#gradBackdropLeft)" />
+        </Svg>
+      </View>
+
+      <View style={styles.leftGradient} pointerEvents="none">
+        <Svg height="100%" width="100%">
+          <Defs>
+            <LinearGradient id="gradLeft" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor={bg} stopOpacity="1" />
+              <Stop offset="0.4" stopColor={bg} stopOpacity="0.8" />
+              <Stop offset="0.7" stopColor={bg} stopOpacity="0.3" />
+              <Stop offset="1" stopColor={bg} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#gradLeft)" />
+        </Svg>
+      </View>
+
+      <View style={styles.bottomGradient} pointerEvents="none">
+        <Svg height="100%" width="100%">
+          <Defs>
+            <LinearGradient id="gradBottom" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={bg} stopOpacity="0" />
+              <Stop offset="0.5" stopColor={bg} stopOpacity="0.3" />
+              <Stop offset="0.8" stopColor={bg} stopOpacity="0.8" />
+              <Stop offset="1" stopColor={bg} stopOpacity="1" />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#gradBottom)" />
+        </Svg>
+      </View>
+    </>
+  );
+});
+
+const isUsableUri = (value?: string): boolean => {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^(https?:\/\/|\/\/|file:\/\/|content:\/\/|data:|asset:)/i.test(trimmed);
+};
+
+const getBackdropUri = (hero?: TVHeroItem | null): string => {
+  const raw = (hero as any)?.backdrop ?? (hero as any)?.image;
+  if (isUsableUri(raw)) return raw;
+  return FALLBACK_POSTER;
+};
+
+const HeroTextBlock = React.memo(function HeroTextBlock({ item }: { item: TVHeroItem }) {
+  const titleText = item?.title ?? '';
+  const descText = item?.description ?? 'No description available.';
+  const tags = Array.isArray(item?.tags) ? item.tags : [];
+  const ratingNumber = Number(item?.rating);
+  const hasRating = Number.isFinite(ratingNumber);
+
+  return (
+    <>
+      <Text style={styles.title} numberOfLines={2}>
+        {titleText}
+      </Text>
+
+      <View style={styles.metadataRow}>
+        {item?.year ? (
+          <>
+            <Text style={styles.metadataText}>{item.year}</Text>
+            <View style={styles.metadataDot} />
+          </>
+        ) : null}
+
+        {hasRating ? (
+          <View style={styles.ratingBadge}>
+            <Text style={styles.ratingLabel}>IMDb</Text>
+            <Text style={styles.ratingValue}>{ratingNumber.toFixed(1)}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.tagsRow}>
+        {tags.length > 0
+          ? tags.slice(0, 3).map((tag, index) => (
+            <React.Fragment key={`${tag}-${index}`}>
+              <Text style={styles.tagText}>{tag}</Text>
+              {index < Math.min(tags.length, 3) - 1 && (
+                <Text style={styles.tagSeparator}> • </Text>
+              )}
+            </React.Fragment>
+          ))
+          : null}
+      </View>
+
+      <Text style={styles.description} numberOfLines={3}>
+        {descText}
+      </Text>
+    </>
+  );
+});
+
+// =============================================================================
+// COMPONENT
 // =============================================================================
 
 const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
-    item,
-    onPlay,
-    onInfo,
-    onAddToList,
-    sidebarTargetRef,
+  item,
+  onPlay,
+  onInfo,
+  onAddToList,
+  sidebarTargetRef,
+  primaryActionRef,
 }) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(20)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const baseOpacity = useRef(new Animated.Value(1)).current;
+  const incomingOpacity = useRef(new Animated.Value(0)).current;
+  const baseReveal = useRef(new Animated.Value(0)).current;
+  const baseLoadedRef = useRef(false);
+  const loadedBackdropsRef = useRef<Set<string>>(new Set());
 
-    // Focus State
-    const [focusedButton, setFocusedButton] = useState<'play' | 'info' | 'list' | null>(null);
+  const [displayItem, setDisplayItem] = useState<TVHeroItem>(item);
+  const [incomingItem, setIncomingItem] = useState<TVHeroItem | null>(null);
+  const currentKeyRef = useRef<string>('');
+  const incomingKeyRef = useRef<string>('');
+  const incomingItemRef = useRef<TVHeroItem | null>(null);
+  const queuedKeyRef = useRef<string>('');
+  const queuedItemRef = useRef<TVHeroItem | null>(null);
+  const isTransitioningRef = useRef(false);
+  const hasMounted = useRef(false);
 
-    // Resolve sidebar target
-    const sidebarNode = sidebarTargetRef && sidebarTargetRef.current ? findNodeHandle(sidebarTargetRef.current) : undefined;
+  // UI-thread focus flags (no React setState)
+  const playFocus = useSharedValue(0);
+  const infoFocus = useSharedValue(0);
+  const listFocus = useSharedValue(0);
 
-    useEffect(() => {
-        // Entrance animation
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 800,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 800,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, [item, fadeAnim, slideAnim]);
+  const bg = colors.background || '#141414';
+  const infoBorderWidth = useRef(scale(3)).current;
 
-    useEffect(() => {
-        prefetchImage(item.backdrop || (item as any).image);
-        if (item.logo) {
-            prefetchImage(item.logo);
+  const nextBackdropUri = getBackdropUri(item);
+  const displayBackdropUri = getBackdropUri(displayItem);
+  const incomingBackdropUri = incomingItem ? getBackdropUri(incomingItem) : '';
+
+  const logoUri =
+    typeof item?.logo === 'string' && item.logo.trim().length > 0 ? item.logo : '';
+
+  // Compute nextFocusLeft safely
+  const sidebarNode = sidebarTargetRef?.current
+    ? findNodeHandle(sidebarTargetRef.current)
+    : undefined;
+
+  const runEntranceAnimation = useCallback(() => {
+    if (hasMounted.current) return;
+    hasMounted.current = true;
+
+    fadeAnim.setValue(0);
+    slideAnim.setValue(20);
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
+
+  useEffect(() => {
+    if (loadedBackdropsRef.current.has(displayBackdropUri)) {
+      baseLoadedRef.current = true;
+      baseReveal.setValue(1);
+      runEntranceAnimation();
+      return;
+    }
+
+    baseLoadedRef.current = false;
+    baseReveal.setValue(0);
+  }, [displayBackdropUri, baseReveal, runEntranceAnimation]);
+
+  const startCrossfade = useCallback(() => {
+    if (!incomingItemRef.current || !incomingKeyRef.current) return;
+    if (isTransitioningRef.current) return;
+
+    isTransitioningRef.current = true;
+
+    baseOpacity.stopAnimation();
+    incomingOpacity.stopAnimation();
+    baseOpacity.setValue(1);
+    incomingOpacity.setValue(0);
+
+    Animated.parallel([
+      Animated.timing(baseOpacity, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+      Animated.timing(incomingOpacity, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (!finished) {
+        isTransitioningRef.current = false;
+        return;
+      }
+      const nextItem = incomingItemRef.current;
+      const nextKey = incomingKeyRef.current;
+      if (nextItem && nextKey) {
+        setDisplayItem(nextItem);
+        currentKeyRef.current = nextKey;
+      }
+      setIncomingItem(null);
+      incomingItemRef.current = null;
+      incomingKeyRef.current = '';
+      baseOpacity.setValue(1);
+      incomingOpacity.setValue(0);
+      isTransitioningRef.current = false;
+
+      if (queuedItemRef.current && queuedKeyRef.current) {
+        const queuedItem = queuedItemRef.current;
+        const queuedKey = queuedKeyRef.current;
+        queuedItemRef.current = null;
+        queuedKeyRef.current = '';
+        if (queuedKey !== currentKeyRef.current) {
+          incomingItemRef.current = queuedItem;
+          incomingKeyRef.current = queuedKey;
+          setIncomingItem(queuedItem);
+          incomingOpacity.setValue(0);
         }
-    }, [item, item.backdrop, item.logo]);
+      }
+    });
+  }, [baseOpacity, incomingOpacity]);
 
+  const cancelIncoming = useCallback(() => {
+    if (!incomingItemRef.current) return;
+    incomingItemRef.current = null;
+    incomingKeyRef.current = '';
+    setIncomingItem(null);
+    baseOpacity.setValue(1);
+    incomingOpacity.setValue(0);
+    isTransitioningRef.current = false;
+  }, [baseOpacity, incomingOpacity]);
 
+  // Soft crossfade on hero change (only after image loads)
+  useEffect(() => {
+    const nextKey = `${item.id}-${nextBackdropUri}`;
 
-    return (
-        <View style={styles.container}>
-            {/* Background Image - Right-aligned 70% width */}
-            <View style={styles.backdropContainer}>
-                <FastImageComponent
-                    source={{ uri: item.backdrop || (item as any).image }}
-                    style={styles.backdropImage}
-                    resizeMode="cover"
-                    priority="high"
-                />
-                {/* Left Edge Fade - Inside backdrop container */}
-                <View style={styles.backdropLeftFade}>
-                    <Svg height="100%" width="100%">
-                        <Defs>
-                            <LinearGradient id="gradBackdropLeft" x1="0" y1="0" x2="1" y2="0">
-                                <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="1" />
-                                <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.5" />
-                                <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="0" />
-                            </LinearGradient>
-                        </Defs>
-                        <Rect width="100%" height="100%" fill="url(#gradBackdropLeft)" />
-                    </Svg>
-                </View>
-            </View>
+    if (!currentKeyRef.current) {
+      currentKeyRef.current = nextKey;
+      setDisplayItem(item);
+      return;
+    }
 
-            {/* Left to Right Gradient - Full screen overlay */}
-            <View style={styles.leftGradient}>
-                <Svg height="100%" width="100%">
-                    <Defs>
-                        <LinearGradient id="gradLeft" x1="0" y1="0" x2="1" y2="0">
-                            <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="1" />
-                            <Stop offset="0.4" stopColor={colors.background || "#141414"} stopOpacity="0.8" />
-                            <Stop offset="0.7" stopColor={colors.background || "#141414"} stopOpacity="0.3" />
-                            <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="0" />
-                        </LinearGradient>
-                    </Defs>
-                    <Rect width="100%" height="100%" fill="url(#gradLeft)" />
-                </Svg>
-            </View>
+    if (currentKeyRef.current === nextKey) {
+      setDisplayItem(item);
+      return;
+    }
 
-            {/* Bottom Gradient - Full screen overlay */}
-            <View style={styles.bottomGradient}>
-                <Svg height="100%" width="100%">
-                    <Defs>
-                        <LinearGradient id="gradBottom" x1="0" y1="0" x2="0" y2="1">
-                            <Stop offset="0" stopColor={colors.background || "#141414"} stopOpacity="0" />
-                            <Stop offset="0.5" stopColor={colors.background || "#141414"} stopOpacity="0.3" />
-                            <Stop offset="0.8" stopColor={colors.background || "#141414"} stopOpacity="0.8" />
-                            <Stop offset="1" stopColor={colors.background || "#141414"} stopOpacity="1" />
-                        </LinearGradient>
-                    </Defs>
-                    <Rect width="100%" height="100%" fill="url(#gradBottom)" />
-                </Svg>
-            </View>
+    if (isTransitioningRef.current) {
+      queuedKeyRef.current = nextKey;
+      queuedItemRef.current = item;
+      return;
+    }
 
-            {/* App Logo - Moved to content container */}
+    incomingKeyRef.current = nextKey;
+    incomingItemRef.current = item;
+    incomingOpacity.setValue(0);
+    setIncomingItem(item);
+  }, [item, nextBackdropUri, incomingOpacity]);
 
-            {/* Content Overlay */}
+  // ✅ Prefetch only when strings change (no whole item in deps)
+  useEffect(() => {
+    if (nextBackdropUri) prefetchImage(nextBackdropUri);
+    if (logoUri) prefetchImage(logoUri);
+  }, [nextBackdropUri, logoUri]);
+
+  // Focus styles
+  const playBtnStyle = useAnimatedStyle(() => ({
+    backgroundColor: playFocus.value
+      ? 'rgba(255,255,255,0.85)'
+      : (colors.primary || '#E50914'),
+    transform: [
+      {
+        scale: playFocus.value
+          ? withTiming(1.03, { duration: 100 })
+          : withTiming(1, { duration: 100 }),
+      },
+    ],
+  }));
+
+  const playTextStyle = useAnimatedStyle(() => ({
+    color: playFocus.value ? '#000' : '#FFF',
+  }));
+
+  const infoBtnStyle = useAnimatedStyle(() => ({
+    backgroundColor: infoFocus.value
+      ? 'rgba(109,109,110,0.95)'
+      : 'rgba(109,109,110,0.70)',
+    borderWidth: infoFocus.value ? infoBorderWidth : 0,
+    borderColor: infoFocus.value ? '#FFF' : 'transparent',
+    transform: [
+      {
+        scale: infoFocus.value
+          ? withTiming(1.03, { duration: 100 })
+          : withTiming(1, { duration: 100 }),
+      },
+    ],
+  }));
+
+  const listBtnStyle = useAnimatedStyle(() => ({
+    backgroundColor: listFocus.value
+      ? 'rgba(255,255,255,0.18)'
+      : 'rgba(42,42,42,0.60)',
+    borderColor: listFocus.value ? '#FFF' : 'rgba(255,255,255,0.5)',
+    transform: [
+      {
+        scale: listFocus.value
+          ? withTiming(1.06, { duration: 100 })
+          : withTiming(1, { duration: 100 }),
+      },
+    ],
+  }));
+
+  const displayBackdropSource = useMemo(
+    () => ({ uri: displayBackdropUri }),
+    [displayBackdropUri]
+  );
+  const incomingBackdropSource = useMemo(
+    () => ({ uri: incomingBackdropUri }),
+    [incomingBackdropUri]
+  );
+
+  const handleBaseLoad = useCallback(() => {
+    if (baseLoadedRef.current) return;
+    baseLoadedRef.current = true;
+    if (displayBackdropUri) {
+      loadedBackdropsRef.current.add(displayBackdropUri);
+    }
+    Animated.timing(baseReveal, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+    runEntranceAnimation();
+  }, [baseReveal, displayBackdropUri, runEntranceAnimation]);
+
+  const handleBaseError = useCallback(() => {
+    if (baseLoadedRef.current) return;
+    baseLoadedRef.current = true;
+    baseReveal.setValue(1);
+    runEntranceAnimation();
+  }, [baseReveal, runEntranceAnimation]);
+
+  const handleIncomingLoad = useCallback(() => {
+    if (incomingBackdropUri) {
+      loadedBackdropsRef.current.add(incomingBackdropUri);
+    }
+    startCrossfade();
+  }, [incomingBackdropUri, startCrossfade]);
+
+  const handleIncomingError = useCallback(() => {
+    cancelIncoming();
+  }, [cancelIncoming]);
+
+  const baseLayerOpacity = Animated.multiply(baseOpacity, baseReveal);
+  const incomingLayerOpacity = Animated.multiply(incomingOpacity, baseReveal);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.backdropContainer}>
+        <Animated.View style={[styles.backdropLayer, { opacity: baseLayerOpacity }]}>
+          <FastImageComponent
+            source={displayBackdropSource}
+            style={styles.backdropImage}
+            resizeMode="cover"
+            priority="high"
+            onLoad={handleBaseLoad}
+            onError={handleBaseError}
+          />
+        </Animated.View>
+
+        {incomingItem ? (
+          <Animated.View style={[styles.backdropLayer, { opacity: incomingLayerOpacity }]}>
+            <FastImageComponent
+              source={incomingBackdropSource}
+              style={styles.backdropImage}
+              resizeMode="cover"
+              priority="high"
+              onLoad={handleIncomingLoad}
+              onError={handleIncomingError}
+            />
+          </Animated.View>
+        ) : null}
+
+        <HeroGradients bg={bg} />
+      </View>
+
+      <Animated.View
+        style={[
+          styles.contentContainer,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <Image
+          source={require('../../../../assets/smartifly_icon.png')}
+          style={styles.appLogo}
+          resizeMode="contain"
+        />
+
+        <View style={styles.textCrossfadeContainer}>
+          <Animated.View style={{ opacity: baseLayerOpacity }}>
+            <HeroTextBlock item={displayItem} />
+          </Animated.View>
+
+          {incomingItem ? (
             <Animated.View
-                style={[
-                    styles.contentContainer,
-                    {
-                        opacity: fadeAnim,
-                        transform: [{ translateY: slideAnim }],
-                    }
-                ]}
+              style={[styles.textLayer, { opacity: incomingLayerOpacity }]}
+              pointerEvents="none"
             >
-                {/* App Logo - Grouped with Title */}
-                <Image
-                    source={require('../../../../assets/smartifly_icon.png')}
-                    style={styles.appLogo}
-                    resizeMode="contain"
-                />
-
-                {/* Title */}
-                <Text style={styles.title} numberOfLines={2}>
-                    {item.title}
-                </Text>
-
-                {/* Metadata Row */}
-                <View style={styles.metadataRow}>
-                    {/* Year */}
-                    {item.year && (
-                        <>
-                            <Text style={styles.metadataText}>{item.year}</Text>
-                            <View style={styles.metadataDot} />
-                        </>
-                    )}
-
-                    {/* Rating Badge */}
-                    {item.rating && (
-                        <View style={styles.ratingBadge}>
-                            <Text style={styles.ratingLabel}>IMDb</Text>
-                            <Text style={styles.ratingValue}>{Number(item.rating).toFixed(1)}</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Tags/Genres */}
-                {item.tags && item.tags.length > 0 && (
-                    <View style={styles.tagsRow}>
-                        {item.tags.slice(0, 3).map((tag, index) => (
-                            <React.Fragment key={index}>
-                                <Text style={styles.tagText}>{tag}</Text>
-                                {index < Math.min(item.tags!.length, 3) - 1 && (
-                                    <Text style={styles.tagSeparator}> • </Text>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </View>
-                )}
-
-                {/* Description */}
-                <Text style={styles.description} numberOfLines={3}>
-                    {item.description || "No description available."}
-                </Text>
-
-                {/* Action Buttons */}
-                <View style={styles.actionsRow}>
-                    {/* Play Button */}
-                    <Pressable
-                        onPress={onPlay}
-                        onFocus={() => setFocusedButton('play')}
-                        onBlur={() => setFocusedButton(null)}
-                        // @ts-ignore
-                        nextFocusLeft={sidebarNode} // Force jump to Sidebar Search
-                        style={[
-                            styles.button,
-                            styles.playButton,
-                            focusedButton === 'play' && styles.buttonFocused
-                        ]}
-                    >
-                        <View style={styles.buttonContent}>
-                            <View style={styles.playIcon}>
-                                <Text style={[
-                                    styles.playIconText,
-                                    focusedButton === 'play' && styles.textBlack
-                                ]}>▶</Text>
-                            </View>
-                            <Text style={[
-                                styles.buttonText,
-                                styles.playButtonText,
-                                focusedButton === 'play' && styles.textBlack
-                            ]}>
-                                Play
-                            </Text>
-                        </View>
-                    </Pressable>
-
-                    {/* More Info Button */}
-                    <Pressable
-                        onPress={onInfo}
-                        onFocus={() => setFocusedButton('info')}
-                        onBlur={() => setFocusedButton(null)}
-                        // @ts-ignore
-                        nextFocusLeft={sidebarNode} // Force jump to Sidebar Search
-                        style={[
-                            styles.button,
-                            styles.infoButton,
-                            focusedButton === 'info' && styles.buttonFocusedSecondary
-                        ]}
-                    >
-                        <View style={styles.buttonContent}>
-                            <View style={styles.infoIcon}>
-                                <Text style={styles.infoIconText}>i</Text>
-                            </View>
-                            <Text style={styles.buttonText}>
-                                More Info
-                            </Text>
-                        </View>
-                    </Pressable>
-
-                    {/* Add to List Button (Optional) */}
-                    {onAddToList && (
-                        <Pressable
-                            onPress={onAddToList}
-                            onFocus={() => setFocusedButton('list')}
-                            onBlur={() => setFocusedButton(null)}
-                            style={[
-                                styles.iconButton,
-                                focusedButton === 'list' && styles.iconButtonFocused
-                            ]}
-                        >
-                            <Text style={styles.iconButtonText}>+</Text>
-                        </Pressable>
-                    )}
-                </View>
+              <HeroTextBlock item={incomingItem} />
             </Animated.View>
-        </View >
-    );
+          ) : null}
+        </View>
+
+        <View style={styles.actionsRow}>
+          <Pressable
+            ref={primaryActionRef}
+            onPress={onPlay}
+            onFocus={() => { playFocus.value = 1; }}
+            onBlur={() => { playFocus.value = 0; }}
+            // @ts-ignore
+            nextFocusLeft={sidebarNode}
+            style={styles.buttonOuter}
+          >
+            <AnimatedRe.View style={[styles.buttonInner, playBtnStyle]}>
+              <View style={styles.buttonContent}>
+                <View style={styles.playIcon}>
+                  <AnimatedRe.Text style={[styles.playIconText, playTextStyle]}>
+                    ▶
+                  </AnimatedRe.Text>
+                </View>
+                <AnimatedRe.Text style={[styles.buttonText, playTextStyle]}>
+                  Play
+                </AnimatedRe.Text>
+              </View>
+            </AnimatedRe.View>
+          </Pressable>
+
+          <Pressable
+            onPress={onInfo}
+            onFocus={() => { infoFocus.value = 1; }}
+            onBlur={() => { infoFocus.value = 0; }}
+            // @ts-ignore
+            nextFocusLeft={sidebarNode}
+            style={styles.buttonOuter}
+          >
+            <AnimatedRe.View style={[styles.buttonInner, infoBtnStyle]}>
+              <View style={styles.buttonContent}>
+                <View style={styles.infoIcon}>
+                  <Text style={styles.infoIconText}>i</Text>
+                </View>
+                <Text style={styles.buttonText}>More Info</Text>
+              </View>
+            </AnimatedRe.View>
+          </Pressable>
+
+          {onAddToList ? (
+            <Pressable
+              onPress={onAddToList}
+              onFocus={() => { listFocus.value = 1; }}
+              onBlur={() => { listFocus.value = 0; }}
+              style={styles.iconButtonOuter}
+            >
+              <AnimatedRe.View style={[styles.iconButton, listBtnStyle]}>
+                <Text style={styles.iconButtonText}>+</Text>
+              </AnimatedRe.View>
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
+    </View>
+  );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        width: '100%',
-        height: scale(680),
-        position: 'relative',
-        marginBottom: scale(40),
-    },
-    backdropContainer: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: '70%',
-        height: '100%',
-    },
-    backdropImage: {
-        width: '100%',
-        height: '100%',
-    },
-    backdropLeftFade: {
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: '30%',
-    },
-    leftGradient: {
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: '60%',
-        zIndex: 1,
-    },
-    bottomGradient: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: '60%',
-        zIndex: 1,
-    },
-    contentContainer: {
-        position: 'absolute',
-        left: scale(30),
-        bottom: scale(80),
-        maxWidth: scale(600),
-        zIndex: 2,
-        alignItems: 'flex-start', // Ensure children align to the left
-    },
-    title: {
-        fontSize: scaleFont(64),
-        fontWeight: '700',
-        color: colors.textPrimary || '#FFF',
-        marginBottom: scale(20),
-        letterSpacing: -1,
-        textShadowColor: 'rgba(0, 0, 0, 0.8)',
-        textShadowOffset: { width: 2, height: 2 },
-        textShadowRadius: 8,
-    },
-    logo: {
-        width: scale(450),
-        height: scale(120),
-        marginBottom: scale(24),
-    },
-    metadataRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: scale(12),
-    },
-    metadataText: {
-        color: colors.textPrimary || '#FFF',
-        fontSize: scaleFont(18),
-        fontWeight: '600',
-        letterSpacing: 0.5,
-    },
-    metadataDot: {
-        width: scale(4),
-        height: scale(4),
-        borderRadius: scale(2),
-        backgroundColor: '#46D369',
-        marginHorizontal: scale(8),
-    },
-    tagsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: scale(20),
-        flexWrap: 'wrap',
-    },
-    tagText: {
-        color: colors.textPrimary || '#FFF',
-        fontSize: scaleFont(18),
-        fontWeight: '500',
-    },
-    tagSeparator: {
-        color: '#999',
-        fontSize: scaleFont(18),
-        marginHorizontal: scale(4),
-    },
-    description: {
-        fontSize: scaleFont(20),
-        color: colors.textSecondary || '#FFF',
-        lineHeight: scaleFont(28),
-        marginBottom: scale(32),
-        textShadowColor: 'rgba(0, 0, 0, 0.8)',
-        textShadowOffset: { width: 1, height: 1 },
-        textShadowRadius: 4,
-    },
-    actionsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    button: {
-        flexDirection: 'row',
-        paddingHorizontal: scale(32),
-        paddingVertical: scale(14),
-        borderRadius: scale(6),
-        marginRight: scale(16),
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: scale(140),
-    },
-    buttonContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    playButton: {
-        backgroundColor: colors.primary || '#E50914', // Red Background
-    },
-    infoButton: {
-        backgroundColor: 'rgba(109, 109, 110, 0.7)',
-    },
-    buttonFocused: {
-        backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    },
-    buttonFocusedSecondary: {
-        backgroundColor: 'rgba(109, 109, 110, 0.9)',
-        borderWidth: scale(3),
-        borderColor: '#FFF',
-    },
-    buttonText: {
-        fontSize: scaleFont(20),
-        fontWeight: '700',
-        color: colors.textPrimary || '#FFF',
-        letterSpacing: 0.5,
-    },
-    playButtonText: {
-        color: '#FFF',
-    },
-    playIcon: {
-        marginRight: scale(10),
-        marginLeft: scale(-4),
-    },
-    playIconText: {
-        fontSize: scaleFont(20),
-        color: '#FFF',
-        fontWeight: 'bold',
-    },
-    infoIcon: {
-        width: scale(24),
-        height: scale(24),
-        borderRadius: scale(12),
-        borderWidth: scale(2),
-        borderColor: '#FFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: scale(10),
-    },
-    infoIconText: {
-        fontSize: scaleFont(16),
-        color: '#FFF',
-        fontWeight: 'bold',
-        fontStyle: 'italic',
-    },
-    iconButton: {
-        width: scale(48),
-        height: scale(48),
-        borderRadius: scale(24),
-        backgroundColor: 'rgba(42, 42, 42, 0.6)',
-        borderWidth: scale(2),
-        borderColor: 'rgba(255, 255, 255, 0.5)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: scale(8),
-    },
-    iconButtonFocused: {
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        borderColor: '#FFF',
-    },
-    iconButtonText: {
-        fontSize: scaleFont(28),
-        color: '#FFF',
-        fontWeight: '400',
-    },
-    ratingBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F5C518', // IMDb Yellow
-        paddingHorizontal: scale(8),
-        paddingVertical: scale(2),
-        borderRadius: scale(4),
-    },
-    ratingLabel: {
-        fontSize: scaleFont(14),
-        color: '#000',
-        fontWeight: '700',
-        marginRight: scale(4),
-    },
-    ratingValue: {
-        fontSize: scaleFont(16),
-        color: '#000',
-        fontWeight: '700',
-    },
+  container: {
+    width: '100%',
+    height: scale(680),
+    position: 'relative',
+    marginBottom: scale(40),
+  },
+  backdropContainer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '70%',
+    height: '100%',
+  },
+  backdropLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  backdropImage: {
+    width: '100%',
+    height: '100%',
+  },
+  backdropLeftFade: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '30%',
+  },
+  leftGradient: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '60%',
+    zIndex: 1,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '60%',
+    zIndex: 1,
+  },
 
-    // appLogoContainer removed
-    appLogo: {
-        width: scale(300),
-        height: scale(80),
-        marginBottom: scale(8),
-        marginLeft: scale(-65), // Aggressively shift left to compensate for asset padding
-        alignSelf: 'flex-start',
-    },
-    textBlack: {
-        color: '#000',
-    }
+  contentContainer: {
+    position: 'absolute',
+    left: scale(30),
+    bottom: scale(80),
+    maxWidth: scale(600),
+    zIndex: 2,
+    alignItems: 'flex-start',
+  },
+  textCrossfadeContainer: {
+    position: 'relative',
+    width: '100%',
+  },
+  textLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  title: {
+    fontSize: scaleFont(64),
+    fontWeight: '700',
+    color: colors.textPrimary || '#FFF',
+    marginBottom: scale(20),
+    letterSpacing: -1,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 8,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: scale(12),
+    minHeight: scaleFont(24),
+  },
+  metadataText: {
+    color: colors.textPrimary || '#FFF',
+    fontSize: scaleFont(18),
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  metadataDot: {
+    width: scale(4),
+    height: scale(4),
+    borderRadius: scale(2),
+    backgroundColor: '#46D369',
+    marginHorizontal: scale(8),
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: scale(20),
+    flexWrap: 'wrap',
+    minHeight: scaleFont(20),
+  },
+  tagText: {
+    color: colors.textPrimary || '#FFF',
+    fontSize: scaleFont(18),
+    fontWeight: '500',
+  },
+  tagSeparator: {
+    color: '#999',
+    fontSize: scaleFont(18),
+    marginHorizontal: scale(4),
+  },
+  description: {
+    fontSize: scaleFont(20),
+    color: colors.textSecondary || '#FFF',
+    lineHeight: scaleFont(28),
+    marginBottom: scale(32),
+    minHeight: scaleFont(28) * 3,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 4,
+  },
+
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  buttonOuter: {
+    marginRight: scale(16),
+  },
+  buttonInner: {
+    paddingHorizontal: scale(32),
+    paddingVertical: scale(14),
+    borderRadius: scale(6),
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: scale(140),
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: scaleFont(20),
+    fontWeight: '700',
+    color: colors.textPrimary || '#FFF',
+    letterSpacing: 0.5,
+  },
+
+  playIcon: {
+    marginRight: scale(10),
+    marginLeft: scale(-4),
+  },
+  playIconText: {
+    fontSize: scaleFont(20),
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+
+  infoIcon: {
+    width: scale(24),
+    height: scale(24),
+    borderRadius: scale(12),
+    borderWidth: scale(2),
+    borderColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scale(10),
+  },
+  infoIconText: {
+    fontSize: scaleFont(16),
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontStyle: 'italic',
+  },
+
+  iconButtonOuter: {
+    marginLeft: scale(8),
+  },
+  iconButton: {
+    width: scale(48),
+    height: scale(48),
+    borderRadius: scale(24),
+    borderWidth: scale(2),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonText: {
+    fontSize: scaleFont(28),
+    color: '#FFF',
+    fontWeight: '400',
+  },
+
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5C518',
+    paddingHorizontal: scale(8),
+    paddingVertical: scale(2),
+    borderRadius: scale(4),
+  },
+  ratingLabel: {
+    fontSize: scaleFont(14),
+    color: '#000',
+    fontWeight: '700',
+    marginRight: scale(4),
+  },
+  ratingValue: {
+    fontSize: scaleFont(16),
+    color: '#000',
+    fontWeight: '700',
+  },
+
+  appLogo: {
+    width: scale(300),
+    height: scale(80),
+    marginBottom: scale(8),
+    marginLeft: scale(-65),
+    alignSelf: 'flex-start',
+  },
 });
 
 export default React.memo(TVHeroBanner);

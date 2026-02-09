@@ -44,7 +44,6 @@ export interface XtreamLiveStream {
     stream_type: string;
     stream_id: number;
     stream_icon: string;
-    epg_channel_id: string;
     added: string;
     category_id: string;
     custom_sid: string;
@@ -525,17 +524,6 @@ class XtreamAPI {
         return `${this.baseUrl}/series/${user}/${pass}/${streamId}.${extension}`;
     }
 
-    async getEPG(streamId: number): Promise<any> {
-        const response = await this.client.get('/player_api.php', {
-            params: {
-                username: this.username,
-                password: this.password,
-                action: 'get_short_epg',
-                stream_id: streamId,
-            },
-        });
-        return response.data;
-    }
 }
 
 export default XtreamAPI;

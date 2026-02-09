@@ -41,7 +41,6 @@ export interface LiveChannelItem extends ContentItemBase {
     stream_id: number;
     stream_icon?: string;
     category_id?: string;
-    epg_channel_id?: string;
     tv_archive?: number;
 }
 

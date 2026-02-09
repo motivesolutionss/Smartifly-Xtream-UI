@@ -11,11 +11,20 @@ import {
     TouchableOpacity,
     StyleSheet,
     ViewStyle,
-    ImageStyle,
+    StyleProp,
 } from 'react-native';
 
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withTiming
+} from 'react-native-reanimated';
 import FastImageComponent from '../../../../components/FastImageComponent';
+import type { ImageStyle as FastImageImageStyle } from '@d11/react-native-fast-image';
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 export type ContentType = 'live' | 'movie' | 'series';
 
@@ -39,12 +48,12 @@ export interface ContentCardProps {
     variant?: 'poster' | 'thumbnail' | 'channel';
     showTitle?: boolean;
     showRating?: boolean;
-    style?: ViewStyle;
-    imageStyle?: ImageStyle;
+    style?: StyleProp<ViewStyle>;
+    imageStyle?: StyleProp<FastImageImageStyle>;
 }
 
 const cardSizes = {
-    poster: { width: 120, height: 180 },
+    poster: { width: 110, height: 165 },
     thumbnail: { width: 160, height: 90 },
     channel: { width: 100, height: 100 },
 } as const;
@@ -58,6 +67,9 @@ const ContentCard: React.FC<ContentCardProps> = ({
     style,
     imageStyle,
 }) => {
+    const scale = useSharedValue(1);
+    const opacity = useSharedValue(1);
+
     const size = variant === 'channel'
         ? cardSizes.channel
         : variant === 'thumbnail'
@@ -69,11 +81,28 @@ const ContentCard: React.FC<ContentCardProps> = ({
         return item.name.slice(0, 2).toUpperCase();
     }, [item.name]);
 
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }],
+        opacity: opacity.value,
+    }));
+
+    const onPressIn = () => {
+        scale.value = withSpring(0.96, { damping: 10, stiffness: 200 });
+        opacity.value = withTiming(0.9, { duration: 100 });
+    };
+
+    const onPressOut = () => {
+        scale.value = withSpring(1, { damping: 10, stiffness: 200 });
+        opacity.value = withTiming(1, { duration: 100 });
+    };
+
     return (
-        <TouchableOpacity
-            style={[styles.container, { width: size.width }, style]}
+        <AnimatedTouchableOpacity
+            style={[styles.container, { width: size.width }, style, animatedStyle]}
             onPress={() => onPress?.(item)}
-            activeOpacity={0.8}
+            onPressIn={onPressIn}
+            onPressOut={onPressOut}
+            activeOpacity={1}
         >
             <View
                 style={[
@@ -86,13 +115,15 @@ const ContentCard: React.FC<ContentCardProps> = ({
                     <FastImageComponent
                         source={{ uri: item.image }}
                         style={[styles.fastImage, { width: size.width, height: size.height }, imageStyle]}
-                        showLoader
                     />
                 ) : (
                     <View style={[styles.placeholder, { width: size.width, height: size.height }]}>
                         <Text style={styles.placeholderText}>{placeholderText}</Text>
                     </View>
                 )}
+
+                {/* Better Gradient Overlay */}
+                <View style={styles.gradientOverlay} />
 
                 {item.type === 'live' && (
                     <View style={styles.liveBadge}>
@@ -120,27 +151,29 @@ const ContentCard: React.FC<ContentCardProps> = ({
                     </View>
                 )}
 
+                {/* Progress Bar Enhancement */}
                 {typeof item.progress === 'number' && item.progress > 0 && item.type !== 'live' && (
                     <View style={styles.progressContainer}>
                         <View style={[styles.progressBar, { width: `${Math.min(item.progress, 100)}%` }]} />
                     </View>
                 )}
-
-                {variant === 'poster' && <View style={styles.gradientOverlay} />}
             </View>
 
             {showTitle && (
                 <View style={styles.titleContainer}>
-                    <Text style={styles.title} numberOfLines={2}>
+                    <Text style={styles.title} numberOfLines={1}>
                         {item.name}
                     </Text>
-                    {!!item.year && variant === 'poster' && <Text style={styles.year}>{item.year}</Text>}
-                    {(item.episodeCount ?? 0) > 0 && item.type === 'series' && (
-                        <Text style={styles.episodeCount}>{item.episodeCount} Episodes</Text>
-                    )}
+                    <View style={styles.metadataView}>
+                        {!!item.year && <Text style={styles.metadataText}>{item.year}</Text>}
+                        {!!item.year && (item.episodeCount ?? 0) > 0 && <View style={styles.metaDivider} />}
+                        {(item.episodeCount ?? 0) > 0 && item.type === 'series' && (
+                            <Text style={styles.metadataText}>{item.episodeCount} EP</Text>
+                        )}
+                    </View>
                 </View>
             )}
-        </TouchableOpacity>
+        </AnimatedTouchableOpacity>
     );
 };
 
@@ -194,13 +227,18 @@ const areEqual = (prev: ContentCardProps, next: ContentCardProps) => (
 
 const styles = StyleSheet.create({
     container: {
-        marginRight: spacing.sm,
+        marginBottom: spacing.md,
     },
     imageContainer: {
         borderRadius: borderRadius.lg,
         overflow: 'hidden',
         backgroundColor: colors.backgroundTertiary,
         position: 'relative',
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
     },
     channelContainer: {
         borderRadius: borderRadius.md,
@@ -225,11 +263,11 @@ const styles = StyleSheet.create({
     },
     gradientOverlay: {
         position: 'absolute',
-        bottom: 0,
+        top: 0,
         left: 0,
         right: 0,
-        height: 40,
-        backgroundColor: 'transparent',
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.15)', // Subtle overall dim
     },
     liveBadge: {
         position: 'absolute',
@@ -238,20 +276,24 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: colors.live,
-        paddingHorizontal: spacing.xs,
+        paddingHorizontal: 6,
         paddingVertical: 3,
-        borderRadius: borderRadius.sm,
-        gap: spacing.xxs,
+        borderRadius: 4,
+        gap: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.4,
+        shadowRadius: 2,
     },
     liveDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
         backgroundColor: colors.textPrimary,
     },
     liveBadgeText: {
-        fontSize: 9,
-        fontWeight: '700',
+        fontSize: 10,
+        fontWeight: '900',
         color: colors.textPrimary,
         letterSpacing: 0.5,
     },
@@ -259,17 +301,20 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: spacing.xs,
         right: spacing.xs,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        paddingHorizontal: spacing.xs,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        paddingHorizontal: 4,
         paddingVertical: 2,
-        borderRadius: borderRadius.sm,
+        borderRadius: 4,
+        borderWidth: 0.5,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     qualityBadge4K: {
         backgroundColor: colors.qualityUHD,
+        borderColor: 'transparent',
     },
     qualityText: {
         fontSize: 9,
-        fontWeight: '700',
+        fontWeight: '800',
         color: colors.textPrimary,
     },
     newBadge: {
@@ -277,13 +322,13 @@ const styles = StyleSheet.create({
         top: spacing.xs,
         left: spacing.xs,
         backgroundColor: colors.success,
-        paddingHorizontal: spacing.xs,
-        paddingVertical: 2,
-        borderRadius: borderRadius.sm,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 4,
     },
     newBadgeText: {
         fontSize: 9,
-        fontWeight: '700',
+        fontWeight: '800',
         color: colors.textPrimary,
     },
     ratingBadge: {
@@ -292,15 +337,15 @@ const styles = StyleSheet.create({
         right: spacing.xs,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        paddingHorizontal: spacing.xs,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        paddingHorizontal: 4,
         paddingVertical: 2,
-        borderRadius: borderRadius.sm,
+        borderRadius: 4,
         gap: 2,
     },
     ratingText: {
         fontSize: 10,
-        fontWeight: '600',
+        fontWeight: '700',
         color: colors.textPrimary,
     },
     progressContainer: {
@@ -308,7 +353,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        height: 4,
+        height: 3,
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
     },
     progressBar: {
@@ -316,24 +361,31 @@ const styles = StyleSheet.create({
         backgroundColor: colors.primary,
     },
     titleContainer: {
-        marginTop: spacing.xs,
-        paddingRight: spacing.xxs,
+        marginTop: 6,
+        paddingHorizontal: 2,
     },
     title: {
-        fontSize: 12,
-        fontWeight: '500',
+        fontSize: 13,
+        fontWeight: '600',
         color: colors.textPrimary,
-        lineHeight: 16,
+        marginBottom: 2,
     },
-    year: {
+    metadataView: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    metadataText: {
         fontSize: 11,
         color: colors.textMuted,
-        marginTop: 2,
+        fontWeight: '500',
     },
-    episodeCount: {
-        fontSize: 11,
-        color: colors.textMuted,
-        marginTop: 2,
+    metaDivider: {
+        width: 3,
+        height: 3,
+        borderRadius: 1.5,
+        backgroundColor: colors.textMuted,
+        marginHorizontal: 4,
+        opacity: 0.5,
     },
     skeletonImage: {
         borderRadius: borderRadius.lg,

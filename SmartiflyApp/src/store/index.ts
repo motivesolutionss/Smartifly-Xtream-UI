@@ -30,6 +30,7 @@ import { logger } from '../config';
 import useFilterStore from './filterStore';
 
 let cachedApi: { key: string; instance: XtreamAPI } | null = null;
+let markHydrated: ((value: boolean) => void) | null = null;
 
 // =============================================================================
 // TYPES
@@ -116,6 +117,8 @@ interface StoreState {
     isAuthenticated: boolean;
     userInfo: UserInfo | null;
     serverInfo: XtreamAuthResponse['server_info'] | null;
+    // Persist hydration flag (runtime only)
+    hasHydrated: boolean;
 
     // Portal
     portals: Portal[];
@@ -195,6 +198,7 @@ interface StoreActions {
     // Reset
     clearError: () => void;
     resetStore: () => void;
+    setHasHydrated: (value: boolean) => void;
 
     // Error Helpers
     createError: (code: string, message: string, category: AppError['category'], retryable: boolean, suggestion?: string) => AppError;
@@ -216,6 +220,7 @@ const initialState: StoreState = {
     isAuthenticated: false,
     userInfo: null,
     serverInfo: null,
+    hasHydrated: false,
     portals: [],
     selectedPortal: null,
     savedAccounts: [],
@@ -244,7 +249,14 @@ const initialState: StoreState = {
 
 const useStore = create<Store>()(
     persist(
-        (set, get) => ({
+        (set, get) => {
+            const setHasHydrated = (value: boolean) => {
+                if (get().hasHydrated === value) return;
+                set({ hasHydrated: value });
+            };
+            markHydrated = setHasHydrated;
+
+            return {
             ...initialState,
 
             // =================================================================
@@ -470,8 +482,10 @@ const useStore = create<Store>()(
                 useFilterStore.getState().clearFilters();
                 cachedApi = null;
 
+                const hydrated = get().hasHydrated;
                 set({
                     ...initialState,
+                    hasHydrated: hydrated,
                     portals: get().portals, // Keep portals
                     savedAccounts: get().savedAccounts, // Keep saved accounts
                 });
@@ -950,10 +964,13 @@ const useStore = create<Store>()(
 
             clearError: () => set({ error: null }),
 
+            setHasHydrated,
+
             resetStore: async () => {
                 // Clear filters
                 useFilterStore.getState().clearFilters();
                 cachedApi = null;
+                const hydrated = get().hasHydrated;
 
                 // Clear AsyncStorage to fully reset persisted state
                 try {
@@ -962,7 +979,7 @@ const useStore = create<Store>()(
                 } catch (e) {
                     logger.error('Failed to clear persisted storage', e);
                 }
-                set(initialState);
+                set({ ...initialState, hasHydrated: hydrated });
             },
 
             // =================================================================
@@ -977,18 +994,21 @@ const useStore = create<Store>()(
                 retryable,
                 suggestion,
             }),
-        }),
+            };
+        },
         {
             name: 'smartifly-storage-v2',
             storage: createJSONStorage(() => AsyncStorage),
-            onRehydrateStorage: () => (state, error) => {
+            onRehydrateStorage: () => (state: Store | undefined, error) => {
                 if (error) {
                     logger.error('Store: Failed to rehydrate', error);
+                    markHydrated?.(true);
                     return;
                 }
 
                 if (!state) {
                     logger.warn('Store: Rehydrated state is null');
+                    markHydrated?.(true);
                     return;
                 }
 
@@ -1011,6 +1031,9 @@ const useStore = create<Store>()(
                 } else {
                     logger.info('Store: Successfully rehydrated with credentials.');
                 }
+
+                // Mark hydration complete (runtime only)
+                markHydrated?.(true);
             },
             partialize: (state) => ({
                 // Persist these fields

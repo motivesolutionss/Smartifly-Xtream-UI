@@ -7,7 +7,7 @@
  * @enterprise-grade
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -59,13 +59,15 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
         }).start();
     }, [fadeAnim]);
 
-    // Prepare profile list data
-    const data: ProfileItem[] = [
-        ...profiles.map((profile) => ({ type: 'profile' as const, profile })),
-        ...(canCreateProfile() ? [{ type: 'add' as const }] : []),
-    ];
+    const canCreate = canCreateProfile();
 
-    const handleProfileSelect = (profile: UserProfile) => {
+    // Prepare profile list data
+    const data = useMemo<ProfileItem[]>(() => ([
+        ...profiles.map((profile) => ({ type: 'profile' as const, profile })),
+        ...(canCreate ? [{ type: 'add' as const }] : []),
+    ]), [profiles, canCreate]);
+
+    const handleProfileSelect = useCallback((profile: UserProfile) => {
         if (isEditMode) {
             navigation.navigate('ProfileEditor', { profileId: profile.id });
             return;
@@ -82,9 +84,9 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
             logger.info('Profile switched', { profileId: profile.id });
             navigation.replace('Main');
         }
-    };
+    }, [isEditMode, navigation, switchProfile]);
 
-    const handlePinComplete = (pin: string) => {
+    const handlePinComplete = useCallback((pin: string) => {
         if (!selectedProfileId) return;
 
         const success = switchProfile(selectedProfileId, pin);
@@ -97,13 +99,17 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
             setPinError(true);
             setTimeout(() => setPinError(false), 500);
         }
-    };
+    }, [navigation, selectedProfileId, switchProfile]);
 
-    const handleAddProfile = () => {
+    const handleAddProfile = useCallback(() => {
         navigation.navigate('ProfileEditor', { profileId: undefined });
-    };
+    }, [navigation]);
 
-    const renderItem = ({ item }: { item: ProfileItem }) => {
+    const handleEditProfile = useCallback((profileId: string) => {
+        navigation.navigate('ProfileEditor', { profileId });
+    }, [navigation]);
+
+    const renderItem = useCallback(({ item }: { item: ProfileItem }) => {
         if (item.type === 'add') {
             return (
                 <TouchableOpacity style={styles.profileItem} onPress={handleAddProfile}>
@@ -123,9 +129,7 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
             <TouchableOpacity
                 style={styles.profileItem}
                 onPress={() => handleProfileSelect(profile)}
-                onLongPress={() => {
-                    navigation.navigate('ProfileEditor', { profileId: profile.id });
-                }}
+                onLongPress={() => handleEditProfile(profile.id)}
             >
                 <ProfileAvatar
                     avatar={profile.avatar}
@@ -142,11 +146,17 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
                 )}
             </TouchableOpacity>
         );
-    };
+    }, [handleAddProfile, handleEditProfile, handleProfileSelect, isEditMode]);
 
-    const selectedProfile = selectedProfileId
-        ? profiles.find((p) => p.id === selectedProfileId)
-        : null;
+    const keyExtractor = useCallback((item: ProfileItem) => (
+        item.type === 'add' ? 'add_profile' : item.profile!.id
+    ), []);
+
+    const selectedProfile = useMemo(() => (
+        selectedProfileId
+            ? profiles.find((p) => p.id === selectedProfileId)
+            : null
+    ), [profiles, selectedProfileId]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -160,12 +170,15 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
                 <FlatList
                     data={data}
                     renderItem={renderItem}
-                    keyExtractor={(item) =>
-                        item.type === 'add' ? 'add_profile' : item.profile!.id
-                    }
+                    keyExtractor={keyExtractor}
                     numColumns={2}
                     contentContainerStyle={styles.profileList}
                     columnWrapperStyle={styles.profileRow}
+                    showsVerticalScrollIndicator={false}
+                    removeClippedSubviews
+                    initialNumToRender={4}
+                    maxToRenderPerBatch={4}
+                    windowSize={5}
                 />
 
                 {/* Edit Mode Toggle */}

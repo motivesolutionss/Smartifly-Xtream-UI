@@ -3,9 +3,9 @@
  * 
  * Optimized image component with caching and performance benefits
  */
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, StyleProp, ActivityIndicator } from 'react-native';
-import FastImage, { ImageStyle, OnLoadEvent, OnProgressEvent } from '@d11/react-native-fast-image';
+import FastImage, { ImageStyle, OnLoadEvent } from '@d11/react-native-fast-image';
 import { colors } from '../theme';
 
 interface Props {
@@ -16,6 +16,9 @@ interface Props {
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
     priority?: 'low' | 'normal' | 'high';
     cache?: 'immutable' | 'web' | 'cacheOnly';
+    onLoad?: (event: OnLoadEvent) => void;
+    onError?: () => void;
+    onLoadEnd?: () => void;
 }
 
 const FastImageComponent: React.FC<Props> = ({
@@ -26,6 +29,9 @@ const FastImageComponent: React.FC<Props> = ({
     resizeMode = 'cover',
     priority = 'normal',
     cache = 'immutable',
+    onLoad,
+    onError,
+    onLoadEnd,
 }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
@@ -40,6 +46,7 @@ const FastImageComponent: React.FC<Props> = ({
         if (showLoader) {
             setLoading(false);
         }
+        onLoad?.(event);
     };
 
     const handleError = () => {
@@ -47,21 +54,52 @@ const FastImageComponent: React.FC<Props> = ({
             setLoading(false);
         }
         setError(true);
+        onError?.();
     };
 
-    // Construct the source object properly for FastImage
-    const finalSource = error && fallbackSource
-        ? fallbackSource
-        : (typeof source === 'string' ? { uri: source } : source);
+    const handleLoadEnd = () => {
+        if (showLoader) {
+            setLoading(false);
+        }
+        onLoadEnd?.();
+    };
+
+    const sourceKey = useMemo(() => {
+        if (typeof source === 'string') return source;
+        if (source && typeof source === 'object' && 'uri' in source) {
+            return String((source as any).uri || '');
+        }
+        return '';
+    }, [source]);
+
+    useEffect(() => {
+        setError(false);
+        if (showLoader) {
+            setLoading(false);
+        }
+    }, [sourceKey, showLoader]);
+
+    const shouldUseFallback = error && fallbackSource;
+
+    const remoteSource = useMemo(() => (sourceKey ? { uri: sourceKey } : null), [sourceKey]);
+
+    const baseSource = useMemo(() => {
+        if (shouldUseFallback) return fallbackSource;
+        if (remoteSource) return remoteSource;
+        return source;
+    }, [shouldUseFallback, fallbackSource, remoteSource, source]);
 
     // Apply priority and cache to the source if it's a URI object
-    const fastImageSource = (finalSource && typeof finalSource === 'object' && finalSource.uri)
-        ? {
-            ...finalSource,
-            priority: FastImage.priority[priority],
-            cache: FastImage.cacheControl[cache],
+    const fastImageSource = useMemo(() => {
+        if (baseSource && typeof baseSource === 'object' && 'uri' in baseSource) {
+            return {
+                ...(baseSource as any),
+                priority: FastImage.priority[priority],
+                cache: FastImage.cacheControl[cache],
+            };
         }
-        : finalSource;
+        return baseSource;
+    }, [baseSource, priority, cache]);
 
     const fastResizeMode = resizeMode === 'stretch'
         ? FastImage.resizeMode.stretch
@@ -78,6 +116,7 @@ const FastImageComponent: React.FC<Props> = ({
                 source={fastImageSource}
                 onLoadStart={handleLoadStart}
                 onLoad={handleLoad}
+                onLoadEnd={handleLoadEnd}
                 onError={handleError}
                 resizeMode={fastResizeMode}
             />

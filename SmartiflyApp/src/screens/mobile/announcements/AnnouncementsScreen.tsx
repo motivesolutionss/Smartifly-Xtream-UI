@@ -5,13 +5,14 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NavBar from '../../../components/NavBar';
 import { colors, spacing, borderRadius } from '../../../theme';
 import useStore from '../../../store';
 import { getAnnouncements } from '../../../api/backend';
 import { logger } from '../../../config';
+import { FlashList } from '@shopify/flash-list';
 
 const AnnouncementsScreen: React.FC<any> = () => {
     const insets = useSafeAreaInsets();
@@ -68,6 +69,26 @@ const AnnouncementsScreen: React.FC<any> = () => {
         fetchAnnouncements();
     }, [fetchAnnouncements]);
 
+    const normalizedAnnouncements = useMemo(() => (
+        announcements.map((item) => ({
+            ...item,
+            formattedDate: formatDate(item.createdAt),
+            sanitizedContent: sanitizeContent(item.content),
+        }))
+    ), [announcements, formatDate, sanitizeContent]);
+
+    const renderItem = useCallback(({ item }: { item: any }) => (
+        <View style={styles.card}>
+            <View style={styles.header}>
+                <Text style={styles.title}>{item.title}</Text>
+                <Text style={styles.date}>{item.formattedDate}</Text>
+            </View>
+            <Text style={styles.message}>{item.sanitizedContent}</Text>
+        </View>
+    ), []);
+
+    const keyExtractor = useCallback((item: any) => String(item.id), []);
+
     const listEmpty = useMemo(() => {
         if (isLoading) {
             return (
@@ -101,9 +122,9 @@ const AnnouncementsScreen: React.FC<any> = () => {
                 username={userInfo?.username}
             />
 
-            <FlatList
-                data={announcements}
-                keyExtractor={(item) => item.id}
+            <FlashList
+                data={normalizedAnnouncements}
+                keyExtractor={keyExtractor}
                 contentContainerStyle={[
                     styles.listContent,
                     { paddingBottom: insets.bottom + spacing.xl }
@@ -115,16 +136,12 @@ const AnnouncementsScreen: React.FC<any> = () => {
                         tintColor={colors.primary}
                     />
                 }
-                renderItem={({ item }) => (
-                    <View style={styles.card}>
-                        <View style={styles.header}>
-                            <Text style={styles.title}>{item.title}</Text>
-                            <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
-                        </View>
-                        <Text style={styles.message}>{sanitizeContent(item.content)}</Text>
-                    </View>
-                )}
+                renderItem={renderItem}
                 ListEmptyComponent={listEmpty}
+                // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                estimatedItemSize={140}
+                showsVerticalScrollIndicator={false}
+                removeClippedSubviews
             />
         </View>
     );

@@ -23,12 +23,12 @@ const BottomTabNavigator: React.FC = () => {
   return (
     <Tab.Navigator
       tabBar={renderTabBar}
-      detachInactiveScreens={true}
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        freezeOnBlur: true,
-        lazy: true,
+        freezeOnBlur: false,
+        lazy: false,
       }}
       initialRouteName="HomeTab"
     >

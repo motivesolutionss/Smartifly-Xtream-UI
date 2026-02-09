@@ -38,6 +38,70 @@ interface Category {
     count: number;
 }
 
+type CategoryListProps = {
+    categories: Category[];
+    selectedCategoryId: string | null;
+    onSelect: (categoryId: string) => void;
+    focusEntryRef?: React.Ref<View>;
+};
+
+const CategoryList: React.FC<CategoryListProps> = React.memo(
+    ({ categories, selectedCategoryId, onSelect, focusEntryRef }) => {
+        const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+
+        const renderCategory = useCallback(
+            ({ item }: { item: Category }) => {
+                const isSelected = selectedCategoryId === item.id ||
+                    (selectedCategoryId === null && item.id === 'all');
+                const isFocused = focusedCategoryId === item.id;
+
+                return (
+                    <Pressable
+                        ref={item.id === 'all' ? focusEntryRef : undefined}
+                        onPress={() => onSelect(item.id)}
+                        onFocus={() => setFocusedCategoryId(item.id)}
+                        onBlur={() => setFocusedCategoryId(null)}
+                        style={[
+                            styles.categoryItem,
+                            isSelected && styles.categoryItemSelected,
+                            isFocused && styles.categoryItemFocused,
+                        ]}
+                    >
+                        <Text style={[
+                            styles.categoryName,
+                            isSelected && styles.categoryNameSelected,
+                            isFocused && styles.categoryNameFocused,
+                        ]} numberOfLines={1}>
+                            {item.name}
+                        </Text>
+                        <Text style={[
+                            styles.categoryCount,
+                            isFocused && styles.categoryCountFocused,
+                        ]}>
+                            {item.count}
+                        </Text>
+                    </Pressable>
+                );
+            },
+            [focusedCategoryId, selectedCategoryId, onSelect, focusEntryRef]
+        );
+
+        return (
+            <FlatList
+                data={categories}
+                renderItem={renderCategory}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.categoryList}
+                removeClippedSubviews={true}
+                initialNumToRender={12}
+                maxToRenderPerBatch={12}
+                windowSize={5}
+            />
+        );
+    }
+);
+
 // =============================================================================
 // LIST CONFIG
 // =============================================================================
@@ -53,23 +117,25 @@ const GRID_BATCH_PERIOD = 16;
 // TV LIVE SCREEN
 // =============================================================================
 
-const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
+
+const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }) => {
     // State
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-    const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoryMap, setCategoryMap] = useState<Record<string, XtreamLiveStream[]>>({});
     const [isPrepared, setIsPrepared] = useState(false);
 
-    // Store
-    const content = useStore((state) => state.content);
+    // Store (narrow selectors to avoid re-render on other domains)
+    const liveLoaded = useStore((state) => state.content.live.loaded);
+    const liveItems = useStore((state) => state.content.live.items);
+    const liveCategories = useStore((state) => state.content.live.categories);
 
     // ==========================================================================
     // CATEGORIES
     // ==========================================================================
 
     useEffect(() => {
-        if (!content.live.loaded || !content.live.categories) {
+        if (!liveLoaded || !liveCategories) {
             setCategories([]);
             setCategoryMap({});
             setIsPrepared(false);
@@ -78,7 +144,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
 
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
-            const items = content.live.items;
+            const items = liveItems;
             const nextMap: Record<string, XtreamLiveStream[]> = {
                 all: items,
             };
@@ -95,7 +161,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
                 { id: 'all', name: 'All Channels', count: items.length },
             ];
 
-            for (const cat of content.live.categories) {
+            for (const cat of liveCategories) {
                 const catId = String(cat.category_id);
                 const count = countMap[catId] || 0;
                 if (count > 0) {
@@ -115,21 +181,21 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
         return () => {
             task.cancel();
         };
-    }, [content.live.loaded, content.live.categories, content.live.items]);
+    }, [liveLoaded, liveCategories, liveItems]);
 
     // ==========================================================================
     // CHANNELS (filtered by category)
     // ==========================================================================
 
     const channels = useMemo((): XtreamLiveStream[] => {
-        if (!content.live.loaded || !isPrepared) return [];
+        if (!liveLoaded || !isPrepared) return [];
 
         if (selectedCategoryId && selectedCategoryId !== 'all') {
             return categoryMap[selectedCategoryId] || [];
         }
 
         return categoryMap.all || [];
-    }, [content.live.loaded, isPrepared, selectedCategoryId, categoryMap]);
+    }, [liveLoaded, isPrepared, selectedCategoryId, categoryMap]);
 
     // ==========================================================================
     // HANDLERS
@@ -157,39 +223,6 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
     // RENDER
     // ==========================================================================
 
-    const renderCategory = useCallback(({ item }: { item: Category }) => {
-        const isSelected = selectedCategoryId === item.id ||
-            (selectedCategoryId === null && item.id === 'all');
-        const isFocused = focusedCategoryId === item.id;
-
-        return (
-            <Pressable
-                onPress={() => handleCategorySelect(item.id)}
-                onFocus={() => setFocusedCategoryId(item.id)}
-                onBlur={() => setFocusedCategoryId(null)}
-                style={[
-                    styles.categoryItem,
-                    isSelected && styles.categoryItemSelected,
-                    isFocused && styles.categoryItemFocused,
-                ]}
-            >
-                <Text style={[
-                    styles.categoryName,
-                    isSelected && styles.categoryNameSelected,
-                    isFocused && styles.categoryNameFocused,
-                ]} numberOfLines={1}>
-                    {item.name}
-                </Text>
-                <Text style={[
-                    styles.categoryCount,
-                    isFocused && styles.categoryCountFocused,
-                ]}>
-                    {item.count}
-                </Text>
-            </Pressable>
-        );
-    }, [focusedCategoryId, selectedCategoryId, handleCategorySelect]);
-
     const renderChannel = useCallback(({ item }: { item: XtreamLiveStream }) => (
         <TVContentCard
             item={{
@@ -213,16 +246,11 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation }) => {
             {/* Category Panel */}
             <View style={styles.categoryPanel}>
                 <Text style={styles.panelTitle}>Live TV</Text>
-                <FlatList
-                    data={categories}
-                    renderItem={renderCategory}
-                    keyExtractor={(item) => item.id}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.categoryList}
-                    removeClippedSubviews={true}
-                    initialNumToRender={12}
-                    maxToRenderPerBatch={12}
-                    windowSize={5}
+                <CategoryList
+                    categories={categories}
+                    selectedCategoryId={selectedCategoryId}
+                    onSelect={handleCategorySelect}
+                    focusEntryRef={focusEntryRef}
                 />
             </View>
 

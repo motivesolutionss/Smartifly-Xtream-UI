@@ -9,11 +9,10 @@
  * - Uses domain.loaded flags for proper data access
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import {
     View,
     StyleSheet,
-    RefreshControl,
     StatusBar,
     Text,
 } from 'react-native';
@@ -28,9 +27,9 @@ import { ContentItem } from './components/ContentCard';
 
 // Store - Using prefetched data!
 import useStore from '../../../store';
-import useFilterStore from '../../../store/filterStore';
+import useFilterStore, { ContentType } from '../../../store/filterStore';
 import { useWatchHistoryStore, WatchProgress } from '../../../store/watchHistoryStore';
-import { useContentFilter } from '../../../store/profileStore';
+import { useContentFilter, useProfileStore } from '../../../store/profileStore';
 import { prefetchImages } from '../../../utils/image';
 
 // Theme and Config
@@ -128,21 +127,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     // Get PREFETCHED content from store - uses new domain structure
     const content = useStore((state) => state.content);
     const userInfo = useStore((state) => state.userInfo);
-    const forceRefresh = useStore((state) => state.forceRefresh);
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
-    const continueWatching = useWatchHistoryStore((state) => state.getContinueWatching(10));
+    const watchHistory = useWatchHistoryStore((state) => state.history);
+    const activeProfileId = useProfileStore((state) => state.activeProfileId);
 
     // Profile Store
     const { filterContent } = useContentFilter();
 
     // Local state
-    const [isRefreshing, setIsRefreshing] = useState(false);
-
     const stats = useMemo(() => ({
         live: content.live.items.length,
         movies: content.movies.items.length,
         series: content.series.items.length,
     }), [content.live.items.length, content.movies.items.length, content.series.items.length]);
+
+    const continueWatching = useMemo<WatchProgress[]>(() => {
+        const profileId = activeProfileId || 'default';
+        return Object.values(watchHistory)
+            .filter((item) => item.id.startsWith(profileId))
+            .filter((item) => !item.completed && item.progress > 0)
+            .sort((a, b) => b.lastWatched - a.lastWatched)
+            .slice(0, 10);
+    }, [activeProfileId, watchHistory]);
 
     const continueWatchingById = useMemo(() => {
         const map = new Map<string, WatchProgress>();
@@ -367,10 +373,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }));
     }, [liveForRows]);
 
-    // =============================================================================
-    // CATEGORY-BASED SECTIONS (Dynamic - shows content by category)
-    // =============================================================================
-
+    // Category rails logic
     const movieCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!content.movies.loaded) return map;
@@ -396,44 +399,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 });
             }
         }
-
         return map;
     }, [content.movies.loaded, filteredMovies]);
 
     const movieCategoryRails = useMemo(() => {
         if (!content.movies.loaded || !content.movies.categories) return [];
-
         const rails: CategoryRail[] = [];
         for (const category of content.movies.categories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
-
             const items = movieCategoryMap.get(catId);
             if (items && items.length > 0) {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-
-        return rails
-            .sort((a, b) => b.items.length - a.items.length)
-            .slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
     }, [content.movies.categories, content.movies.loaded, movieCategoryMap]);
 
     const seriesCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!content.series.loaded) return map;
-
         for (const series of filteredSeries) {
             const catId = String(series.category_id);
             if (!catId) continue;
-
             let items = map.get(catId);
             if (!items) {
                 items = [];
                 map.set(catId, items);
             }
-
             if (items.length < RAIL_ITEM_LIMIT) {
                 items.push({
                     id: String(series.series_id),
@@ -445,44 +439,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 });
             }
         }
-
         return map;
     }, [content.series.loaded, filteredSeries]);
 
     const seriesCategoryRails = useMemo(() => {
         if (!content.series.loaded || !content.series.categories) return [];
-
         const rails: CategoryRail[] = [];
         for (const category of content.series.categories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
-
             const items = seriesCategoryMap.get(catId);
             if (items && items.length > 0) {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-
-        return rails
-            .sort((a, b) => b.items.length - a.items.length)
-            .slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
     }, [content.series.categories, content.series.loaded, seriesCategoryMap]);
 
     const liveCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!content.live.loaded) return map;
-
         for (const channel of content.live.items) {
             const catId = String(channel.category_id);
             if (!catId) continue;
-
             let items = map.get(catId);
             if (!items) {
                 items = [];
                 map.set(catId, items);
             }
-
             if (items.length < RAIL_ITEM_LIMIT) {
                 items.push({
                     id: String(channel.stream_id),
@@ -493,51 +478,39 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 });
             }
         }
-
         return map;
     }, [content.live.items, content.live.loaded]);
 
     const liveCategoryRails = useMemo(() => {
         if (!content.live.loaded || !content.live.categories) return [];
-
         const rails: CategoryRail[] = [];
         for (const category of content.live.categories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
-
             const items = liveCategoryMap.get(catId);
             if (items && items.length > 0) {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-
-        return rails
-            .sort((a, b) => b.items.length - a.items.length)
-            .slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
     }, [content.live.categories, content.live.loaded, liveCategoryMap]);
 
     // =============================================================================
     // HANDLERS
     // =============================================================================
 
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        try {
-            await forceRefresh();
-        } catch (error) {
-            logger.error('Refresh failed', error);
-        }
-        setIsRefreshing(false);
-    }, [forceRefresh]);
+    const handleCategoryTypePress = useCallback((type: ContentType) => {
+        navigation.navigate('Browse', { type });
+    }, [navigation]);
 
     const handleSearch = useCallback(() => {
         navigation.navigate('Search');
     }, [navigation]);
 
-    const handleNotifications = useCallback(() => {
-        logger.debug('Notifications clicked - feature coming soon');
-    }, []);
+    const handleDownloads = useCallback(() => {
+        navigation.navigate('Downloads');
+    }, [navigation]);
 
     const handleProfile = useCallback(() => {
         navigation.navigate('SettingsTab');
@@ -554,7 +527,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 },
             });
         } else if (item.type === 'movie') {
-            // Navigate to MovieDetail instead of direct play
             const movieData = item.data as any;
             navigation.navigate('MovieDetail', {
                 movie: {
@@ -615,6 +587,32 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         const entry = continueWatchingById.get(String(item.id));
         if (entry) handleContinuePress(entry);
     }, [continueWatchingById, handleContinuePress]);
+
+    const handleHeroPlay = useCallback(() => {
+        if (!featuredContent) return;
+        const api = getXtreamAPI();
+        if (!api) return;
+
+        if (featuredContent.type === 'movie') {
+            navigation.navigate('Player', {
+                type: 'movie',
+                item: {
+                    stream_id: featuredContent.data.stream_id,
+                    name: featuredContent.data.name,
+                    stream_icon: featuredContent.data.stream_icon,
+                },
+            });
+        } else if (featuredContent.type === 'series') {
+            navigation.navigate('SeriesDetail', {
+                series: featuredContent.data,
+            });
+        }
+    }, [featuredContent, getXtreamAPI, navigation]);
+
+    const handleHeroInfo = useCallback(() => {
+        if (!featuredContent) return;
+        handleContentPress(featuredContent);
+    }, [featuredContent, handleContentPress]);
 
     const handleSeeAll = useCallback((section: string) => {
         switch (section) {
@@ -784,18 +782,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     useEffect(() => {
         const preload: Array<string | undefined> = [featuredContent?.image];
-
         const addRowImages = (items: ContentItem[]) => {
             for (const item of items.slice(0, PREFETCH_ITEMS_PER_ROW)) {
                 preload.push(item.image);
             }
         };
-
         addRowImages(continueRowItems);
         addRowImages(popularChannels);
         addRowImages(recentMovies);
         addRowImages(recentSeries);
-
         prefetchImages(preload);
     }, [continueRowItems, featuredContent?.image, popularChannels, recentMovies, recentSeries]);
 
@@ -805,7 +800,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 return (
                     <HeroBanner
                         item={item.item}
-                        onPress={() => handleContentPress(item.item)}
+                        onPress={handleHeroInfo}
+                        onPlayPress={handleHeroPlay}
+                        onInfoPress={handleHeroInfo}
                     />
                 );
             case 'row':
@@ -834,33 +831,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             default:
                 return null;
         }
-    }, [handleContentPress]);
+    }, [handleHeroInfo, handleHeroPlay]);
 
     const getItemType = useCallback((item: HomeSection) => item.type, []);
-
-    // =============================================================================
-    // RENDER - NO LOADING STATE! Data is already prefetched!
-    // =============================================================================
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-
-            {/* NavBar */}
             <NavBar
                 variant="home"
                 username={userInfo?.username}
                 onSearchPress={handleSearch}
-                onNotificationPress={handleNotifications}
+                onNotificationPress={handleDownloads}
                 onProfilePress={handleProfile}
+                onCategoryTypePress={handleCategoryTypePress}
             />
-
             <FlashList
                 style={styles.scrollView}
                 data={sections}
                 renderItem={renderSection}
                 keyExtractor={(item) => item.key}
-                // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                // @ts-ignore
                 estimatedItemSize={320}
                 getItemType={getItemType}
                 drawDistance={600}
@@ -869,14 +860,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     styles.scrollContent,
                     { paddingBottom: insets.bottom + 100 }
                 ]}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={isRefreshing}
-                        onRefresh={handleRefresh}
-                        tintColor={colors.primary}
-                        colors={[colors.primary]}
-                    />
-                }
             />
         </View>
     );

@@ -39,6 +39,70 @@ interface Category {
     count: number;
 }
 
+type CategoryListProps = {
+    categories: Category[];
+    selectedCategoryId: string | null;
+    onSelect: (categoryId: string) => void;
+    focusEntryRef?: React.Ref<View>;
+};
+
+const CategoryList: React.FC<CategoryListProps> = React.memo(
+    ({ categories, selectedCategoryId, onSelect, focusEntryRef }) => {
+        const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+
+        const renderCategory = useCallback(
+            ({ item }: { item: Category }) => {
+                const isSelected = selectedCategoryId === item.id ||
+                    (selectedCategoryId === null && item.id === 'all');
+                const isFocused = focusedCategoryId === item.id;
+
+                return (
+                    <Pressable
+                        ref={item.id === 'all' ? focusEntryRef : undefined}
+                        onPress={() => onSelect(item.id)}
+                        onFocus={() => setFocusedCategoryId(item.id)}
+                        onBlur={() => setFocusedCategoryId(null)}
+                        style={[
+                            styles.categoryItem,
+                            isSelected && styles.categoryItemSelected,
+                            isFocused && styles.categoryItemFocused,
+                        ]}
+                    >
+                        <Text style={[
+                            styles.categoryName,
+                            isSelected && styles.categoryNameSelected,
+                            isFocused && styles.categoryNameFocused,
+                        ]} numberOfLines={1}>
+                            {item.name}
+                        </Text>
+                        <Text style={[
+                            styles.categoryCount,
+                            isFocused && styles.categoryCountFocused,
+                        ]}>
+                            {item.count}
+                        </Text>
+                    </Pressable>
+                );
+            },
+            [focusedCategoryId, selectedCategoryId, onSelect, focusEntryRef]
+        );
+
+        return (
+            <FlatList
+                data={categories}
+                renderItem={renderCategory}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.categoryList}
+                removeClippedSubviews={true}
+                initialNumToRender={12}
+                maxToRenderPerBatch={12}
+                windowSize={5}
+            />
+        );
+    }
+);
+
 // =============================================================================
 // LIST CONFIG
 // =============================================================================
@@ -54,16 +118,18 @@ const GRID_BATCH_PERIOD = 16;
 // TV SERIES SCREEN
 // =============================================================================
 
-const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
+
+const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryRef }) => {
     // State
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-    const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoryMap, setCategoryMap] = useState<Record<string, XtreamSeries[]>>({});
     const [isPrepared, setIsPrepared] = useState(false);
 
-    // Store
-    const content = useStore((state) => state.content);
+    // Store (narrow selectors to avoid re-render on other domains)
+    const seriesLoaded = useStore((state) => state.content.series.loaded);
+    const seriesItems = useStore((state) => state.content.series.items);
+    const seriesCategories = useStore((state) => state.content.series.categories);
     const { filterContent } = useContentFilter();
 
     // ==========================================================================
@@ -71,7 +137,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
     // ==========================================================================
 
     useEffect(() => {
-        if (!content.series.loaded || !content.series.categories) {
+        if (!seriesLoaded || !seriesCategories) {
             setCategories([]);
             setCategoryMap({});
             setIsPrepared(false);
@@ -80,7 +146,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
 
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
-            const filteredAllSeries = filterContent(content.series.items as any[]);
+            const filteredAllSeries = filterContent(seriesItems as any[]);
             const nextMap: Record<string, XtreamSeries[]> = {
                 all: filteredAllSeries,
             };
@@ -95,7 +161,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
                 { id: 'all', name: 'All Series', count: filteredAllSeries.length },
             ];
 
-            for (const cat of content.series.categories) {
+            for (const cat of seriesCategories) {
                 const catId = String(cat.category_id);
                 const count = nextMap[catId]?.length || 0;
 
@@ -116,21 +182,21 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
         return () => {
             task.cancel();
         };
-    }, [content.series.loaded, content.series.categories, content.series.items, filterContent]);
+    }, [seriesLoaded, seriesCategories, seriesItems, filterContent]);
 
     // ==========================================================================
     // SERIES (filtered by category)
     // ==========================================================================
 
     const series = useMemo((): XtreamSeries[] => {
-        if (!content.series.loaded || !isPrepared) return [];
+        if (!seriesLoaded || !isPrepared) return [];
 
         const key = selectedCategoryId && selectedCategoryId !== 'all'
             ? selectedCategoryId
             : 'all';
 
         return categoryMap[key] || [];
-    }, [content.series.loaded, isPrepared, selectedCategoryId, categoryMap]);
+    }, [seriesLoaded, isPrepared, selectedCategoryId, categoryMap]);
 
     const selectedCategoryName = useMemo(() => {
         return categories.find((c) => c.id === (selectedCategoryId || 'all'))?.name;
@@ -160,39 +226,6 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
     // RENDER
     // ==========================================================================
 
-    const renderCategory = useCallback(({ item }: { item: Category }) => {
-        const isSelected = selectedCategoryId === item.id ||
-            (selectedCategoryId === null && item.id === 'all');
-        const isFocused = focusedCategoryId === item.id;
-
-        return (
-            <Pressable
-                onPress={() => handleCategorySelect(item.id)}
-                onFocus={() => setFocusedCategoryId(item.id)}
-                onBlur={() => setFocusedCategoryId(null)}
-                style={[
-                    styles.categoryItem,
-                    isSelected && styles.categoryItemSelected,
-                    isFocused && styles.categoryItemFocused,
-                ]}
-            >
-                <Text style={[
-                    styles.categoryName,
-                    isSelected && styles.categoryNameSelected,
-                    isFocused && styles.categoryNameFocused,
-                ]} numberOfLines={1}>
-                    {item.name}
-                </Text>
-                <Text style={[
-                    styles.categoryCount,
-                    isFocused && styles.categoryCountFocused,
-                ]}>
-                    {item.count}
-                </Text>
-            </Pressable>
-        );
-    }, [focusedCategoryId, selectedCategoryId, handleCategorySelect]);
-
     const renderSeries = useCallback(({ item }: { item: XtreamSeries }) => (
         <TVContentCard
             item={{
@@ -221,16 +254,11 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation }) => {
                     <Text style={styles.panelTitle}>Series</Text>
                     <View style={styles.titleUnderline} />
                 </View>
-                <FlatList
-                    data={categories}
-                    renderItem={renderCategory}
-                    keyExtractor={(item) => item.id}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.categoryList}
-                    removeClippedSubviews={true}
-                    initialNumToRender={12}
-                    maxToRenderPerBatch={12}
-                    windowSize={5}
+                <CategoryList
+                    categories={categories}
+                    selectedCategoryId={selectedCategoryId}
+                    onSelect={handleCategorySelect}
+                    focusEntryRef={focusEntryRef}
                 />
             </View>
 

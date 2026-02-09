@@ -201,11 +201,6 @@ const ContentRow: React.FC<ContentRowProps> = ({
     const displayData = useMemo(() => (items ? items.slice(0, maxItems) : []), [items, maxItems]);
     const cardVariant = type === 'live' ? 'channel' : 'poster';
 
-    // Don't render if no data and not loading
-    if (!isLoading && displayData.length === 0) {
-        return null;
-    }
-
     const handleItemPress = useCallback((item: ContentItem) => {
         onItemPress?.(item);
     }, [onItemPress]);
@@ -225,6 +220,11 @@ const ContentRow: React.FC<ContentRowProps> = ({
 
     // Key extractor
     const keyExtractor = useCallback((item: ContentItem) => String(item.id), []);
+
+    // Don't render if no data and not loading
+    if (!isLoading && displayData.length === 0) {
+        return null;
+    }
 
     return (
         <View style={[styles.container, style]}>

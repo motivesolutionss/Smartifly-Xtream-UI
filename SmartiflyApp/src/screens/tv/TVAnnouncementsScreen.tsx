@@ -17,6 +17,7 @@ import { colors, scale, scaleFont } from '../../theme';
 import { getAnnouncements } from '../../api/backend';
 import { logger } from '../../config';
 import TVLoadingState from './components/TVLoadingState';
+import { TVAnnouncementsScreenProps } from '../../navigation/types';
 
 interface Announcement {
     id: string;
@@ -27,10 +28,12 @@ interface Announcement {
     priority?: string;
 }
 
-const TVAnnouncementsScreen: React.FC = () => {
+
+const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntryRef }) => {
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [focusedId, setFocusedId] = useState<string | null>(null);
 
     const formatDate = useCallback((dateString?: string) => {
         if (!dateString) return '';
@@ -92,6 +95,7 @@ const TVAnnouncementsScreen: React.FC = () => {
                     <Text style={styles.emptyText}>{error}</Text>
                     <Pressable
                         onPress={fetchAnnouncements}
+                        ref={focusEntryRef}
                         style={styles.retryButton}
                     >
                         <Text style={styles.retryText}>Try Again</Text>
@@ -105,23 +109,32 @@ const TVAnnouncementsScreen: React.FC = () => {
                 <Text style={styles.emptyText}>No announcements</Text>
             </View>
         );
-    }, [error, fetchAnnouncements, isLoading]);
+    }, [error, fetchAnnouncements, isLoading, focusEntryRef]);
 
-    const renderItem = ({ item }: { item: Announcement }) => (
-        <View style={styles.card}>
-            <View style={styles.cardHeader}>
-                <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
-            </View>
-            <Text style={styles.body}>{sanitizeContent(item.content)}</Text>
-            {(item.type || item.priority) && (
-                <View style={styles.metaRow}>
-                    {item.type && <Text style={styles.metaTag}>{item.type}</Text>}
-                    {item.priority && <Text style={styles.metaTag}>{item.priority}</Text>}
+    const renderItem = ({ item, index }: { item: Announcement; index: number }) => {
+        const isFocused = focusedId === item.id;
+
+        return (
+            <Pressable
+                ref={index === 0 ? focusEntryRef : undefined}
+                onFocus={() => setFocusedId(item.id)}
+                onBlur={() => setFocusedId(null)}
+                style={[styles.card, isFocused && styles.cardFocused]}
+            >
+                <View style={styles.cardHeader}>
+                    <Text style={styles.title}>{item.title}</Text>
+                    <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
                 </View>
-            )}
-        </View>
-    );
+                <Text style={styles.body}>{sanitizeContent(item.content)}</Text>
+                {(item.type || item.priority) && (
+                    <View style={styles.metaRow}>
+                        {item.type && <Text style={styles.metaTag}>{item.type}</Text>}
+                        {item.priority && <Text style={styles.metaTag}>{item.priority}</Text>}
+                    </View>
+                )}
+            </Pressable>
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -162,6 +175,11 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.08)',
         padding: scale(20),
         marginBottom: scale(16),
+    },
+    cardFocused: {
+        borderColor: colors.accent || '#00E5FF',
+        backgroundColor: 'rgba(0, 229, 255, 0.08)',
+        transform: [{ scale: 1.01 }],
     },
     cardHeader: {
         flexDirection: 'row',

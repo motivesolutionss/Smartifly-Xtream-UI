@@ -20,13 +20,10 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { colors, scale, scaleFont, Icon } from '../../theme';
 import useDownloadStore, { DownloadItem } from '../../store/downloadStore';
+import { TVDownloadsScreenProps } from '../../navigation/types';
 
 
-interface TVDownloadsScreenProps {
-    navigation: any;
-}
-
-const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navigation }) => {
+const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navigation, focusEntryRef }) => {
     const downloads = useDownloadStore((state) => state.downloads);
     const removeDownload = useDownloadStore((state) => state.removeDownload);
     const refreshStorageMetrics = useDownloadStore((state) => state.refreshStorageMetrics);
@@ -83,13 +80,14 @@ const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navi
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     };
 
-    const renderDownloadItem = ({ item }: { item: DownloadItem }) => {
+    const renderDownloadItem = ({ item, index: _index, isEntry }: { item: DownloadItem; index: number; isEntry: boolean }) => {
         const isDownloading = item.status === 'downloading' || item.status === 'pending';
         const progress = Math.round((item.progress || 0) * 100);
         const isFocused = focusedId === item.id;
 
         return (
             <Pressable
+                ref={isEntry ? focusEntryRef : undefined}
                 style={[
                     styles.itemCard,
                     isFocused && styles.itemCardFocused,
@@ -156,7 +154,9 @@ const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navi
                     <Text style={styles.sectionTitle}>Downloading ({downloadingItems.length})</Text>
                     <FlatList
                         data={downloadingItems}
-                        renderItem={renderDownloadItem}
+                        renderItem={({ item, index }) =>
+                            renderDownloadItem({ item, index, isEntry: index === 0 })
+                        }
                         keyExtractor={item => item.id}
                         horizontal
                         showsHorizontalScrollIndicator={false}
@@ -173,7 +173,9 @@ const TVDownloadsScreen: React.FC<TVDownloadsScreenProps> = ({ navigation: _navi
                 ) : (
                     <FlatList
                         data={completedDownloads}
-                        renderItem={renderDownloadItem}
+                        renderItem={({ item, index }) =>
+                            renderDownloadItem({ item, index, isEntry: downloadingItems.length === 0 && index === 0 })
+                        }
                         keyExtractor={item => item.id}
                         horizontal
                         showsHorizontalScrollIndicator={false}

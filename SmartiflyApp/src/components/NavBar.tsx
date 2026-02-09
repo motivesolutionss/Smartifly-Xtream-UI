@@ -24,6 +24,7 @@ import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, borderRadius, Icon } from '../theme';
 import CategoryFilter from './CategoryFilter';
 import CategoryModal from './CategoryModal';
+import type { ContentType } from '../store/filterStore';
 
 
 
@@ -60,6 +61,8 @@ export interface NavBarProps {
     transparent?: boolean;
     /** Additional container styles */
     style?: ViewStyle;
+    /** Handle category type press (Live/Movies/Series) */
+    onCategoryTypePress?: (type: ContentType) => void;
 }
 
 // =============================================================================
@@ -97,6 +100,7 @@ const NavBar: React.FC<NavBarProps> = ({
     onBackPress,
     transparent = false,
     style,
+    onCategoryTypePress,
 }) => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
@@ -167,7 +171,7 @@ const NavBar: React.FC<NavBarProps> = ({
                         )}
                         {showNotifications && (
                             <IconButton
-                                icon={<Icon name="bell" size={22} color={colors.textPrimary} weight="bold" />}
+                                icon={<Icon name="downloadSimple" size={22} color={colors.textPrimary} weight="bold" />}
                                 onPress={onNotificationPress}
                             />
                         )}
@@ -175,7 +179,7 @@ const NavBar: React.FC<NavBarProps> = ({
                 </View>
 
                 {/* Category Filter Row - Netflix Style (Interactive) */}
-                <CategoryFilter />
+                <CategoryFilter onTypePress={onCategoryTypePress} />
 
                 {/* Category Selection Modal */}
                 <CategoryModal />
@@ -332,9 +336,10 @@ const styles = StyleSheet.create({
         color: colors.textPrimary,
     },
     titleText: {
-        fontSize: 20,
-        fontWeight: '700',
+        fontSize: 18,
+        fontWeight: '800',
         color: colors.textPrimary,
+        letterSpacing: -0.5,
     },
     rightSection: {
         flexDirection: 'row',

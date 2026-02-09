@@ -5,19 +5,27 @@
  * Displays storage usage, download queue, and completed items.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    FlatList,
     TouchableOpacity,
     Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
 import { colors, spacing, borderRadius, Icon, stylePresets } from '../../theme';
 import useDownloadStore, { DownloadItem } from '../../store/downloadStore';
 import FastImageComponent from '../../components/FastImageComponent';
+
+const formatSize = (bytes?: number) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 const DownloadsScreen: React.FC = () => {
     const navigation = useNavigation();
@@ -26,16 +34,7 @@ const DownloadsScreen: React.FC = () => {
     const removeDownload = useDownloadStore((state) => state.removeDownload);
     const clearAll = useDownloadStore((state) => state.clearAll);
 
-    // Calculate human-readable size
-    const formatSize = (bytes?: number) => {
-        if (!bytes) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
-    const handleRemove = (item: DownloadItem) => {
+    const handleRemove = useCallback((item: DownloadItem) => {
         Alert.alert(
             'Remove Download',
             `Are you sure you want to delete "${item.title}"?`,
@@ -48,9 +47,9 @@ const DownloadsScreen: React.FC = () => {
                 },
             ]
         );
-    };
+    }, [removeDownload]);
 
-    const handleClearAll = () => {
+    const handleClearAll = useCallback(() => {
         Alert.alert(
             'Clear All Downloads',
             'This will delete all offline content. Continue?',
@@ -63,9 +62,9 @@ const DownloadsScreen: React.FC = () => {
                 },
             ]
         );
-    };
+    }, [clearAll]);
 
-    const renderItem = ({ item }: { item: DownloadItem }) => (
+    const renderItem = useCallback(({ item }: { item: DownloadItem }) => (
         <View style={styles.itemCard}>
             <FastImageComponent
                 source={{ uri: item.thumbnail }}
@@ -87,12 +86,33 @@ const DownloadsScreen: React.FC = () => {
                 <Icon name="trash" size={20} color={colors.error} />
             </TouchableOpacity>
         </View>
-    );
+    ), [handleRemove]);
+
+    const keyExtractor = useCallback((item: DownloadItem) => item.id, []);
 
     const storageAppPercent = useMemo(() => {
         if (!storageUsage.total) return 0;
         return (storageUsage.appUsed / storageUsage.total) * 100;
     }, [storageUsage.appUsed, storageUsage.total]);
+
+    const listEmpty = useMemo(() => (
+        <View style={styles.emptyContainer}>
+            <Icon name="downloadSimple" size={64} color={colors.textMuted} weight="thin" />
+            <Text style={styles.emptyTitle}>No Downloads</Text>
+            <Text style={styles.emptySubtitle}>
+                Movies and shows you download will appear here.
+            </Text>
+            <TouchableOpacity
+                style={styles.browseButton}
+                onPress={() => navigation.navigate('MainTabs' as any, {
+                    screen: 'HomeTab',
+                    params: { screen: 'HomeMain' },
+                })}
+            >
+                <Text style={styles.browseButtonText}>Browse Content</Text>
+            </TouchableOpacity>
+        </View>
+    ), [navigation]);
 
     return (
         <View style={stylePresets.screenContainer}>
@@ -123,26 +143,19 @@ const DownloadsScreen: React.FC = () => {
             </View>
 
             {/* Downloads List */}
-            <FlatList
+            <FlashList
                 data={downloads}
-                keyExtractor={(item) => item.id}
+                keyExtractor={keyExtractor}
                 renderItem={renderItem}
                 contentContainerStyle={styles.listContent}
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Icon name="downloadSimple" size={64} color={colors.textMuted} weight="thin" />
-                        <Text style={styles.emptyTitle}>No Downloads</Text>
-                        <Text style={styles.emptySubtitle}>
-                            Movies and shows you download will appear here.
-                        </Text>
-                        <TouchableOpacity
-                            style={styles.browseButton}
-                            onPress={() => navigation.navigate('Home' as any)}
-                        >
-                            <Text style={styles.browseButtonText}>Browse Content</Text>
-                        </TouchableOpacity>
-                    </View>
-                }
+                ListEmptyComponent={listEmpty}
+                // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
+                estimatedItemSize={96}
+                showsVerticalScrollIndicator={false}
+                removeClippedSubviews
+                initialNumToRender={8}
+                maxToRenderPerBatch={8}
+                windowSize={5}
             />
         </View>
     );

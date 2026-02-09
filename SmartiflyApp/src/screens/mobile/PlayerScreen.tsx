@@ -42,6 +42,10 @@ const PlayerScreen: React.FC = () => {
     const lastProgressUpdateRef = React.useRef(0);
     const [hasSeeked, setHasSeeked] = React.useState(false);
     const hasTrackedLiveRef = React.useRef(false);
+    const download = React.useMemo(
+        () => downloads.find(d => d.id === String(item.stream_id || item.id)),
+        [downloads, item.stream_id, item.id]
+    );
 
     React.useEffect(() => {
         setHasSeeked(false);
@@ -75,9 +79,6 @@ const PlayerScreen: React.FC = () => {
     }
 
     let streamUrl = '';
-    const download = React.useMemo(() => (
-        downloads.find(d => d.id === String(item.stream_id || item.id))
-    ), [downloads, item.stream_id, item.id]);
 
     if (download && download.status === 'completed' && download.localPath) {
         streamUrl = `file://${download.localPath}`;

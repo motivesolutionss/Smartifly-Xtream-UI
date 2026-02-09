@@ -7,7 +7,7 @@
  * - Filtered: Shows X button + selected filter + "All categories" dropdown
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
     View,
     Text,
@@ -23,6 +23,7 @@ import useFilterStore, { ContentType } from '../store/filterStore';
 
 interface CategoryFilterProps {
     onCategoryPress?: () => void;
+    onTypePress?: (type: ContentType) => void;
 }
 
 interface FilterChip {
@@ -44,7 +45,7 @@ const FILTER_CHIPS: FilterChip[] = [
 // COMPONENT
 // =============================================================================
 
-const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryPress }) => {
+const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryPress, onTypePress }) => {
     const {
         selectedType,
         getCategoryNameForType,
@@ -56,10 +57,22 @@ const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryPress }) => {
     // Get the category name for the current type
     const currentCategoryName = getCategoryNameForType();
 
-    const isFiltered = selectedType !== null;
+    const isFiltered = selectedType !== null && !onTypePress;
+
+    useEffect(() => {
+        if (onTypePress && selectedType) {
+            clearFilters();
+        }
+    }, [clearFilters, onTypePress, selectedType]);
 
     // Handle filter chip press
     const handleChipPress = (type: ContentType) => {
+        if (onTypePress) {
+            clearFilters();
+            onTypePress(type);
+            return;
+        }
+
         if (selectedType === type) {
             // Already selected, clear filter
             clearFilters();
@@ -127,14 +140,16 @@ const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryPress }) => {
                             <Text style={styles.chipText}>{chip.label}</Text>
                         </TouchableOpacity>
                     ))}
-                    <TouchableOpacity
-                        style={styles.chipWithArrow}
-                        onPress={handleCategoriesPress}
-                        activeOpacity={0.7}
-                    >
-                        <Text style={styles.chipText}>Categories</Text>
-                        <Icon name="caretDown" size={14} color={colors.textSecondary} weight="bold" />
-                    </TouchableOpacity>
+                    {!onTypePress && (
+                        <TouchableOpacity
+                            style={styles.chipWithArrow}
+                            onPress={handleCategoriesPress}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.chipText}>Categories</Text>
+                            <Icon name="caretDown" size={14} color={colors.textSecondary} weight="bold" />
+                        </TouchableOpacity>
+                    )}
                 </React.Fragment>
             )}
         </View>

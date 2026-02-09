@@ -48,7 +48,8 @@ interface SettingsMenuItem {
 // COMPONENT
 // =============================================================================
 
-const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
+
+const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEntryRef }) => {
     // State
     const [selectedSection, setSelectedSection] = useState<SettingsSection>('Account');
     const [focusedSection, setFocusedSection] = useState<SettingsSection | null>(null);
@@ -140,9 +141,11 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation }) => {
     const renderMenuItem = ({ item }: { item: SettingsMenuItem }) => {
         const isSelected = selectedSection === item.id;
         const isFocused = focusedSection === item.id;
+        const isFirst = item.id === sections[0].id;
 
         return (
             <Pressable
+                ref={isFirst ? focusEntryRef : undefined}
                 onPress={() => setSelectedSection(item.id)}
                 onFocus={() => setFocusedSection(item.id)}
                 onBlur={() => setFocusedSection(null)}

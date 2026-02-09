@@ -5,14 +5,14 @@
  * Uses the migrated TV screens to drive the platform experience.
  */
 
-import React from 'react';
-
+import React, { useEffect, useMemo, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
 // Theme
 import { colors } from '../theme';
 import useStore from '../store';
 import { logger } from '../config';
+import SmartiflyPreloaderScreen from '../screens/common/SmartiflyPreloaderScreen';
 
 // TV Screens
 import TVLoginScreen from '../screens/tv/login/TVLoginScreen';
@@ -26,21 +26,27 @@ import TVAccountSwitcherScreen from '../screens/tv/account/TVAccountSwitcherScre
 // Profile Screens (Parental Controls)
 import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/tv/profiles';
 import { useProfileStore } from '../store/profileStore';
-
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const TVNavigator: React.FC = () => {
   // Get authentication and content state from store
+  const hasHydrated = useStore((state) => state.hasHydrated);
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isCacheValid = useStore((state) => state.isCacheValid);
+  const savedAccountsCount = useStore((state) => state.savedAccounts.length);
+  const profiles = useProfileStore((state) => state.profiles);
+  const activeProfileId = useProfileStore((state) => state.activeProfileId);
+  const [showPreloader, setShowPreloader] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowPreloader(false), 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
-  const getInitialRoute = (): keyof RootStackParamList => {
-    const savedAccounts = useStore.getState().savedAccounts;
-    const { profiles, activeProfileId } = useProfileStore.getState();
-
+  const initialRoute = useMemo<keyof RootStackParamList>(() => {
     if (!isAuthenticated) {
-      if (savedAccounts.length > 1) {
+      if (savedAccountsCount > 1) {
         return 'TVAccountSwitcher';
       }
       return 'Login';
@@ -60,9 +66,12 @@ const TVNavigator: React.FC = () => {
 
     logger.debug('TV: Cache valid, proceeding to Home');
     return 'TVHome';
-  };
+  }, [isAuthenticated, savedAccountsCount, profiles.length, activeProfileId, isCacheValid]);
 
-  const initialRoute = getInitialRoute();
+  // Hydration gate prevents initial route decisions before persisted state is ready.
+  if (!hasHydrated || showPreloader) {
+    return <SmartiflyPreloaderScreen />;
+  }
 
   return (
     <Stack.Navigator

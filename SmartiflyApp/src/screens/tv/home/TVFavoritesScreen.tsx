@@ -16,7 +16,8 @@ const instructionalSteps = [
     'Return once you have at least one favorite saved',
 ];
 
-const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => {
+
+const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation, focusEntryRef }) => {
     // FIX: Optimized selector to prevent infinite re-renders
     // Using simple selector to get history object, which is referentially stable unless updated
     const history = useWatchHistoryStore((state) => state.history);
@@ -45,8 +46,9 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => 
         });
     };
 
-    const renderItem = ({ item }: { item: WatchProgress }) => (
+    const renderItem = ({ item, index }: { item: WatchProgress; index: number }) => (
         <Pressable
+            ref={index === 0 ? focusEntryRef : undefined}
             style={styles.card}
             onPress={() => handlePress(item)}
         >
@@ -63,6 +65,7 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation }) => 
                 <Text key={step} style={styles.instructionText}>{`${index + 1}. ${step}`}</Text>
             ))}
             <Pressable
+                ref={focusEntryRef}
                 style={styles.actionButton}
                 onPress={() => navigation.navigate('TVHome')}
             >
