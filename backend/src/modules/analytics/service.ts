@@ -483,37 +483,44 @@ export async function generateDailySnapshot(date: Date) {
     const notificationsDelivered = notificationsSent; // Assuming sent = delivered for now
     const notificationsFailed = notifications.filter(n => n.status === 'FAILED').length;
 
-    // Upsert snapshot
-    const snapshot = await prisma.analyticsSnapshot.upsert({
-        where: { date: dayStart },
-        update: {
-            ticketsCreated,
-            ticketsResolved,
-            avgResolutionTime,
-            ticketsOpen,
-            ticketsInProgress,
-            ticketsClosed,
-            portalConnections,
-            portalUptimeAvg,
-            notificationsSent,
-            notificationsDelivered,
-            notificationsFailed
-        },
-        create: {
-            date: dayStart,
-            ticketsCreated,
-            ticketsResolved,
-            avgResolutionTime,
-            ticketsOpen,
-            ticketsInProgress,
-            ticketsClosed,
-            portalConnections,
-            portalUptimeAvg,
-            notificationsSent,
-            notificationsDelivered,
-            notificationsFailed
-        }
+    // Simplified data for upsert
+    const snapshotData = {
+        ticketsCreated,
+        ticketsResolved,
+        avgResolutionTime,
+        ticketsOpen,
+        ticketsInProgress,
+        ticketsClosed,
+        portalConnections,
+        portalUptimeAvg,
+        notificationsSent,
+        notificationsDelivered,
+        notificationsFailed
+    };
+
+    // Use a more robust check for existing records on MySQL
+    // Normalize to UTC YYYY-MM-DD to avoid timezone shifting
+    const dateString = format(date, 'yyyy-MM-dd');
+    const normalizedDate = new Date(`${dateString}T00:00:00.000Z`);
+
+    let snapshot;
+    const existing = await prisma.analyticsSnapshot.findUnique({
+        where: { date: normalizedDate }
     });
+
+    if (existing) {
+        snapshot = await prisma.analyticsSnapshot.update({
+            where: { id: existing.id },
+            data: snapshotData
+        });
+    } else {
+        snapshot = await prisma.analyticsSnapshot.create({
+            data: {
+                ...snapshotData,
+                date: normalizedDate
+            }
+        });
+    }
 
     return snapshot;
 }
