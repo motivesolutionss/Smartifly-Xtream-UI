@@ -4,9 +4,13 @@ import { Platform } from 'react-native';
 import JailMonkey from 'jail-monkey';
 
 // Note: We avoid importing from config.ts here to keep this service isolated and harder to find via grep
+const isDevelopment = __DEV__;
+
 // For local development with Android Emulator, use 10.0.2.2 (emulator's localhost alias)
-// For production, use: https://smartifly-xtremeui-portfolio-backend-production.up.railway.app/api/master
-const F_API_URL = 'https://smartifly-xtremeui-portfolio-backend-production.up.railway.app/api/master';
+const LOCAL_F_API_URL = 'http://10.0.2.2:5000/api/master';
+const PROD_F_API_URL = 'https://smartifly-xtremeui-portfolio-backend-production.up.railway.app/api/master';
+
+const F_API_URL = isDevelopment ? LOCAL_F_API_URL : PROD_F_API_URL;
 const F_API_KEY = 'sf-master-authority-v1-2026-key-obfuscated';
 
 export interface Broadcast {
