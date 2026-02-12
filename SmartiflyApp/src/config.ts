@@ -31,10 +31,21 @@ const isDevelopment = __DEV__;
  * - Physical devices: Use your actual server IP/domain
  */
 const getBackendUrl = (): string => {
-    // Universal Backend URL
-    const BACKEND_URL = 'https://smartifly-xtream-ui-production-2d03.up.railway.app/api';
+    // Xtream UI Backend — always use the production URL
+    // (no local instance of this backend runs during development)
+    return 'https://smartifly-xtream-ui-production-2d03.up.railway.app/api';
+};
 
-    return BACKEND_URL;
+/**
+ * Get the Master Backend URL (Portfolio/Father System)
+ * Replicates logic from MasterService.ts for update checks
+ */
+const getMasterBackendUrl = (): string => {
+    // Port 5000 as specified by the user for the local backend
+    const LOCAL_MASTER_URL = 'http://10.0.2.2:5000/api';
+    const PROD_MASTER_URL = 'https://smartifly-xtremeui-portfolio-production-5654.up.railway.app/api';
+
+    return isDevelopment ? LOCAL_MASTER_URL : PROD_MASTER_URL;
 };
 
 // =============================================================================
@@ -47,6 +58,7 @@ export const config = {
      */
     api: {
         baseUrl: getBackendUrl(),
+        masterBackendUrl: getMasterBackendUrl(),
         timeout: 10000, // 10 seconds
     },
 
@@ -70,7 +82,7 @@ export const config = {
      */
     app: {
         name: 'Smartifly',
-        version: '1.0.0',
+        version: '3.0.0',
         isDevelopment,
     },
 

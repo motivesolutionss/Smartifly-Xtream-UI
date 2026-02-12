@@ -17,9 +17,13 @@ import {
     Pressable,
     Alert,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
+import UpdateService, { UpdateInfo } from '../../services/UpdateService';
 import { CommonActions } from '@react-navigation/native';
 import useStore from '../../store';
+import config from '../../config';
 import { useProfileStore } from '../../store/profileStore';
 import ProfileAvatar from '../../components/ProfileAvatar';
 import {
@@ -54,6 +58,12 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
     const [selectedSection, setSelectedSection] = useState<SettingsSection>('Account');
     const [focusedSection, setFocusedSection] = useState<SettingsSection | null>(null);
     const [focusedOption, setFocusedOption] = useState<string | null>(null);
+
+    // Update State
+    const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+    const [isChecking, setIsChecking] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState(0);
 
     // Theme & Store
     const { theme } = useTheme();
@@ -133,6 +143,38 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
             { cancelable: true }
         );
     };
+
+    const handleCheckUpdate = React.useCallback(async () => {
+        setIsChecking(true);
+        try {
+            const info = await UpdateService.checkForUpdates();
+            setUpdateInfo(info);
+        } catch (error) {
+            console.error('Update check failed:', error);
+        } finally {
+            setIsChecking(false);
+        }
+    }, []);
+
+    const handleDownloadUpdate = async () => {
+        if (!updateInfo?.downloadUrl) return;
+
+        try {
+            setIsDownloading(true);
+            setDownloadProgress(0);
+            await UpdateService.downloadAndInstall(updateInfo.downloadUrl, (received, total) => {
+                setDownloadProgress(received / total);
+            }, updateInfo.fileSize);
+            setIsDownloading(false);
+        } catch (error) {
+            setIsDownloading(false);
+            Alert.alert('Update Failed', 'Failed to download update. Please try again later.');
+        }
+    };
+
+    React.useEffect(() => {
+        handleCheckUpdate();
+    }, [handleCheckUpdate]);
 
     // =========================================================================
     // RENDERERS
@@ -228,6 +270,68 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
                 </View>
             </Pressable>
         );
+    };
+
+    const renderUpdateItem = () => {
+        const isFocused = focusedOption === 'System Update';
+
+        if (isChecking) {
+            return (
+                <View style={styles.detailRow}>
+                    <View style={styles.detailLabelContainer}>
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                        <Text style={[styles.detailLabel, { marginLeft: scale(15) }]}>Checking Protocols...</Text>
+                    </View>
+                </View>
+            );
+        }
+
+        if (updateInfo?.updateAvailable) {
+            const progress = isNaN(downloadProgress) ? 0 : downloadProgress;
+            return (
+                <Pressable
+                    onPress={handleDownloadUpdate}
+                    onFocus={() => setFocusedOption('System Update')}
+                    onBlur={() => setFocusedOption(null)}
+                    style={[
+                        styles.detailRow,
+                        isFocused && styles.detailRowFocused,
+                        isDownloading && { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' },
+                        { height: isDownloading ? 'auto' : scale(80) }
+                    ]}
+                >
+                    <View style={[styles.updateItemRow, isDownloading && { marginBottom: scale(10) }]}>
+                        <View style={styles.detailLabelContainer}>
+                            <Text style={[styles.detailLabel, isFocused && styles.detailLabelFocused]}>
+                                System Patch Available
+                            </Text>
+                            {isFocused && <View style={styles.hudDecoration} />}
+                        </View>
+
+                        {!isDownloading && (
+                            <View style={styles.badgeContainer}>
+                                <View style={[styles.statusBadge, { backgroundColor: theme.colors.primary }]}>
+                                    <Text style={[styles.statusBadgeText, { color: '#000' }]}>DOWNLOAD v{updateInfo.latestVersion}</Text>
+                                </View>
+                            </View>
+                        )}
+                    </View>
+
+                    {isDownloading && (
+                        <View style={styles.tvProgressContainer}>
+                            <View style={styles.tvProgressBar}>
+                                <View style={[styles.tvProgressFill, { width: `${Math.min(100, progress * 100)}%` }]} />
+                            </View>
+                            <Text style={styles.tvProgressText}>
+                                {Math.round(progress * 100)}% Synchronized
+                            </Text>
+                        </View>
+                    )}
+                </Pressable>
+            );
+        }
+
+        return renderDetailItem('System Integrity', 'Up to Date', true, handleCheckUpdate);
     };
 
     const renderContent = () => {
@@ -348,6 +452,7 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
                         {renderDetailItem('Clock Format', '24h Neon', true, () => Alert.alert('Coming Soon'))}
 
                         <Text style={[styles.sectionHeader, styles.sectionHeaderMargin]}>Maintenance</Text>
+                        {renderUpdateItem()}
                         {renderDetailItem('Purge Cache', '14.2 MB', true, () => Alert.alert('Purge Complete', 'Aether cache has been optimized.'))}
                         {renderDetailItem('Wipe Data', 'Sensory data only', true, () => Alert.alert('Success', 'History cleared'))}
                     </ScrollView>
@@ -357,9 +462,9 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
                 return (
                     <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
                         <Text style={styles.sectionHeader}>System Manifest</Text>
-                        {renderDetailItem('Core Version', '1.2.5-Aether')}
+                        {renderDetailItem('Core Version', config.app.version)}
                         {renderDetailItem('Build Sequence', '2024.1.XP')}
-                        {renderDetailItem('Hardware Hash', 'A6-FF-09-12-88')}
+                        {renderDetailItem('Hardware Hash', DeviceInfo.getUniqueIdSync()?.slice(0, 12).toUpperCase() || 'UNKNOWN')}
 
                         <Text style={[styles.sectionHeader, styles.sectionHeaderMargin]}>Protocols</Text>
                         {renderDetailItem('Encryption Layer', 'AES-256-GCM', true, () => { })}
@@ -653,7 +758,39 @@ const styles = StyleSheet.create({
 
     spacer: {
         height: scale(20),
-    }
+    },
+
+    // TV Update UI
+    updateItemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+    },
+    tvProgressContainer: {
+        width: '100%',
+        marginTop: scale(20),
+        paddingBottom: scale(10),
+    },
+    tvProgressBar: {
+        height: scale(4),
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: scale(2),
+        overflow: 'hidden',
+        marginBottom: scale(10),
+    },
+    tvProgressFill: {
+        height: '100%',
+        backgroundColor: '#00F3FF',
+    },
+    tvProgressText: {
+        fontSize: scaleFont(12),
+        color: '#00F3FF',
+        fontWeight: '900',
+        letterSpacing: 2,
+        textTransform: 'uppercase',
+        textAlign: 'right',
+    },
 });
 
 export default TVSettingsScreen;

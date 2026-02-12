@@ -6,6 +6,8 @@
 */
 
 import React from 'react';
+import UpdateService, { UpdateInfo } from '../../services/UpdateService';
+import DeviceInfo from 'react-native-device-info';
 import {
     View,
     Text,
@@ -13,6 +15,7 @@ import {
     TouchableOpacity,
     StyleSheet,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions } from '@react-navigation/native';
@@ -111,6 +114,12 @@ const SettingsScreen: React.FC = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
 
+    // Update state
+    const [updateInfo, setUpdateInfo] = React.useState<UpdateInfo | null>(null);
+    const [isChecking, setIsChecking] = React.useState(false);
+    const [isDownloading, setIsDownloading] = React.useState(false);
+    const [downloadProgress, setDownloadProgress] = React.useState(0);
+
     // Get user info and profiles from store
     const userInfo = useStore((state) => state.userInfo);
     const logout = useStore((state) => state.logout);
@@ -152,6 +161,42 @@ const SettingsScreen: React.FC = () => {
     const daysRemaining = getDaysRemaining(userInfo?.expDate);
     const isExpiringSoon = daysRemaining <= 7 && daysRemaining > 0;
     const isExpired = daysRemaining <= 0;
+
+    // Handle updates
+    const handleCheckUpdate = React.useCallback(async () => {
+        setIsChecking(true);
+        try {
+            const info = await UpdateService.checkForUpdates();
+            setUpdateInfo(info);
+            if (info && !info.updateAvailable) {
+                // Alert.alert('Up to Date', 'You are running the latest version.');
+            }
+        } catch (error) {
+            console.error('Update check failed:', error);
+        } finally {
+            setIsChecking(false);
+        }
+    }, []);
+
+    React.useEffect(() => {
+        handleCheckUpdate();
+    }, [handleCheckUpdate]);
+
+    const handleDownloadUpdate = async () => {
+        if (!updateInfo?.downloadUrl) return;
+
+        try {
+            setIsDownloading(true);
+            setDownloadProgress(0);
+            await UpdateService.downloadAndInstall(updateInfo.downloadUrl, (received, total) => {
+                setDownloadProgress(received / total);
+            });
+            setIsDownloading(false);
+        } catch (error) {
+            setIsDownloading(false);
+            Alert.alert('Update Failed', 'Failed to download update. Please try again later.');
+        }
+    };
 
     // Handle logout
     const handleLogout = () => {
@@ -349,12 +394,61 @@ const SettingsScreen: React.FC = () => {
                     />
                 </SettingsSection>
 
+                {/* System Update */}
+                <SettingsSection title="SYSTEM UPDATE">
+                    {isChecking ? (
+                        <View style={styles.loadingItem}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={styles.loadingText}>Checking for updates...</Text>
+                        </View>
+                    ) : updateInfo?.updateAvailable ? (
+                        <View style={styles.updateCard}>
+                            <View style={styles.updateHeader}>
+                                <View style={styles.updateBadge}>
+                                    <Text style={styles.updateBadgeText}>NEW UPDATE</Text>
+                                </View>
+                                <Text style={styles.updateVersion}>v{updateInfo.latestVersion}</Text>
+                            </View>
+                            <Text style={styles.updateNotes} numberOfLines={3}>
+                                {updateInfo.releaseNotes}
+                            </Text>
+
+                            {isDownloading ? (
+                                <View style={styles.progressContainer}>
+                                    <View style={styles.progressBar}>
+                                        <View style={[styles.progressFill, { width: `${downloadProgress * 100}%` }]} />
+                                    </View>
+                                    <Text style={styles.progressText}>
+                                        {Math.round(downloadProgress * 100)}% downloaded
+                                    </Text>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.downloadButton}
+                                    onPress={handleDownloadUpdate}
+                                    activeOpacity={0.8}
+                                >
+                                    <Text style={styles.downloadButtonText}>Download & Install</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    ) : (
+                        <SettingsItem
+                            icon="✅"
+                            title="System is up to date"
+                            subtitle={`Last checked: ${new Date().toLocaleDateString()}`}
+                            onPress={handleCheckUpdate}
+                            showArrow={false}
+                        />
+                    )}
+                </SettingsSection>
+
                 {/* About */}
                 <SettingsSection title="ABOUT">
                     <SettingsItem
                         icon="ℹ️"
                         title="App Version"
-                        value="1.0.0"
+                        value={DeviceInfo.getVersion()}
                         showArrow={false}
                     />
                     <SettingsItem
@@ -630,6 +724,80 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.textMuted,
         marginTop: spacing.xxs,
+    },
+
+    // Update Section
+    loadingItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.base,
+        gap: spacing.md,
+    },
+    loadingText: {
+        color: colors.textMuted,
+        fontSize: 14,
+    },
+    updateCard: {
+        padding: spacing.base,
+        backgroundColor: colors.primary + '10',
+    },
+    updateHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: spacing.xs,
+    },
+    updateBadge: {
+        backgroundColor: colors.primary,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 2,
+        borderRadius: borderRadius.sm,
+    },
+    updateBadgeText: {
+        color: colors.textPrimary,
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    updateVersion: {
+        color: colors.textPrimary,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    updateNotes: {
+        color: colors.textMuted,
+        fontSize: 13,
+        lineHeight: 18,
+        marginBottom: spacing.md,
+    },
+    downloadButton: {
+        backgroundColor: colors.primary,
+        paddingVertical: spacing.sm,
+        borderRadius: borderRadius.md,
+        alignItems: 'center',
+    },
+    downloadButtonText: {
+        color: colors.textPrimary,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    progressContainer: {
+        marginTop: spacing.xs,
+    },
+    progressBar: {
+        height: 6,
+        backgroundColor: colors.backgroundSecondary,
+        borderRadius: 3,
+        overflow: 'hidden',
+        marginBottom: 6,
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: colors.primary,
+    },
+    progressText: {
+        color: colors.textMuted,
+        fontSize: 12,
+        textAlign: 'center',
     },
 });
 

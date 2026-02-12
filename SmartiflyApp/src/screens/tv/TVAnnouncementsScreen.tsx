@@ -30,12 +30,69 @@ interface Announcement {
 
 
 const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntryRef }) => {
+    // 1. Store hooks (Always at top, order preserved from original as much as possible)
     const announcements = useStore((state) => state.announcements) as Announcement[];
     const isLoading = useStore((state) => state.announcementsLoading);
     const error = useStore((state) => state.announcementsError);
     const fetchAnnouncements = useStore((state) => state.fetchAnnouncements);
-    const [focusedId, setFocusedId] = useState<string | null>(null);
     const fatherControl = useStore((state) => state.fatherControl);
+
+    // 2. State hooks
+    const [selectedCategory, setSelectedCategory] = useState<string>('all');
+    const [focusedCategory, setFocusedCategory] = useState<string | null>(null);
+    const [focusedId, setFocusedId] = useState<string | null>(null);
+    const [activeSection, setActiveSection] = useState<'sidebar' | 'content'>('sidebar');
+
+    // =========================================================================
+    // DATA PROCESSING (Memoized to prevent unnecessary re-calculatios/renders)
+    // =========================================================================
+
+    const combinedAnnouncements = useMemo<Announcement[]>(() => {
+        const broadcasts = (fatherControl.broadcasts || []).map((b: any) => ({
+            id: `broadcast_${b.id}`,
+            title: b.title || 'SYSTEM BROADCAST',
+            content: b.message || b.content,
+            createdAt: b.createdAt,
+            type: b.type,
+            priority: 'HIGH',
+            isBroadcast: true,
+        }));
+        return [...broadcasts, ...announcements];
+    }, [announcements, fatherControl?.broadcasts]);
+
+    const categories = useMemo(() => {
+        const systemCount = combinedAnnouncements.filter(a => a.isBroadcast).length;
+        const criticalCount = combinedAnnouncements.filter(a =>
+            a.priority === 'HIGH' || a.priority === 'URGENT' || a.type === 'EMERGENCY'
+        ).length;
+        const generalCount = combinedAnnouncements.filter(a => !a.isBroadcast).length;
+
+        return [
+            { id: 'all', label: 'All Announcements', icon: 'megaphone', count: combinedAnnouncements.length },
+            { id: 'system', label: 'System Messages', icon: 'shield-check', count: systemCount },
+            { id: 'critical', label: 'Critical Alerts', icon: 'warning', count: criticalCount },
+            { id: 'general', label: 'General Info', icon: 'info', count: generalCount },
+        ];
+    }, [combinedAnnouncements]);
+
+    const filteredAnnouncements = useMemo(() => {
+        switch (selectedCategory) {
+            case 'system':
+                return combinedAnnouncements.filter(a => a.isBroadcast);
+            case 'critical':
+                return combinedAnnouncements.filter(a =>
+                    a.priority === 'HIGH' || a.priority === 'URGENT' || a.type === 'EMERGENCY'
+                );
+            case 'general':
+                return combinedAnnouncements.filter(a => !a.isBroadcast);
+            default:
+                return combinedAnnouncements;
+        }
+    }, [combinedAnnouncements, selectedCategory]);
+
+    // =========================================================================
+    // EFFECTS & HANDLERS
+    // =========================================================================
 
     const formatDate = useCallback((dateString?: string) => {
         if (!dateString) return '';
@@ -60,77 +117,106 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
             .trim();
     }, []);
 
-    const refreshAnnouncements = useCallback(() => {
-        fetchAnnouncements({ force: true });
-    }, [fetchAnnouncements]);
-
     useEffect(() => {
         fetchAnnouncements();
     }, [fetchAnnouncements]);
 
-    const listEmpty = useMemo(() => {
-        if (isLoading) {
-            return (
-                <TVLoadingState style={styles.emptyState} />
-            );
-        }
+    // =========================================================================
+    // RENDERERS
+    // =========================================================================
 
-        if (error) {
-            return (
-                <View style={styles.emptyState}>
-                    <Text style={styles.emptyText}>{error}</Text>
-                    <Pressable
-                        onPress={refreshAnnouncements}
-                        ref={focusEntryRef}
-                        style={styles.retryButton}
-                    >
-                        <Text style={styles.retryText}>Try Again</Text>
-                    </Pressable>
-                </View>
-            );
-        }
+    const renderCategoryItem = ({ item }: { item: any }) => {
+        const isSelected = selectedCategory === item.id;
+        const isFocused = focusedCategory === item.id;
+        const isFirst = item.id === categories[0].id;
 
         return (
-            <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No announcements</Text>
-            </View>
+            <Pressable
+                ref={isFirst ? focusEntryRef : undefined}
+                onPress={() => {
+                    setSelectedCategory(item.id);
+                    setActiveSection('content');
+                }}
+                onFocus={() => {
+                    setFocusedCategory(item.id);
+                    setActiveSection('sidebar');
+                }}
+                onBlur={() => setFocusedCategory(null)}
+                style={[
+                    styles.categoryItem,
+                    isSelected && styles.categoryItemActive,
+                    isFocused && styles.categoryItemFocused,
+                ]}
+            >
+                <View style={styles.categoryItemInner}>
+                    <Text style={[
+                        styles.categoryLabel,
+                        isSelected && styles.categoryLabelActive,
+                        isFocused && styles.categoryLabelFocused,
+                    ]}>
+                        {item.label}
+                    </Text>
+                    {item.count > 0 && (
+                        <View style={[
+                            styles.categoryBadge,
+                            isSelected && styles.categoryBadgeActive
+                        ]}>
+                            <Text style={[
+                                styles.categoryBadgeText,
+                                isSelected && styles.categoryBadgeTextActive
+                            ]}>
+                                {item.count}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+                {isSelected && <View style={styles.selectedIndicator} />}
+            </Pressable>
         );
-    }, [error, fetchAnnouncements, isLoading, focusEntryRef]);
+    };
 
-    const combinedAnnouncements = useMemo<Announcement[]>(() => {
-        const broadcasts = (fatherControl.broadcasts || []).map((b: any) => ({
-            id: `broadcast_${b.id}`,
-            title: b.title || 'SYSTEM BROADCAST',
-            content: b.message || b.content,
-            createdAt: b.createdAt,
-            type: b.type,
-            priority: 'HIGH',
-            isBroadcast: true,
-        }));
-        return [...broadcasts, ...announcements];
-    }, [announcements, fatherControl.broadcasts]);
-
-    const renderItem = ({ item, index }: { item: Announcement; index: number }) => {
+    const renderAnnouncementItem = ({ item }: { item: Announcement; index: number }) => {
         const isFocused = focusedId === item.id;
 
         return (
             <Pressable
-                ref={index === 0 ? focusEntryRef : undefined}
-                onFocus={() => setFocusedId(item.id)}
+                onFocus={() => {
+                    setFocusedId(item.id);
+                    setActiveSection('content');
+                }}
                 onBlur={() => setFocusedId(null)}
                 style={[styles.card, isFocused && styles.cardFocused]}
             >
                 <View style={styles.cardHeader}>
-                    <Text style={styles.title}>{item.title}</Text>
+                    <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
                     <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
                 </View>
                 <Text style={styles.body}>{sanitizeContent(item.content)}</Text>
-                {(item.type || item.priority) && (
-                    <View style={styles.metaRow}>
-                        {item.type && <Text style={styles.metaTag}>{item.type}</Text>}
-                        {item.priority && <Text style={styles.metaTag}>{item.priority}</Text>}
-                    </View>
-                )}
+                <View style={styles.metaRow}>
+                    {item.isBroadcast && (
+                        <View style={[styles.statusTag, { backgroundColor: colors.primary + '30' }]}>
+                            <Text style={[styles.statusTagText, { color: colors.primary }]}>SYSTEM</Text>
+                        </View>
+                    )}
+                    {item.type && (
+                        <View style={styles.statusTag}>
+                            <Text style={styles.statusTagText}>{item.type}</Text>
+                        </View>
+                    )}
+                    {item.priority && (
+                        <View style={[
+                            styles.statusTag,
+                            (item.priority === 'HIGH' || item.priority === 'URGENT') && { backgroundColor: '#FF525220' }
+                        ]}>
+                            <Text style={[
+                                styles.statusTagText,
+                                (item.priority === 'HIGH' || item.priority === 'URGENT') && { color: '#FF5252' }
+                            ]}>
+                                {item.priority}
+                            </Text>
+                        </View>
+                    )}
+                </View>
             </Pressable>
         );
     };
@@ -138,15 +224,45 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
     return (
         <View style={styles.container}>
             <StatusBar hidden />
-            <Text style={styles.screenTitle}>Announcements</Text>
-            <FlatList
-                data={combinedAnnouncements}
-                keyExtractor={(item) => item.id}
-                renderItem={renderItem}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-                ListEmptyComponent={listEmpty}
-            />
+
+            {/* Left Sidebar: Categories */}
+            <View style={styles.sidebar}>
+                <View style={styles.titleContainer}>
+                    <Text style={styles.screenTitle}>ANNOUNCEMENTS</Text>
+                    <View style={styles.titleLine} />
+                </View>
+
+                <FlatList
+                    data={categories}
+                    renderItem={renderCategoryItem}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.categoryList}
+                    showsVerticalScrollIndicator={false}
+                />
+            </View>
+
+            {/* Right Panel: Announcements List */}
+            <View style={styles.content}>
+                {isLoading ? (
+                    <TVLoadingState style={styles.centerBox} />
+                ) : error ? (
+                    <View style={styles.centerBox}>
+                        <Text style={styles.emptyText}>{error}</Text>
+                    </View>
+                ) : filteredAnnouncements.length === 0 ? (
+                    <View style={styles.centerBox}>
+                        <Text style={styles.emptyText}>No messages in this category</Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        data={filteredAnnouncements}
+                        renderItem={renderAnnouncementItem}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
+            </View>
         </View>
     );
 };
@@ -154,87 +270,171 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        flexDirection: 'row',
         backgroundColor: colors.background,
+    },
+    // Sidebar
+    sidebar: {
+        width: scale(320),
+        borderRightWidth: 1,
+        borderRightColor: 'rgba(255,255,255,0.05)',
         paddingTop: scale(40),
-        paddingHorizontal: scale(40),
+        paddingHorizontal: scale(30),
+    },
+    titleContainer: {
+        marginBottom: scale(40),
+        paddingLeft: scale(10),
     },
     screenTitle: {
-        fontSize: scaleFont(36),
-        color: colors.textPrimary || '#FFF',
+        fontSize: scaleFont(22),
+        fontWeight: '900',
+        color: '#FFF',
+        letterSpacing: 2,
+    },
+    titleLine: {
+        height: scale(3),
+        width: scale(40),
+        backgroundColor: colors.primary,
+        marginTop: scale(10),
+        borderRadius: 2,
+    },
+    categoryList: {
+        paddingBottom: scale(20),
+    },
+    categoryItem: {
+        paddingVertical: scale(16),
+        paddingHorizontal: scale(20),
+        borderRadius: scale(12),
+        marginBottom: scale(10),
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+    categoryItemActive: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    categoryItemFocused: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+        transform: [{ scale: 1.05 }],
+    },
+    categoryItemInner: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    categoryLabel: {
+        fontSize: scaleFont(18),
+        color: 'rgba(255,255,255,0.5)',
+        fontWeight: '600',
+    },
+    categoryLabelActive: {
+        color: '#FFF',
         fontWeight: '700',
-        marginBottom: scale(20),
+    },
+    categoryLabelFocused: {
+        color: '#FFF',
+        fontWeight: '800',
+    },
+    categoryBadge: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        paddingHorizontal: scale(8),
+        paddingVertical: scale(2),
+        borderRadius: scale(6),
+    },
+    categoryBadgeActive: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+    },
+    categoryBadgeText: {
+        fontSize: scaleFont(12),
+        color: 'rgba(255,255,255,0.4)',
+        fontWeight: '700',
+    },
+    categoryBadgeTextActive: {
+        color: '#FFF',
+    },
+    selectedIndicator: {
+        position: 'absolute',
+        left: -scale(30),
+        top: '50%',
+        marginTop: -scale(10),
+        width: scale(4),
+        height: scale(20),
+        backgroundColor: colors.primary,
+        borderTopRightRadius: 2,
+        borderBottomRightRadius: 2,
+    },
+
+    // Content Panel
+    content: {
+        flex: 1,
+        paddingTop: scale(40),
+        paddingHorizontal: scale(60),
     },
     listContent: {
-        paddingBottom: scale(40),
+        paddingBottom: scale(80),
+    },
+    centerBox: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     card: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: scale(12),
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        borderRadius: scale(16),
+        padding: scale(24),
+        marginBottom: scale(20),
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        padding: scale(20),
-        marginBottom: scale(16),
+        borderColor: 'rgba(255,255,255,0.05)',
     },
     cardFocused: {
-        borderColor: colors.accent || '#00E5FF',
-        backgroundColor: 'rgba(0, 229, 255, 0.08)',
-        transform: [{ scale: 1.01 }],
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderColor: colors.primary,
+        transform: [{ scale: 1.02 }],
     },
     cardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: scale(12),
+        marginBottom: scale(15),
     },
     title: {
         flex: 1,
-        color: colors.textPrimary || '#FFF',
-        fontSize: scaleFont(22),
-        fontWeight: '600',
-        marginRight: scale(12),
+        fontSize: scaleFont(24),
+        fontWeight: '700',
+        color: '#FFF',
+        marginRight: scale(20),
     },
     date: {
-        color: colors.textMuted || '#AAA',
-        fontSize: scaleFont(16),
+        fontSize: scaleFont(14),
+        color: 'rgba(255,255,255,0.4)',
     },
     body: {
-        color: colors.textSecondary || '#CCC',
         fontSize: scaleFont(18),
-        lineHeight: scaleFont(26),
+        color: 'rgba(255,255,255,0.7)',
+        lineHeight: scale(28),
+        marginBottom: scale(20),
     },
     metaRow: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: scale(10),
-        marginTop: scale(12),
     },
-    metaTag: {
-        color: colors.textPrimary || '#FFF',
-        fontSize: scaleFont(14),
+    statusTag: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        paddingHorizontal: scale(12),
         paddingVertical: scale(4),
-        paddingHorizontal: scale(10),
-        borderRadius: scale(6),
-        backgroundColor: 'rgba(255,255,255,0.12)',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        borderRadius: scale(4),
     },
-    emptyState: {
-        alignItems: 'center',
-        paddingTop: scale(80),
+    statusTagText: {
+        fontSize: scaleFont(12),
+        fontWeight: '900',
+        color: '#FFF',
+        letterSpacing: 1,
     },
     emptyText: {
-        color: colors.textMuted || '#AAA',
-        fontSize: scaleFont(18),
-        marginBottom: scale(16),
-    },
-    retryButton: {
-        paddingHorizontal: scale(20),
-        paddingVertical: scale(10),
-        borderRadius: scale(8),
-        backgroundColor: colors.primary || '#E50914',
-    },
-    retryText: {
-        color: '#FFF',
-        fontSize: scaleFont(16),
+        fontSize: scaleFont(20),
+        color: 'rgba(255,255,255,0.3)',
         fontWeight: '600',
     },
 });

@@ -28,7 +28,7 @@ class UpdateService {
      */
     async checkForUpdates(): Promise<UpdateInfo | null> {
         try {
-            const currentVersion = DeviceInfo.getVersion();
+            const currentVersion = config.app.version;
             // Map 'Smartifly' to 'Smartifly IPTV Pro' for the backend check
             const appName = config.app.name === 'Smartifly' ? 'Smartifly IPTV Pro' : config.app.name;
 
@@ -72,7 +72,8 @@ class UpdateService {
      */
     async downloadAndInstall(
         url: string,
-        onProgress?: (received: number, total: number) => void
+        onProgress?: (received: number, total: number) => void,
+        expectedTotalSize?: number
     ): Promise<void> {
         if (Platform.OS !== 'android') {
             logger.warn('Update functionality only supported on Android');
@@ -98,9 +99,15 @@ class UpdateService {
                     followRedirect: true,
                 })
                 .fetch('GET', url)
-                .progress((received, total) => {
-                    const receivedNum = parseInt(received);
-                    const totalNum = parseInt(total);
+                .progress({ count: 10, interval: 250 }, (received, total) => {
+                    const receivedNum = Number(received);
+                    let totalNum = Number(total);
+
+                    // Fallback to expectedTotalSize if server total is missing or -1
+                    if (totalNum <= 0 && expectedTotalSize && expectedTotalSize > 0) {
+                        totalNum = expectedTotalSize;
+                    }
+
                     if (onProgress && totalNum > 0) {
                         onProgress(receivedNum, totalNum);
                     }
