@@ -22,12 +22,8 @@ const envSchema = z.object({
     PG_DUMP_PATH: z.string().optional(),
     PSQL_PATH: z.string().optional(),
 
-    // Email Configuration
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.string().optional(),
-    SMTP_SECURE: z.string().optional(),
-    SMTP_USER: z.string().optional(),
-    SMTP_PASS: z.string().optional(),
+    // Brevo Configuration
+    BREVO_API_KEY: z.string().min(1, 'BREVO_API_KEY is required'),
     SMTP_FROM: z.string().email().optional(),
 
     // Frontend URL
@@ -91,14 +87,8 @@ export const config = {
     psqlPath: env.PSQL_PATH || 'psql',
 
     // Email Configuration
-    smtp: {
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT ? parseInt(env.SMTP_PORT, 10) : 587,
-        secure: env.SMTP_SECURE === 'true',
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-        from: env.SMTP_FROM || env.SMTP_USER || 'noreply@smartifly.com',
-    },
+    brevoApiKey: env.BREVO_API_KEY,
+    fromEmail: env.SMTP_FROM || 'noreply@smartifly.com',
 
     // Frontend URL
     frontendUrl: (() => {

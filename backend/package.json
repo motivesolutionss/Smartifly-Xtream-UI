@@ -21,6 +21,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "@prisma/client": "^5.22.0",
     "@types/multer": "^2.0.0",
     "@types/node-cron": "^3.0.11",
