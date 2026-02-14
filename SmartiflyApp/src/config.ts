@@ -33,7 +33,7 @@ const isDevelopment = __DEV__;
 const getBackendUrl = (): string => {
     // Xtream UI Backend — always use the production URL
     // (no local instance of this backend runs during development)
-    return 'https://smartifly-xtream-ui-production-2d03.up.railway.app/api';
+    return 'https://smartifly-xtream-ui-production-dce1.up.railway.app/api';
 };
 
 /**
