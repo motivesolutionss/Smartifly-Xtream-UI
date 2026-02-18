@@ -192,7 +192,7 @@ const SettingsScreen: React.FC = () => {
                 setDownloadProgress(received / total);
             });
             setIsDownloading(false);
-        } catch (error) {
+        } catch {
             setIsDownloading(false);
             Alert.alert('Update Failed', 'Failed to download update. Please try again later.');
         }

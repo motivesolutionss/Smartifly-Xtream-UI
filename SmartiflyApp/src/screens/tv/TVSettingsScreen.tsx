@@ -166,7 +166,7 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
                 setDownloadProgress(received / total);
             }, updateInfo.fileSize);
             setIsDownloading(false);
-        } catch (error) {
+        } catch {
             setIsDownloading(false);
             Alert.alert('Update Failed', 'Failed to download update. Please try again later.');
         }

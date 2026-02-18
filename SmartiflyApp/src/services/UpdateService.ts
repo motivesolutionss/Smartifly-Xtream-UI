@@ -1,5 +1,4 @@
 import ReactNativeBlobUtil from 'react-native-blob-util';
-import DeviceInfo from 'react-native-device-info';
 import { Platform } from 'react-native';
 import config, { logger } from '../config';
 
@@ -45,8 +44,8 @@ class UpdateService {
 
             try {
                 result = JSON.parse(responseText);
-            } catch (e) {
-                logger.error(`JSON Parse Error: Received non-JSON response from ${baseUrl}. Status: ${response.status}`);
+            } catch (parseError) {
+                logger.error(`JSON Parse Error: Received non-JSON response from ${baseUrl}. Status: ${response.status}`, parseError);
                 logger.debug(`Raw response body: ${responseText.substring(0, 500)}`);
                 return null;
             }
@@ -57,7 +56,7 @@ class UpdateService {
                     latestVersion: result.latestVersion,
                     downloadUrl: result.downloadUrl,
                     releaseNotes: result.releaseNotes,
-                    fileSize: parseInt(result.fileSize) || 0
+                    fileSize: parseInt(result.fileSize, 10) || 0
                 };
             }
             return null;

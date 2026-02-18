@@ -308,9 +308,10 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                 const seriesItem =
                     (item.data as SeriesItem) ??
                     ({
-                        series_id: item.streamId,
+                        stream_id: item.streamId,
+                        id: item.streamId,
                         name: item.episodeTitle || item.title,
-                    } as SeriesItem);
+                    } as any);
 
                 navigation.navigate('FullscreenPlayer', {
                     type: 'series',

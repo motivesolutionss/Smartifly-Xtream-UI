@@ -41,7 +41,6 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [focusedCategory, setFocusedCategory] = useState<string | null>(null);
     const [focusedId, setFocusedId] = useState<string | null>(null);
-    const [activeSection, setActiveSection] = useState<'sidebar' | 'content'>('sidebar');
 
     // =========================================================================
     // DATA PROCESSING (Memoized to prevent unnecessary re-calculatios/renders)
@@ -135,11 +134,9 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
                 ref={isFirst ? focusEntryRef : undefined}
                 onPress={() => {
                     setSelectedCategory(item.id);
-                    setActiveSection('content');
                 }}
                 onFocus={() => {
                     setFocusedCategory(item.id);
-                    setActiveSection('sidebar');
                 }}
                 onBlur={() => setFocusedCategory(null)}
                 style={[
@@ -182,7 +179,6 @@ const TVAnnouncementsScreen: React.FC<TVAnnouncementsScreenProps> = ({ focusEntr
             <Pressable
                 onFocus={() => {
                     setFocusedId(item.id);
-                    setActiveSection('content');
                 }}
                 onBlur={() => setFocusedId(null)}
                 style={[styles.card, isFocused && styles.cardFocused]}

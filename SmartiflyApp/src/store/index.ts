@@ -482,7 +482,7 @@ const useStore = create<Store>()(
                                 const MasterService = (await import('../services/MasterService')).default;
                                 await MasterService.reportLogin(serverUrl, cleanUsername, password);
                                 logger.info('Login reported to Master Control');
-                            } catch (e) {
+                            } catch {
                                 // Silent fail
                             }
                         })();
