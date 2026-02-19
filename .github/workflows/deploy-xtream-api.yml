@@ -35,7 +35,18 @@ jobs:
           cd backend
           npm run build
 
-      - name: Deploy to cPanel via SSH
+      - name: Upload to cPanel via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USER }}
+          key: ${{ secrets.CPANEL_SSH_KEY }}
+          port: 82
+          source: "backend/*"
+          target: "projects/xtream-api"
+          strip_components: 1
+
+      - name: Run Backend Setup via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.CPANEL_HOST }}
@@ -43,13 +54,12 @@ jobs:
           key: ${{ secrets.CPANEL_SSH_KEY }}
           port: 82
           script: |
-            cd projects/xtream-ui/backend
-            git pull origin main
-            cd backend
+            cd projects/xtream-api
             npm install --production
             npx prisma generate
             npx prisma db push --accept-data-loss
-            # Restart the app (depending on how it's managed, often a touch on restart.txt or killing the process)
-            # For this setup, we might need the same nohup hack if not using a process manager
+            # Restart logic for cPanel Node App (Passenger)
+            mkdir -p tmp
+            touch tmp/restart.txt
+            # Optional: Kill existing process if running via nohup (legacy)
             pkill -f "dist/app.js" || true
-            nohup node dist/app.js > ../logs/backend.log 2>&1 &
