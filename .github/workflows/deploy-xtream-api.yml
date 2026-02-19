@@ -52,17 +52,24 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           key: ${{ secrets.CPANEL_SSH_KEY }}
           port: 82
+          command_timeout: 30m
+          timeout: 40m
           script: |
             cd projects/xtream-api
-            # Ensure .env is present for Prisma
+            # Ensure .env is present for Prisma and the App
             if [ -f .env.production.cpanel ]; then
               cp .env.production.cpanel .env
             fi
-            npm install --production
-            npx prisma generate
+            
+            # Install production dependencies
+            npm install --production --no-audit --no-fund
+            
+            # Run migrations (This also runs generate if needed)
             npx prisma db push --accept-data-loss
+            
             # Restart logic for cPanel Node App (Passenger)
             mkdir -p tmp
             touch tmp/restart.txt
-            # Optional: Kill existing process if running via nohup (legacy)
-            pkill -f "dist/app.js" || true
+            
+            # Verify structure
+            ls -l dist/app.js
