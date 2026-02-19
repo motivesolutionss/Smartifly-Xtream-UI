@@ -75,7 +75,7 @@ export function TicketForm() {
         title: "Ticket Created",
         description: `Your ticket ID is ${ticket.ticketNo}. Save this for reference.`,
       });
-      router.push(`/tickets/${ticket.ticketNo}`);
+      router.push(`/tickets/view?id=${ticket.ticketNo}`);
     },
     validateOnChange: true,
     validateOnBlur: true,

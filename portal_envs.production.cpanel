@@ -1,0 +1,11 @@
+# Admin Panel Production .env
+# Path: projects/xtream-ui/admin-panel/.env
+
+NEXT_PUBLIC_API_URL="http://smartifly-xtream-api.duckdns.org/api"
+
+---
+
+# Customer Portal Production .env
+# Path: projects/xtream-ui/customer-portal/.env
+
+NEXT_PUBLIC_BACKEND_URL="http://smartifly-xtream-api.duckdns.org/api"

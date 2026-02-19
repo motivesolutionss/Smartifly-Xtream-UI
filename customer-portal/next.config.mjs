@@ -40,24 +40,9 @@ function validateEnvVars() {
 validateEnvVars();
 
 const nextConfig = {
-    // Enable standalone output for cPanel deployment
-    output: "standalone",
-
-
-    // API rewrites to backend
-    async rewrites() {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-
-        if (!backendUrl) {
-            throw new Error('NEXT_PUBLIC_BACKEND_URL is required but not set');
-        }
-
-        return [
-            {
-                source: "/api/:path*",
-                destination: `${backendUrl}/api/:path*`,
-            },
-        ];
+    output: "export",
+    images: {
+        unoptimized: true,
     },
 };
 

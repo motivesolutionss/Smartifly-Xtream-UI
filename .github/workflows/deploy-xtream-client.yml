@@ -1,0 +1,44 @@
+name: Deploy Smartifly-Xtream-UI Customer Portal
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'customer-portal/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './customer-portal/package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          cd customer-portal
+          npm install
+
+      - name: Build with Next.js (Static Export)
+        env:
+          NEXT_PUBLIC_BACKEND_URL: "http://smartifly-xtream-api.duckdns.org/api"
+        run: |
+          cd customer-portal
+          npm run build
+
+      - name: Deploy to cPanel via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USER }}
+          key: ${{ secrets.CPANEL_SSH_KEY }}
+          port: 82
+          source: "customer-portal/out/*"
+          target: "public_html/xtream-client"
+          strip_components: 2

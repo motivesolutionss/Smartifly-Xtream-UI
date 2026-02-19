@@ -16,7 +16,7 @@ export default function SupportLandingPage() {
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
         if (ticketId.trim()) {
-            router.push(`/tickets/${ticketId.trim()}`);
+            router.push(`/tickets/view?id=${ticketId.trim()}`);
         }
     };
 
