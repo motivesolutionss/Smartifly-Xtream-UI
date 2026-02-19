@@ -3,8 +3,7 @@ name: Deploy Smartifly-Xtream-UI Backend
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'backend/**'
+# Trigger on all changes for now to ensure deployment works
 
 jobs:
   deploy:
