@@ -24,7 +24,7 @@ export async function sendVerificationEmail(
     name: string,
     fromEmail?: string | null
 ): Promise<boolean> {
-    const verificationUrl = `${config.frontendUrl}/subscription/verify/${token}`;
+    const verificationUrl = `${config.frontendUrl}/subscription/verify?token=${token}`;
     const from = getFromDetails(fromEmail);
 
     const sendSmtpEmail = new brevo.SendSmtpEmail();

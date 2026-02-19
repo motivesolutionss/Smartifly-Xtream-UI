@@ -24,10 +24,10 @@ export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCard
   // Memoize currency conversion to avoid recalculating on every render
   const convertedPrice = useMemo(
     () => convertPrice(
-    pkg.price,
-    pkg.currency || 'USD',
-    selectedCurrency,
-    exchangeRates
+      pkg.price,
+      pkg.currency || 'USD',
+      selectedCurrency,
+      exchangeRates
     ),
     [pkg.price, pkg.currency, selectedCurrency, exchangeRates]
   );
@@ -73,8 +73,8 @@ export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCard
           <div className="flex items-baseline gap-2 flex-wrap">
             <span
               className={`font-bold font-heading text-gradient ${formattedPrice.length > 8
-                  ? 'text-3xl sm:text-4xl'
-                  : 'text-4xl sm:text-5xl'
+                ? 'text-3xl sm:text-4xl'
+                : 'text-4xl sm:text-5xl'
                 }`}
             >
               {formattedPrice}
@@ -104,7 +104,7 @@ export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCard
         {/* CTA Section */}
         <div className="space-y-4 pt-4 border-t border-border-soft relative z-10">
           <Link
-            href={`/subscription/request/${pkg.id}`}
+            href={`/subscription/request?packageId=${pkg.id}`}
             className="block"
             aria-label={`Subscribe to ${pkg.name}`}
           >
