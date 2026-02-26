@@ -11,7 +11,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 // Validate critical environment variables at build time
 function validateEnvVars() {
     const isProduction = process.env.NODE_ENV === 'production';
-    const requiredVars = ['NEXT_PUBLIC_BACKEND_URL'];
+    const requiredVars = ['NEXT_PUBLIC_API_URL'];
     const missingVars = [];
 
     for (const varName of requiredVars) {
