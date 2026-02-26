@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useReplyTicket, useUploadAttachments } from "@/hooks/useTicket";
 import { cn } from "@/lib/utils";
+import { ENV } from "@/lib/env";
 import type { Ticket } from "@/types";
 
 interface TicketStatusProps {
@@ -142,7 +143,7 @@ export function TicketStatus({ ticket }: TicketStatusProps) {
                   {ticket.attachments.map((att) => (
                     <a
                       key={att.id}
-                      href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${att.fileUrl}`}
+                      href={`${ENV.BACKEND_URL}${att.fileUrl}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 rounded-lg bg-background/40 hover:bg-background/60 transition-colors border border-primary/10 group/att"

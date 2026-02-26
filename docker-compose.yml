@@ -3,11 +3,7 @@ services:
     image: mysql:8.0
     container_name: xtream-db
     restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=xtream_root_pass
-      - MYSQL_DATABASE=xtream_db
-      - MYSQL_USER=xtream_user
-      - MYSQL_PASSWORD=xtream_pass
+    env_file: .env.vps
     volumes:
       - xtream_db_data:/var/lib/mysql
     networks:
@@ -24,14 +20,13 @@ services:
       dockerfile: Dockerfile
     container_name: xtream-api
     restart: unless-stopped
-    environment:
-      - PORT=5000
-      - NODE_ENV=production
-      - DATABASE_URL=mysql://xtream_user:xtream_pass@xtream-db:3306/xtream_db
+    env_file: .env.vps
     expose:
       - "5000"
     networks:
       - nginx-proxy
+    volumes:
+      - xtream_uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -60,7 +55,7 @@ services:
     container_name: xtream-portal
     restart: unless-stopped
     expose:
-      - "3001"
+      - "3000"
     networks:
       - nginx-proxy
     depends_on:
@@ -72,3 +67,4 @@ networks:
 
 volumes:
   xtream_db_data:
+  xtream_uploads:

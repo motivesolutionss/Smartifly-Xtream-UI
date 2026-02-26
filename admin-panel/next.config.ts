@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Enable standalone output for smaller deployments
-  output: 'export',
+  output: 'standalone',
   images: {
     unoptimized: true,
   },

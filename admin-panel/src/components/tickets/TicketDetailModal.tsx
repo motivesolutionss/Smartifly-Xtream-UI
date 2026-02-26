@@ -31,6 +31,7 @@ import {
     Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '@/lib/constants';
 
 interface TicketDetailModalProps {
     ticket: Ticket | null;
@@ -411,7 +412,7 @@ export function TicketDetailModal({
                                         {ticket.attachments.map(att => (
                                             <a
                                                 key={att.id}
-                                                href={att.fileUrl.startsWith('http') ? att.fileUrl : `http://localhost:3001${att.fileUrl}`}
+                                                href={att.fileUrl.startsWith('http') ? att.fileUrl : `${API_BASE_URL}${att.fileUrl}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="flex items-center gap-3 p-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)] hover:shadow-sm transition-all group"
