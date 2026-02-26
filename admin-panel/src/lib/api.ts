@@ -2,7 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Create axios instance
 const api = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || '/api',
+    baseURL: (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '') + '/api/',
     headers: {
         'Content-Type': 'application/json',
     },
@@ -26,8 +26,13 @@ const processQueue = (error: Error | null, token: string | null = null) => {
     failedQueue = [];
 };
 
-// Add auth token to requests
+// Add auth token to requests and standardize URLs
 api.interceptors.request.use((config) => {
+    // Strip leading slash from URL to ensure it appends correctly to baseURL (which has a trailing slash)
+    if (config.url?.startsWith('/')) {
+        config.url = config.url.substring(1);
+    }
+
     if (typeof window !== 'undefined') {
         const token = localStorage.getItem('token');
         if (token) {
@@ -43,8 +48,8 @@ api.interceptors.response.use(
     async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-        // Skip token refresh for login endpoint - let login errors pass through
-        if (originalRequest.url?.includes('/auth/login')) {
+        // Skip token refresh for login/refresh endpoints - let errors pass through
+        if (originalRequest.url?.includes('auth/login') || originalRequest.url?.includes('auth/refresh')) {
             return Promise.reject(error);
         }
 
@@ -70,8 +75,8 @@ api.interceptors.response.use(
                     throw new Error('No refresh token');
                 }
 
-                // Use a separate axios instance to avoid interceptor loop
-                const response = await axios.post('/api/auth/refresh', { refreshToken });
+                // Use the api instance to ensure correct baseURL and interceptors
+                const response = await api.post('auth/refresh', { refreshToken });
                 const { token: newToken, refreshToken: newRefreshToken } = response.data;
 
                 localStorage.setItem('token', newToken);
