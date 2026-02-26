@@ -35,7 +35,7 @@ export function initializeFirebase(): admin.app.App | null {
             }),
         });
 
-        console.log('🔥 Firebase Admin SDK initialized successfully');
+
         return firebaseApp;
     } catch (error) {
         console.error('❌ Firebase initialization failed:', error);

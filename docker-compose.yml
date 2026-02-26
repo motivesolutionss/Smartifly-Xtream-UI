@@ -1,0 +1,74 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: xtream-db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=xtream_root_pass
+      - MYSQL_DATABASE=xtream_db
+      - MYSQL_USER=xtream_user
+      - MYSQL_PASSWORD=xtream_pass
+    volumes:
+      - xtream_db_data:/var/lib/mysql
+    networks:
+      - nginx-proxy
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: xtream-api
+    restart: unless-stopped
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://xtream_user:xtream_pass@xtream-db:3306/xtream_db
+    expose:
+      - "5000"
+    networks:
+      - nginx-proxy
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  admin-panel:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_ADMIN_API_URL:-http://localhost:5000}
+    container_name: xtream-admin
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - nginx-proxy
+    depends_on:
+      - backend
+
+  customer-portal:
+    build:
+      context: ./customer-portal
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_CUSTOMER_API_URL:-http://localhost:5000}
+    container_name: xtream-portal
+    restart: unless-stopped
+    expose:
+      - "3001"
+    networks:
+      - nginx-proxy
+    depends_on:
+      - backend
+
+networks:
+  nginx-proxy:
+    external: true
+
+volumes:
+  xtream_db_data:

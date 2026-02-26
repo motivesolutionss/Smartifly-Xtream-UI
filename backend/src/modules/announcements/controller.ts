@@ -136,9 +136,7 @@ export const processScheduledAnnouncements = async () => {
         }
     });
 
-    if (toPublish.count > 0) {
-        console.log(`📢 Published ${toPublish.count} scheduled announcements`);
-    }
+
 
     // 2. Archive expired announcements
     const toArchive = await prisma.announcement.updateMany({
@@ -153,9 +151,7 @@ export const processScheduledAnnouncements = async () => {
         }
     });
 
-    if (toArchive.count > 0) {
-        console.log(`📦 Archived ${toArchive.count} expired announcements`);
-    }
+
 
     return { published: toPublish.count, archived: toArchive.count };
 };

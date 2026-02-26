@@ -1,18 +1,23 @@
-import * as brevo from '@getbrevo/brevo';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const nodemailer = require('nodemailer');
 import { config } from '../config/index.js';
 
-// Initialize Brevo API
-const apiInstance = new brevo.TransactionalEmailsApi();
-apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, config.brevoApiKey);
+// Initialize nodemailer with Brevo SMTP relay
+const transporter = nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false,
+    auth: {
+        user: config.fromEmail,
+        pass: config.brevoApiKey,
+    },
+});
 
 /**
  * Get the "from" email details
  */
 function getFromDetails(providedEmail?: string | null) {
-    return {
-        name: 'Smartifly OTT',
-        email: providedEmail || config.fromEmail
-    };
+    return `"Smartifly OTT" <${providedEmail || config.fromEmail}>`;
 }
 
 /**
@@ -27,11 +32,7 @@ export async function sendVerificationEmail(
     const verificationUrl = `${config.frontendUrl}/subscription/verify?token=${token}`;
     const from = getFromDetails(fromEmail);
 
-    const sendSmtpEmail = new brevo.SendSmtpEmail();
-    sendSmtpEmail.subject = 'Verify Your Email - Smartifly Subscription';
-    sendSmtpEmail.sender = from;
-    sendSmtpEmail.to = [{ email, name }];
-    sendSmtpEmail.htmlContent = `
+    const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -68,26 +69,19 @@ export async function sendVerificationEmail(
         </body>
         </html>
     `;
-    sendSmtpEmail.textContent = `
-        Hello ${name},
-
-        Thank you for your subscription request! Please verify your email address to receive your subscription payment instructions.
-
-        Click this link to verify: ${verificationUrl}
-
-        This link will expire in 1 hour.
-
-        If you didn't request this subscription, please ignore this email.
-
-        © ${new Date().getFullYear()} Smartifly. All rights reserved.
-    `;
 
     try {
-        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log('✅ Verification email sent via Brevo API:', data.body.messageId);
+        const info = await transporter.sendMail({
+            from,
+            to: `"${name}" <${email}>`,
+            subject: 'Verify Your Email - Smartifly Subscription',
+            html: htmlContent,
+            text: `Hello ${name},\n\nThank you for your subscription request! Please verify your email address.\n\nClick this link to verify: ${verificationUrl}\n\nThis link will expire in 1 hour.\n\n© ${new Date().getFullYear()} Smartifly. All rights reserved.`,
+        });
+
         return true;
     } catch (error) {
-        console.error('❌ Failed to send verification email via Brevo API:', error);
+        console.error('❌ Failed to send verification email:', error);
         return false;
     }
 }
@@ -109,11 +103,7 @@ export async function sendSubscriptionPDF(
 ): Promise<boolean> {
     const from = getFromDetails(fromEmail);
 
-    const sendSmtpEmail = new brevo.SendSmtpEmail();
-    sendSmtpEmail.subject = `Subscription Payment Instructions – ${subscriptionData.packageName}`;
-    sendSmtpEmail.sender = from;
-    sendSmtpEmail.to = [{ email, name: subscriptionData.name }];
-    sendSmtpEmail.htmlContent = `
+    const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -152,39 +142,25 @@ export async function sendSubscriptionPDF(
         </body>
         </html>
     `;
-    sendSmtpEmail.textContent = `
-        Hello ${subscriptionData.name},
-
-        Thank you for verifying your email! Your subscription payment instructions are attached to this email.
-
-        Subscription Details:
-        Plan: ${subscriptionData.packageName}
-        Duration: ${subscriptionData.duration}
-        Price: ${subscriptionData.currency} ${subscriptionData.price}
-
-        Please review the attached PDF document for complete payment instructions and bank details.
-
-        Important: Manual payment is required before your subscription can be activated.
-
-        If you have any questions, please contact our support team.
-
-        © ${new Date().getFullYear()} Smartifly. All rights reserved.
-    `;
-
-    // Add PDF attachment
-    sendSmtpEmail.attachment = [
-        {
-            name: `subscription-${subscriptionData.packageName.replace(/\s+/g, '-')}-${Date.now()}.pdf`,
-            content: pdfBuffer.toString('base64')
-        }
-    ];
 
     try {
-        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log('✅ Subscription PDF email sent via Brevo API:', data.body.messageId);
+        const info = await transporter.sendMail({
+            from,
+            to: `"${subscriptionData.name}" <${email}>`,
+            subject: `Subscription Payment Instructions – ${subscriptionData.packageName}`,
+            html: htmlContent,
+            text: `Hello ${subscriptionData.name},\n\nSubscription Details:\nPlan: ${subscriptionData.packageName}\nDuration: ${subscriptionData.duration}\nPrice: ${subscriptionData.currency} ${subscriptionData.price}\n\nPlease review the attached PDF for payment instructions.\n\n© ${new Date().getFullYear()} Smartifly. All rights reserved.`,
+            attachments: [
+                {
+                    filename: `subscription-${subscriptionData.packageName.replace(/\s+/g, '-')}-${Date.now()}.pdf`,
+                    content: pdfBuffer,
+                },
+            ],
+        });
+
         return true;
     } catch (error) {
-        console.error('❌ Failed to send subscription PDF email via Brevo API:', error);
+        console.error('❌ Failed to send subscription PDF email:', error);
         return false;
     }
 }

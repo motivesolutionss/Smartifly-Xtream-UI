@@ -14,19 +14,18 @@ let isSchedulerRunning = false;
  */
 export function initializeScheduler() {
     if (isSchedulerRunning) {
-        console.log('⏰ Scheduler already running');
         return;
     }
 
-    console.log('⏰ Initializing scheduler...');
+
 
     // Daily analytics snapshot - runs at midnight every day
     // Cron expression: minute hour day-of-month month day-of-week
     cron.schedule('0 0 * * *', async () => {
-        console.log('📊 Running daily analytics snapshot...');
+
         try {
             const snapshot = await generateDailySnapshot(new Date());
-            console.log('✅ Daily snapshot generated:', snapshot.id);
+
         } catch (error) {
             console.error('❌ Daily snapshot failed:', error);
         }
@@ -50,21 +49,21 @@ export function initializeScheduler() {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
 
-            console.log('📊 Generating initial snapshot for yesterday...');
+
             const snapshot = await generateDailySnapshot(yesterday);
-            console.log('✅ Initial snapshot generated:', snapshot.id);
+
 
             // Also generate for today
-            console.log('📊 Generating snapshot for today...');
+
             const todaySnapshot = await generateDailySnapshot(new Date());
-            console.log('✅ Today snapshot generated:', todaySnapshot.id);
+
         } catch (error) {
             console.error('⚠️ Initial snapshot generation failed:', error);
         }
     }, 5000); // Wait 5 seconds after startup
 
     isSchedulerRunning = true;
-    console.log('✅ Scheduler initialized - Daily snapshots at 00:00 UTC');
+
 }
 
 /**
@@ -72,11 +71,11 @@ export function initializeScheduler() {
  */
 export async function triggerSnapshot(date?: Date): Promise<void> {
     const targetDate = date || new Date();
-    console.log(`📊 Manually triggering snapshot for ${targetDate.toISOString().split('T')[0]}...`);
+
 
     try {
         const snapshot = await generateDailySnapshot(targetDate);
-        console.log('✅ Manual snapshot generated:', snapshot.id);
+
     } catch (error) {
         console.error('❌ Manual snapshot failed:', error);
         throw error;
@@ -90,7 +89,7 @@ export async function backfillSnapshots(startDate: Date, endDate: Date): Promise
     let count = 0;
     const current = new Date(startDate);
 
-    console.log(`📊 Backfilling snapshots from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}...`);
+
 
     while (current <= endDate) {
         try {
@@ -102,6 +101,6 @@ export async function backfillSnapshots(startDate: Date, endDate: Date): Promise
         current.setDate(current.getDate() + 1);
     }
 
-    console.log(`✅ Backfill complete: ${count} snapshots generated`);
+
     return count;
 }

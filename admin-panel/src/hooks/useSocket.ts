@@ -38,12 +38,12 @@ export function useSocket() {
 
         // Define event handlers
         const handleConnect = () => {
-            console.log('🔌 Socket connected:', socket.id);
+
             setIsConnected(true);
         };
 
         const handleDisconnect = (reason: string) => {
-            console.log('🔌 Socket disconnected:', reason);
+
             setIsConnected(false);
         };
 
@@ -53,7 +53,7 @@ export function useSocket() {
 
         const handleInvalidate = (data: { keys: string[] }) => {
             if (data.keys && Array.isArray(data.keys)) {
-                console.log('📡 Cache invalidation:', data.keys);
+
                 queryClientRef.current.invalidateQueries({ queryKey: data.keys });
             }
         };
@@ -88,7 +88,7 @@ export function useSocket() {
 
             // Only disconnect if this is the last component using the socket
             if (connectionCount === 0 && socket.connected) {
-                console.log('🔌 Socket cleanup: disconnecting');
+
                 socket.disconnect();
                 globalSocket = null;
             }

@@ -1,4 +1,5 @@
-import PDFDocument from 'pdfkit';
+// PDFKit is lazy-loaded inside the function to avoid crashing on startup
+// (fontkit requires 'windows-1252' encoding which needs full ICU support)
 import prisma from '../config/database.js';
 
 interface SubscriptionData {
@@ -17,6 +18,8 @@ interface SubscriptionData {
 export async function generateSubscriptionPDF(data: SubscriptionData): Promise<Buffer> {
     return new Promise((resolve, reject) => {
         try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const PDFDocument = require('pdfkit');
             const doc = new PDFDocument({
                 size: 'A4',
                 margins: { top: 50, bottom: 50, left: 50, right: 50 },

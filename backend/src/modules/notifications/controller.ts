@@ -157,7 +157,7 @@ export const sendNotification = async (req: AuthRequest, res: Response) => {
                     failureCount: fcmResponse.failureCount,
                 };
 
-                console.log(`📱 FCM sent: ${response.successCount} success, ${response.failureCount} failed`);
+
 
                 // Handle failed tokens (remove invalid ones)
                 if (fcmResponse.failureCount > 0) {
@@ -174,7 +174,7 @@ export const sendNotification = async (req: AuthRequest, res: Response) => {
                         await prisma.deviceToken.deleteMany({
                             where: { token: { in: failedTokens } }
                         });
-                        console.log(`   Removed ${failedTokens.length} invalid tokens`);
+
                     }
                 }
             } catch (fcmError) {
