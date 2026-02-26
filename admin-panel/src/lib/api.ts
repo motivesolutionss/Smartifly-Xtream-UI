@@ -2,7 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Create axios instance
 const api = axios.create({
-    baseURL: (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '') + '/api/',
+    baseURL: (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '') + '/api/',
     headers: {
         'Content-Type': 'application/json',
     },

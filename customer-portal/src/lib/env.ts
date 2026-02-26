@@ -36,6 +36,6 @@ export function getEnvVar(key: string, fallback: string | null = null, isRequire
  */
 export const ENV = {
     // Explicit access is required for Next.js to inline the variable at build time
-    BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001',
+    BACKEND_URL: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, ''),
     NODE_ENV: process.env.NODE_ENV || 'development',
 };
