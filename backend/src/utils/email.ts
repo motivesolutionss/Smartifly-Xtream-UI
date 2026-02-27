@@ -2,14 +2,21 @@
 const nodemailer = require('nodemailer');
 import { config } from '../config/index.js';
 
-// Initialize nodemailer with Brevo SMTP relay
+// Initialize nodemailer with SMTP relay (Brevo by default)
+const smtpAuthUser = config.smtpUser || config.fromEmail;
+const smtpAuthPass = config.smtpPass || config.brevoApiKey;
+
+if (!smtpAuthUser || !smtpAuthPass) {
+    throw new Error('SMTP credentials are missing. Set SMTP_USER/SMTP_PASS (recommended) or SMTP_FROM/BREVO_API_KEY.');
+}
+
 const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false,
+    host: config.smtpHost,
+    port: config.smtpPort,
+    secure: config.smtpSecure,
     auth: {
-        user: config.fromEmail,
-        pass: config.brevoApiKey,
+        user: smtpAuthUser,
+        pass: smtpAuthPass,
     },
 });
 

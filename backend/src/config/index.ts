@@ -25,6 +25,11 @@ const envSchema = z.object({
     // Brevo Configuration
     BREVO_API_KEY: z.string().min(1, 'BREVO_API_KEY is required'),
     SMTP_FROM: z.string().email().optional(),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.string().optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    SMTP_SECURE: z.string().optional(),
 
     // Frontend URL
     FRONTEND_URL: z.string().optional(),
@@ -89,6 +94,11 @@ export const config = {
     // Email Configuration
     brevoApiKey: env.BREVO_API_KEY,
     fromEmail: env.SMTP_FROM || 'noreply@smartifly.com',
+    smtpHost: env.SMTP_HOST || 'smtp-relay.brevo.com',
+    smtpPort: Number(env.SMTP_PORT) || 587,
+    smtpUser: env.SMTP_USER,
+    smtpPass: env.SMTP_PASS,
+    smtpSecure: (env.SMTP_SECURE || 'false').toLowerCase() === 'true',
 
     // Frontend URL
     frontendUrl: (() => {
