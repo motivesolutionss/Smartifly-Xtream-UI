@@ -47,12 +47,13 @@ async function fetchWithErrorHandling<T>(
   }
 
   try {
+    const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
     const response = await fetchWithRetry(
       url,
       {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
           ...options?.headers,
         },
         // Add cache control for SSR
