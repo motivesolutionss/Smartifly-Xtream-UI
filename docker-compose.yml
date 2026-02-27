@@ -41,7 +41,7 @@ services:
       context: ./admin-panel
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.xtreamui.duckdns.org}
     container_name: xtream-admin
     restart: unless-stopped
     expose:
@@ -61,7 +61,7 @@ services:
       context: ./customer-portal
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.xtreamui.duckdns.org}
     container_name: xtream-portal
     restart: unless-stopped
     expose:

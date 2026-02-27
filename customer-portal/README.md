@@ -38,7 +38,7 @@ npm install
 
 2. Create a `.env.local` file in the root directory:
 ```env
-NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
 3. Run the development server:
@@ -83,7 +83,7 @@ customer-portal/
 
 ## API Integration
 
-The portal consumes APIs from the backend. Set the `NEXT_PUBLIC_BACKEND_URL` environment variable to point to your backend API.
+The portal consumes APIs from the backend. Set the `NEXT_PUBLIC_API_URL` environment variable to point to your backend API.
 
 ### Available Endpoints
 
