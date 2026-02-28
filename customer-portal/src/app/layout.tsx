@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactQueryProvider } from "@/components/providers/ReactQueryProvider";
+import { MotionProvider } from "@/components/providers/MotionProvider";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { GlobalBackground } from "@/components/layout/GlobalBackground";
 import { ErrorBoundaryWrapper } from "@/components/ErrorBoundaryWrapper";
@@ -69,21 +70,23 @@ export default function RootLayout({
         <ErrorBoundaryWrapper>
           <ReactQueryProvider>
             <CurrencyProvider>
-              <TooltipProvider>
-                <div className="relative z-10 min-h-screen flex flex-col">
-                  <Navbar />
-                  {/* 
-                   IMPORTANT: Ensure your page components don't have 
-                   heavy background colors so the video can be seen.
-                */}
-                  <main className="flex-1 pt-16 md:pt-20">
-                    {children}
-                  </main>
-                  <Footer />
-                </div>
-                <Toaster />
-                <Sonner />
-              </TooltipProvider>
+              <MotionProvider>
+                <TooltipProvider>
+                  <div className="relative z-10 min-h-screen flex flex-col">
+                    <Navbar />
+                    {/* 
+                     IMPORTANT: Ensure your page components don't have 
+                     heavy background colors so the video can be seen.
+                  */}
+                    <main className="flex-1 pt-16 md:pt-20">
+                      {children}
+                    </main>
+                    <Footer />
+                  </div>
+                  <Toaster />
+                  <Sonner />
+                </TooltipProvider>
+              </MotionProvider>
             </CurrencyProvider>
           </ReactQueryProvider>
         </ErrorBoundaryWrapper>

@@ -8,6 +8,7 @@ import { PackageCardSkeleton } from "@/components/ui/skeleton";
 import { usePackages } from "@/hooks/usePackages";
 import { Tv2, Film, Shield, Zap, Globe, Star, Check, AlertCircle, RefreshCw, Package as PackageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 const includedFeatures = [
   { icon: Tv2, label: "Live TV Channels", color: "text-violet-400", bgColor: "bg-violet-500/10" },
@@ -40,6 +41,7 @@ const itemVariants = {
 };
 
 export default function PackagesPage() {
+  const { reduceMotion } = usePerformanceMode();
   const { data: packages = [], isLoading, error, refetch, isError } = usePackages();
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
@@ -53,28 +55,13 @@ export default function PackagesPage() {
       {/* Matching Animated Background Effects from Features/FAQ */}
       <motion.div
         className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-        animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.1, 0.15, 0.1],
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
+        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
         className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-        animate={{
-          scale: [1.2, 1, 1.2],
-          opacity: [0.1, 0.15, 0.1],
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          ease: "easeInOut",
-          delay: 2,
-        }}
+        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
+        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
       />
 
       {/* Grid pattern overlay */}

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CurrencySelector } from "./CurrencySelector";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 const navItems = [
   { path: "/", label: "Home", icon: Home },
@@ -22,23 +23,33 @@ const navItems = [
 ];
 
 export function Navbar() {
+  const { reduceMotion } = usePerformanceMode();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
   useEffect(() => {
-    const handleScroll = () => {
-      const scrolled = window.scrollY > 20;
-      setIsScrolled(scrolled);
+    let ticking = false;
 
-      // Calculate scroll progress for progress bar
-      const windowHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = (window.scrollY / windowHeight) * 100;
-      setScrollProgress(progress);
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+
+      window.requestAnimationFrame(() => {
+        const scrolled = window.scrollY > 20;
+        setIsScrolled((prev) => (prev === scrolled ? prev : scrolled));
+
+        // Calculate scroll progress for progress bar
+        const windowHeight = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = windowHeight > 0 ? (window.scrollY / windowHeight) * 100 : 0;
+        setScrollProgress((prev) => (prev === progress ? prev : progress));
+        ticking = false;
+      });
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -150,13 +161,17 @@ export function Navbar() {
                 <Button className="btn-primary hover-lift group">
                   <Sparkles className="w-4 h-4" />
                   Get Started
-                  <motion.div
-                    className="ml-1"
-                    animate={{ x: [0, 3, 0] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                  >
-                    →
-                  </motion.div>
+                  {reduceMotion ? (
+                    <span className="ml-1">{"->"}</span>
+                  ) : (
+                    <motion.div
+                      className="ml-1"
+                      animate={{ x: [0, 3, 0] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                    >
+                      {"->"}
+                    </motion.div>
+                  )}
                 </Button>
               </Link>
             </div>
@@ -303,12 +318,16 @@ export function Navbar() {
                           <Button className="w-full btn-primary btn-lg hover-lift">
                             <Sparkles className="w-5 h-5" />
                             Get Started Now
-                            <motion.span
-                              animate={{ x: [0, 5, 0] }}
-                              transition={{ duration: 1.5, repeat: Infinity }}
-                            >
-                              →
-                            </motion.span>
+                            {reduceMotion ? (
+                              <span>{"->"}</span>
+                            ) : (
+                              <motion.span
+                                animate={{ x: [0, 5, 0] }}
+                                transition={{ duration: 1.5, repeat: Infinity }}
+                              >
+                                {"->"}
+                              </motion.span>
+                            )}
                           </Button>
                         </Link>
                       </motion.div>
@@ -352,3 +371,5 @@ export function Navbar() {
 }
 
 export default Navbar;
+
+

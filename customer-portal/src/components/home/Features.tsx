@@ -3,6 +3,7 @@
 import { motion, useInView } from "framer-motion";
 import { Play, Shield, Zap, Globe } from "lucide-react";
 import { useRef } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 const features = [
     {
@@ -69,6 +70,7 @@ const itemVariants = {
 };
 
 export function Features() {
+    const { reduceMotion } = usePerformanceMode();
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -77,28 +79,13 @@ export function Features() {
             {/* Animated Background Effects */}
             <motion.div
                 className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1, 1.2, 1],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1]}}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
                 className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1.2, 1, 1.2],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: 2,
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1]}}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
             />
 
             {/* Grid pattern overlay */}
@@ -145,7 +132,7 @@ export function Features() {
                             <motion.div
                                 key={index}
                                 variants={itemVariants}
-                                whileHover={{ y: -8 }}
+                                whileHover={reduceMotion ? undefined : { y: -8 }}
                                 className="group relative"
                             >
                                 {/* Card Container */}
@@ -162,28 +149,30 @@ export function Features() {
                                     <div className="relative mb-6">
                                         <div className="relative w-20 h-20 mx-auto">
                                             {/* Animated border ring */}
-                                            <motion.div
-                                                className={`absolute inset-0 rounded-full border-2 ${feature.borderColor}`}
-                                                animate={{
-                                                    rotate: [0, 360],
-                                                    scale: [1, 1.05, 1],
-                                                }}
-                                                transition={{
-                                                    rotate: {
-                                                        duration: 20,
-                                                        repeat: Infinity,
-                                                        ease: "linear",
-                                                    },
-                                                    scale: {
-                                                        duration: 2,
-                                                        repeat: Infinity,
-                                                        ease: "easeInOut",
-                                                    },
-                                                }}
-                                                style={{
-                                                    clipPath: "polygon(0% 0%, 100% 0%, 100% 50%, 0% 50%)",
-                                                }}
-                                            />
+                                            {!reduceMotion && (
+                                                <motion.div
+                                                    className={`absolute inset-0 rounded-full border-2 ${feature.borderColor}`}
+                                                    animate={{
+                                                        rotate: [0, 360],
+                                                        scale: [1, 1.05, 1],
+                                                    }}
+                                                    transition={{
+                                                        rotate: {
+                                                            duration: 20,
+                                                            repeat: Infinity,
+                                                            ease: "linear",
+                                                        },
+                                                        scale: {
+                                                            duration: 2,
+                                                            repeat: Infinity,
+                                                            ease: "easeInOut",
+                                                        },
+                                                    }}
+                                                    style={{
+                                                        clipPath: "polygon(0% 0%, 100% 0%, 100% 50%, 0% 50%)",
+                                                    }}
+                                                />
+                                            )}
 
                                             {/* Static full border */}
                                             <div className={`absolute inset-0 rounded-full border ${feature.borderColor} opacity-30`} />

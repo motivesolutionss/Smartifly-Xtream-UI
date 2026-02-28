@@ -6,6 +6,7 @@ import { ChevronDown, MessageCircle, Clock, Headphones, CheckCircle, MessageSqua
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useRef } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 const faqs = [
     {
@@ -138,6 +139,7 @@ function FAQItem({ faq, index }: { faq: typeof faqs[0]; index: number }) {
 }
 
 export function FAQ() {
+    const { reduceMotion } = usePerformanceMode();
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -146,28 +148,13 @@ export function FAQ() {
             {/* Matching Animated Background Effects from Features */}
             <motion.div
                 className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1, 1.2, 1],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
                 className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1.2, 1, 1.2],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: 2,
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
             />
 
             {/* Grid pattern overlay */}
@@ -209,7 +196,7 @@ export function FAQ() {
                                             initial={{ opacity: 0, x: -20 }}
                                             animate={isInView ? { opacity: 1, x: 0 } : {}}
                                             transition={{ duration: 0.4, delay: 0.1 + index * 0.1 }}
-                                            whileHover={{ x: 4 }}
+                                            whileHover={reduceMotion ? undefined : { x: 4 }}
                                             className={`relative glass-card-sm hover:bg-background-hover transition-all duration-300 border-l-4 ${feature.borderColor} overflow-hidden group cursor-default`}
                                         >
                                             <div className="flex items-center gap-4 relative z-10">

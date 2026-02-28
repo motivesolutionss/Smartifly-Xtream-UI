@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Sparkles, MessageCircle, Play, Star, Zap, Shield, Check, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRef } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 const features = [
     "No Setup Fees",
@@ -20,6 +21,7 @@ const trustIndicators = [
 ];
 
 export function CTA() {
+    const { reduceMotion } = usePerformanceMode();
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -28,28 +30,13 @@ export function CTA() {
             {/* Matching Animated Background Effects from Features/FAQ */}
             <motion.div
                 className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1, 1.2, 1],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
                 className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-                animate={{
-                    scale: [1.2, 1, 1.2],
-                    opacity: [0.1, 0.15, 0.1],
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: 2,
-                }}
+                animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
+                transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
             />
 
             {/* Grid pattern overlay */}

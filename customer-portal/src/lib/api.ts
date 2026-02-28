@@ -85,22 +85,6 @@ async function fetchWithErrorHandling<T>(
       error.userMessage = `Request timed out. The server took too long to respond. Please try again.`;
     }
 
-    // Try to extract error message from response
-    if (error.status && error.status >= 400) {
-      // For 4xx and 5xx errors, try to get detailed message
-      try {
-        const errorData = await fetch(url, { ...options, method: 'GET' }).catch(() => null);
-        if (errorData) {
-          const errorJson = await errorData.json().catch(() => ({}));
-          if (errorJson.error || errorJson.message) {
-            error.userMessage = errorJson.error || errorJson.message;
-          }
-        }
-      } catch {
-        // Ignore errors when trying to get error details
-      }
-    }
-
     // Set default user message if not set
     if (!error.userMessage) {
       error.userMessage = getNetworkErrorMessage(error);

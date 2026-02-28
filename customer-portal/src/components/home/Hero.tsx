@@ -5,10 +5,12 @@ import Link from "next/link";
 import { ArrowRight, Play, Monitor, Smartphone, Tv, Laptop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRef, useEffect } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 export function Hero() {
     const containerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const { reduceMotion } = usePerformanceMode();
 
     // Mouse Parallax effect
     const mouseX = useMotionValue(0);
@@ -21,16 +23,29 @@ export function Hero() {
     const opacityTransform = useTransform(scrollY, [0, 400], [1, 0]);
 
     useEffect(() => {
+        if (reduceMotion) return;
+
+        let rafId: number | null = null;
+
         const handleMouseMove = (e: MouseEvent) => {
-            const { clientX, clientY } = e;
-            const { innerWidth, innerHeight } = window;
-            // Shifting by 30px max for a subtle look
-            mouseX.set((clientX / innerWidth - 0.5) * 30);
-            mouseY.set((clientY / innerHeight - 0.5) * 30);
+            if (rafId !== null) return;
+            rafId = window.requestAnimationFrame(() => {
+                const { clientX, clientY } = e;
+                const { innerWidth, innerHeight } = window;
+                // Shifting by 30px max for a subtle look
+                mouseX.set((clientX / innerWidth - 0.5) * 30);
+                mouseY.set((clientY / innerHeight - 0.5) * 30);
+                rafId = null;
+            });
         };
-        window.addEventListener("mousemove", handleMouseMove);
-        return () => window.removeEventListener("mousemove", handleMouseMove);
-    }, [mouseX, mouseY]);
+        window.addEventListener("mousemove", handleMouseMove, { passive: true });
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            if (rafId !== null) {
+                window.cancelAnimationFrame(rafId);
+            }
+        };
+    }, [mouseX, mouseY, reduceMotion]);
 
     return (
         <section
@@ -41,9 +56,13 @@ export function Hero() {
             <motion.div
                 className="absolute inset-0 z-0 pointer-events-none"
                 style={{
-                    x: springX,
-                    y: springY,
-                    scale: 1.05, // Slightly larger to prevent edges showing during parallax
+                    ...(reduceMotion
+                        ? { scale: 1 }
+                        : {
+                              x: springX,
+                              y: springY,
+                              scale: 1.05, // Slightly larger to prevent edges showing during parallax
+                          }),
                 }}
             >
                 <div className="absolute inset-0 bg-background/40 z-[1]" /> {/* Subtle tint */}
@@ -173,13 +192,15 @@ export function Hero() {
             </motion.div>
 
             {/* Subtle Scroll Indicator */}
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 opacity-40">
-                <motion.div
-                    animate={{ y: [0, 8, 0] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                    className="w-px h-12 bg-gradient-to-b from-primary to-transparent"
-                />
-            </div>
+            {!reduceMotion && (
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 opacity-40">
+                    <motion.div
+                        animate={{ y: [0, 8, 0] }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        className="w-px h-12 bg-gradient-to-b from-primary to-transparent"
+                    />
+                </div>
+            )}
         </section>
     );
 }

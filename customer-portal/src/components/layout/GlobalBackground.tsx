@@ -2,8 +2,11 @@
 
 import { motion, useSpring, useMotionValue } from "framer-motion";
 import { useEffect } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 export function GlobalBackground() {
+    const { reduceMotion } = usePerformanceMode();
+
     // Parallax values
     const mouseX = useMotionValue(0);
     const mouseY = useMotionValue(0);
@@ -13,16 +16,29 @@ export function GlobalBackground() {
     const springY = useSpring(mouseY, { stiffness: 20, damping: 30 });
 
     useEffect(() => {
+        if (reduceMotion) return;
+
+        let rafId: number | null = null;
+
         const handleMouseMove = (e: MouseEvent) => {
-            const { clientX, clientY } = e;
-            const { innerWidth, innerHeight } = window;
-            // Subtle shift: 20px range
-            mouseX.set((clientX / innerWidth - 0.5) * 20);
-            mouseY.set((clientY / innerHeight - 0.5) * 20);
+            if (rafId !== null) return;
+            rafId = window.requestAnimationFrame(() => {
+                const { clientX, clientY } = e;
+                const { innerWidth, innerHeight } = window;
+                // Subtle shift: 20px range
+                mouseX.set((clientX / innerWidth - 0.5) * 20);
+                mouseY.set((clientY / innerHeight - 0.5) * 20);
+                rafId = null;
+            });
         };
-        window.addEventListener("mousemove", handleMouseMove);
-        return () => window.removeEventListener("mousemove", handleMouseMove);
-    }, [mouseX, mouseY]);
+        window.addEventListener("mousemove", handleMouseMove, { passive: true });
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            if (rafId !== null) {
+                window.cancelAnimationFrame(rafId);
+            }
+        };
+    }, [mouseX, mouseY, reduceMotion]);
 
     return (
         <div
@@ -36,20 +52,24 @@ export function GlobalBackground() {
         >
             {/* 1. The Video with Parallax */}
             <motion.div
-                style={{ x: springX, y: springY, scale: 1.05 }}
+                style={reduceMotion ? undefined : { x: springX, y: springY, scale: 1.05 }}
                 className="absolute inset-0 w-full h-full"
             >
-                <video
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                    className="h-full w-full object-cover opacity-25 saturate-[0.7] contrast-[1.1]"
-                >
-                    <source src="/vid.webm" type="video/webm" />
-                    <source src="/vid.mp4" type="video/mp4" />
-                </video>
+                {reduceMotion ? (
+                    <div className="h-full w-full bg-[radial-gradient(circle_at_30%_20%,rgba(124,58,237,0.18),transparent_45%),radial-gradient(circle_at_80%_70%,rgba(6,182,212,0.14),transparent_40%),linear-gradient(180deg,rgba(2,6,23,0.9),rgba(2,6,23,1))]" />
+                ) : (
+                    <video
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        preload="auto"
+                        className="h-full w-full object-cover opacity-25 saturate-[0.7] contrast-[1.1]"
+                    >
+                        <source src="/vid.webm" type="video/webm" />
+                        <source src="/vid.mp4" type="video/mp4" />
+                    </video>
+                )}
             </motion.div>
 
             {/* 2. Cinematic Overlays */}
@@ -74,11 +94,13 @@ export function GlobalBackground() {
                 />
 
                 {/* Horizontal Scanline Beams */}
-                <motion.div
-                    animate={{ y: ["-100%", "200%"] }}
-                    transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-                    className="absolute inset-x-0 h-[30%] bg-gradient-to-b from-transparent via-primary/5 to-transparent mix-blend-overlay"
-                />
+                {!reduceMotion && (
+                    <motion.div
+                        animate={{ y: ["-100%", "200%"] }}
+                        transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-x-0 h-[30%] bg-gradient-to-b from-transparent via-primary/5 to-transparent mix-blend-overlay"
+                    />
+                )}
             </div>
 
             {/* 4. Brand Glows (On Top of video, behind content) */}
