@@ -8,7 +8,7 @@ const isDevelopment = __DEV__;
 
 // For local development with Android Emulator, use 10.0.2.2 (emulator's localhost alias)
 const LOCAL_F_API_URL = 'http://10.0.2.2:5000/api/master';
-const PROD_F_API_URL = 'https://smartifly-xtremeui-portfolio-production-5654.up.railway.app/api/master';
+const PROD_F_API_URL = 'https://api.smartifly-portfolio.duckdns.org/api/master';
 
 
 const F_API_URL = isDevelopment ? LOCAL_F_API_URL : PROD_F_API_URL;

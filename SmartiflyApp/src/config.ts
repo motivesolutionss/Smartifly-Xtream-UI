@@ -33,7 +33,7 @@ const isDevelopment = __DEV__;
 const getBackendUrl = (): string => {
     // Xtream UI Backend — always use the production URL
     // (no local instance of this backend runs during development)
-    return 'https://smartifly-xtream-ui-production-dce1.up.railway.app/api';
+    return 'https://api.xtreamui.duckdns.org/api';
 };
 
 /**
@@ -43,7 +43,7 @@ const getBackendUrl = (): string => {
 const getMasterBackendUrl = (): string => {
     // Port 5000 as specified by the user for the local backend
     const LOCAL_MASTER_URL = 'http://10.0.2.2:5000/api';
-    const PROD_MASTER_URL = 'https://smartifly-xtremeui-portfolio-production-5654.up.railway.app/api';
+    const PROD_MASTER_URL = 'https://api.smartifly-portfolio.duckdns.org/api';
 
     return isDevelopment ? LOCAL_MASTER_URL : PROD_MASTER_URL;
 };
