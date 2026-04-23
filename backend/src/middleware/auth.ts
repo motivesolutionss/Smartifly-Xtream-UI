@@ -15,7 +15,13 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
         }
 
         const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, config.jwtSecret) as { adminId: string };
+        const decoded = jwt.verify(token, config.jwtSecret, {
+            algorithms: ['HS256'],
+        }) as { adminId?: string; tokenType?: string };
+
+        if (!decoded?.adminId || decoded.tokenType !== 'access') {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
 
         req.adminId = decoded.adminId;
         next();

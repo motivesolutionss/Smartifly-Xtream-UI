@@ -34,7 +34,7 @@ api.interceptors.request.use((config) => {
     }
 
     if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -69,8 +69,10 @@ api.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                const refreshToken = localStorage.getItem('refreshToken');
-
+                if (typeof window === 'undefined') {
+                    throw new Error('Token refresh is only available in browser context');
+                }
+                const refreshToken = sessionStorage.getItem('refreshToken');
                 if (!refreshToken) {
                     throw new Error('No refresh token');
                 }
@@ -79,8 +81,8 @@ api.interceptors.response.use(
                 const response = await api.post('auth/refresh', { refreshToken });
                 const { token: newToken, refreshToken: newRefreshToken } = response.data;
 
-                localStorage.setItem('token', newToken);
-                localStorage.setItem('refreshToken', newRefreshToken);
+                sessionStorage.setItem('token', newToken);
+                sessionStorage.setItem('refreshToken', newRefreshToken);
 
                 processQueue(null, newToken);
 
@@ -91,8 +93,8 @@ api.interceptors.response.use(
 
                 // Clear tokens and redirect to login
                 if (typeof window !== 'undefined') {
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('refreshToken');
+                    sessionStorage.removeItem('token');
+                    sessionStorage.removeItem('refreshToken');
                     window.location.href = '/login';
                 }
 
@@ -152,6 +154,8 @@ export const ticketsApi = {
     bulkAction: (ids: string[], action: 'close' | 'resolve' | 'delete') =>
         api.post('/tickets/admin/bulk-action', { ids, action }),
     export: () => api.get('/tickets/admin/export', { responseType: 'blob' }),
+    downloadAttachment: (attachmentId: string) =>
+        api.get(`/tickets/admin/attachments/${encodeURIComponent(attachmentId)}/download`, { responseType: 'blob' }),
     uploadAttachments: (id: string, formData: FormData) =>
         api.post(`/tickets/admin/${id}/attachments`, formData, {
             headers: {
@@ -201,7 +205,7 @@ export const packagesApi = {
 
 // Announcements API
 export const announcementsApi = {
-    getAll: () => api.get('/announcements'),
+    getAll: () => api.get('/announcements/admin'),
     create: (data: { title: string; content: string; type?: string }) =>
         api.post('/announcements', data),
     update: (id: string, data: any) =>
@@ -211,7 +215,7 @@ export const announcementsApi = {
 
 // Settings API
 export const settingsApi = {
-    get: () => api.get('/settings'),
+    get: () => api.get('/settings/admin'),
     update: (data: Partial<{ maintenanceMode: boolean; latestVersion: string; forceUpdate: boolean }>) =>
         api.put('/settings', data),
 
@@ -232,6 +236,8 @@ export const settingsApi = {
     getBackups: () => api.get('/settings/backups'),
     createBackup: () => api.post('/settings/backups'),
     restoreBackup: (id: string) => api.post(`/settings/backups/${id}/restore`),
+    downloadBackup: (filename: string) =>
+        api.get(`/settings/backups/${encodeURIComponent(filename)}/download`, { responseType: 'blob' }),
 
     // Audit Logs
     getAuditLogs: (page = 1, limit = 20) => api.get(`/settings/audit-logs?page=${page}&limit=${limit}`),

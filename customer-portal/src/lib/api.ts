@@ -237,11 +237,14 @@ export async function createTicketWithAttachments(
  * console.log('Ticket status:', ticket.status);
  * ```
  */
-export async function fetchTicket(ticketNo: string): Promise<Ticket> {
+export async function fetchTicket(ticketNo: string, email: string): Promise<Ticket> {
   if (!ticketNo || typeof ticketNo !== 'string') {
     throw new Error('Ticket number is required and must be a string');
   }
-  return await fetchWithErrorHandling<Ticket>(`${BASE_URL}/api/tickets/${ticketNo}`, undefined, {
+  if (!email || typeof email !== 'string') {
+    throw new Error('Email is required to view ticket details');
+  }
+  return await fetchWithErrorHandling<Ticket>(`${BASE_URL}/api/tickets/${ticketNo}?email=${encodeURIComponent(email)}`, undefined, {
     timeout: 15000, // 15 seconds for ticket lookup
   });
 }
@@ -423,10 +426,10 @@ export async function lookupSubscription(email: string): Promise<SubscriptionLoo
  * @param message - The reply message content
  * @returns Promise resolving to the created TicketReply
  */
-export async function replyTicket(ticketNo: string, message: string): Promise<TicketReply> {
+export async function replyTicket(ticketNo: string, email: string, message: string): Promise<TicketReply> {
   return await fetchWithErrorHandling<TicketReply>(`${BASE_URL}/api/tickets/${ticketNo}/reply`, {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ email, message }),
   }, {
     timeout: 15000,
   });
@@ -435,8 +438,9 @@ export async function replyTicket(ticketNo: string, message: string): Promise<Ti
 /**
  * Uploads attachments to an existing ticket.
  */
-export async function uploadTicketAttachments(ticketNo: string, files: File[]): Promise<TicketAttachment[]> {
+export async function uploadTicketAttachments(ticketNo: string, email: string, files: File[]): Promise<TicketAttachment[]> {
   const formData = new FormData();
+  formData.append('email', email);
   files.forEach((file) => formData.append('files', file));
 
   return await fetchWithErrorHandling<TicketAttachment[]>(`${BASE_URL}/api/tickets/${ticketNo}/attachments`, {

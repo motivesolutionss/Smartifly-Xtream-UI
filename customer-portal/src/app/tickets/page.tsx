@@ -12,11 +12,12 @@ import Image from "next/image";
 export default function SupportLandingPage() {
     const router = useRouter();
     const [ticketId, setTicketId] = useState("");
+    const [ticketEmail, setTicketEmail] = useState("");
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        if (ticketId.trim()) {
-            router.push(`/tickets/view?id=${ticketId.trim()}`);
+        if (ticketId.trim() && ticketEmail.trim()) {
+            router.push(`/tickets/view?id=${ticketId.trim()}&email=${encodeURIComponent(ticketEmail.trim().toLowerCase())}`);
         }
     };
 
@@ -86,7 +87,7 @@ export default function SupportLandingPage() {
 
                                 <h2 className="text-2xl font-bold font-heading text-foreground mb-3">Track Ticket</h2>
                                 <p className="text-foreground-secondary mb-8">
-                                    Check the status of your existing support request. Enter your Ticket ID below.
+                                    Check the status of your existing support request. Enter your Ticket ID and email below.
                                 </p>
 
                                 <form onSubmit={handleSearch} className="mt-auto space-y-4">
@@ -99,10 +100,19 @@ export default function SupportLandingPage() {
                                             className="pl-10 h-12 bg-background-tertiary border-border-soft focus:bg-background-elevated"
                                         />
                                     </div>
+                                    <div className="relative">
+                                        <Input
+                                            type="email"
+                                            placeholder="Email used for the ticket"
+                                            value={ticketEmail}
+                                            onChange={(e) => setTicketEmail(e.target.value)}
+                                            className="h-12 bg-background-tertiary border-border-soft focus:bg-background-elevated"
+                                        />
+                                    </div>
                                     <Button
                                         type="submit"
                                         className="w-full btn-primary btn-lg hover-lift"
-                                        disabled={!ticketId.trim()}
+                                        disabled={!ticketId.trim() || !ticketEmail.trim()}
                                     >
                                         Check Status <ArrowRight className="w-4 h-4 ml-2" />
                                     </Button>

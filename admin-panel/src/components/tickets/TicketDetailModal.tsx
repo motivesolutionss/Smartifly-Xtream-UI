@@ -12,6 +12,7 @@ import {
     cn,
     formatRelativeTime
 } from '@/lib/utils';
+import { ticketsApi } from '@/lib/api';
 import type { Ticket, TicketTemplate } from '@/types';
 import {
     Clock,
@@ -31,7 +32,6 @@ import {
     Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_BASE_URL } from '@/lib/constants';
 
 interface TicketDetailModalProps {
     ticket: Ticket | null;
@@ -116,6 +116,22 @@ export function TicketDetailModal({
         onAddTag(newTag.trim());
         setNewTag('');
         // Don't close editing mode to allow adding multiple tags
+    };
+
+    const handleDownloadAttachment = async (attachmentId: string, filename: string) => {
+        try {
+            const response = await ticketsApi.downloadAttachment(attachmentId);
+            const blobUrl = window.URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            toast.error('Failed to download attachment');
+        }
     };
 
     return (
@@ -410,11 +426,10 @@ export function TicketDetailModal({
                                 {ticket.attachments && ticket.attachments.length > 0 ? (
                                     <div className="space-y-2">
                                         {ticket.attachments.map(att => (
-                                            <a
+                                            <button
                                                 key={att.id}
-                                                href={att.fileUrl.startsWith('http') ? att.fileUrl : `${API_BASE_URL}${att.fileUrl}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
+                                                type="button"
+                                                onClick={() => handleDownloadAttachment(att.id, att.filename)}
                                                 className="flex items-center gap-3 p-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)] hover:shadow-sm transition-all group"
                                             >
                                                 <div className="p-1.5 rounded-md bg-[var(--bg-secondary)] text-[var(--text-muted)] group-hover:bg-[var(--accent)]/10 group-hover:text-[var(--accent)] transition-colors">
@@ -425,7 +440,7 @@ export function TicketDetailModal({
                                                     <p className="text-[10px] text-[var(--text-muted)]">{formatBytes(att.fileSize)}</p>
                                                 </div>
                                                 <Download size={12} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                                            </a>
+                                            </button>
                                         ))}
                                     </div>
                                 ) : (

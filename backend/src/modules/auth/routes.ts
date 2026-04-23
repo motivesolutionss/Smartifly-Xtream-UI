@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../../config/database.js';
@@ -30,11 +31,19 @@ const refreshSchema = z.object({
     }),
 });
 
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many login attempts. Please try again later.' },
+});
+
 // Helper: Generate tokens
 const generateTokens = async (adminId: string) => {
     // Access token (short-lived)
     const accessToken = jwt.sign(
-        { adminId },
+        { adminId, tokenType: 'access' },
         config.jwtSecret,
         { expiresIn: config.jwtExpiresIn } as jwt.SignOptions
     );
@@ -56,30 +65,19 @@ const generateTokens = async (adminId: string) => {
 };
 
 // POST /api/auth/login
-router.post('/login', validate(loginSchema), async (req: Request, res: Response) => {
+router.post('/login', loginLimiter, validate(loginSchema), async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
 
         const admin = await prisma.admin.findUnique({ where: { email } });
 
-        // If email doesn't exist, check if password is also clearly invalid
         if (!admin) {
-            // Try to see if the password would fail for ANY user (e.g., too short, empty after trim)
-            const trimmedPassword = password.trim();
-            const isPasswordWeak = trimmedPassword.length < 6;
-
-            // If both are wrong (email doesn't exist AND password is weak), return generic error
-            if (isPasswordWeak) {
-                return res.status(401).json({ error: 'Invalid credentials' });
-            }
-
-            // Only email is wrong, password looks reasonable
-            return res.status(401).json({ error: 'Invalid email' });
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const isValidPassword = await bcrypt.compare(password, admin.password);
         if (!isValidPassword) {
-            return res.status(401).json({ error: 'Incorrect password' });
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         // Generate both access and refresh tokens
@@ -96,7 +94,6 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         });
     } catch (error) {
         console.error('Login error:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
         res.status(500).json({ error: 'Server error occurred. Please try again.' });
     }
 });

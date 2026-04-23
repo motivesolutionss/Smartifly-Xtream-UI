@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, useInView } from "framer-motion";
 import { Loader2, ArrowLeft, Search, TicketIcon, AlertCircle, RefreshCw } from "lucide-react";
 import { TicketStatus } from "@/components/tickets/TicketStatus";
@@ -13,12 +13,16 @@ import Link from "next/link";
 
 export default function ViewTicketPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
   // Type-safe ID extraction
   const id = typeof params?.id === 'string' ? params.id : null;
+  const emailFromQuery = searchParams.get("email");
   const [ticketId, setTicketId] = useState(id || "");
-  const [searchId, setSearchId] = useState("");
+  const [ticketEmail, setTicketEmail] = useState(emailFromQuery || "");
+  const [searchId, setSearchId] = useState(id || "");
+  const [searchEmail, setSearchEmail] = useState(emailFromQuery || "");
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -28,7 +32,7 @@ export default function ViewTicketPage() {
     error, 
     isError, 
     refetch 
-  } = useTicket(ticketId || null);
+  } = useTicket(ticketId || null, ticketEmail || null);
 
   const isNotFound = (error as any)?.status === 404;
   const errorMessage = isNotFound
@@ -39,9 +43,11 @@ export default function ViewTicketPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchId.trim()) {
+    if (searchId.trim() && searchEmail.trim()) {
+      const normalizedEmail = searchEmail.trim().toLowerCase();
       setTicketId(searchId.trim());
-      router.push(`/tickets/${searchId.trim()}`);
+      setTicketEmail(normalizedEmail);
+      router.push(`/tickets/${searchId.trim()}?email=${encodeURIComponent(normalizedEmail)}`);
     }
   };
 
@@ -97,7 +103,7 @@ export default function ViewTicketPage() {
             </Button>
           </Link>
 
-          {!id && (
+          {!(id && emailFromQuery) && (
             <div className="max-w-xl mx-auto mb-8">
               <div className="glass-card glass-card-xl relative overflow-hidden">
                 {/* Corner glows */}
@@ -117,14 +123,21 @@ export default function ViewTicketPage() {
                     </div>
                   </div>
 
-                  <form onSubmit={handleSearch} className="flex gap-3">
+                  <form onSubmit={handleSearch} className="space-y-3">
                     <Input
-                      placeholder="Enter ticket ID (e.g., TKT-123456)"
+                      placeholder="Enter ticket ID (e.g., TKT-ABC123)"
                       value={searchId}
                       onChange={(e) => setSearchId(e.target.value)}
-                      className="flex-1"
+                      className="w-full"
                     />
-                    <Button type="submit" className="btn-primary hover-lift">
+                    <Input
+                      type="email"
+                      placeholder="Enter the email used when creating the ticket"
+                      value={searchEmail}
+                      onChange={(e) => setSearchEmail(e.target.value)}
+                      className="w-full"
+                    />
+                    <Button type="submit" className="btn-primary hover-lift w-full">
                       <Search className="w-4 h-4" />
                       Search
                     </Button>
@@ -151,7 +164,7 @@ export default function ViewTicketPage() {
           >
             <TicketStatus ticket={ticket} />
           </motion.div>
-        ) : ticketId && isError ? (
+        ) : ticketId && ticketEmail && isError ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}

@@ -2,7 +2,8 @@ import { Router } from 'express';
 import {
     createAnnouncement,
     getAnnouncements,
-    getAnnouncement,
+    getPublicAnnouncements,
+    getPublicAnnouncement,
     updateAnnouncement,
     deleteAnnouncement,
     trackView
@@ -11,14 +12,12 @@ import { authenticate } from '../../middleware/auth.js';
 
 const router = Router();
 
-// Logs to debug if imports are undefined
-if (!authenticate) console.error('Auth middleware is missing!');
-if (!getAnnouncements) console.error('getAnnouncements controller is missing!');
+// Public read routes
+router.get('/', getPublicAnnouncements);
 
-// Public/Protected read routes
-// Public/Protected read routes
-router.get('/', getAnnouncements);
-router.get('/:id', getAnnouncement);
+// Admin read route
+router.get('/admin', authenticate, getAnnouncements);
+router.get('/:id', getPublicAnnouncement);
 
 // Admin only routes
 router.post('/', authenticate, createAnnouncement);

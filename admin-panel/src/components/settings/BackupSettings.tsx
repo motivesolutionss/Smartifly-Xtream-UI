@@ -1,6 +1,7 @@
 
 import { Card, CardHeader, CardBody, Button, Table, Badge, TableRow, TableCell } from '@/components/ui';
 import { useBackups, useCreateBackup, useRestoreBackup } from '@/hooks/useSettings';
+import { settingsApi } from '@/lib/api';
 import { Database, Download, RotateCcw, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -26,6 +27,23 @@ export function BackupSettings() {
             toast.success('System restored successfully');
         } catch {
             toast.error('Failed to restore system');
+        }
+    };
+
+    const handleDownload = async (filename: string) => {
+        try {
+            const response = await settingsApi.downloadBackup(filename);
+            const blob = new Blob([response.data], { type: 'application/sql' });
+            const objectUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(objectUrl);
+        } catch {
+            toast.error('Failed to download backup');
         }
     };
 
@@ -90,7 +108,12 @@ export function BackupSettings() {
                                         </TableCell>
                                         <TableCell align="right">
                                             <div className="flex justify-end gap-2">
-                                                <Button size="sm" variant="ghost" onClick={() => window.open(backup.url, '_blank')} disabled={!backup.url}>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => handleDownload(backup.filename)}
+                                                    disabled={backup.status !== 'COMPLETED'}
+                                                >
                                                     Download
                                                 </Button>
                                                 <Button size="sm" variant="danger" onClick={() => handleRestore(backup.id, backup.filename)}>

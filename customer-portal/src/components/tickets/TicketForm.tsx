@@ -75,7 +75,8 @@ export function TicketForm() {
         title: "Ticket Created",
         description: `Your ticket ID is ${ticket.ticketNo}. Save this for reference.`,
       });
-      router.push(`/tickets/view?id=${ticket.ticketNo}`);
+      const ticketEmail = sanitizedData.email.toLowerCase();
+      router.push(`/tickets/view?id=${ticket.ticketNo}&email=${encodeURIComponent(ticketEmail)}`);
     },
     validateOnChange: true,
     validateOnBlur: true,

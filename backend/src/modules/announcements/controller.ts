@@ -45,11 +45,80 @@ export const getAnnouncements = async (req: Request, res: Response) => {
     }
 };
 
+export const getPublicAnnouncements = async (req: Request, res: Response) => {
+    try {
+        const { type } = req.query;
+        const now = new Date();
+
+        const where: any = {
+            isActive: true,
+            status: 'PUBLISHED',
+            OR: [
+                { scheduledAt: null },
+                { scheduledAt: { lte: now } },
+            ],
+            AND: [
+                {
+                    OR: [
+                        { expiresAt: null },
+                        { expiresAt: { gt: now } },
+                    ],
+                },
+            ],
+        };
+        if (type) where.type = type;
+
+        const announcements = await prisma.announcement.findMany({
+            where,
+            orderBy: { createdAt: 'desc' }
+        });
+
+        res.json(announcements);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch announcements' });
+    }
+};
+
 export const getAnnouncement = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const announcement = await prisma.announcement.findUnique({
             where: { id }
+        });
+
+        if (!announcement) {
+            return res.status(404).json({ error: 'Announcement not found' });
+        }
+
+        res.json(announcement);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch announcement' });
+    }
+};
+
+export const getPublicAnnouncement = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const now = new Date();
+
+        const announcement = await prisma.announcement.findFirst({
+            where: {
+                id,
+                isActive: true,
+                status: 'PUBLISHED',
+                OR: [
+                    { scheduledAt: null },
+                    { scheduledAt: { lte: now } },
+                ],
+                AND: [
+                    {
+                        OR: [
+                            { expiresAt: null },
+                            { expiresAt: { gt: now } },
+                        ],
+                    },
+                ],
+            }
         });
 
         if (!announcement) {

@@ -184,6 +184,14 @@ export default function AnnouncementsPage() {
         }
     };
 
+    const getContentPreview = (htmlContent: string) => {
+        // Render preview as plain text to avoid stored-XSS sinks in admin list.
+        return htmlContent
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -339,10 +347,9 @@ export default function AnnouncementsPage() {
                                         </div>
                                     </div>
 
-                                    <div
-                                        className="prose prose-invert prose-sm max-w-none text-[var(--text-secondary)] line-clamp-3"
-                                        dangerouslySetInnerHTML={{ __html: a.content }}
-                                    />
+                                    <p className="text-[var(--text-secondary)] line-clamp-3 whitespace-pre-wrap break-words">
+                                        {getContentPreview(a.content)}
+                                    </p>
 
                                     {a.expiresAt && (
                                         <div className="mt-4 flex items-center gap-2 text-xs text-[var(--warning)] bg-[var(--warning)]/5 w-fit px-2 py-1 rounded">

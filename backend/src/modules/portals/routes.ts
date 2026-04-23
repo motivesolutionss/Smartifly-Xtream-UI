@@ -33,7 +33,10 @@ const updatePortalSchema = z.object({
         serverIp: z.string().optional(),
         order: z.number().int().optional(),
         isActive: z.boolean().optional(),
-    }),
+    }).refine(
+        (body) => Object.keys(body).length > 0,
+        { message: 'At least one field must be provided for update' }
+    ),
 });
 
 // GET /api/portals - Public: Get active portals for app
@@ -45,8 +48,6 @@ router.get('/', async (req: Request, res: Response) => {
                 id: true,
                 name: true,
                 url: true,
-                username: true,
-                password: true,
                 order: true,
             },
             orderBy: { order: 'asc' },
@@ -82,8 +83,30 @@ router.post('/', authMiddleware, validate(portalSchema), async (req: AuthRequest
             });
         }
 
+        const {
+            name,
+            url,
+            username,
+            password,
+            description,
+            category,
+            serverIp,
+            order,
+            isActive,
+        } = req.body;
+
         const portal = await prisma.portal.create({
-            data: req.body,
+            data: {
+                name,
+                url,
+                ...(username !== undefined && { username }),
+                ...(password !== undefined && { password }),
+                ...(description !== undefined && { description }),
+                ...(category !== undefined && { category }),
+                ...(serverIp !== undefined && { serverIp }),
+                ...(order !== undefined && { order }),
+                ...(isActive !== undefined && { isActive }),
+            },
         });
 
         notifyInvalidation(['portals']);
@@ -97,10 +120,31 @@ router.post('/', authMiddleware, validate(portalSchema), async (req: AuthRequest
 router.put('/:id', authMiddleware, validate(updatePortalSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+        const {
+            name,
+            url,
+            username,
+            password,
+            description,
+            category,
+            serverIp,
+            order,
+            isActive,
+        } = req.body;
 
         const portal = await prisma.portal.update({
             where: { id },
-            data: req.body,
+            data: {
+                ...(name !== undefined && { name }),
+                ...(url !== undefined && { url }),
+                ...(username !== undefined && { username }),
+                ...(password !== undefined && { password }),
+                ...(description !== undefined && { description }),
+                ...(category !== undefined && { category }),
+                ...(serverIp !== undefined && { serverIp }),
+                ...(order !== undefined && { order }),
+                ...(isActive !== undefined && { isActive }),
+            },
         });
 
         notifyInvalidation(['portals']);

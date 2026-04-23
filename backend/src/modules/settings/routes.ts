@@ -33,14 +33,46 @@ const updateSettingsSchema = z.object({
 
 const router = Router();
 
-// GET /api/settings - Public: Get app settings
+// GET /api/settings - Public: Get safe app settings only
 router.get('/', async (req: Request, res: Response) => {
     try {
-        let settings = await prisma.appSettings.findFirst({
+        let settings = await prisma.appSettings.findUnique({
             where: { id: 'main' },
         });
 
         // Create default settings if not exists
+        if (!settings) {
+            settings = await prisma.appSettings.create({
+                data: { id: 'main' },
+            });
+        }
+
+        res.json({
+            maintenanceMode: settings.maintenanceMode,
+            maintenanceMsg: settings.maintenanceMsg,
+            latestVersion: settings.latestVersion,
+            minVersion: settings.minVersion,
+            updateUrl: settings.updateUrl,
+            forceUpdate: settings.forceUpdate,
+            contactEmail: settings.contactEmail,
+            contactPhone: settings.contactPhone,
+            aboutText: settings.aboutText,
+            termsUrl: settings.termsUrl,
+            privacyUrl: settings.privacyUrl,
+            updatedAt: settings.updatedAt,
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get settings' });
+    }
+});
+
+// GET /api/settings/admin - Admin: Get full settings (including sensitive operational fields)
+router.get('/admin', authMiddleware, async (req: AuthRequest, res: Response) => {
+    try {
+        let settings = await prisma.appSettings.findUnique({
+            where: { id: 'main' },
+        });
+
         if (!settings) {
             settings = await prisma.appSettings.create({
                 data: { id: 'main' },
@@ -129,7 +161,7 @@ router.delete('/maintenance-windows/:id', authMiddleware, maintenance.deleteMain
 router.get('/backups', authMiddleware, backups.getBackups);
 router.post('/backups', authMiddleware, backups.createBackup);
 router.post('/backups/:id/restore', authMiddleware, backups.restoreBackup);
-router.get('/backups/:filename/download', backups.downloadBackup);
+router.get('/backups/:filename/download', authMiddleware, backups.downloadBackup);
 
 // AUDIT LOGS
 router.get('/audit-logs', authMiddleware, auditLogs.getAuditLogs);

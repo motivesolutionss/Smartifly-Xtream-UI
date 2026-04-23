@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
 import { config } from './config/index.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
 import prisma from './config/database.js';
@@ -19,6 +18,7 @@ import { analyticsRoutes } from './modules/analytics/index.js';
 import { subscriptionRoutes } from './modules/subscriptions/index.js';
 
 const app = express();
+app.disable('x-powered-by');
 
 /**
  * TRUST PROXY (PRODUCTION SAFE)
@@ -29,36 +29,39 @@ if (config.nodeEnv === 'production') {
 }
 
 // Security middleware
-app.use(helmet());
-app.use(cors({
-    origin: config.corsOrigins,
-    credentials: true,
+app.use(helmet({
+    crossOriginResourcePolicy: false,
 }));
 
-// Rate limiting (relaxed for development)
+const allowedOrigins = new Set(config.corsOrigins);
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow same-origin/non-browser clients (curl, health probes, server-to-server).
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        return callback(null, allowedOrigins.has(origin));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 60 * 60 * 24,
+}));
+
+// Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 2000, // Limit each IP to 1000 requests per window
+    max: config.nodeEnv === 'production' ? 300 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
+    message: { error: 'Too many requests. Please try again later.' },
 });
 app.use(limiter);
 
-// Specific rate limiter for subscription requests (10 per IP per hour)
-const subscriptionLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 50, // Limit each IP to 10 subscription requests per hour
-    standardHeaders: true,
-    legacyHeaders: false,
-    skipSuccessfulRequests: false,
-});
-
-// Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Static files
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Body parsing with size limits
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Root route
 app.get('/', (req, res) => {
@@ -89,7 +92,6 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/subscriptions/request', subscriptionLimiter);
 app.use('/api/subscriptions', subscriptionRoutes);
 
 // API info

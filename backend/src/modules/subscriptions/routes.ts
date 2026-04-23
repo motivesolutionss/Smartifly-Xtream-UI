@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import prisma from '../../config/database.js';
 import { validate } from '../../middleware/index.js';
 import { sendVerificationEmail, sendSubscriptionPDF } from '../../utils/email.js';
@@ -30,41 +31,34 @@ const lookupSchema = z.object({
     }),
 });
 
-// In-memory rate limiting for lookup (simple approach - use Redis in production)
-const lookupAttempts = new Map<string, { count: number; resetAt: number }>();
+const subscriptionLookupLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many lookup attempts. Please try again in 10 minutes.' },
+});
 
-function checkLookupRateLimit(email: string): boolean {
-    const now = Date.now();
-    const windowMs = 10 * 60 * 1000; // 10 minutes
-    const maxAttempts = 5;
+const subscriptionRequestLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many subscription requests. Please try again later.' },
+});
 
-    const key = email.toLowerCase();
-    const record = lookupAttempts.get(key);
-
-    if (!record || now > record.resetAt) {
-        lookupAttempts.set(key, { count: 1, resetAt: now + windowMs });
-        return true;
-    }
-
-    if (record.count >= maxAttempts) {
-        return false;
-    }
-
-    record.count++;
-    return true;
-}
+const subscriptionVerifyLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many verification attempts. Please try again later.' },
+});
 
 // GET /api/subscriptions/lookup - Lookup subscription request by email (public endpoint)
-router.get('/lookup', validate(lookupSchema), async (req: Request, res: Response) => {
+router.get('/lookup', subscriptionLookupLimiter, validate(lookupSchema), async (req: Request, res: Response) => {
     try {
         const email = (req.query.email as string).toLowerCase().trim();
-
-        // Check rate limit
-        if (!checkLookupRateLimit(email)) {
-            return res.status(429).json({
-                error: 'Too many lookup attempts. Please try again in 10 minutes.'
-            });
-        }
 
         // Find the most recent subscription request for this email
         const subscriptionRequest = await prisma.subscriptionRequest.findFirst({
@@ -108,7 +102,7 @@ router.get('/lookup', validate(lookupSchema), async (req: Request, res: Response
 });
 
 // POST /api/subscriptions/request - Create subscription request
-router.post('/request', validate(createSubscriptionRequestSchema), async (req: Request, res: Response) => {
+router.post('/request', subscriptionRequestLimiter, validate(createSubscriptionRequestSchema), async (req: Request, res: Response) => {
     try {
         const { packageId, fullName, email, phoneNumber } = req.body;
 
@@ -127,7 +121,7 @@ router.post('/request', validate(createSubscriptionRequestSchema), async (req: R
         }
 
         // Check rate limit: 3 requests per email per hour
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 2000);
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         const recentRequests = await prisma.subscriptionRequest.count({
             where: {
                 email: sanitizedEmail,
@@ -135,7 +129,7 @@ router.post('/request', validate(createSubscriptionRequestSchema), async (req: R
             },
         });
 
-        if (recentRequests >= 6) {
+        if (recentRequests >= 3) {
             return res.status(429).json({
                 error: 'Too many requests. Please wait before requesting again.',
             });
@@ -197,9 +191,13 @@ router.post('/request', validate(createSubscriptionRequestSchema), async (req: R
 });
 
 // GET /api/subscriptions/verify/:token - Verify email and send PDF
-router.get('/verify/:token', async (req: Request, res: Response) => {
+router.get('/verify/:token', subscriptionVerifyLimiter, async (req: Request, res: Response) => {
     try {
         const { token } = req.params;
+
+        if (!/^[a-f0-9]{64}$/i.test(token)) {
+            return res.status(400).json({ error: 'Invalid verification link' });
+        }
 
         // Find subscription request by token
         const subscriptionRequest = await prisma.subscriptionRequest.findUnique({

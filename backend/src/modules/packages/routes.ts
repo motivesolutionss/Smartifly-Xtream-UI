@@ -36,6 +36,102 @@ const featureTemplateSchema = z.object({
     }),
 });
 
+const packageIdParamsSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+});
+
+const tierIdParamsSchema = z.object({
+    params: z.object({
+        tierId: z.string().uuid(),
+    }),
+});
+
+const featureTemplateIdParamsSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+});
+
+const updatePackageSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+    body: z.object({
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().min(1).optional(),
+        duration: z.string().min(1).optional(),
+        price: z.number().positive().optional(),
+        currency: z.string().min(1).max(10).optional(),
+        features: z.array(z.string()).optional(),
+        isPopular: z.boolean().optional(),
+        isActive: z.boolean().optional(),
+        order: z.number().int().optional(),
+    }).refine(
+        (body) => Object.keys(body).length > 0,
+        { message: 'At least one field must be provided for update' }
+    ),
+});
+
+const duplicatePackageSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+    body: z.object({
+        name: z.string().min(1).max(100).optional(),
+    }),
+});
+
+const purchaseAnalyticsSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+    body: z.object({
+        amount: z.number().min(0).optional(),
+    }),
+});
+
+const pricingTierCreateSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+    body: z.object({
+        minQuantity: z.number().int().positive(),
+        maxQuantity: z.number().int().positive().nullable().optional(),
+        price: z.number().positive(),
+        discount: z.number().min(0).max(100).nullable().optional(),
+    }),
+});
+
+const pricingTierUpdateSchema = z.object({
+    params: z.object({
+        tierId: z.string().uuid(),
+    }),
+    body: z.object({
+        minQuantity: z.number().int().positive(),
+        maxQuantity: z.number().int().positive().nullable().optional(),
+        price: z.number().positive(),
+        discount: z.number().min(0).max(100).nullable().optional(),
+    }),
+});
+
+const featureTemplateUpdateSchema = z.object({
+    params: z.object({
+        id: z.string().uuid(),
+    }),
+    body: z.object({
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().optional(),
+        features: z.array(z.string()).optional(),
+        category: z.string().optional(),
+        isActive: z.boolean().optional(),
+    }).refine(
+        (body) => Object.keys(body).length > 0,
+        { message: 'At least one field must be provided for update' }
+    ),
+});
+
 // GET /api/packages - Public: Get active packages
 router.get('/', async (req: Request, res: Response) => {
     try {
@@ -93,13 +189,34 @@ router.post('/', authMiddleware, validate(packageSchema), async (req: AuthReques
 });
 
 // PUT /api/packages/:id - Admin: Update package
-router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authMiddleware, validate(updatePackageSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+        const {
+            name,
+            description,
+            duration,
+            price,
+            currency,
+            features,
+            isPopular,
+            isActive,
+            order,
+        } = req.body;
 
         const pkg = await prisma.package.update({
             where: { id },
-            data: req.body,
+            data: {
+                ...(name !== undefined && { name }),
+                ...(description !== undefined && { description }),
+                ...(duration !== undefined && { duration }),
+                ...(price !== undefined && { price }),
+                ...(currency !== undefined && { currency }),
+                ...(features !== undefined && { features }),
+                ...(isPopular !== undefined && { isPopular }),
+                ...(isActive !== undefined && { isActive }),
+                ...(order !== undefined && { order }),
+            },
         });
 
         res.json(pkg);
@@ -109,7 +226,7 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
 });
 
 // DELETE /api/packages/:id - Admin: Delete package
-router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authMiddleware, validate(packageIdParamsSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -122,7 +239,7 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) =>
 });
 
 // POST /api/packages/:id/duplicate - Admin: Duplicate package
-router.post('/:id/duplicate', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/:id/duplicate', authMiddleware, validate(duplicatePackageSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { name } = req.body;
@@ -189,7 +306,7 @@ router.get('/analytics', authMiddleware, async (req: AuthRequest, res: Response)
 });
 
 // POST /api/packages/:id/analytics/view - Track package view
-router.post('/:id/analytics/view', async (req: Request, res: Response) => {
+router.post('/:id/analytics/view', validate(packageIdParamsSchema), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -213,7 +330,7 @@ router.post('/:id/analytics/view', async (req: Request, res: Response) => {
 });
 
 // POST /api/packages/:id/analytics/purchase - Track package purchase
-router.post('/:id/analytics/purchase', async (req: Request, res: Response) => {
+router.post('/:id/analytics/purchase', validate(purchaseAnalyticsSchema), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { amount } = req.body;
@@ -256,7 +373,7 @@ router.post('/:id/analytics/purchase', async (req: Request, res: Response) => {
 // === PRICING TIERS ===
 
 // GET /api/packages/:id/tiers - Get pricing tiers for a package
-router.get('/:id/tiers', async (req: Request, res: Response) => {
+router.get('/:id/tiers', validate(packageIdParamsSchema), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -272,7 +389,7 @@ router.get('/:id/tiers', async (req: Request, res: Response) => {
 });
 
 // POST /api/packages/:id/tiers - Create pricing tier
-router.post('/:id/tiers', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/:id/tiers', authMiddleware, validate(pricingTierCreateSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { minQuantity, maxQuantity, price, discount } = req.body;
@@ -294,7 +411,7 @@ router.post('/:id/tiers', authMiddleware, async (req: AuthRequest, res: Response
 });
 
 // PUT /api/packages/tiers/:tierId - Update pricing tier
-router.put('/tiers/:tierId', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.put('/tiers/:tierId', authMiddleware, validate(pricingTierUpdateSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { tierId } = req.params;
         const { minQuantity, maxQuantity, price, discount } = req.body;
@@ -316,7 +433,7 @@ router.put('/tiers/:tierId', authMiddleware, async (req: AuthRequest, res: Respo
 });
 
 // DELETE /api/packages/tiers/:tierId - Delete pricing tier
-router.delete('/tiers/:tierId', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.delete('/tiers/:tierId', authMiddleware, validate(tierIdParamsSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { tierId } = req.params;
 
@@ -347,8 +464,15 @@ router.get('/feature-templates', authMiddleware, async (req: AuthRequest, res: R
 // POST /api/packages/feature-templates - Create feature template
 router.post('/feature-templates', authMiddleware, validate(featureTemplateSchema), async (req: AuthRequest, res: Response) => {
     try {
+        const { name, description, features, category, isActive } = req.body;
         const template = await prisma.featureTemplate.create({
-            data: req.body,
+            data: {
+                name,
+                ...(description !== undefined && { description }),
+                features,
+                ...(category !== undefined && { category }),
+                ...(isActive !== undefined && { isActive }),
+            },
         });
 
         res.status(201).json(template);
@@ -358,13 +482,20 @@ router.post('/feature-templates', authMiddleware, validate(featureTemplateSchema
 });
 
 // PUT /api/packages/feature-templates/:id - Update feature template
-router.put('/feature-templates/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.put('/feature-templates/:id', authMiddleware, validate(featureTemplateUpdateSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+        const { name, description, features, category, isActive } = req.body;
 
         const template = await prisma.featureTemplate.update({
             where: { id },
-            data: req.body,
+            data: {
+                ...(name !== undefined && { name }),
+                ...(description !== undefined && { description }),
+                ...(features !== undefined && { features }),
+                ...(category !== undefined && { category }),
+                ...(isActive !== undefined && { isActive }),
+            },
         });
 
         res.json(template);
@@ -374,7 +505,7 @@ router.put('/feature-templates/:id', authMiddleware, async (req: AuthRequest, re
 });
 
 // DELETE /api/packages/feature-templates/:id - Delete feature template
-router.delete('/feature-templates/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.delete('/feature-templates/:id', authMiddleware, validate(featureTemplateIdParamsSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
 

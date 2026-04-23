@@ -18,8 +18,11 @@ function TicketViewContent() {
 
     // Get ID from search params instead of path params
     const idFromQuery = searchParams.get("id");
+    const emailFromQuery = searchParams.get("email");
     const [ticketId, setTicketId] = useState(idFromQuery || "");
-    const [searchId, setSearchId] = useState("");
+    const [ticketEmail, setTicketEmail] = useState(emailFromQuery || "");
+    const [searchId, setSearchId] = useState(idFromQuery || "");
+    const [searchEmail, setSearchEmail] = useState(emailFromQuery || "");
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -29,7 +32,7 @@ function TicketViewContent() {
         error,
         isError,
         refetch
-    } = useTicket(ticketId || null);
+    } = useTicket(ticketId || null, ticketEmail || null);
 
     const isNotFound = (error as any)?.status === 404;
     const errorMessage = isNotFound
@@ -40,9 +43,11 @@ function TicketViewContent() {
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        if (searchId.trim()) {
+        if (searchId.trim() && searchEmail.trim()) {
+            const normalizedEmail = searchEmail.trim().toLowerCase();
             setTicketId(searchId.trim());
-            router.push(`/tickets/view?id=${searchId.trim()}`);
+            setTicketEmail(normalizedEmail);
+            router.push(`/tickets/view?id=${searchId.trim()}&email=${encodeURIComponent(normalizedEmail)}`);
         }
     };
 
@@ -98,7 +103,7 @@ function TicketViewContent() {
                         </Button>
                     </Link>
 
-                    {!idFromQuery && (
+                    {!(idFromQuery && emailFromQuery) && (
                         <div className="max-w-xl mx-auto mb-8">
                             <div className="glass-card glass-card-xl relative overflow-hidden">
                                 {/* Corner glows */}
@@ -119,16 +124,25 @@ function TicketViewContent() {
                                     </div>
 
                                     <form onSubmit={handleSearch} className="flex gap-3">
-                                        <Input
-                                            placeholder="Enter ticket ID (e.g., TKT-123456)"
-                                            value={searchId}
-                                            onChange={(e) => setSearchId(e.target.value)}
-                                            className="flex-1"
-                                        />
-                                        <Button type="submit" className="btn-primary hover-lift">
-                                            <Search className="w-4 h-4" />
-                                            Search
-                                        </Button>
+                                        <div className="w-full space-y-3">
+                                            <Input
+                                                placeholder="Enter ticket ID (e.g., TKT-ABC123)"
+                                                value={searchId}
+                                                onChange={(e) => setSearchId(e.target.value)}
+                                                className="w-full"
+                                            />
+                                            <Input
+                                                type="email"
+                                                placeholder="Enter the email used when creating the ticket"
+                                                value={searchEmail}
+                                                onChange={(e) => setSearchEmail(e.target.value)}
+                                                className="w-full"
+                                            />
+                                            <Button type="submit" className="btn-primary hover-lift w-full">
+                                                <Search className="w-4 h-4" />
+                                                Search
+                                            </Button>
+                                        </div>
                                     </form>
                                 </div>
 
@@ -152,7 +166,7 @@ function TicketViewContent() {
                     >
                         <TicketStatus ticket={ticket} />
                     </motion.div>
-                ) : ticketId && isError ? (
+                ) : ticketId && ticketEmail && isError ? (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={isInView ? { opacity: 1, y: 0 } : {}}

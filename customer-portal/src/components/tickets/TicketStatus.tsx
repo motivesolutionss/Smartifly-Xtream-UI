@@ -45,7 +45,7 @@ export function TicketStatus({ ticket }: TicketStatusProps) {
     if (!message.trim()) return;
 
     reply(
-      { ticketNo: ticket.ticketNo, message },
+      { ticketNo: ticket.ticketNo, email: ticket.email, message },
       {
         onSuccess: () => {
           setMessage("");
@@ -58,6 +58,7 @@ export function TicketStatus({ ticket }: TicketStatusProps) {
     if (e.target.files && e.target.files.length > 0) {
       upload({
         ticketNo: ticket.ticketNo,
+        email: ticket.email,
         files: Array.from(e.target.files)
       });
       // Reset input
@@ -143,7 +144,7 @@ export function TicketStatus({ ticket }: TicketStatusProps) {
                   {ticket.attachments.map((att) => (
                     <a
                       key={att.id}
-                      href={`${ENV.BACKEND_URL}${att.fileUrl}`}
+                      href={`${ENV.BACKEND_URL}/api/tickets/public/${encodeURIComponent(ticket.ticketNo)}/attachments/${encodeURIComponent(att.id)}/download?email=${encodeURIComponent(ticket.email)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 rounded-lg bg-background/40 hover:bg-background/60 transition-colors border border-primary/10 group/att"
