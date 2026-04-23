@@ -1,0 +1,18 @@
+{
+  "name": "smartifly",
+  "version": "3.0.0",
+  "private": true,
+  "workspaces": [
+    "mobile",
+    "tv",
+    "shared"
+  ],
+  "scripts": {
+    "mobile:android": "npm --workspace @smartifly/mobile run android",
+    "mobile:start": "npm --workspace @smartifly/mobile run start",
+    "mobile:test": "npm --workspace @smartifly/mobile run test",
+    "tv:android": "npm --workspace @smartifly/tv run android",
+    "tv:start": "npm --workspace @smartifly/tv run start",
+    "tv:test": "npm --workspace @smartifly/tv run test"
+  }
+}
