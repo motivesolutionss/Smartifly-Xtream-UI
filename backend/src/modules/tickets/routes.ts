@@ -99,6 +99,8 @@ const publicTicketUpdateLimiter = rateLimit({
 });
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const asSingleParam = (value: string | string[] | undefined): string =>
+    Array.isArray(value) ? value[0] : (value ?? '');
 const uploadsDir = path.join(process.cwd(), 'uploads');
 
 const getStoredFilename = (fileUrl: string) => path.basename(fileUrl);
@@ -251,7 +253,7 @@ router.post('/with-attachments', publicTicketCreateLimiter, upload.array('files'
 // GET /api/tickets/:ticketNo - Public: Get ticket by number
 router.get('/:ticketNo', publicTicketLookupLimiter, validate(publicTicketLookupSchema), async (req: Request, res: Response) => {
     try {
-        const { ticketNo } = req.params;
+        const ticketNo = asSingleParam(req.params.ticketNo);
         const email = normalizeEmail(req.query.email as string);
 
         const ticket = await prisma.ticket.findFirst({
@@ -280,7 +282,7 @@ router.get('/:ticketNo', publicTicketLookupLimiter, validate(publicTicketLookupS
 // POST /api/tickets/:ticketNo/reply - Public: Add reply to ticket
 router.post('/:ticketNo/reply', publicTicketUpdateLimiter, validate(publicReplySchema), async (req: Request, res: Response) => {
     try {
-        const { ticketNo } = req.params;
+        const ticketNo = asSingleParam(req.params.ticketNo);
         const { email, message } = req.body;
 
         const ticket = await prisma.ticket.findFirst({
@@ -324,7 +326,7 @@ router.post('/:ticketNo/reply', publicTicketUpdateLimiter, validate(publicReplyS
 // POST /api/tickets/:ticketNo/attachments - Public: Upload attachments to ticket
 router.post('/:ticketNo/attachments', publicTicketUpdateLimiter, upload.array('files', 3), async (req: Request, res: Response) => {
     try {
-        const { ticketNo } = req.params;
+        const ticketNo = asSingleParam(req.params.ticketNo);
         const files = req.files as Express.Multer.File[];
         const email = typeof req.body.email === 'string' ? normalizeEmail(req.body.email) : '';
 
@@ -388,7 +390,8 @@ router.get(
     validate(publicAttachmentDownloadSchema),
     async (req: Request, res: Response) => {
         try {
-            const { ticketNo, attachmentId } = req.params;
+            const ticketNo = asSingleParam(req.params.ticketNo);
+            const attachmentId = asSingleParam(req.params.attachmentId);
             const email = normalizeEmail(req.query.email as string);
 
             const ticket = await prisma.ticket.findFirst({
