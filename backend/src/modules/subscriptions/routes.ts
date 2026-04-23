@@ -193,7 +193,12 @@ router.post('/request', subscriptionRequestLimiter, validate(createSubscriptionR
 // GET /api/subscriptions/verify/:token - Verify email and send PDF
 router.get('/verify/:token', subscriptionVerifyLimiter, async (req: Request, res: Response) => {
     try {
-        const { token } = req.params;
+        const tokenParam = req.params.token;
+        const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
+
+        if (!token) {
+            return res.status(400).json({ error: 'Invalid verification link' });
+        }
 
         if (!/^[a-f0-9]{64}$/i.test(token)) {
             return res.status(400).json({ error: 'Invalid verification link' });

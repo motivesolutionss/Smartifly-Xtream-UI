@@ -205,7 +205,12 @@ export const restoreBackup = async (req: AuthRequest, res: Response) => {
 
 export const downloadBackup = async (req: Request, res: Response) => {
     try {
-        const { filename } = req.params;
+        const filenameParam = req.params.filename;
+        const filename = Array.isArray(filenameParam) ? filenameParam[0] : filenameParam;
+
+        if (!filename) {
+            return res.status(400).send('Invalid filename');
+        }
 
         // Security check: ensure filename looks like what we expect to prevent traversal
         if (!filename.startsWith('backup-') || !filename.endsWith('.sql')) {
