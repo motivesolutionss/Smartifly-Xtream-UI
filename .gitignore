@@ -73,3 +73,25 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.vps.example
+
+# Deployment/runtime artifacts
+*.sql
+*.sql.gz
+*.zip
+*.tar.gz
+*.tgz
+backend/uploads/
+customer-portal/videos.zip
+customer-portal/release.zip
+customer-portal/release.tar.gz
+
+# Local IDE/workspace files
+*.code-workspace
+smartifly_tv_datastore.preferences_pb
+emulator_prefs.pb

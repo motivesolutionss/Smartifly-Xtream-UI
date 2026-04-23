@@ -3,7 +3,8 @@ services:
     image: mysql:8.0
     container_name: xtream-db
     restart: unless-stopped
-    env_file: .env.vps
+    env_file:
+      - ${ENV_FILE:-.env.vps}
     volumes:
       - xtream_db_data:/var/lib/mysql
     networks:
@@ -20,7 +21,8 @@ services:
       dockerfile: Dockerfile
     container_name: xtream-api
     restart: unless-stopped
-    env_file: .env.vps
+    env_file:
+      - ${ENV_FILE:-.env.vps}
     environment:
       - VIRTUAL_HOST=api.xtreamui.duckdns.org
       - VIRTUAL_PORT=5000
