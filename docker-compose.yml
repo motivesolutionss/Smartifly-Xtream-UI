@@ -14,6 +14,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
 
   backend:
     build:
@@ -30,13 +32,28 @@ services:
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
     expose:
       - "5000"
+    read_only: true
+    tmpfs:
+      - /tmp
     networks:
       - nginx-proxy
     volumes:
       - xtream_uploads:/app/uploads
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 768m
     depends_on:
       mysql:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:5000/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   admin-panel:
     build:
@@ -48,15 +65,31 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       - VIRTUAL_HOST=admin.xtreamui.duckdns.org
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=admin.xtreamui.duckdns.org
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
     networks:
       - nginx-proxy
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   customer-portal:
     build:
@@ -68,15 +101,31 @@ services:
     restart: unless-stopped
     expose:
       - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       - VIRTUAL_HOST=xtreamui.duckdns.org
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=xtreamui.duckdns.org
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
     networks:
       - nginx-proxy
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 networks:
   nginx-proxy:
