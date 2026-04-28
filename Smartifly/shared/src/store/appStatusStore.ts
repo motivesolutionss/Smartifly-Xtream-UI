@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getAnnouncements } from '../api/backend';
 import { logger } from '../config';
+import MasterService from '../services/MasterService';
 import { inferErrorCategory, toSafeMessageFromUnknown } from '../utils/errorHandling';
 
 export interface FatherControlState {
@@ -120,8 +121,6 @@ const useAppStatusStore = create<AppStatusState & AppStatusActions>((set, get) =
 
         deviceCheckInFlight = (async () => {
         try {
-            const MasterService = (await import('../services/MasterService')).default;
-
             logger.info('Father: Checking device ban status...');
 
             // Add timeout to prevent hanging forever
@@ -168,8 +167,6 @@ const useAppStatusStore = create<AppStatusState & AppStatusActions>((set, get) =
         if (fatherVerifyInFlight) {
             return fatherVerifyInFlight;
         }
-
-        const MasterService = (await import('../services/MasterService')).default;
 
         fatherVerifyInFlight = (async () => {
             try {

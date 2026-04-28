@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { scale, scaleFont, Icon } from '../../../../theme';
+import { useTheme } from '../../../../theme/ThemeProvider';
 
 const SEEK_STEP_SECONDS = 10;
 
@@ -31,13 +32,14 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
     progressPressableRef,
     lockButtonRef,
 }) => {
+    const { colors } = useTheme();
     return (
         <View style={styles.centerControls}>
             {/* Rewind */}
             <Pressable
                 style={[
                     styles.seekButton,
-                    focusedElement === 'seek-rewind' && styles.seekButtonFocused
+                    focusedElement === 'seek-rewind' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
                 ]}
                 onPress={() => handleSeekBy(-SEEK_STEP_SECONDS)}
                 onFocus={() => {
@@ -60,7 +62,7 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                 ref={playPauseRef}
                 style={[
                     styles.playPauseButton,
-                    focusedElement === 'playPause' && styles.playPauseButtonFocused
+                    focusedElement === 'playPause' && [styles.playPauseButtonFocused, { backgroundColor: colors.glass }]
                 ]}
                 onPress={() => setPaused(prev => !prev)}
                 onFocus={() => {
@@ -81,7 +83,7 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
             <Pressable
                 style={[
                     styles.seekButton,
-                    focusedElement === 'seek-forward' && styles.seekButtonFocused
+                    focusedElement === 'seek-forward' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
                 ]}
                 onPress={() => handleSeekBy(SEEK_STEP_SECONDS)}
                 onFocus={() => {
@@ -119,7 +121,7 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     seekButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.15)',
+        backgroundColor: 'rgba(255,255,255,0.15)', // overridden at render time with theme.colors.glass
         borderColor: 'rgba(255,255,255,0.5)',
         transform: [{ scale: 1.08 }],
     },
@@ -143,7 +145,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.2)',
     },
     playPauseButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.25)',
+        backgroundColor: 'rgba(255,255,255,0.25)', // overridden at render time with theme.colors.glass
         borderColor: '#FFFFFF',
         transform: [{ scale: 1.12 }],
     },

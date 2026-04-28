@@ -111,7 +111,12 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
       style={[styles.container, containerSize]}
     >
       <Animated.View style={[styles.card, cardSize, cardAnimatedStyle]}>
-        <FastImageComponent source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+        <FastImageComponent
+          source={{ uri: imageUri }}
+          style={styles.image}
+          resizeMode="cover"
+          enableColdFade={false}
+        />
 
         <View style={styles.overlay} pointerEvents="none" />
 

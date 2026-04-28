@@ -8,10 +8,12 @@ export interface UpdateInfo {
     downloadUrl: string;
     releaseNotes: string;
     fileSize: number;
+    sha256?: string;
 }
 
 class UpdateService {
     private static instance: UpdateService;
+    private readonly checkTimeoutMs = 10000;
 
     private constructor() { }
 
@@ -20,6 +22,25 @@ class UpdateService {
             UpdateService.instance = new UpdateService();
         }
         return UpdateService.instance;
+    }
+
+    private isHttpsUrl(url: string): boolean {
+        return /^https:\/\//i.test(url.trim());
+    }
+
+    private isValidSha256(value?: string): boolean {
+        return !!value && /^[a-fA-F0-9]{64}$/.test(value);
+    }
+
+    private async fetchWithTimeout(url: string): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.checkTimeoutMs);
+
+        try {
+            return await fetch(url, { signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 
     /**
@@ -33,10 +54,10 @@ class UpdateService {
 
             // Use the Master Backend URL (Portfolio) for update checks
             const baseUrl = config.api.masterBackendUrl;
+            const requestUrl =
+                `${baseUrl}/apps/check-update?name=${encodeURIComponent(appName)}&version=${currentVersion}&platform=tv`;
 
-            const response = await fetch(
-                `${baseUrl}/apps/check-update?name=${encodeURIComponent(appName)}&version=${currentVersion}&platform=tv`
-            );
+            const response = await this.fetchWithTimeout(requestUrl);
 
             // Read as text first to handle potential HTML errors from server/platform
             const responseText = await response.text();
@@ -50,16 +71,30 @@ class UpdateService {
                 return null;
             }
 
-            if (result.success) {
-                return {
-                    updateAvailable: result.updateAvailable,
-                    latestVersion: result.latestVersion,
-                    downloadUrl: result.downloadUrl,
-                    releaseNotes: result.releaseNotes,
-                    fileSize: parseInt(result.fileSize, 10) || 0
-                };
+            if (!response.ok || !result.success) {
+                logger.warn(`Update check failed. Status: ${response.status}`);
+                return null;
             }
-            return null;
+
+            const downloadUrl = String(result.downloadUrl || '');
+
+            if (result.updateAvailable && !this.isHttpsUrl(downloadUrl)) {
+                logger.error('Rejected update: APK download URL must use HTTPS.');
+                return null;
+            }
+
+            const sha256 = typeof result.sha256 === 'string'
+                ? result.sha256.trim().toLowerCase()
+                : undefined;
+
+            return {
+                updateAvailable: Boolean(result.updateAvailable),
+                latestVersion: String(result.latestVersion || ''),
+                downloadUrl,
+                releaseNotes: String(result.releaseNotes || ''),
+                fileSize: parseInt(String(result.fileSize || '0'), 10) || 0,
+                sha256: this.isValidSha256(sha256) ? sha256 : undefined,
+            };
         } catch (error) {
             logger.error('Failed to check for updates:', error);
             return null;
@@ -72,11 +107,20 @@ class UpdateService {
     async downloadAndInstall(
         url: string,
         onProgress?: (received: number, total: number) => void,
-        expectedTotalSize?: number
+        expectedTotalSize?: number,
+        expectedSha256?: string
     ): Promise<void> {
         if (Platform.OS !== 'android') {
             logger.warn('Update functionality only supported on Android');
             return;
+        }
+
+        if (!this.isHttpsUrl(url)) {
+            throw new Error('APK update URL must use HTTPS.');
+        }
+
+        if (expectedSha256 && !this.isValidSha256(expectedSha256)) {
+            throw new Error('Invalid APK checksum format.');
         }
 
         try {
@@ -88,7 +132,7 @@ class UpdateService {
                 await ReactNativeBlobUtil.fs.unlink(path);
             }
 
-            logger.info(`Starting direct download from: ${url}`);
+            logger.info(`Starting secure APK download from: ${url}`);
 
             // We use direct fetch instead of DownloadManager for better progress UI control
             const res = await ReactNativeBlobUtil
@@ -115,18 +159,29 @@ class UpdateService {
             const status = res.info().status;
             logger.info(`Download finished with status: ${status}`);
 
-            if (status === 200 || status === 201) {
-                // Post-download: Trigger the Android Installer
-                logger.info('Download successful, prompting user for installation');
-
-                // Note: For Android 10+, we might need to use actionViewIntent with specific flags
-                ReactNativeBlobUtil.android.actionViewIntent(
-                    res.path(),
-                    'application/vnd.android.package-archive'
-                );
-            } else {
+            if (status !== 200 && status !== 201) {
                 throw new Error(`Server returned status ${status}. Download failed.`);
             }
+
+            if (expectedSha256) {
+                const actualSha256 = await ReactNativeBlobUtil.fs.hash(res.path(), 'sha256');
+
+                if (actualSha256.toLowerCase() !== expectedSha256.toLowerCase()) {
+                    await ReactNativeBlobUtil.fs.unlink(res.path()).catch(() => undefined);
+                    throw new Error('APK checksum verification failed.');
+                }
+
+                logger.info('APK checksum verification passed.');
+            } else {
+                logger.warn('APK checksum was not provided. Skipping integrity verification.');
+            }
+
+            logger.info('Download successful, prompting user for installation');
+
+            ReactNativeBlobUtil.android.actionViewIntent(
+                res.path(),
+                'application/vnd.android.package-archive'
+            );
         } catch (error) {
             logger.error('The update download process was interrupted:', error);
             throw error;

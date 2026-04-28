@@ -8,12 +8,11 @@
  * - Loading and error states
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
     Pressable,
-    TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
     Animated,
@@ -126,16 +125,75 @@ interface ServerCardProps {
     portal: Portal;
     isSelected: boolean;
     onSelect: () => void;
+    onFocusSelect: () => void;
     status?: ServerStatus;
     index: number;
+    cardSize: ServerCardSize;
+    hasInitialFocus?: boolean;
 }
+
+type ServerCardSize = 'solo' | 'standard' | 'compact';
+
+interface PortalRowItem {
+    index: number;
+    portal: Portal;
+}
+
+interface PortalRowSpec {
+    items: PortalRowItem[];
+    widthFraction: number;
+}
+
+const buildPortalRows = (portals: Portal[]): PortalRowSpec[] => {
+    const items = portals.map((portal, index) => ({ index, portal }));
+    switch (items.length) {
+        case 0:
+            return [];
+        case 1:
+            return [{ items, widthFraction: 0.46 }];
+        case 2:
+            return [{ items, widthFraction: 0.74 }];
+        case 3:
+            return [{ items, widthFraction: 1 }];
+        case 4:
+            return [
+                { items: items.slice(0, 2), widthFraction: 0.76 },
+                { items: items.slice(2), widthFraction: 0.76 },
+            ];
+        default:
+            return [
+                { items: items.slice(0, 3), widthFraction: 1 },
+                { items: items.slice(3), widthFraction: 0.72 },
+            ];
+    }
+};
+
+const resolveCardSize = (portalCount: number): ServerCardSize => {
+    if (portalCount <= 1) return 'solo';
+    if (portalCount >= 5) return 'compact';
+    return 'standard';
+};
+
+const portalSubtitle = (portal: Portal, status?: ServerStatus, selected?: boolean): string => {
+    if (status?.status === 'checking') return 'Checking service health...';
+    if (status?.status === 'offline') return 'Service unavailable';
+    if (status?.status === 'online' && selected) return 'Selected service is ready';
+    if (status?.status === 'online' && status.latency) return `${status.latency} ms response`;
+    if (status?.status === 'online') return 'Ready to connect';
+    if (selected) return 'Selected service';
+    if (portal.name.trim().length === 0) return 'Smartifly service';
+    return 'Secure portal';
+};
 
 const ServerCard: React.FC<ServerCardProps> = React.memo(({
     portal,
     isSelected,
     onSelect,
+    onFocusSelect,
     status,
     index,
+    cardSize,
+    hasInitialFocus = false,
 }) => {
     const [isFocused, setIsFocused] = useState(false);
     const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -144,7 +202,7 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
     const animateFocus = useCallback((focused: boolean) => {
         Animated.parallel([
             Animated.spring(scaleAnim, {
-                toValue: focused ? 1.1 : 1,
+                toValue: focused ? 1.04 : 1,
                 tension: 90,
                 friction: 8,
                 useNativeDriver: true,
@@ -160,6 +218,9 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
     const handleFocus = () => {
         setIsFocused(true);
         animateFocus(true);
+        if (!isSelected) {
+            onFocusSelect();
+        }
     };
 
     const handleBlur = () => {
@@ -173,6 +234,18 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
     });
 
     const accentColor = colors.accent || '#00E5FF';
+    const isCompact = cardSize === 'compact';
+    const isSolo = cardSize === 'solo';
+
+    const cardHeight = isSolo ? scale(140) : isCompact ? scale(96) : scale(116);
+    const cardRadius = isSolo ? scale(24) : isCompact ? scale(16) : scale(20);
+    const iconSize = isSolo ? scale(70) : isCompact ? scale(50) : scale(62);
+    const iconRadius = isSolo ? scale(20) : isCompact ? scale(12) : scale(16);
+    const iconGlyph = isSolo ? scale(32) : isCompact ? scale(24) : scale(30);
+    const badgeSize = isSolo ? scale(40) : isCompact ? scale(30) : scale(36);
+    const badgeGlyph = isSolo ? scale(22) : isCompact ? scale(14) : scale(18);
+    const titleSize = isSolo ? scaleFont(24) : isCompact ? scaleFont(16) : scaleFont(19);
+    const subtitleSize = isSolo ? scaleFont(14) : isCompact ? scaleFont(11) : scaleFont(13);
 
     return (
         <Animated.View
@@ -199,6 +272,13 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
                     styles.card,
                     isSelected && styles.cardSelected,
                     isFocused && styles.cardFocused,
+                    {
+                        minHeight: cardHeight,
+                        borderRadius: cardRadius,
+                        paddingHorizontal: isCompact ? scale(16) : scale(20),
+                        paddingVertical: isCompact ? scale(14) : scale(18),
+                        minWidth: isSolo ? scale(560) : isCompact ? scale(250) : scale(310),
+                    },
                 ]}
                 onPress={onSelect}
                 onFocus={handleFocus}
@@ -206,17 +286,24 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
                 accessibilityLabel={`Select server ${portal.name}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                hasTVPreferredFocus={index === 0}
+                hasTVPreferredFocus={hasInitialFocus}
                 focusable={true}
             >
+                {(isFocused || isSelected) && <View style={styles.focusTopLine} />}
                 {/* Server Icon */}
                 <View style={[
                     styles.iconContainer,
                     isSelected && styles.iconContainerSelected,
+                    {
+                        width: iconSize,
+                        height: iconSize,
+                        borderRadius: iconRadius,
+                        marginRight: isCompact ? scale(14) : scale(18),
+                    },
                 ]}>
                     <Icon
                         name="server"
-                        size={scale(34)}
+                        size={iconGlyph}
                         color={isSelected ? '#000' : accentColor}
                     />
                 </View>
@@ -227,20 +314,22 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
                         style={[
                             styles.serverName,
                             isSelected && styles.serverNameSelected,
+                            { fontSize: titleSize },
                         ]}
                         numberOfLines={1}
                     >
                         {portal.name}
                     </Text>
-                    {status && (
-                        <StatusIndicator status={status.status} latency={status.latency} />
-                    )}
+                    <Text style={[styles.serverSubtitle, { fontSize: subtitleSize }]}>
+                        {portalSubtitle(portal, status, isSelected)}
+                    </Text>
+                    {status && <StatusIndicator status={status.status} latency={status.latency} />}
                 </View>
 
                 {/* Selection Badge */}
                 {isSelected && (
                     <View style={styles.selectedBadge}>
-                        <Icon name="check" size={scale(20)} color="#000" weight="bold" />
+                        <Icon name="check" size={badgeGlyph} color="#000" weight="bold" />
                     </View>
                 )}
             </Pressable>
@@ -262,6 +351,10 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
     onRetry,
 }) => {
     const [serverStatuses, setServerStatuses] = useState<Map<string, ServerStatus>>(new Map());
+    const [retryFocused, setRetryFocused] = useState(false);
+    const portalRows = useMemo(() => buildPortalRows(portals), [portals]);
+    const cardSize = useMemo(() => resolveCardSize(portals.length), [portals.length]);
+    const denseLayout = portals.length >= 4;
 
     const checkAllServers = useCallback(async () => {
         if (!checkServerStatus) return;
@@ -314,10 +407,20 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
                     <Icon name="warning" size={scale(32)} color="#EF4444" />
                     <Text style={styles.errorText}>{error || 'No servers available'}</Text>
                     {onRetry && (
-                        <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.8}>
+                        <Pressable
+                            style={[
+                                styles.retryButton,
+                                retryFocused && styles.retryButtonFocused,
+                            ]}
+                            onPress={onRetry}
+                            focusable
+                            hasTVPreferredFocus
+                            onFocus={() => setRetryFocused(true)}
+                            onBlur={() => setRetryFocused(false)}
+                        >
                             <Icon name="refresh" size={scale(20)} color={colors.accent || '#00E5FF'} />
                             <Text style={styles.retryText}>Retry</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                     )}
                 </View>
             </View>
@@ -336,16 +439,31 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
                 </Text>
             </View>
 
-            <View style={styles.cardsContainer}>
-                {portals.map((portal, index) => (
-                    <ServerCard
-                        key={portal.id}
-                        portal={portal}
-                        isSelected={selectedPortal?.id === portal.id}
-                        onSelect={() => onSelectPortal(portal)}
-                        status={serverStatuses.get(portal.id)}
-                        index={index}
-                    />
+            <View style={[styles.cardsContainer, denseLayout && styles.cardsContainerDense]}>
+                {portalRows.map((row, rowIndex) => (
+                    <View
+                        key={`row-${rowIndex}`}
+                        style={[
+                            styles.row,
+                            { width: `${row.widthFraction * 100}%` },
+                            denseLayout ? styles.rowDense : styles.rowStandard,
+                        ]}
+                    >
+                        {row.items.map((item) => (
+                            <View key={item.portal.id} style={styles.rowItem}>
+                                <ServerCard
+                                    portal={item.portal}
+                                    isSelected={selectedPortal?.id === item.portal.id}
+                                    onSelect={() => onSelectPortal(item.portal)}
+                                    onFocusSelect={() => onSelectPortal(item.portal)}
+                                    status={serverStatuses.get(item.portal.id)}
+                                    index={item.index}
+                                    cardSize={cardSize}
+                                    hasInitialFocus={!selectedPortal && item.index === 0}
+                                />
+                            </View>
+                        ))}
+                    </View>
                 ))}
             </View>
         </View>
@@ -395,15 +513,31 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     cardsContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
+        width: '100%',
         paddingVertical: scale(16),
-        gap: scale(16),
+        alignItems: 'center',
+    },
+    cardsContainerDense: {
+        paddingVertical: scale(10),
+    },
+    row: {
+        flexDirection: 'row',
+        alignSelf: 'center',
+    },
+    rowStandard: {
+        marginBottom: scale(14),
+        gap: scale(14),
+    },
+    rowDense: {
+        marginBottom: scale(10),
+        gap: scale(10),
+    },
+    rowItem: {
+        flex: 1,
     },
 
     // Card
     cardWrapper: {
-        marginRight: scale(24),
         position: 'relative',
     },
     cardGlow: {
@@ -423,9 +557,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(0, 20, 30, 0.7)',
-        borderRadius: scale(20),
-        padding: scale(22),
-        minWidth: scale(260),
         borderWidth: scale(2),
         borderColor: 'rgba(255, 255, 255, 0.12)',
     },
@@ -441,13 +572,9 @@ const styles = StyleSheet.create({
         borderColor: colors.accent || '#00E5FF',
     },
     iconContainer: {
-        width: scale(64),
-        height: scale(64),
-        borderRadius: scale(16),
         backgroundColor: 'rgba(0, 229, 255, 0.12)',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: scale(18),
     },
     iconContainerSelected: {
         backgroundColor: colors.accent || '#00E5FF',
@@ -456,18 +583,22 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     serverName: {
-        fontSize: scaleFont(20),
         fontWeight: '700',
         color: '#FFFFFF',
         letterSpacing: 0.4,
+    },
+    serverSubtitle: {
+        marginTop: scale(4),
+        color: 'rgba(231, 236, 244, 0.74)',
+        fontWeight: '500',
     },
     serverNameSelected: {
         color: colors.accent || '#00E5FF',
     },
     selectedBadge: {
-        width: scale(40),
-        height: scale(40),
-        borderRadius: scale(20),
+        width: scale(36),
+        height: scale(36),
+        borderRadius: scale(18),
         backgroundColor: colors.accent || '#00E5FF',
         alignItems: 'center',
         justifyContent: 'center',
@@ -477,6 +608,16 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.7,
         shadowRadius: scale(14),
         elevation: 10,
+    },
+    focusTopLine: {
+        position: 'absolute',
+        top: scale(2),
+        left: '24%',
+        right: '24%',
+        height: scale(2),
+        borderRadius: scale(2),
+        backgroundColor: colors.accent || '#00E5FF',
+        opacity: 0.9,
     },
 
     // Status Indicator
@@ -540,6 +681,15 @@ const styles = StyleSheet.create({
         marginLeft: scale(18),
         borderWidth: scale(1),
         borderColor: colors.accent || '#00E5FF',
+    },
+    retryButtonFocused: {
+        transform: [{ scale: 1.04 }],
+        backgroundColor: 'rgba(0, 229, 255, 0.18)',
+        shadowColor: colors.accent || '#00E5FF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.45,
+        shadowRadius: scale(18),
+        elevation: 8,
     },
     retryText: {
         fontSize: scaleFont(16),

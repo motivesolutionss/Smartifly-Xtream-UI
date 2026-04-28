@@ -8,7 +8,7 @@
  * @enterprise-grade
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -32,7 +32,8 @@ import {
     scaleFont,
     Icon,
     useTheme,
-    textGlow
+    textGlow,
+    typographyTV,
 } from '../../theme';
 import { TVSettingsScreenProps } from '../../navigation/types';
 
@@ -46,6 +47,337 @@ interface SettingsMenuItem {
     id: SettingsSection;
     label: string;
     icon: string;
+}
+
+// =============================================================================
+// STYLES FACTORY
+// =============================================================================
+
+function createStyles(
+    primaryColor: string,
+    textPrimary: string,
+    backgroundSecondary: string,
+    backgroundTertiary: string,
+    borderColor: string,
+    borderFocus: string,
+    borderMedium: string,
+) {
+    return StyleSheet.create({
+        container: {
+            flex: 1,
+            flexDirection: 'row',
+        },
+        // Left Panel
+        leftPanel: {
+            width: scale(320),
+            borderRightWidth: 1,
+            paddingTop: scale(60),
+            paddingHorizontal: scale(30),
+        },
+        titleContainer: {
+            marginBottom: scale(50),
+            paddingLeft: scale(10),
+        },
+        pageTitle: {
+            fontSize: scaleFont(32),
+            fontWeight: '900',
+            color: '#00F3FF', // Static for HUD Feel
+            letterSpacing: 4,
+        },
+        titleLine: {
+            height: 2,
+            width: scale(40),
+            marginTop: scale(10),
+            borderRadius: 1,
+        },
+        menuList: {
+            paddingBottom: scale(20),
+        },
+        menuItem: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: scale(20),
+            paddingHorizontal: scale(20),
+            borderRadius: scale(12),
+            marginBottom: scale(15),
+            borderWidth: 1,
+            borderColor: 'transparent',
+        },
+        menuItemActive: {
+            backgroundColor: 'rgba(0, 243, 255, 0.08)',
+            borderColor: 'rgba(0, 243, 255, 0.2)',
+        },
+        menuItemFocused: {
+            transform: [{ scale: 1.05 }],
+        },
+        menuLabel: {
+            fontSize: scaleFont(19),
+            color: '#8E9AAF',
+            marginLeft: scale(20),
+            fontWeight: '600',
+            letterSpacing: 1,
+        },
+        menuLabelActive: {
+            color: '#FFF',
+            fontWeight: '700',
+        },
+        menuLabelFocused: {
+            color: '#000',
+            fontWeight: '900',
+        },
+        focusIndicator: {
+            position: 'absolute',
+            right: scale(15),
+            width: scale(6),
+            height: scale(6),
+            borderRadius: 3,
+            backgroundColor: '#000',
+        },
+
+        // Right Panel
+        rightPanel: {
+            flex: 1,
+            paddingTop: scale(60),
+            paddingHorizontal: scale(80),
+        },
+        detailsContent: {
+            paddingBottom: scale(60),
+        },
+        // 7.1: section headers use typographyTV.h3 equivalent and textPrimary
+        sectionHeader: {
+            ...typographyTV.h3,
+            color: textPrimary,
+            textTransform: 'uppercase',
+            letterSpacing: 3,
+            marginBottom: scale(25),
+            marginTop: scale(10),
+        },
+        sectionHeaderMargin: {
+            marginTop: scale(20),
+        },
+
+        // Profile
+        profileHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: scale(60),
+            paddingBottom: scale(40),
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255,255,255,0.05)',
+        },
+        avatarContainer: {
+            position: 'relative',
+            width: scale(110),
+            height: scale(110),
+            marginRight: scale(40),
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        avatar: {
+            width: scale(100),
+            height: scale(100),
+            borderRadius: scale(50),
+            backgroundColor: '#00F3FF',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2,
+        },
+        avatarAura: {
+            position: 'absolute',
+            width: scale(120),
+            height: scale(120),
+            borderRadius: scale(60),
+            borderWidth: 1,
+            borderColor: 'rgba(0, 243, 255, 0.3)',
+            zIndex: 1,
+        },
+        avatarText: {
+            fontSize: scaleFont(46),
+            fontWeight: '900',
+            color: '#000',
+        },
+        profileInfo: {
+            flex: 1,
+            justifyContent: 'center',
+        },
+        profileName: {
+            fontSize: scaleFont(38),
+            fontWeight: '900',
+            color: '#FFF',
+            marginBottom: scale(10),
+            letterSpacing: 1,
+        },
+        badgeContainer: {
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        statusBadge: {
+            paddingHorizontal: scale(12),
+            paddingVertical: scale(4),
+            borderRadius: scale(4),
+            marginRight: scale(15),
+        },
+        statusBadgeText: {
+            fontSize: scaleFont(12),
+            fontWeight: '900',
+            letterSpacing: 1,
+        },
+        statusBadgeTextDark: {
+            color: '#000',
+        },
+        profileStatus: {
+            fontSize: scaleFont(16),
+            color: '#8E9AAF',
+            fontWeight: '600',
+        },
+        kidsBadge: {
+            backgroundColor: '#4CAF5020',
+        },
+        adultBadge: {
+            backgroundColor: colors.primary + '20',
+        },
+        kidsBadgeText: {
+            color: '#4CAF50',
+        },
+        adultBadgeText: {
+            color: colors.primary,
+        },
+
+        // 7.2: HUD Detail Rows — backgroundSecondary background, border separator
+        detailRow: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingVertical: scale(24),
+            paddingHorizontal: scale(30),
+            backgroundColor: backgroundSecondary,
+            marginBottom: scale(16),
+            borderRadius: scale(4),
+            borderLeftWidth: 3,
+            borderLeftColor: borderColor,
+            borderWidth: 1,
+            borderColor: borderColor,
+        },
+        detailRowUpdateBase: {
+            height: scale(80),
+        },
+        detailRowUpdateDownloading: {
+            height: 'auto',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+        },
+        // 7.2: focused row uses backgroundTertiary; borderFocus left accent bar
+        detailRowFocused: {
+            backgroundColor: backgroundTertiary,
+            borderColor: borderFocus,
+            borderLeftColor: borderFocus,
+            transform: [{ scale: 1.02 }],
+            zIndex: 10,
+        },
+        detailLabelContainer: {
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        detailLabel: {
+            fontSize: scaleFont(19),
+            color: '#E1E5EE',
+            fontWeight: '600',
+            letterSpacing: 0.5,
+        },
+        detailLabelFocused: {
+            color: '#FFF',
+            fontWeight: '800',
+        },
+        hudDecoration: {
+            width: scale(15),
+            height: 2,
+            backgroundColor: '#00F3FF',
+            marginLeft: scale(15),
+            opacity: 0.6,
+        },
+        detailValueContainer: {
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        detailValue: {
+            fontSize: scaleFont(19),
+            color: '#5C677D',
+            fontWeight: '500',
+        },
+        detailValueFocused: {
+            color: '#00F3FF',
+            fontWeight: '700',
+        },
+        chevronIcon: {
+            marginLeft: scale(10),
+        },
+
+        // Danger Zone
+        detailRowDanger: {
+            backgroundColor: 'rgba(255, 0, 85, 0.03)',
+            borderLeftColor: 'rgba(255, 0, 85, 0.2)',
+            marginTop: scale(30),
+        },
+        detailRowDangerFocused: {
+            backgroundColor: 'rgba(255, 0, 85, 0.08)',
+            borderColor: 'rgba(255, 0, 85, 0.4)',
+            borderLeftColor: '#FF0055',
+        },
+
+        spacer: {
+            height: scale(20),
+        },
+
+        // TV Update UI
+        updateItemRow: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: '100%',
+        },
+        updateItemRowDownloading: {
+            marginBottom: scale(10),
+        },
+        tvProgressContainer: {
+            width: '100%',
+            marginTop: scale(20),
+            paddingBottom: scale(10),
+        },
+        tvProgressBar: {
+            height: scale(4),
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            borderRadius: scale(2),
+            overflow: 'hidden',
+            marginBottom: scale(10),
+        },
+        tvProgressFill: {
+            height: '100%',
+            backgroundColor: primaryColor,
+        },
+        tvProgressText: {
+            fontSize: scaleFont(12),
+            color: '#8E9AAF',
+        },
+
+        // 7.3: Toggle states
+        toggleActive: {
+            backgroundColor: primaryColor,
+        },
+        toggleInactive: {
+            backgroundColor: borderMedium,
+        },
+
+        // 7.4: Theme preview card borders
+        themeCardSelected: {
+            borderWidth: 2,
+            borderColor: borderFocus,
+        },
+        themeCardUnselected: {
+            borderWidth: 1,
+            borderColor: borderColor,
+        },
+    });
 }
 
 // =============================================================================
@@ -74,6 +406,20 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
     // Profile Store
     const activeProfile = useProfileStore((state) => state.profiles.find(p => p.id === state.activeProfileId));
     const profiles = useProfileStore((state) => state.profiles);
+
+    // Primitive color tokens for stable useMemo deps
+    const primaryColor = theme.colors.primary;
+    const textPrimary = theme.colors.textPrimary;
+    const backgroundSecondary = theme.colors.backgroundSecondary;
+    const backgroundTertiary = theme.colors.backgroundTertiary;
+    const borderColor = theme.colors.border;
+    const borderFocus = theme.colors.borderFocus;
+    const borderMedium = theme.colors.borderMedium;
+
+    const styles = useMemo(
+        () => createStyles(primaryColor, textPrimary, backgroundSecondary, backgroundTertiary, borderColor, borderFocus, borderMedium),
+        [primaryColor, textPrimary, backgroundSecondary, backgroundTertiary, borderColor, borderFocus, borderMedium]
+    );
 
     // =========================================================================
     // MENU CONFIG
@@ -164,7 +510,7 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
             setDownloadProgress(0);
             await UpdateService.downloadAndInstall(updateInfo.downloadUrl, (received, total) => {
                 setDownloadProgress(received / total);
-            }, updateInfo.fileSize);
+            }, updateInfo.fileSize, updateInfo.sha256);
             setIsDownloading(false);
         } catch {
             setIsDownloading(false);
@@ -500,312 +846,5 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        flexDirection: 'row',
-    },
-    // Left Panel
-    leftPanel: {
-        width: scale(320),
-        borderRightWidth: 1,
-        paddingTop: scale(60),
-        paddingHorizontal: scale(30),
-    },
-    titleContainer: {
-        marginBottom: scale(50),
-        paddingLeft: scale(10),
-    },
-    pageTitle: {
-        fontSize: scaleFont(32),
-        fontWeight: '900',
-        color: '#00F3FF', // Static for HUD Feel
-        letterSpacing: 4,
-    },
-    titleLine: {
-        height: 2,
-        width: scale(40),
-        marginTop: scale(10),
-        borderRadius: 1,
-    },
-    menuList: {
-        paddingBottom: scale(20),
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: scale(20),
-        paddingHorizontal: scale(20),
-        borderRadius: scale(12),
-        marginBottom: scale(15),
-        borderWidth: 1,
-        borderColor: 'transparent',
-    },
-    menuItemActive: {
-        backgroundColor: 'rgba(0, 243, 255, 0.08)',
-        borderColor: 'rgba(0, 243, 255, 0.2)',
-    },
-    menuItemFocused: {
-        transform: [{ scale: 1.05 }],
-    },
-    menuLabel: {
-        fontSize: scaleFont(19),
-        color: '#8E9AAF',
-        marginLeft: scale(20),
-        fontWeight: '600',
-        letterSpacing: 1,
-    },
-    menuLabelActive: {
-        color: '#FFF',
-        fontWeight: '700',
-    },
-    menuLabelFocused: {
-        color: '#000',
-        fontWeight: '900',
-    },
-    focusIndicator: {
-        position: 'absolute',
-        right: scale(15),
-        width: scale(6),
-        height: scale(6),
-        borderRadius: 3,
-        backgroundColor: '#000',
-    },
-
-    // Right Panel
-    rightPanel: {
-        flex: 1,
-        paddingTop: scale(60),
-        paddingHorizontal: scale(80),
-    },
-    detailsContent: {
-        paddingBottom: scale(60),
-    },
-    sectionHeader: {
-        fontSize: scaleFont(14),
-        color: '#00F3FF',
-        textTransform: 'uppercase',
-        letterSpacing: 3,
-        fontWeight: '900',
-        marginBottom: scale(25),
-        marginTop: scale(10),
-        opacity: 0.8,
-    },
-    sectionHeaderMargin: {
-        marginTop: scale(20),
-    },
-
-    // Profile
-    profileHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: scale(60),
-        paddingBottom: scale(40),
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
-    },
-    avatarContainer: {
-        position: 'relative',
-        width: scale(110),
-        height: scale(110),
-        marginRight: scale(40),
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    avatar: {
-        width: scale(100),
-        height: scale(100),
-        borderRadius: scale(50),
-        backgroundColor: '#00F3FF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2,
-    },
-    avatarAura: {
-        position: 'absolute',
-        width: scale(120),
-        height: scale(120),
-        borderRadius: scale(60),
-        borderWidth: 1,
-        borderColor: 'rgba(0, 243, 255, 0.3)',
-        zIndex: 1,
-    },
-    avatarText: {
-        fontSize: scaleFont(46),
-        fontWeight: '900',
-        color: '#000',
-    },
-    profileInfo: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    profileName: {
-        fontSize: scaleFont(38),
-        fontWeight: '900',
-        color: '#FFF',
-        marginBottom: scale(10),
-        letterSpacing: 1,
-    },
-    badgeContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    statusBadge: {
-        paddingHorizontal: scale(12),
-        paddingVertical: scale(4),
-        borderRadius: scale(4),
-        marginRight: scale(15),
-    },
-    statusBadgeText: {
-        fontSize: scaleFont(12),
-        fontWeight: '900',
-        letterSpacing: 1,
-    },
-    statusBadgeTextDark: {
-        color: '#000',
-    },
-    profileStatus: {
-        fontSize: scaleFont(16),
-        color: '#8E9AAF',
-        fontWeight: '600',
-    },
-    kidsBadge: {
-        backgroundColor: '#4CAF5020',
-    },
-    adultBadge: {
-        backgroundColor: colors.primary + '20',
-    },
-    kidsBadgeText: {
-        color: '#4CAF50',
-    },
-    adultBadgeText: {
-        color: colors.primary,
-    },
-
-    // HUD Detail Rows
-    detailRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: scale(24),
-        paddingHorizontal: scale(30),
-        backgroundColor: 'rgba(15, 22, 36, 0.4)', // Glassmorphic
-        marginBottom: scale(16),
-        borderRadius: scale(4), // More angular for HUD
-        borderLeftWidth: 3,
-        borderLeftColor: 'rgba(0, 243, 255, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.03)',
-    },
-    detailRowUpdateBase: {
-        height: scale(80),
-    },
-    detailRowUpdateDownloading: {
-        height: 'auto',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-    },
-    detailRowFocused: {
-        backgroundColor: 'rgba(0, 243, 255, 0.05)',
-        borderColor: 'rgba(0, 243, 255, 0.3)',
-        borderLeftColor: '#00F3FF',
-        transform: [{ scale: 1.02 }],
-        zIndex: 10,
-    },
-    detailLabelContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    detailLabel: {
-        fontSize: scaleFont(19),
-        color: '#E1E5EE',
-        fontWeight: '600',
-        letterSpacing: 0.5,
-    },
-    detailLabelFocused: {
-        color: '#FFF',
-        fontWeight: '800',
-    },
-    hudDecoration: {
-        width: scale(15),
-        height: 2,
-        backgroundColor: '#00F3FF',
-        marginLeft: scale(15),
-        opacity: 0.6,
-    },
-    detailValueContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    detailValue: {
-        fontSize: scaleFont(19),
-        color: '#5C677D',
-        fontWeight: '500',
-    },
-    detailValueFocused: {
-        color: '#00F3FF',
-        fontWeight: '700',
-    },
-    chevronIcon: {
-        marginLeft: scale(10),
-    },
-
-    // Danger Zone
-    detailRowDanger: {
-        backgroundColor: 'rgba(255, 0, 85, 0.03)',
-        borderLeftColor: 'rgba(255, 0, 85, 0.2)',
-        marginTop: scale(30),
-    },
-    detailRowDangerFocused: {
-        backgroundColor: 'rgba(255, 0, 85, 0.08)',
-        borderColor: 'rgba(255, 0, 85, 0.4)',
-        borderLeftColor: '#FF0055',
-    },
-
-    spacer: {
-        height: scale(20),
-    },
-
-    // TV Update UI
-    updateItemRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        width: '100%',
-    },
-    updateItemRowDownloading: {
-        marginBottom: scale(10),
-    },
-    tvProgressContainer: {
-        width: '100%',
-        marginTop: scale(20),
-        paddingBottom: scale(10),
-    },
-    tvProgressBar: {
-        height: scale(4),
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: scale(2),
-        overflow: 'hidden',
-        marginBottom: scale(10),
-    },
-    tvProgressFill: {
-        height: '100%',
-        backgroundColor: '#00F3FF',
-    },
-    tvProgressText: {
-        fontSize: scaleFont(12),
-        color: '#00F3FF',
-        fontWeight: '900',
-        letterSpacing: 2,
-        textTransform: 'uppercase',
-        textAlign: 'right',
-    },
-});
 
 export default TVSettingsScreen;

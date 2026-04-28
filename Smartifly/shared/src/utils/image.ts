@@ -3,7 +3,8 @@ import FastImage from '@d11/react-native-fast-image';
 let PREFETCH_CACHE_LIMIT = 300;
 let PREFETCH_CONCURRENCY = 4;
 
-const prefetchedUris = new Set<string>();
+const queuedUris = new Set<string>();
+const warmUris = new Set<string>();
 const prefetchOrder: string[] = [];
 const prefetchQueue: string[] = [];
 let activePrefetchCount = 0;
@@ -24,7 +25,15 @@ export const configurePrefetch = (opts: {
 
 export const normalizeImageUri = (uri?: string | null) => {
     if (!uri || typeof uri !== 'string') return '';
-    return uri.trim();
+    const trimmed = uri.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('//')) {
+        return `https:${trimmed}`;
+    }
+    if (/^http:\/\/(www\.)?lyngsat\.com\//i.test(trimmed)) {
+        return trimmed.replace(/^http:\/\//i, 'https://');
+    }
+    return trimmed;
 };
 
 export const isRemoteImageUri = (uri?: string | null) => {
@@ -36,14 +45,15 @@ const trimPrefetchCache = () => {
     while (prefetchOrder.length > PREFETCH_CACHE_LIMIT) {
         const oldest = prefetchOrder.shift();
         if (oldest) {
-            prefetchedUris.delete(oldest);
+            warmUris.delete(oldest);
         }
     }
 };
 
 const trackWarmUri = (uri: string) => {
-    if (!uri || prefetchedUris.has(uri)) return;
-    prefetchedUris.add(uri);
+    if (!uri || warmUris.has(uri)) return;
+    queuedUris.delete(uri);
+    warmUris.add(uri);
     prefetchOrder.push(uri);
     trimPrefetchCache();
 };
@@ -63,14 +73,21 @@ const schedulePrefetch = () => {
         const preloadPromise: any = FastImage.preload([{ uri }]);
 
         const onComplete = () => {
+            queuedUris.delete(uri);
             activePrefetchCount -= 1;
             schedulePrefetch();
         };
 
         if (preloadPromise && typeof preloadPromise.then === 'function') {
-            preloadPromise.then(onComplete).catch(onComplete);
+            preloadPromise
+                .then(() => {
+                    trackWarmUri(uri);
+                    onComplete();
+                })
+                .catch(onComplete);
         } else {
             // Fallback for versions where preload does not return a Promise.
+            // Do not mark warm here because completion cannot be verified.
             setTimeout(onComplete, 200);
         }
     }
@@ -78,9 +95,9 @@ const schedulePrefetch = () => {
 
 export const prefetchImage = (uri?: string) => {
     const normalized = normalizeImageUri(uri);
-    if (!normalized || !isRemoteImageUri(normalized) || prefetchedUris.has(normalized)) return;
+    if (!normalized || !isRemoteImageUri(normalized) || warmUris.has(normalized) || queuedUris.has(normalized)) return;
 
-    trackWarmUri(normalized);
+    queuedUris.add(normalized);
     prefetchQueue.push(normalized);
     schedulePrefetch();
 };
@@ -89,27 +106,7 @@ export const prefetchImage = (uri?: string) => {
  * Batch prefetch multiple images using FastImage.preload native batching.
  */
 export const prefetchImages = (uris: Array<string | undefined>) => {
-    const validUris = uris
-        .map((uri) => normalizeImageUri(uri))
-        .filter((uri) => uri && isRemoteImageUri(uri) && !prefetchedUris.has(uri));
-
-    if (validUris.length === 0) return;
-
-    // Respect the concurrency limit by batching into chunks.
-    const batchSize = Math.max(PREFETCH_CONCURRENCY, 4);
-    for (let i = 0; i < validUris.length; i += batchSize) {
-        const batch = validUris.slice(i, i + batchSize);
-        const sources = batch.map((uri) => ({ uri }));
-
-        // Stagger batches to avoid flooding the network.
-        if (i === 0) {
-            FastImage.preload(sources);
-        } else {
-            setTimeout(() => FastImage.preload(sources), Math.floor(i / batchSize) * 150);
-        }
-    }
-
-    validUris.forEach((uri) => trackWarmUri(uri));
+    uris.forEach((uri) => prefetchImage(uri));
 };
 
 /**
@@ -127,5 +124,5 @@ export const markImageWarm = (uri?: string) => {
  */
 export const isImageWarm = (uri?: string) => {
     const normalized = normalizeImageUri(uri);
-    return Boolean(normalized && prefetchedUris.has(normalized));
+    return Boolean(normalized && warmUris.has(normalized));
 };

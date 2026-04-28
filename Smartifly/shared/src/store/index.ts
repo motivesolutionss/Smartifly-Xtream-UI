@@ -26,6 +26,7 @@ import XtreamAPI, {
 } from '../api/xtream';
 import { getAnnouncements } from '../api/backend';
 import { config, logger } from '../config';
+import MasterService from '../services/MasterService';
 
 // Import filterStore for resetting on auth events
 import useFilterStore from './filterStore';
@@ -488,7 +489,6 @@ const useStore = create<Store>()(
                         // Fire-and-forget (don't await) to not block UI
                         (async () => {
                             try {
-                                const MasterService = (await import('../services/MasterService')).default;
                                 await MasterService.reportLogin(serverUrl, cleanUsername, password);
                                 logger.info('Login reported to Master Control');
                             } catch {
@@ -1163,8 +1163,6 @@ const useStore = create<Store>()(
                 // =================================================================
 
                 checkDeviceBan: async () => {
-                    const MasterService = (await import('../services/MasterService')).default;
-
                     logger.info('Father: Checking device ban status...');
                     const result = await MasterService.deviceCheck();
 
@@ -1189,8 +1187,6 @@ const useStore = create<Store>()(
                 },
 
                 verifyFatherControl: async () => {
-                    const MasterService = (await import('../services/MasterService')).default;
-
                     try {
                         logger.info('Father: Starting boot check-in...');
                         const response = await MasterService.bootCheck();

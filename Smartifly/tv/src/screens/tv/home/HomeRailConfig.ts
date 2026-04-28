@@ -1,17 +1,6 @@
 /**
- * Smartifly TV Home Rail Configuration
- * 
- * Netflix-grade rail manifest system.
- * Controls what appears on Home, in what order, and how.
- * 
- * Philosophy:
- * - Home = curated preview, NOT a catalog
- * - Intentional ordering, not accidental
- * - Type-aware placement rules
- * - Performance-conscious limits
- * - Zone-based safety (prevents accidental reordering)
- * 
- * @enterprise-grade
+ * Smartifly TV Home rail configuration.
+ * Controls which rails appear on the Home screen and their limits.
  */
 
 // =============================================================================
@@ -64,11 +53,11 @@ export interface ResolvedRail {
 }
 
 // =============================================================================
-// HOME RAIL MANIFEST (Netflix-Style Ordered)
+// HOME RAIL MANIFEST
 // =============================================================================
 
 /**
- * Netflix Home Structure Philosophy:
+ * Home structure:
  * 
  * 1. Live content at TOP (urgency, real-time)
  * 2. Continue Watching next (personalization)
@@ -101,7 +90,7 @@ export const TV_HOME_RAILS: HomeRailConfig[] = [
         maxItems: 12,
         enabled: true,
     },
-    // Continue Watching - NOW ENABLED
+    // Continue Watching
     {
         id: 'continue',
         title: 'Continue Watching',
@@ -152,7 +141,7 @@ export const TV_HOME_RAILS: HomeRailConfig[] = [
         title: 'Movie Categories', // Will be replaced with actual category names
         type: 'movie_category',
         zone: 'bottom',
-        maxItems: 15,
+        maxItems: 10,
         enabled: true,
     },
     {
@@ -160,7 +149,7 @@ export const TV_HOME_RAILS: HomeRailConfig[] = [
         title: 'Series Categories', // Will be replaced with actual category names
         type: 'series_category',
         zone: 'bottom',
-        maxItems: 15,
+        maxItems: 10,
         enabled: true,
     },
 ];
@@ -170,10 +159,10 @@ export const TV_HOME_RAILS: HomeRailConfig[] = [
 // =============================================================================
 
 /** Maximum movie categories to show on Home */
-export const MAX_HOME_MOVIE_CATEGORIES = 4;
+export const MAX_HOME_MOVIE_CATEGORIES = 2;
 
 /** Maximum series categories to show on Home */
-export const MAX_HOME_SERIES_CATEGORIES = 4;
+export const MAX_HOME_SERIES_CATEGORIES = 2;
 
 /** Live categories should NEVER appear on Home (they belong in Live TV) */
 export const SHOW_LIVE_CATEGORIES_ON_HOME = false;

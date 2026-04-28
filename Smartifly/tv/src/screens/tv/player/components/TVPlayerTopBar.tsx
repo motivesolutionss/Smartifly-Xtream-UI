@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
 import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { scale, scaleFont, Icon } from '../../../../theme';
+import { useTheme } from '../../../../theme/ThemeProvider';
+import { typographyTV } from '../../../../theme/typography';
 
 interface TVPlayerTopBarProps {
     navigation: any;
@@ -33,6 +35,7 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
     lockButtonRef,
     playPauseRef,
 }) => {
+    const { colors } = useTheme();
     // If the HUD isn't visible, we don't want this layer capturing focus at all
     if (!isHudVisible) return null;
 
@@ -42,7 +45,7 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                 ref={backButtonRef}
                 style={[
                     styles.topButton,
-                    focusedElement === 'back' && styles.topButtonFocused
+                    focusedElement === 'back' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
                 ]}
                 onPress={() => navigation.goBack()}
                 onFocus={() => {
@@ -55,11 +58,11 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                     nextFocusDown: findNodeHandle(playPauseRef.current)
                 } as any)}
             >
-                <Icon name="back" size={scale(26)} color="#FFFFFF" />
+                <Icon name="back" size={scale(26)} color={focusedElement === 'back' ? colors.iconActive : '#FFFFFF'} />
             </Pressable>
 
             <View style={styles.titleBlock}>
-                <Text style={styles.title} numberOfLines={1}>{item?.name}</Text>
+                <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>{item?.name}</Text>
                 {type === 'series' && (item as any)?.episodeTitle ? (
                     <Text style={styles.subtitle} numberOfLines={1}>{(item as any)?.episodeTitle}</Text>
                 ) : null}
@@ -70,7 +73,7 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                     ref={lockButtonRef}
                     style={[
                         styles.topButton,
-                        focusedElement === 'lock' && styles.topButtonFocused
+                        focusedElement === 'lock' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
                     ]}
                     onPress={() => setControlsLocked(true)}
                     onFocus={() => {
@@ -84,12 +87,12 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
-                    <Icon name="lock" size={scale(24)} color="#FFFFFF" />
+                    <Icon name="lock" size={scale(24)} color={focusedElement === 'lock' ? colors.iconActive : '#FFFFFF'} />
                 </Pressable>
                 <Pressable
                     style={[
                         styles.topButton,
-                        focusedElement === 'info' && styles.topButtonFocused
+                        focusedElement === 'info' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
                     ]}
                     onPress={() => setShowStats(prev => !prev)}
                     onFocus={() => {
@@ -101,12 +104,12 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
-                    <Icon name="info" size={scale(24)} color="#FFFFFF" />
+                    <Icon name="info" size={scale(24)} color={focusedElement === 'info' ? colors.iconActive : '#FFFFFF'} />
                 </Pressable>
                 <Pressable
                     style={[
                         styles.topButton,
-                        focusedElement === 'settings' && styles.topButtonFocused
+                        focusedElement === 'settings' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
                     ]}
                     onPress={() => setShowSettings(true)}
                     onFocus={() => {
@@ -118,7 +121,7 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
-                    <Icon name="settings" size={scale(24)} color="#FFFFFF" />
+                    <Icon name="settings" size={scale(24)} color={focusedElement === 'settings' ? colors.iconActive : '#FFFFFF'} />
                 </Pressable>
             </View>
         </View>
@@ -142,7 +145,7 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     topButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.15)',
+        backgroundColor: 'rgba(255,255,255,0.15)', // overridden at render time with theme.colors.glass
         borderColor: 'rgba(255,255,255,0.6)',
     },
     titleBlock: {
@@ -150,9 +153,9 @@ const styles = StyleSheet.create({
         marginHorizontal: scale(12),
     },
     title: {
-        color: '#FFFFFF',
-        fontSize: scaleFont(28),
-        fontWeight: '700',
+        color: '#FFFFFF', // overridden at render time with theme.colors.textPrimary
+        fontSize: typographyTV.h4.fontSize,
+        fontWeight: typographyTV.h4.fontWeight,
         textShadowColor: 'rgba(0,0,0,0.8)',
         textShadowOffset: { width: 0, height: 2 },
         textShadowRadius: 6,

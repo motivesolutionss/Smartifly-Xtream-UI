@@ -20,6 +20,7 @@ import {
     Pressable,
     StyleSheet,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Icon, scale, scaleFont } from '../../../../theme';
 
 // =============================================================================
@@ -76,6 +77,18 @@ const KeyButton: React.FC<KeyButtonProps> = ({
         }
     };
 
+    const gradientStops = isActive
+        ? focused
+            ? { top: '#D1001A', bottom: '#D1001A' }
+            : { top: '#CC0000', bottom: '#CC0000' }
+        : focused
+            ? { top: '#B51525', bottom: '#B51525' }
+            : { top: '#13263A', bottom: '#0E1C2C' };
+
+    const baseFillColor = isActive
+        ? (focused ? '#D1001A' : '#CC0000')
+        : (focused ? '#B51525' : '#0E1C2C');
+
     return (
         <View style={[
             styles.keyWrapper,
@@ -87,18 +100,29 @@ const KeyButton: React.FC<KeyButtonProps> = ({
                 onBlur={handleBlur}
                 style={({ pressed }) => [
                     styles.key,
+                    { backgroundColor: baseFillColor },
                     isSpecial && styles.specialKey,
                     isActive && styles.activeKey,
-                    (focused || pressed) && styles.focusedKey,
+                    !isActive && (focused || pressed) && styles.focusedKey,
+                    isActive && (focused || pressed) && styles.focusedActiveKey,
                 ]}
             >
                 {({ pressed }) => (
                     <>
+                        <Svg pointerEvents="none" style={styles.keyGradient}>
+                            <Defs>
+                                <LinearGradient id="keyGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <Stop offset="0" stopColor={gradientStops.top} />
+                                    <Stop offset="1" stopColor={gradientStops.bottom} />
+                                </LinearGradient>
+                            </Defs>
+                            <Rect x="0" y="0" width="100%" height="100%" rx={scale(7)} ry={scale(7)} fill="url(#keyGradient)" />
+                        </Svg>
                         {icon ? (
                             <Icon
                                 name={icon}
                                 size={scale(24)}
-                                color={(focused || pressed || isActive) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.8)'}
+                                color={(focused || pressed || isActive) ? '#FFFFFF' : '#AAAAAA'}
                             />
                         ) : (
                             <Text style={[
@@ -179,10 +203,10 @@ const TVKeyboard: React.FC<TVKeyboardProps> = ({
                         {i === 2 && (
                             <KeyButton
                                 label={showSymbols ? 'ABC' : ''}
-                                icon={showSymbols ? undefined : 'arrowUp'}
                                 onPress={() => showSymbols ? setShowSymbols(false) : setIsUppercase(!isUppercase)}
                                 isSpecial
                                 isActive={!showSymbols && isUppercase}
+                                icon={showSymbols ? undefined : 'arrow-up'}
                                 width="extraWide"
                             />
                         )}
@@ -253,7 +277,7 @@ const TVKeyboard: React.FC<TVKeyboardProps> = ({
                     />
                     <View style={styles.spaceBarWrapper}>
                         <KeyButton
-                            label="space"
+                            label="Space"
                             onPress={() => onKeyPress(' ')}
                             isSpecial
                         />
@@ -277,61 +301,78 @@ const TVKeyboard: React.FC<TVKeyboardProps> = ({
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        paddingHorizontal: scale(8),
-        paddingVertical: scale(12),
+        paddingHorizontal: scale(6),
+        paddingVertical: scale(10),
     },
     grid: {
-        gap: scale(4),
+        gap: scale(3),
     },
     row: {
         flexDirection: 'row',
         justifyContent: 'center',
-        gap: scale(4),
-        paddingHorizontal: scale(4),
+        gap: scale(3),
+        paddingHorizontal: scale(3),
     },
     spaceBarWrapper: {
         flex: 3,
     },
     keyWrapper: {
-        height: scale(52),
+        height: scale(54),
     },
     key: {
         flex: 1,
-        backgroundColor: 'rgba(1, 20, 30, 0.7)',
-        borderRadius: scale(8),
+        backgroundColor: '#0E1C2C',
+        borderRadius: scale(7),
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderColor: '#1E3448',
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    keyGradient: {
+        ...StyleSheet.absoluteFillObject,
     },
     focusedKey: {
-        backgroundColor: '#E50914',
-        borderColor: '#E50914',
-        shadowColor: '#E50914',
+        borderColor: '#B51525',
+        shadowColor: '#D32638',
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: scale(16),
-        elevation: 10,
+        shadowOpacity: 0.24,
+        shadowRadius: scale(8),
+        elevation: 4,
+    },
+    focusedActiveKey: {
+        borderColor: '#D1001A',
+        shadowColor: '#FF2A3D',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.32,
+        shadowRadius: scale(12),
+        elevation: 5,
     },
     keyText: {
-        color: 'rgba(255, 255, 255, 0.9)',
-        fontSize: scaleFont(20),
-        fontWeight: '500',
+        color: '#AAAAAA',
+        fontSize: scaleFont(24),
+        fontWeight: '600',
     },
     focusedKeyText: {
         fontWeight: '700',
         color: '#FFFFFF',
     },
     specialKey: {
-        backgroundColor: 'rgba(0, 20, 30, 0.75)',
+        backgroundColor: '#0E1C2C',
     },
     specialKeyText: {
-        fontSize: scaleFont(14),
-        color: 'rgba(255, 255, 255, 0.8)',
+        fontSize: scaleFont(17),
+        color: '#AAAAAA',
+        fontWeight: '600',
     },
     activeKey: {
-        backgroundColor: '#E50914',
-        borderColor: '#E50914',
+        borderColor: '#CC0000',
+        shadowColor: '#FF1B2D',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.22,
+        shadowRadius: scale(10),
+        elevation: 5,
     },
     activeKeyText: {
         color: '#FFFFFF',

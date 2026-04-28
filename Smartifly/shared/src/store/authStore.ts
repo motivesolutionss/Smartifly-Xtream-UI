@@ -52,6 +52,7 @@ const mmkvStorage: StateStorage = {
 };
 import XtreamAPI, { XtreamAuthResponse } from '../api/xtream';
 import { logger } from '../config';
+import MasterService from '../services/MasterService';
 import useFilterStore from './filterStore';
 import useContentStore from './contentStore';
 import { useProfileStore } from './profileStore';
@@ -353,7 +354,6 @@ const useAuthStore = create<AuthStore>()(
 
                         (async () => {
                             try {
-                                const MasterService = (await import('../services/MasterService')).default;
                                 await MasterService.reportLogin(serverUrl, cleanUsername, password);
                                 logger.info('Login reported to Master Control');
                             } catch {

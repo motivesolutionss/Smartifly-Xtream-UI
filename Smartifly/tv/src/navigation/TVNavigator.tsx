@@ -6,13 +6,13 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Animated, Easing, Image, StatusBar, StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
 // Theme
-import { colors } from '../theme';
+import { colors, scale } from '../theme';
 import useStore from '../store';
 import { logger } from '../config';
-import SmartiflyPreloaderScreen from '../screens/common/SmartiflyPreloaderScreen';
 import BlockedScreen from '../screens/tv/TVBlockedScreen';
 
 // TV Screens
@@ -29,6 +29,94 @@ import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/tv/pr
 import { useProfileStore } from '../store/profileStore';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+const StartupGateScreen: React.FC = () => {
+  const logoPulse = React.useRef(new Animated.Value(0)).current;
+  const loaderSweep = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoPulse, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoPulse, {
+          toValue: 0,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const sweepLoop = Animated.loop(
+      Animated.timing(loaderSweep, {
+        toValue: 1,
+        duration: 1300,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      })
+    );
+
+    pulseLoop.start();
+    sweepLoop.start();
+
+    return () => {
+      pulseLoop.stop();
+      sweepLoop.stop();
+      loaderSweep.setValue(0);
+    };
+  }, [loaderSweep, logoPulse]);
+
+  const logoAnimatedStyle = {
+    opacity: logoPulse.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.9, 1],
+    }),
+    transform: [
+      {
+        scale: logoPulse.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 1.04],
+        }),
+      },
+    ],
+  };
+
+  const loaderAnimatedStyle = {
+    transform: [
+      {
+        translateX: loaderSweep.interpolate({
+          inputRange: [0, 1],
+          outputRange: [scale(-88), scale(176)],
+        }),
+      },
+    ],
+  };
+
+  return (
+    <View style={styles.preloaderContainer}>
+      <StatusBar hidden />
+
+      <View style={styles.preloaderContent}>
+        <Animated.View style={[styles.logoWrap, logoAnimatedStyle]}>
+          <Image
+            source={require('../assets/smartifly_icon.png')}
+            style={styles.preloaderLogo}
+            resizeMode="contain"
+          />
+        </Animated.View>
+
+        <View style={styles.loaderTrack}>
+          <Animated.View style={[styles.loaderSweep, loaderAnimatedStyle]} />
+        </View>
+      </View>
+    </View>
+  );
+};
+
 const TVNavigator: React.FC = () => {
   // Get authentication and content state from store
   const hasHydrated = useStore((state) => state.hasHydrated);
@@ -42,7 +130,6 @@ const TVNavigator: React.FC = () => {
   const activeProfileId = useProfileStore((state) => state.activeProfileId);
   const [showPreloader, setShowPreloader] = useState(true);
   const [deviceCheckDone, setDeviceCheckDone] = useState(false);
-  const [announcementsPrefetchDone, setAnnouncementsPrefetchDone] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowPreloader(false), 1400);
@@ -54,7 +141,7 @@ const TVNavigator: React.FC = () => {
   }, [checkDeviceBan]);
 
   useEffect(() => {
-    fetchAnnouncements().finally(() => setAnnouncementsPrefetchDone(true));
+    fetchAnnouncements().catch(() => undefined);
   }, [fetchAnnouncements]);
 
   // Determine initial route with SMART CACHE VALIDATION + PROFILE CHECK
@@ -87,8 +174,8 @@ const TVNavigator: React.FC = () => {
   }, [fatherControl.status, isAuthenticated, savedAccountsCount, profiles.length, activeProfileId, isCacheValid]);
 
   // Hydration gate prevents initial route decisions before persisted state is ready.
-  if (!hasHydrated || showPreloader || !deviceCheckDone || !announcementsPrefetchDone) {
-    return <SmartiflyPreloaderScreen />;
+  if (!hasHydrated || showPreloader || !deviceCheckDone) {
+    return <StartupGateScreen />;
   }
 
   return (
@@ -121,5 +208,40 @@ const TVNavigator: React.FC = () => {
     </Stack.Navigator>
   );
 };
+
+const styles = StyleSheet.create({
+  preloaderContainer: {
+    flex: 1,
+    backgroundColor: colors.background || '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preloaderContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: scale(32),
+  },
+  logoWrap: {
+    marginBottom: scale(44),
+  },
+  preloaderLogo: {
+    width: scale(450),
+    height: scale(128),
+    tintColor: colors.primary || '#E50914',
+  },
+  loaderTrack: {
+    width: scale(280),
+    height: scale(5),
+    borderRadius: scale(2),
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    overflow: 'hidden',
+  },
+  loaderSweep: {
+    width: scale(88),
+    height: '100%',
+    borderRadius: scale(2),
+    backgroundColor: colors.primary || '#E50914',
+  },
+});
 
 export default TVNavigator;

@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
 import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { scale, scaleFont } from '../../../../theme';
+import { useTheme } from '../../../../theme/ThemeProvider';
+import { typographyTV } from '../../../../theme/typography';
 
 interface TVPlayerBottomControlsProps {
     isLive: boolean;
@@ -13,8 +15,6 @@ interface TVPlayerBottomControlsProps {
     setFocusedElement: (element: string | null) => void;
     showHUD: () => void;
     progressPressableRef: any;
-    setProgressBarWidth: (width: number) => void;
-    panResponder: any;
     playPauseRef?: any;
 }
 
@@ -42,10 +42,9 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
     setFocusedElement,
     showHUD,
     progressPressableRef,
-    setProgressBarWidth,
-    panResponder,
     playPauseRef,
 }) => {
+    const { colors } = useTheme();
     const progressTime = isScrubbing ? scrubTime : currentTime;
     const progressPercent = duration > 0 ? Math.min(progressTime / duration, 1) : 0;
     const bufferPercent = duration > 0 ? Math.min(playableDuration / duration, 1) : 0;
@@ -64,24 +63,25 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
                     }}
                     onBlur={() => setFocusedElement(null)}
                     style={styles.progressContainer}
-                    onLayout={(event) => setProgressBarWidth(event.nativeEvent.layout.width)}
-                    {...panResponder.panHandlers}
                     {...({
                         nextFocusUp: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
                     <View style={[
                         styles.progressTrack,
-                        isFocused && styles.progressTrackFocused
+                        isFocused && styles.progressTrackFocused,
+                        { backgroundColor: colors.borderMedium },
+                        isFocused && { backgroundColor: colors.borderMedium },
                     ]}>
                         <View style={[styles.progressBuffered, { width: `${bufferPercent * 100}%` }]} />
-                        <View style={[styles.progressPlayed, { width: `${progressPercent * 100}%` }]} />
+                        <View style={[styles.progressPlayed, { width: `${progressPercent * 100}%`, backgroundColor: colors.primary }]} />
                     </View>
                     {/* Thumb */}
                     <View style={[
                         styles.progressThumb,
-                        { left: `${progressPercent * 100}%` },
-                        isFocused && styles.progressThumbFocused
+                        { left: `${progressPercent * 100}%`, backgroundColor: colors.accent },
+                        isFocused && styles.progressThumbFocused,
+                        isFocused && { backgroundColor: colors.accent },
                     ]} />
                     {/* Scrub time popup */}
                     {isScrubbing && (
@@ -100,10 +100,10 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
                         <Text style={styles.liveBadgeText}>LIVE</Text>
                     </View>
                 ) : (
-                    <Text style={styles.timeText}>{formatTime(progressTime)}</Text>
+                    <Text style={[styles.timeText, { color: colors.textSecondary }]}>{formatTime(progressTime)}</Text>
                 )}
                 {!isLive && (
-                    <Text style={styles.timeTextRemaining}>-{formatTime(Math.max(duration - progressTime, 0))}</Text>
+                    <Text style={[styles.timeTextRemaining, { color: colors.textSecondary }]}>-{formatTime(Math.max(duration - progressTime, 0))}</Text>
                 )}
             </View>
         </View>
@@ -121,13 +121,13 @@ const styles = StyleSheet.create({
     },
     progressTrack: {
         height: scale(4),
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: 'rgba(255,255,255,0.2)', // overridden at render time with theme.colors.borderMedium
         borderRadius: scale(2),
         overflow: 'hidden',
     },
     progressTrackFocused: {
         height: scale(7),
-        backgroundColor: 'rgba(255,255,255,0.25)',
+        backgroundColor: 'rgba(255,255,255,0.25)', // overridden at render time with theme.colors.borderMedium
     },
     progressBuffered: {
         position: 'absolute',
@@ -141,14 +141,14 @@ const styles = StyleSheet.create({
         left: 0,
         top: 0,
         bottom: 0,
-        backgroundColor: '#E50914',
+        backgroundColor: '#E50914', // overridden at render time with theme.colors.primary
     },
     progressThumb: {
         position: 'absolute',
         width: scale(14),
         height: scale(14),
         borderRadius: scale(7),
-        backgroundColor: '#E50914',
+        backgroundColor: '#E50914', // overridden at render time with theme.colors.accent
         marginLeft: scale(-7),
     },
     progressThumbFocused: {
@@ -156,12 +156,12 @@ const styles = StyleSheet.create({
         height: scale(20),
         borderRadius: scale(10),
         marginLeft: scale(-10),
-        backgroundColor: '#FFFFFF',
-        elevation: 8,
+        backgroundColor: '#FFFFFF', // overridden at render time with theme.colors.accent (white in default theme)
+        elevation: 2,
         shadowColor: '#E50914',
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 8,
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
     },
     scrubTimeBubble: {
         position: 'absolute',
@@ -186,14 +186,14 @@ const styles = StyleSheet.create({
         paddingHorizontal: scale(4),
     },
     timeText: {
-        color: '#999999',
-        fontSize: scaleFont(16),
-        fontWeight: '500',
+        color: '#999999', // overridden at render time with theme.colors.textSecondary
+        fontSize: typographyTV.labelSmall.fontSize,
+        fontWeight: typographyTV.labelSmall.fontWeight,
     },
     timeTextRemaining: {
-        color: '#999999',
-        fontSize: scaleFont(16),
-        fontWeight: '500',
+        color: '#999999', // overridden at render time with theme.colors.textSecondary
+        fontSize: typographyTV.labelSmall.fontSize,
+        fontWeight: typographyTV.labelSmall.fontWeight,
     },
     liveBadge: {
         flexDirection: 'row',

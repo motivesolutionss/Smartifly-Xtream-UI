@@ -5,8 +5,6 @@
  * - Left panel: Category list
  * - Right panel: Series grid
  * - No duplicate sidebar (main sidebar is on Home only)
- * 
- * @enterprise-grade
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -21,7 +19,7 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import useStore from '../../store';
-import { colors, scale, scaleFont } from '../../theme';
+import { scale, typographyTV, useTheme } from '../../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
 import { XtreamSeries } from '../../api/xtream';
 import { TVSeriesScreenProps } from '../../navigation/types';
@@ -45,11 +43,195 @@ type CategoryListProps = {
     selectedCategoryId: string | null;
     onSelect: (categoryId: string) => void;
     focusEntryRef?: React.Ref<View>;
+    styles: ReturnType<typeof createStyles>;
 };
 
+type CategoryItemProps = {
+    item: Category;
+    isSelected: boolean;
+    onSelect: (categoryId: string) => void;
+    focusEntryRef?: React.Ref<View>;
+    styles: ReturnType<typeof createStyles>;
+};
+
+// =============================================================================
+// STYLE FACTORY
+// =============================================================================
+
+function createStyles(
+    primaryColor: string,
+    textPrimary: string,
+    textMuted: string,
+    textDisabled: string,
+    textOnPrimary: string,
+    glassColor: string,
+    glassMedium: string,
+    borderMedium: string,
+    background: string,
+) {
+    return StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: background,
+            flexDirection: 'row',
+        },
+        // Category Panel
+        categoryPanel: {
+            width: scale(320),
+            backgroundColor: 'transparent',
+            paddingTop: scale(40),
+        },
+        panelHeader: {
+            paddingHorizontal: scale(24),
+            marginBottom: scale(30),
+        },
+        panelTitle: {
+            ...typographyTV.h2,
+            color: textPrimary,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+        },
+        titleUnderline: {
+            width: scale(40),
+            height: scale(4),
+            backgroundColor: primaryColor,
+            marginTop: scale(8),
+            borderRadius: scale(2),
+        },
+        categoryList: {
+            paddingHorizontal: scale(16),
+            paddingBottom: scale(40),
+        },
+        categoryItem: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingVertical: scale(14),
+            paddingHorizontal: scale(20),
+            marginBottom: scale(6),
+            borderRadius: scale(12),
+            backgroundColor: glassColor,
+        },
+        categoryItemSelected: {
+            backgroundColor: glassMedium,
+            borderWidth: 1,
+            borderColor: borderMedium,
+        },
+        categoryItemFocused: {
+            backgroundColor: primaryColor,
+            transform: [{ scale: 1.02 }],
+        },
+        categoryName: {
+            ...typographyTV.bodyMedium,
+            color: textMuted,
+            flex: 1,
+        },
+        categoryNameSelected: {
+            color: textPrimary,
+            fontWeight: '700',
+        },
+        categoryNameFocused: {
+            color: textOnPrimary,
+            fontWeight: '900',
+        },
+        categoryCount: {
+            ...typographyTV.captionSmall,
+            color: textDisabled,
+            marginLeft: scale(10),
+            fontVariant: ['tabular-nums'],
+        },
+        categoryCountFocused: {
+            color: textOnPrimary,
+            fontWeight: 'bold',
+        },
+        // Series Panel
+        seriesPanel: {
+            flex: 1,
+            paddingTop: scale(40),
+            paddingLeft: scale(30),
+        },
+        gridHeader: {
+            flexDirection: 'row',
+            alignItems: 'baseline',
+            marginBottom: scale(24),
+            paddingRight: scale(40),
+        },
+        selectedCategoryName: {
+            ...typographyTV.h3,
+            color: textPrimary,
+            marginRight: scale(15),
+        },
+        seriesCount: {
+            ...typographyTV.caption,
+            color: textMuted,
+        },
+        seriesGrid: {
+            paddingBottom: scale(60),
+            paddingRight: scale(20),
+        },
+        seriesRow: {
+            justifyContent: 'flex-start',
+            marginBottom: scale(30),
+        },
+        loadingState: {
+            paddingVertical: scale(40),
+            alignItems: 'center',
+        },
+    });
+}
+
+// =============================================================================
+// CATEGORY ITEM
+// =============================================================================
+
+const CategoryItem: React.FC<CategoryItemProps> = React.memo(
+    ({ item, isSelected, onSelect, focusEntryRef, styles }) => {
+        const [isFocused, setIsFocused] = useState(false);
+        const handlePress = useCallback(() => {
+            onSelect(item.id);
+        }, [item.id, onSelect]);
+
+        return (
+            <Pressable
+                ref={item.id === 'all' ? focusEntryRef : undefined}
+                onPress={handlePress}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                style={[
+                    styles.categoryItem,
+                    isSelected && styles.categoryItemSelected,
+                    isFocused && styles.categoryItemFocused,
+                ]}
+            >
+                <Text
+                    style={[
+                        styles.categoryName,
+                        isSelected && styles.categoryNameSelected,
+                        isFocused && styles.categoryNameFocused,
+                    ]}
+                    numberOfLines={1}
+                >
+                    {item.name}
+                </Text>
+                <Text
+                    style={[
+                        styles.categoryCount,
+                        isFocused && styles.categoryCountFocused,
+                    ]}
+                >
+                    {item.count}
+                </Text>
+            </Pressable>
+        );
+    }
+);
+
+// =============================================================================
+// CATEGORY LIST
+// =============================================================================
+
 const CategoryList: React.FC<CategoryListProps> = React.memo(
-    ({ categories, selectedCategoryId, onSelect, focusEntryRef }) => {
-        const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null);
+    ({ categories, selectedCategoryId, onSelect, focusEntryRef, styles }) => {
         const perf = usePerfProfile();
         const listPerf = perf.categoryList;
 
@@ -57,37 +239,17 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
             ({ item }: { item: Category }) => {
                 const isSelected = selectedCategoryId === item.id ||
                     (selectedCategoryId === null && item.id === 'all');
-                const isFocused = focusedCategoryId === item.id;
-
                 return (
-                    <Pressable
-                        ref={item.id === 'all' ? focusEntryRef : undefined}
-                        onPress={() => onSelect(item.id)}
-                        onFocus={() => setFocusedCategoryId(item.id)}
-                        onBlur={() => setFocusedCategoryId(null)}
-                        style={[
-                            styles.categoryItem,
-                            isSelected && styles.categoryItemSelected,
-                            isFocused && styles.categoryItemFocused,
-                        ]}
-                    >
-                        <Text style={[
-                            styles.categoryName,
-                            isSelected && styles.categoryNameSelected,
-                            isFocused && styles.categoryNameFocused,
-                        ]} numberOfLines={1}>
-                            {item.name}
-                        </Text>
-                        <Text style={[
-                            styles.categoryCount,
-                            isFocused && styles.categoryCountFocused,
-                        ]}>
-                            {item.count}
-                        </Text>
-                    </Pressable>
+                    <CategoryItem
+                        item={item}
+                        isSelected={isSelected}
+                        onSelect={onSelect}
+                        focusEntryRef={focusEntryRef}
+                        styles={styles}
+                    />
                 );
             },
-            [focusedCategoryId, selectedCategoryId, onSelect, focusEntryRef]
+            [selectedCategoryId, onSelect, focusEntryRef, styles]
         );
 
         return (
@@ -95,6 +257,7 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
                 data={categories}
                 renderItem={renderCategory}
                 keyExtractor={(item) => item.id}
+                extraData={selectedCategoryId}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.categoryList}
                 removeClippedSubviews={true}
@@ -124,6 +287,23 @@ const CATEGORY_ROW_SIZE = scale(62); // row height + margin (approx)
 
 
 const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryRef }) => {
+    // Theme tokens (primitive strings for stable memo deps)
+    const { colors } = useTheme();
+    const primaryColor    = colors.primary;
+    const textPrimary     = colors.textPrimary;
+    const textMuted       = colors.textMuted;
+    const textDisabled    = colors.textDisabled;
+    const textOnPrimary   = colors.textOnPrimary;
+    const glassColor      = colors.glass;
+    const glassMedium     = colors.glassMedium;
+    const borderMedium    = colors.borderMedium;
+    const background      = colors.background;
+
+    const styles = useMemo(
+        () => createStyles(primaryColor, textPrimary, textMuted, textDisabled, textOnPrimary, glassColor, glassMedium, borderMedium, background),
+        [primaryColor, textPrimary, textMuted, textDisabled, textOnPrimary, glassColor, glassMedium, borderMedium, background]
+    );
+
     // State
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -267,6 +447,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
                     selectedCategoryId={selectedCategoryId}
                     onSelect={handleCategorySelect}
                     focusEntryRef={focusEntryRef}
+                    styles={styles}
                 />
             </View>
 
@@ -306,136 +487,5 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-        flexDirection: 'row',
-    },
-    bgOverlay: {
-        backgroundColor: colors.background,
-    },
-    bgGradient: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: '50%',
-        opacity: 0.5,
-        backgroundColor: 'rgba(0, 229, 255, 0.03)',
-    },
-    // Category Panel
-    categoryPanel: {
-        width: scale(320),
-        backgroundColor: 'transparent',
-        paddingTop: scale(40),
-    },
-    panelHeader: {
-        paddingHorizontal: scale(24),
-        marginBottom: scale(30),
-    },
-    panelTitle: {
-        fontSize: scaleFont(34),
-        fontWeight: '900',
-        color: '#FFF',
-        letterSpacing: 1,
-        textTransform: 'uppercase',
-    },
-    titleUnderline: {
-        width: scale(40),
-        height: scale(4),
-        backgroundColor: '#E50914',
-        marginTop: scale(8),
-        borderRadius: scale(2),
-    },
-    categoryList: {
-        paddingHorizontal: scale(16),
-        paddingBottom: scale(40),
-    },
-    categoryItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: scale(14),
-        paddingHorizontal: scale(20),
-        marginBottom: scale(6),
-        borderRadius: scale(12),
-        backgroundColor: 'rgba(255,255,255,0.03)',
-    },
-    categoryItemSelected: {
-        backgroundColor: 'rgba(255,255,255,0.08)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    categoryItemFocused: {
-        backgroundColor: '#E50914',
-        transform: [{ scale: 1.02 }],
-        elevation: 10,
-        shadowColor: '#E50914',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 10,
-    },
-    categoryName: {
-        fontSize: scaleFont(18),
-        color: 'rgba(255,255,255,0.5)',
-        fontWeight: '500',
-        flex: 1,
-    },
-    categoryNameSelected: {
-        color: '#FFF',
-        fontWeight: '700',
-    },
-    categoryNameFocused: {
-        color: '#000',
-        fontWeight: '900',
-    },
-    categoryCount: {
-        fontSize: scaleFont(14),
-        color: 'rgba(255,255,255,0.3)',
-        marginLeft: scale(10),
-        fontVariant: ['tabular-nums'],
-    },
-    categoryCountFocused: {
-        color: 'rgba(0,0,0,0.6)',
-        fontWeight: 'bold',
-    },
-    // Series Panel
-    seriesPanel: {
-        flex: 1,
-        paddingTop: scale(40),
-        paddingLeft: scale(30),
-    },
-    gridHeader: {
-        flexDirection: 'row',
-        alignItems: 'baseline',
-        marginBottom: scale(24),
-        paddingRight: scale(40),
-    },
-    selectedCategoryName: {
-        fontSize: scaleFont(26),
-        fontWeight: '800',
-        color: '#FFF',
-        marginRight: scale(15),
-    },
-    seriesCount: {
-        fontSize: scaleFont(16),
-        color: 'rgba(255,255,255,0.4)',
-        fontWeight: '500',
-    },
-    seriesGrid: {
-        paddingBottom: scale(60),
-        paddingRight: scale(20),
-    },
-    seriesRow: {
-        justifyContent: 'flex-start',
-        marginBottom: scale(30),
-    },
-    loadingState: {
-        paddingVertical: scale(40),
-        alignItems: 'center',
-    },
-});
 
 export default TVSeriesScreen;

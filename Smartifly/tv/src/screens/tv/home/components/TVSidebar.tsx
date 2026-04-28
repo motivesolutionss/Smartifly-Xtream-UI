@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Text, findNodeHandle } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -8,7 +8,7 @@ import Animated, {
   interpolate,
   Extrapolate,
 } from 'react-native-reanimated';
-import { scale, scaleFont, Icon, useTheme, stylePresets } from '../../../../theme';
+import { scale, scaleFont, Icon, useTheme } from '../../../../theme';
 
 export type SidebarRoute =
   | 'Home'
@@ -28,8 +28,6 @@ interface TVSidebarProps {
   onExpand?: () => void;
   onCollapse?: () => void;
   onProfilePress?: () => void;
-
-  // ✅ match useRef<View>(null)
   searchRef?: React.RefObject<View | null>;
   focusTargets?: Partial<Record<SidebarRoute, number | null>>;
 }
@@ -58,7 +56,7 @@ const MAX_WIDTH = scale(285);
 const CONTAINER_RADIUS = scale(48);
 const ICON_SIZE_MAX = scale(36);
 const SIDEBAR_CENTER = MINI_WIDTH / 2;
-const ITEM_LEFT_PADDING = SIDEBAR_CENTER - ICON_SIZE_MAX / 2; // Perfectly centers the 36px wrapper at 48px
+const ITEM_LEFT_PADDING = SIDEBAR_CENTER - ICON_SIZE_MAX / 2;
 
 const SPRING_CONFIG = {
   damping: 24,
@@ -73,25 +71,36 @@ const TVSidebar = ({
   onExpand,
   onCollapse,
   onProfilePress,
-  searchRef: _providedSearchRef,
-  focusTargets
+  searchRef: providedSearchRef,
+  focusTargets,
 }: TVSidebarProps) => {
   const { theme } = useTheme();
   const [focusedId, setFocusedId] = useState<SidebarRoute | 'Profile' | null>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refs for focus management
   const profileRef = React.useRef<View>(null);
   const internalSearchRef = React.useRef<View>(null);
+  const homeRef = React.useRef<View>(null);
+  const liveRef = React.useRef<View>(null);
+  const moviesRef = React.useRef<View>(null);
+  const seriesRef = React.useRef<View>(null);
+  const announcementsRef = React.useRef<View>(null);
+  const favoritesRef = React.useRef<View>(null);
   const downloadsRef = React.useRef<View>(null);
   const settingsRef = React.useRef<View>(null);
 
-  // Use the provided searchRef if available, otherwise use our internal one
-  const searchRef = (_providedSearchRef as React.RefObject<View>) || internalSearchRef;
+  const searchRef = providedSearchRef ?? internalSearchRef;
 
-  // Animation values
   const expandProgress = useSharedValue(0);
 
-  // Sync animation with focus
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const isSidebarFocused = focusedId !== null;
     expandProgress.value = withSpring(isSidebarFocused ? 1 : 0, SPRING_CONFIG);
@@ -100,28 +109,47 @@ const TVSidebar = ({
     if (!isSidebarFocused && onCollapse) onCollapse();
   }, [focusedId, onExpand, onCollapse, expandProgress]);
 
-  const animatedContainerStyle = useAnimatedStyle(() => {
-    return {
-      width: interpolate(
-        expandProgress.value,
-        [0, 1],
-        [MINI_WIDTH, MAX_WIDTH],
-        Extrapolate.CLAMP
-      ),
-      backgroundColor: `rgba(12, 12, 12, ${interpolate(expandProgress.value, [0, 1], [0.78, 0.88])})`,
-    };
-  });
+  const clearPendingBlur = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+  }, []);
 
-  const animatedLabelStyle = useAnimatedStyle(() => {
-    return {
-      opacity: withTiming(expandProgress.value > 0.75 ? 1 : 0, { duration: 180 }),
-      transform: [
-        {
-          translateX: interpolate(expandProgress.value, [0.4, 1], [-25, 0], Extrapolate.CLAMP),
-        },
-      ],
-    };
-  });
+  const handleFocus = useCallback(
+    (id: SidebarRoute | 'Profile') => {
+      clearPendingBlur();
+      setFocusedId(id);
+    },
+    [clearPendingBlur]
+  );
+
+  const handleBlur = useCallback(() => {
+    clearPendingBlur();
+    blurTimeoutRef.current = setTimeout(() => {
+      setFocusedId(null);
+      blurTimeoutRef.current = null;
+    }, 90);
+  }, [clearPendingBlur]);
+
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    width: interpolate(
+      expandProgress.value,
+      [0, 1],
+      [MINI_WIDTH, MAX_WIDTH],
+      Extrapolate.CLAMP
+    ),
+    backgroundColor: `rgba(18, 20, 23, ${interpolate(expandProgress.value, [0, 1], [0.82, 0.92])})`,
+  }));
+
+  const animatedLabelStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(expandProgress.value > 0.75 ? 1 : 0, { duration: 180 }),
+    transform: [
+      {
+        translateX: interpolate(expandProgress.value, [0.4, 1], [-25, 0], Extrapolate.CLAMP),
+      },
+    ],
+  }));
 
   const handlePress = useCallback(
     (id: SidebarRoute) => {
@@ -130,74 +158,156 @@ const TVSidebar = ({
     [activeRoute, onNavigate]
   );
 
-  const activeColor = '#E50914';
-  const inactiveColor = theme.colors.textMuted || '#808080';
+  const activeColor = theme.colors.primary || '#E50914';
+  const inactiveColor = theme.colors.icon || theme.colors.textMuted || '#9CA3AF';
+  const focusedFill = 'rgba(255, 255, 255, 0.18)';
+  const focusedBorder = 'rgba(255, 255, 255, 0.22)';
+  const focusedShadow = 'rgba(255, 255, 255, 0.18)';
 
   const getFocusTarget = useCallback(
-    (route: SidebarRoute) => {
-      const target = focusTargets?.[route];
-      return target ?? undefined;
-    },
+    (route: SidebarRoute) => focusTargets?.[route] ?? undefined,
     [focusTargets]
   );
+
+  const getNode = useCallback((ref: React.RefObject<View | null>) => {
+    if (!ref.current) return undefined;
+    return findNodeHandle(ref.current) ?? undefined;
+  }, []);
+
+  const getItemRef = useCallback((id: SidebarRoute): React.RefObject<View | null> => {
+    switch (id) {
+      case 'Search':
+        return searchRef;
+      case 'Home':
+        return homeRef;
+      case 'Live':
+        return liveRef;
+      case 'Movies':
+        return moviesRef;
+      case 'Series':
+        return seriesRef;
+      case 'Announcements':
+        return announcementsRef;
+      case 'Favorites':
+        return favoritesRef;
+      case 'Downloads':
+        return downloadsRef;
+      case 'Settings':
+      default:
+        return settingsRef;
+    }
+  }, [searchRef]);
+
+  const getUpNode = useCallback((id: SidebarRoute) => {
+    switch (id) {
+      case 'Search':
+        return getNode(profileRef);
+      case 'Home':
+        return getNode(searchRef);
+      case 'Live':
+        return getNode(homeRef);
+      case 'Movies':
+        return getNode(liveRef);
+      case 'Series':
+        return getNode(moviesRef);
+      case 'Announcements':
+        return getNode(seriesRef);
+      case 'Favorites':
+        return getNode(announcementsRef);
+      case 'Downloads':
+        return getNode(favoritesRef);
+      case 'Settings':
+      default:
+        return getNode(downloadsRef);
+    }
+  }, [announcementsRef, downloadsRef, favoritesRef, getNode, homeRef, liveRef, moviesRef, searchRef, seriesRef]);
+
+  const getDownNode = useCallback((id: SidebarRoute) => {
+    switch (id) {
+      case 'Search':
+        return getNode(homeRef);
+      case 'Home':
+        return getNode(liveRef);
+      case 'Live':
+        return getNode(moviesRef);
+      case 'Movies':
+        return getNode(seriesRef);
+      case 'Series':
+        return getNode(announcementsRef);
+      case 'Announcements':
+        return getNode(favoritesRef);
+      case 'Favorites':
+        return getNode(downloadsRef);
+      case 'Downloads':
+        return getNode(settingsRef);
+      case 'Settings':
+      default:
+        return getNode(settingsRef);
+    }
+  }, [announcementsRef, downloadsRef, favoritesRef, getNode, homeRef, liveRef, moviesRef, seriesRef]);
 
   const renderMenuItem = (item: MenuItem) => {
     const isActive = activeRoute === item.id;
     const isFocused = focusedId === item.id;
 
-    // Assign specific refs for focus chaining
-    let itemRef: React.RefObject<any> | undefined;
-    if (item.id === 'Search') itemRef = searchRef;
-    if (item.id === 'Downloads') itemRef = downloadsRef;
-    if (item.id === 'Settings') itemRef = settingsRef;
+    const itemRef = getItemRef(item.id);
+    const selfNode = getNode(itemRef);
+    const rightNode = getFocusTarget(item.id) ?? getFocusTarget(activeRoute);
 
     return (
       <Pressable
         key={item.id}
-        ref={itemRef}
-        onPress={() => handlePress(item.id)}
-        onFocus={() => setFocusedId(item.id)}
-        onBlur={() => setFocusedId(null)}
-        // Focus Trapping and Chaining
+        ref={itemRef as React.RefObject<any>}
+        onPress={() => {
+          clearPendingBlur();
+          setFocusedId(null);
+          handlePress(item.id);
+        }}
+        onFocus={() => handleFocus(item.id)}
+        onBlur={handleBlur}
         {...({
-          nextFocusRight: getFocusTarget(activeRoute),
-          nextFocusLeft: itemRef?.current ? findNodeHandle(itemRef.current) : undefined, // Trap Left
-          nextFocusUp: item.id === 'Search'
-            ? (profileRef.current ? findNodeHandle(profileRef.current) : undefined)
-            : (item.id === 'Settings' ? (downloadsRef.current ? findNodeHandle(downloadsRef.current) : undefined) : undefined),
-          nextFocusDown: item.id === 'Downloads'
-            ? (settingsRef.current ? findNodeHandle(settingsRef.current) : undefined)
-            : (item.id === 'Settings' ? (settingsRef.current ? findNodeHandle(settingsRef.current) : undefined) : undefined),
+          nextFocusRight: rightNode,
+          nextFocusLeft: selfNode,
+          nextFocusUp: getUpNode(item.id),
+          nextFocusDown: getDownNode(item.id),
         } as any)}
         style={[
           styles.menuItem,
-          isFocused && styles.menuItemFocused
+          isFocused && styles.menuItemFocused,
+          isFocused && {
+            backgroundColor: focusedFill,
+            borderColor: focusedBorder,
+            shadowColor: focusedShadow,
+          },
         ]}
       >
-        {isActive && (
-          <View style={styles.activeHalo} pointerEvents="none" />
-        )}
+        {isActive && <View style={styles.activeHalo} pointerEvents="none" />}
         {isActive && <View style={styles.activeIndicator} pointerEvents="none" />}
 
         <View style={styles.menuItemContent}>
-          <View style={[
-            styles.iconWrapper,
-            (isActive || isFocused) && styles.iconActiveBorder,
-            isActive && { borderBottomColor: activeColor }
-          ]}>
+          <View
+            style={[
+              styles.iconWrapper,
+              (isActive || isFocused) && styles.iconActiveBorder,
+              isActive && { borderBottomColor: activeColor },
+            ]}
+          >
             <Icon
               name={item.icon}
               size={scaleFont(28)}
-              color={isFocused ? '#FFF' : isActive ? activeColor : inactiveColor}
+              color={isFocused || isActive ? '#FFFFFF' : inactiveColor}
             />
           </View>
 
           <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
-            <Text style={[
-              styles.label,
-              isFocused && styles.labelFocused,
-              isActive && !isFocused && { color: activeColor }
-            ]}>
+            <Text
+              style={[
+                styles.label,
+                isFocused && styles.labelFocused,
+                isActive && !isFocused && { color: activeColor },
+                isActive && isFocused && { color: '#FFFFFF' },
+              ]}
+            >
               {item.label}
             </Text>
           </Animated.View>
@@ -208,30 +318,30 @@ const TVSidebar = ({
 
   return (
     <View style={styles.outerContainer}>
-      <Animated.View style={[styles.container, stylePresets.glassCard, animatedContainerStyle]}>
-        {/* Rim Lighting / Edge highlight - Concentric curve (Radius - margin) */}
+      <Animated.View style={[styles.container, animatedContainerStyle]}>
         <View style={styles.rimLight} pointerEvents="none" />
-
-        {/* Secondary Inner Glow for "Liquid" feel */}
         <View style={styles.innerLiquidGlow} pointerEvents="none" />
 
-        {/* Profile Section */}
         <View style={styles.header}>
           <Pressable
             ref={profileRef}
             onPress={onProfilePress}
-            onFocus={() => setFocusedId('Profile')}
-            onBlur={() => setFocusedId(null)}
-            // Focus Trapping
+            onFocus={() => handleFocus('Profile')}
+            onBlur={handleBlur}
             {...({
-              nextFocusUp: findNodeHandle(profileRef.current), // Trap Up
-              nextFocusLeft: findNodeHandle(profileRef.current), // Trap Left
+              nextFocusUp: getNode(profileRef),
+              nextFocusLeft: getNode(profileRef),
               nextFocusRight: getFocusTarget(activeRoute),
-              nextFocusDown: findNodeHandle(searchRef.current),
+              nextFocusDown: getNode(searchRef),
             } as any)}
             style={[
               styles.profileButton,
-              focusedId === 'Profile' && styles.profileFocused
+              focusedId === 'Profile' && styles.profileFocused,
+              focusedId === 'Profile' && {
+                backgroundColor: focusedFill,
+                borderColor: focusedBorder,
+                shadowColor: focusedShadow,
+              },
             ]}
           >
             <View style={styles.menuItemContent}>
@@ -250,12 +360,8 @@ const TVSidebar = ({
           <View style={styles.divider} />
         </View>
 
-        {/* Menu Items */}
-        <View style={styles.menuList}>
-          {MENU_ITEMS.map(renderMenuItem)}
-        </View>
+        <View style={styles.menuList}>{MENU_ITEMS.map(renderMenuItem)}</View>
 
-        {/* Footer Section (Settings) */}
         <View style={styles.footer}>
           <View style={styles.dividerFooter} />
           {renderMenuItem(SETTINGS_ITEM)}
@@ -269,42 +375,42 @@ const styles = StyleSheet.create({
   outerContainer: {
     height: '100%',
     paddingVertical: scale(24),
-    paddingLeft: scale(20),
+    paddingLeft: scale(18),
     justifyContent: 'center',
     zIndex: 100,
   },
   container: {
-    height: scale(820), // More balanced height for the content volume
+    height: scale(820),
     borderRadius: CONTAINER_RADIUS,
-    backgroundColor: 'rgba(12, 12, 12, 0.82)',
+    backgroundColor: 'rgba(18, 20, 23, 0.88)',
     borderWidth: scale(1.5),
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     shadowColor: '#000',
-    shadowOpacity: 0.85,
-    shadowRadius: scale(35),
+    shadowOpacity: 0.72,
+    shadowRadius: scale(28),
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
     overflow: 'hidden',
   },
   rimLight: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: CONTAINER_RADIUS - 1, // Concentric adjustment
+    borderRadius: CONTAINER_RADIUS - 1,
     borderWidth: scale(0.8),
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     margin: scale(1.5),
   },
   innerLiquidGlow: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: CONTAINER_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: 'rgba(255, 255, 255, 0.012)',
     borderWidth: scale(1),
-    borderColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: 'rgba(255, 255, 255, 0.03)',
     margin: scale(4),
   },
   header: {
     width: '100%',
     alignItems: 'flex-start',
-    paddingTop: scale(20), // Tighter header
+    paddingTop: scale(20),
   },
   profileButton: {
     width: '100%',
@@ -314,15 +420,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: ITEM_LEFT_PADDING,
   },
   profileFocused: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
     borderWidth: 1.5,
-    transform: [{ scale: 1.03 }],
+    shadowOpacity: 0.18,
+    shadowRadius: scale(10),
+    transform: [{ scale: 1.02 }],
   },
   divider: {
     width: '70%',
     alignSelf: 'center',
-    height: scale(1), // Thinner divider
+    height: scale(1),
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     marginTop: scale(14),
     marginBottom: scale(4),
@@ -330,7 +438,7 @@ const styles = StyleSheet.create({
   dividerFooter: {
     width: '70%',
     alignSelf: 'center',
-    height: scale(1), // Thinner divider
+    height: scale(1),
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     marginTop: scale(4),
     marginBottom: scale(10),
@@ -339,18 +447,18 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     paddingVertical: scale(5),
-    justifyContent: 'center', // Snug centering
+    justifyContent: 'center',
   },
   footer: {
     width: '100%',
-    paddingBottom: scale(16), // Tighter footer
+    paddingBottom: scale(16),
   },
   menuItem: {
     width: '100%',
-    height: scale(54),
+    height: scale(58),
     justifyContent: 'center',
-    borderRadius: scale(27),
-    marginBottom: scale(5),
+    borderRadius: scale(29),
+    marginBottom: scale(6),
     paddingHorizontal: ITEM_LEFT_PADDING,
     backgroundColor: 'transparent',
     borderWidth: 1,
@@ -358,12 +466,12 @@ const styles = StyleSheet.create({
   },
   menuItemFocused: {
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
     shadowColor: '#FFFFFF',
-    shadowOpacity: 0.25,
-    shadowRadius: scale(14),
-    elevation: 6,
-    transform: [{ scale: 1.06 }],
+    shadowOpacity: 0.18,
+    shadowRadius: scale(10),
+    elevation: 4,
+    transform: [{ scale: 1.02 }],
   },
   menuItemContent: {
     flexDirection: 'row',
@@ -387,7 +495,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.75)',
     fontSize: scaleFont(19),
     fontWeight: '600',
-    letterSpacing: 0.8,
+    letterSpacing: 0.2,
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1.5 },
     textShadowRadius: 3,
@@ -404,17 +512,17 @@ const styles = StyleSheet.create({
     borderRadius: scale(3),
     backgroundColor: '#E50914',
     shadowColor: '#E50914',
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
+    shadowOpacity: 0.45,
+    shadowRadius: 4,
     elevation: 4,
   },
   activeHalo: {
     position: 'absolute',
-    left: ITEM_LEFT_PADDING - (scale(56) - ICON_SIZE_MAX) / 2, // Centers 56px halo over 36px icon at established padding
+    left: ITEM_LEFT_PADDING - (scale(56) - ICON_SIZE_MAX) / 2,
     width: scale(56),
     height: scale(56),
     borderRadius: scale(28),
-    backgroundColor: 'rgba(229, 9, 20, 0.25)',
+    backgroundColor: 'rgba(229, 9, 20, 0.22)',
     zIndex: -1,
   },
 });

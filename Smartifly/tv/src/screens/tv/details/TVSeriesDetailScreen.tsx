@@ -15,17 +15,16 @@ import {
     ActivityIndicator,
     Pressable,
     FlatList,
-    BackHandler,
     Modal,
 } from 'react-native';
 import FastImageComponent from '../../../components/tv/TVFastImage';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import useStore from '../../../store';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
 import { logger } from '../../../config';
-// import useTVBackHandler from '../../../utils/useTVBackHandler';
+import useTVBackHandler from '../../../utils/useTVBackHandler';
 import { prefetchImage } from '../../../utils/image';
 import useDownloadStore from '../../../store/downloadStore';
 import downloadService from '../../../services/downloadService';
@@ -114,14 +113,10 @@ const TVSeriesDetailScreen: React.FC = () => {
     // HANDLERS
     // ==========================================================================
 
-    useFocusEffect(
+    useTVBackHandler(
         useCallback(() => {
-            const onBackPress = () => {
-                navigation.goBack();
-                return true;
-            };
-            const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-            return () => subscription.remove();
+            navigation.goBack();
+            return true;
         }, [navigation])
     );
 

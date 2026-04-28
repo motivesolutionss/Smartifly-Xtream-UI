@@ -74,12 +74,10 @@ export const SCALE_FACTORS: Record<TVResolution, number> = {
  * Uses actual screen dimensions for precise scaling
  */
 export const getScaleFactor = (): number => {
-    // Calculate based on actual screen width relative to base design
     const widthScale = SCREEN_WIDTH / BASE_DESIGN.width;
     const heightScale = SCREEN_HEIGHT / BASE_DESIGN.height;
-
-    // Use the smaller scale to ensure content fits
-    return Math.min(widthScale, heightScale);
+    const rawScale = Math.min(widthScale, heightScale);
+    return Math.min(rawScale, 1.25);
 };
 
 /**

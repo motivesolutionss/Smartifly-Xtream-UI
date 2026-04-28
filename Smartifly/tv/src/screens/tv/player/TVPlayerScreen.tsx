@@ -8,7 +8,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    PanResponder,
     Pressable,
     StatusBar,
     StyleSheet,
@@ -34,6 +33,7 @@ import { RootStackParamList } from '../../../navigation/types';
 import { useTrackProgress } from '../../../store/watchHistoryStore';
 import useTVBackHandler from '../../../utils/useTVBackHandler';
 import useDownloadStore from '../../../store/downloadStore';
+import { useTheme } from '../../../theme/ThemeProvider';
 
 // Components
 import TVPlayerTopBar from './components/TVPlayerTopBar';
@@ -49,6 +49,7 @@ type SettingsView = 'root' | 'quality' | 'audio' | 'subtitles' | 'speed' | 'aspe
 const TVPlayerScreen: React.FC = () => {
     const navigation = useNavigation();
     const route = useRoute<TVPlayerScreenRouteProp>();
+    const { colors: themeColors } = useTheme();
 
 
     // Params might come from FullscreenPlayer or just Player depending on how we route
@@ -61,6 +62,15 @@ const TVPlayerScreen: React.FC = () => {
     const api = getXtreamAPI();
 
     const isLive = type === 'live';
+    const mediaItem = item as any;
+    const downloadSearchId = useMemo(
+        () => String(mediaItem?.stream_id || mediaItem?.id || ''),
+        [mediaItem?.id, mediaItem?.stream_id]
+    );
+    const localDownload = useMemo(
+        () => downloads.find((download) => download.id === downloadSearchId),
+        [downloadSearchId, downloads]
+    );
 
     // Refs and state
     const videoRef = useRef<VideoRef>(null);
@@ -109,6 +119,25 @@ const TVPlayerScreen: React.FC = () => {
     const [selectedVideoTrack, setSelectedVideoTrack] = useState<SelectedVideoTrack>({
         type: SelectedVideoTrackType.AUTO,
     });
+
+    const bufferConfig = useMemo(
+        () => (
+            isLive
+                ? {
+                    minBufferMs: 25000,
+                    maxBufferMs: 60000,
+                    bufferForPlaybackMs: 3000,
+                    bufferForPlaybackAfterRebufferMs: 10000,
+                }
+                : {
+                    minBufferMs: 15000,
+                    maxBufferMs: 50000,
+                    bufferForPlaybackMs: 2500,
+                    bufferForPlaybackAfterRebufferMs: 5000,
+                }
+        ),
+        [isLive]
+    );
 
     // HUD Visibility Management
     const showHUD = useCallback(() => {
@@ -254,24 +283,18 @@ const TVPlayerScreen: React.FC = () => {
 
         let url = '';
         try {
-            const mediaItem = item as any;
-            const searchId = String(mediaItem.stream_id || mediaItem.id);
-
             logger.debug('TVPlayer: Checking for local download', {
-                searchId,
+                searchId: downloadSearchId,
                 item_stream_id: mediaItem.stream_id,
                 item_id: mediaItem.id,
                 downloadsCount: downloads.length,
-                downloadIds: downloads.map(d => d.id),
             });
 
-            const download = downloads.find(d => d.id === searchId);
-
-            if (download && download.status === 'completed' && download.localPath) {
-                url = `file://${download.localPath}`;
+            if (localDownload && localDownload.status === 'completed' && localDownload.localPath) {
+                url = `file://${localDownload.localPath}`;
                 logger.info('TVPlayer: Playing from local download', {
-                    id: download.id,
-                    path: download.localPath,
+                    id: localDownload.id,
+                    path: localDownload.localPath,
                     url,
                 });
             } else if (type === 'live') {
@@ -306,7 +329,19 @@ const TVPlayerScreen: React.FC = () => {
         }
 
         setStreamUrl(url);
-    }, [api, item, type, episodeUrl, videoKey, resumePosition, downloads]);
+    }, [
+        api,
+        downloadSearchId,
+        episodeUrl,
+        item,
+        localDownload?.id,
+        localDownload?.localPath,
+        localDownload?.status,
+        resumePosition,
+        type,
+        videoKey,
+        downloads.length,
+    ]);
 
     // Lifecycle cleanup
     useEffect(() => {
@@ -344,34 +379,6 @@ const TVPlayerScreen: React.FC = () => {
         handleSeek(time);
         setPaused(!wasPlayingRef.current);
     }, [duration, handleSeek, isLive]);
-
-    const [progressBarWidth, setProgressBarWidth] = useState(0);
-
-    const panResponder = useMemo(() => PanResponder.create({
-        onStartShouldSetPanResponder: () => !isLive,
-        onMoveShouldSetPanResponder: () => !isLive,
-        onPanResponderGrant: (evt) => {
-            const position = evt.nativeEvent.locationX;
-            const ratio = progressBarWidth > 0 ? position / progressBarWidth : 0;
-            beginScrub(Math.max(0, Math.min(ratio, 1)) * duration);
-        },
-        onPanResponderMove: (evt) => {
-            const position = evt.nativeEvent.locationX;
-            const ratio = progressBarWidth > 0 ? position / progressBarWidth : 0;
-            setScrubTime(Math.max(0, Math.min(ratio, 1)) * duration);
-        },
-        onPanResponderRelease: (evt) => {
-            const position = evt.nativeEvent.locationX;
-            const ratio = progressBarWidth > 0 ? position / progressBarWidth : 0;
-            endScrub(Math.max(0, Math.min(ratio, 1)) * duration);
-        },
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderTerminate: (evt) => {
-            const position = evt.nativeEvent.locationX;
-            const ratio = progressBarWidth > 0 ? position / progressBarWidth : 0;
-            endScrub(Math.max(0, Math.min(ratio, 1)) * duration);
-        },
-    }), [beginScrub, duration, endScrub, isLive, progressBarWidth]);
 
     // Progress percent is handled inside child components.
 
@@ -464,23 +471,10 @@ const TVPlayerScreen: React.FC = () => {
                     selectedAudioTrack={selectedAudioTrack}
                     selectedTextTrack={selectedTextTrack}
                     selectedVideoTrack={selectedVideoTrack}
+                    progressUpdateInterval={1000}
                     playInBackground={false}
                     playWhenInactive={false}
-                    bufferConfig={
-                        isLive
-                            ? {
-                                minBufferMs: 25000,
-                                maxBufferMs: 60000,
-                                bufferForPlaybackMs: 3000,
-                                bufferForPlaybackAfterRebufferMs: 10000,
-                            }
-                            : {
-                                minBufferMs: 15000,
-                                maxBufferMs: 50000,
-                                bufferForPlaybackMs: 2500,
-                                bufferForPlaybackAfterRebufferMs: 5000,
-                            }
-                    }
+                    bufferConfig={bufferConfig}
                     onError={(e) => {
                         logger.error('TVPlayer: Playback error', e);
                         if (isLive) {
@@ -555,7 +549,7 @@ const TVPlayerScreen: React.FC = () => {
             )}
 
             {!controlsLocked && !showOverlay && isHudVisible && (
-                <View style={styles.controlsOverlay} pointerEvents="box-none">
+                <View style={[styles.controlsOverlay, { backgroundColor: themeColors.overlay }]} pointerEvents="box-none">
                     <TVPlayerTopBar
                         navigation={navigation}
                         item={item}
@@ -597,8 +591,6 @@ const TVPlayerScreen: React.FC = () => {
                         setFocusedElement={setFocusedElement}
                         showHUD={showHUD}
                         progressPressableRef={progressPressableRef}
-                        setProgressBarWidth={setProgressBarWidth}
-                        panResponder={panResponder}
                         playPauseRef={playPauseRef}
                     />
                 </View>

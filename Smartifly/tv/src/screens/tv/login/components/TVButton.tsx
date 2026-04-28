@@ -25,6 +25,7 @@ import {
     Icon,
     scale,
     scaleFont,
+    useTheme,
 } from '../../../../theme';
 
 // =============================================================================
@@ -70,6 +71,8 @@ const TVButton: React.FC<TVButtonProps> = ({
     const [isFocused, setIsFocused] = useState(false);
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
+
+    const { colors: themeColors } = useTheme();
 
     // Animate focus state (scale + glow)
     const animateFocus = useCallback((focused: boolean) => {
@@ -120,13 +123,13 @@ const TVButton: React.FC<TVButtonProps> = ({
             case 'primary':
                 return {
                     container: {
-                        backgroundColor: isDisabled ? 'rgba(229, 9, 20, 0.4)' : '#E50914',
-                        shadowColor: '#E50914',
+                        backgroundColor: isDisabled ? `${themeColors.primary}66` : themeColors.primary,
+                        shadowColor: themeColors.primary,
                         shadowOpacity: 0,
                         elevation: 0,
                     },
                     text: {
-                        color: isDisabled ? 'rgba(255, 255, 255, 0.5)' : '#FFF',
+                        color: isDisabled ? `${themeColors.textOnPrimary}80` : themeColors.textOnPrimary,
                     },
                 };
             case 'secondary':

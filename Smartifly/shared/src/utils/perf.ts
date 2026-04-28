@@ -67,9 +67,9 @@ const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
     grid: { initialRows: 3, maxRenderBatchRows: 2, windowSize: 5, updateCellsBatchingPeriod: 16 },
     categoryList: { initialNumToRender: 12, maxToRenderPerBatch: 12, windowSize: 5 },
     enableSvgGradients: true,
-    enableFocusGlow: true,
+    enableFocusGlow: false,
     imageQuality: 'normal',
-    prefetchConcurrency: 4,
+    prefetchConcurrency: 3,
     imageCacheLimit: 300,
   },
   high: {
@@ -82,13 +82,39 @@ const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
     enableSvgGradients: true,
     enableFocusGlow: true,
     imageQuality: 'normal',
-    prefetchConcurrency: 6,
+    prefetchConcurrency: 4,
     imageCacheLimit: 400,
   },
 };
 
 let cachedProfile: PerfProfile | null = null;
 let pendingProfile: Promise<PerfProfile> | null = null;
+let initialPrefetchConfigured = false;
+
+const configurePrefetchForProfile = (profile: PerfProfile) => {
+  configurePrefetch({
+    cacheLimit: profile.imageCacheLimit,
+    concurrency: profile.prefetchConcurrency,
+  });
+};
+
+const getInitialPerfProfile = (): PerfProfile => {
+  if (cachedProfile) return cachedProfile;
+
+  // TV hardware is the sensitive target. Start conservatively so the first
+  // screen mount does not over-render before async device probing completes.
+  if (Platform.isTV) {
+    return Platform.OS === 'android' ? PERF_PROFILES.low : PERF_PROFILES.normal;
+  }
+
+  return PERF_PROFILES.normal;
+};
+
+const ensureInitialPrefetchConfig = (profile: PerfProfile) => {
+  if (initialPrefetchConfigured) return;
+  configurePrefetchForProfile(profile);
+  initialPrefetchConfigured = true;
+};
 
 const chooseTier = async (): Promise<PerfTier> => {
   try {
@@ -109,8 +135,8 @@ const chooseTier = async (): Promise<PerfTier> => {
     }
 
     if (Platform.OS === 'android') {
-      if (totalMemory && totalMemory < 2.5e9) return 'low';
-      if (totalMemory && totalMemory < 4e9) return 'normal';
+      if (totalMemory && totalMemory < 3e9) return 'low';
+      if (totalMemory && totalMemory < 6e9) return 'normal';
       return 'high';
     }
 
@@ -123,14 +149,12 @@ const chooseTier = async (): Promise<PerfTier> => {
 
 export const getPerfProfile = async (): Promise<PerfProfile> => {
   if (cachedProfile) return cachedProfile;
+  ensureInitialPrefetchConfig(getInitialPerfProfile());
   if (!pendingProfile) {
     pendingProfile = chooseTier().then((tier) => {
       cachedProfile = PERF_PROFILES[tier] || PERF_PROFILES.normal;
       // Configure image prefetching for the resolved tier
-      configurePrefetch({
-        cacheLimit: cachedProfile.imageCacheLimit,
-        concurrency: cachedProfile.prefetchConcurrency,
-      });
+      configurePrefetchForProfile(cachedProfile);
       return cachedProfile;
     });
   }
@@ -138,9 +162,10 @@ export const getPerfProfile = async (): Promise<PerfProfile> => {
 };
 
 export const usePerfProfile = (): PerfProfile => {
-  const [profile, setProfile] = useState<PerfProfile>(cachedProfile || PERF_PROFILES.normal);
+  const [profile, setProfile] = useState<PerfProfile>(getInitialPerfProfile());
 
   useEffect(() => {
+    ensureInitialPrefetchConfig(profile);
     let isActive = true;
     getPerfProfile().then((next) => {
       if (!isActive) return;

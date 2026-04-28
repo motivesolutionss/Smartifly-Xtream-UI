@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -22,6 +22,7 @@ const BlockedScreen = ({ navigation, route }: any) => {
     const cardOpacity = useSharedValue(0);
     const cardScale = useSharedValue(0.95);
     const cardTranslateY = useSharedValue(10);
+    const [buttonFocused, setButtonFocused] = React.useState(false);
 
     useEffect(() => {
         cardOpacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.exp) });
@@ -73,16 +74,22 @@ const BlockedScreen = ({ navigation, route }: any) => {
                     <Text style={styles.message}>{message}</Text>
 
                     {/* Action Button */}
-                    <TouchableOpacity
-                        activeOpacity={0.8}
-                        style={styles.button}
+                    <Pressable
+                        style={[
+                            styles.button,
+                            buttonFocused && styles.buttonFocused,
+                        ]}
+                        focusable
+                        hasTVPreferredFocus
+                        onFocus={() => setButtonFocused(true)}
+                        onBlur={() => setButtonFocused(false)}
                         onPress={async () => {
                             await resetStore();
                             navigation.replace('Login');
                         }}
                     >
                         <Text style={styles.buttonText}>Return to Login</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                 </View>
             </Animated.View>
         </View>
@@ -142,6 +149,15 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: colors.primaryLight,
+    },
+    buttonFocused: {
+        transform: [{ scale: 1.04 }],
+        borderColor: colors.textPrimary,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.45,
+        shadowRadius: 14,
+        elevation: 8,
     },
     buttonText: {
         color: colors.textPrimary,

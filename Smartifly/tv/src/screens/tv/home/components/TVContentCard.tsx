@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
+import React, { memo, useMemo, useCallback, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, StyleProp, ViewStyle } from 'react-native';
 import FastImageComponent from '../../../../components/tv/TVFastImage';
 import Animated, {
@@ -7,8 +7,10 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { scale, scaleFont, useTheme } from '../../../../theme';
+import { scale, scaleFont, useTheme, Icon } from '../../../../theme';
+import { ThemeColors } from '../../../../theme/themes/types';
 import { usePerfProfile } from '../../../../utils/perf';
+import { normalizeImageUri } from '@smartifly/shared/src/utils/image';
 import { FALLBACK_POSTER } from '../HomeRailConfig';
 
 export type ContentVariant = 'live' | 'movie' | 'series';
@@ -30,7 +32,7 @@ interface TVContentCardProps {
   width?: number;
   height?: number;
   disableZoom?: boolean;
-  onFocusItem?: () => void;
+  onFocusItem?: (item: TVContentItem) => void;
   onBlurItem?: () => void;
   focusRef?: React.Ref<View>;
   hasTVPreferredFocus?: boolean;
@@ -51,21 +53,52 @@ const SPRING_CONFIG = {
   mass: 0.6,
 };
 
-const createStyles = (liveColor: string, accentColor: string) =>
+const DEFAULT_MOVIE_CARD_WIDTH = scale(240);
+const DEFAULT_MOVIE_CARD_HEIGHT = scale(336);
+const DEFAULT_LIVE_CARD_HEIGHT_RATIO = 0.6;
+
+const normalizeCardImageUri = (value?: string): string => {
+  return normalizeImageUri(value);
+};
+
+const isUsableCardImageUri = (value?: string): boolean => {
+  const normalized = normalizeCardImageUri(value);
+  return /^(https?:\/\/|file:\/\/|content:\/\/|data:|asset:)/i.test(normalized);
+};
+
+/**
+ * Resolves the quality badge background color from theme tokens.
+ * Requirements: 2.2
+ */
+export const resolveQualityBadgeColor = (quality: string, themeColors: ThemeColors): string => {
+  const q = quality.toLowerCase();
+  if (q === '4k' || q === 'uhd') return themeColors.qualityUHD;
+  if (q === 'hd' || q === 'fhd') return themeColors.qualityHD;
+  if (q === 'sd') return themeColors.qualitySD;
+  return themeColors.primary;
+};
+
+const createStyles = (
+  liveColor: string,
+  borderFocusColor: string,
+  cardBgColor: string,
+  warningColor: string,
+) =>
   StyleSheet.create({
     container: {
-      marginRight: scale(24),
+      marginRight: scale(18),
       justifyContent: 'flex-start',
       alignItems: 'center',
     },
 
+    // Requirements: 2.4 — card background uses theme.colors.cardBackground
     cardBase: {
       overflow: 'hidden',
-      backgroundColor: '#181818',
+      backgroundColor: cardBgColor,
       borderRadius: scale(8),
     },
     cardLive: {
-      backgroundColor: '#FFF',
+      backgroundColor: '#FFFFFF',
       borderRadius: scale(12),
     },
 
@@ -73,12 +106,37 @@ const createStyles = (liveColor: string, accentColor: string) =>
       width: '100%',
       height: '100%',
     },
+    // Requirements: 1.5 — live logo: white surface, contain resize, padded inner frame
+    imageLive: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: scale(10),
+    },
+    liveImageFrame: {
+      ...StyleSheet.absoluteFillObject,
+      paddingHorizontal: scale(18),
+      paddingVertical: scale(16),
+      backgroundColor: '#FFFFFF',
+    },
+    livePlaceholder: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFFFFF',
+    },
+    livePlaceholderIconWrap: {
+      width: scale(54),
+      height: scale(54),
+      borderRadius: scale(16),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.06)',
+    },
 
-    // Outer ring layer (ALWAYS visible on any poster)
+    // Requirements: 2.1 — focus ring uses borderFocus for movie/series, live for live cards
     focusRing: {
       ...StyleSheet.absoluteFillObject,
       borderRadius: scale(10),
-      borderColor: accentColor,
+      borderColor: borderFocusColor,
     },
     focusRingLive: {
       borderColor: liveColor,
@@ -133,9 +191,10 @@ const createStyles = (liveColor: string, accentColor: string) =>
       paddingVertical: scale(4),
       borderRadius: scale(4),
     },
+    // Requirements: 2.3 — rating star color uses theme.colors.warning
     ratingText: {
       fontSize: scaleFont(12),
-      color: '#FFD700',
+      color: warningColor,
       fontWeight: '900',
     },
   });
@@ -143,8 +202,8 @@ const createStyles = (liveColor: string, accentColor: string) =>
 const TVContentCard: React.FC<TVContentCardProps> = ({
   item,
   onPress,
-  width = scale(200),
-  height = scale(280),
+  width,
+  height,
   disableZoom = false,
   onFocusItem,
   onBlurItem,
@@ -162,24 +221,52 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 }) => {
   const { theme } = useTheme();
   const perf = usePerfProfile();
-  const enableGlow = perf.enableFocusGlow;
+  const [liveImageFailed, setLiveImageFailed] = useState(false);
+  const cardWidth = width ?? DEFAULT_MOVIE_CARD_WIDTH;
+  const cardHeight = height ?? DEFAULT_MOVIE_CARD_HEIGHT;
 
   const variant: ContentVariant = item.type || 'movie';
   const isLive = variant === 'live';
+  const enableGlow = perf.enableFocusGlow && perf.tier === 'high' && !isLive;
 
-  const imageUri = item.image || FALLBACK_POSTER;
-  const finalHeight = isLive ? width : height;
+  const imageUri = useMemo(() => normalizeCardImageUri(item.image), [item.image]);
+  const hasUsableImage = useMemo(() => isUsableCardImageUri(imageUri), [imageUri]);
+  const shouldShowLivePlaceholder = isLive && (!hasUsableImage || liveImageFailed);
+  const finalHeight = isLive
+    ? (height ?? Math.round(cardWidth * DEFAULT_LIVE_CARD_HEIGHT_RATIO))
+    : cardHeight;
 
-  // Extract colors so worklets don't depend on whole theme object
-  const liveColor = theme.colors.live || '#E50914';
-  const accentColor = '#FFFFFF';
+  // Extract primitive color tokens — stable useMemo deps (prevents Issue 1 regression)
+  // Requirements: 2.1 — borderFocus for movie/series ring, live for live ring
+  const liveColor = theme.colors.live ?? '#E50914';
+  const borderFocusColor = theme.colors.borderFocus ?? '#FFFFFF';
+  const cardBgColor = theme.colors.cardBackground ?? '#0F151E';
+  const warningColor = theme.colors.warning ?? '#F5C518';
 
+  // Requirements: 2.5 — variant-specific glow color tokens
+  const glowColor = isLive
+    ? (theme.colors.liveGlow ?? 'rgba(229,9,20,0.4)')
+    : variant === 'series'
+    ? (theme.colors.seriesGlow ?? 'rgba(14,165,233,0.4)')
+    : (theme.colors.moviesGlow ?? 'rgba(147,51,234,0.4)');
 
-  const styles = useMemo(() => createStyles(liveColor, accentColor), [liveColor, accentColor]);
-  const shadowRadiusFocused = useMemo(() => (enableGlow ? scale(18) : 0), [enableGlow]);
-  const ringWidthFocused = useMemo(() => (enableGlow ? scale(3.5) : scale(2)), [enableGlow]);
-  const ringWidthIdle = useMemo(() => 0, []);
+  const styles = useMemo(
+    () => createStyles(liveColor, borderFocusColor, cardBgColor, warningColor),
+    [liveColor, borderFocusColor, cardBgColor, warningColor],
+  );
+
+  // Requirements: 2.2 — quality badge color resolved from theme tokens
+  const qualityBadgeColor = useMemo(
+    () => (item.quality ? resolveQualityBadgeColor(item.quality, theme.colors) : null),
+    [item.quality, theme.colors.qualityUHD, theme.colors.qualityHD, theme.colors.qualitySD, theme.colors.primary],
+  );
+
+  const ringWidthFocused = useMemo(() => scale(isLive ? 4.5 : enableGlow ? 3.5 : 2.5), [enableGlow, isLive]);
+  const ringWidthIdle = 0;
   const ringOpacityIdle = 0;
+  const focusShadowRadius = useRef(scale(18)).current;
+  // Keep zoomed focus ring fully visible on all sides (no top/bottom clipping in rails).
+  const focusBleed = useMemo(() => (disableZoom ? 0 : scale(8)), [disableZoom]);
 
   // UI-thread state (no React re-render)
   const focused = useSharedValue(0);
@@ -194,22 +281,20 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     return null;
   }, [isLive, item.quality]);
 
+  // Requirements: 2.5 — glow uses variant-specific *Glow tokens, gated by perf.enableFocusGlow
+  // shadowOpacity: 0, elevation: 0 when enableFocusGlow === false
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const isFocused = focused.value === 1;
-
-    // subtle glow: keep it only when focused
-    // (shadow is native-side; minimal overhead vs SVG)
     return {
       transform: [{ scale: disableZoom ? 1 : zoom.value }],
-      shadowOpacity: enableGlow && isFocused ? 0.7 : 0,
-      shadowRadius: enableGlow && isFocused ? shadowRadiusFocused : 0,
+      shadowOpacity: enableGlow && isFocused ? 0.38 : 0,
+      shadowRadius: enableGlow && isFocused ? focusShadowRadius : 0,
       shadowOffset: { width: 0, height: 0 },
-      shadowColor: isLive ? liveColor : accentColor,
-
+      shadowColor: glowColor,
       // Android
-      elevation: enableGlow && isFocused ? 14 : 0,
+      elevation: enableGlow && isFocused ? 8 : 0,
     };
-  }, [disableZoom, isLive, liveColor, accentColor, enableGlow, shadowRadiusFocused]);
+  }, [disableZoom, enableGlow, focusShadowRadius, glowColor]);
 
   const ringAnimatedStyle = useAnimatedStyle(() => ({
     opacity: ringOpacity.value,
@@ -220,25 +305,26 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     opacity: overlayOpacity.value,
   }));
 
+  // Requirements: 10.2 — focus ring animation: withTiming(1, 120ms) / withSpring
   const handleFocus = useCallback(() => {
     focused.value = 1;
     ringOpacity.value = withTiming(1, { duration: 120 });
     ringWidth.value = withTiming(ringWidthFocused, { duration: 120 });
-    overlayOpacity.value = withTiming(1, { duration: 120 });
+    overlayOpacity.value = withTiming(isLive ? 0.18 : 0, { duration: 90 });
 
     if (!disableZoom) {
-      zoom.value = withSpring(1.05, SPRING_CONFIG);
+      zoom.value = withSpring(isLive ? 1.03 : 1.04, SPRING_CONFIG);
     }
     if (onFocusItem) {
-      onFocusItem();
+      onFocusItem(item);
     }
-  }, [disableZoom, focused, onFocusItem, overlayOpacity, ringOpacity, ringWidth, ringWidthFocused, zoom]);
+  }, [disableZoom, focused, item, onFocusItem, overlayOpacity, ringOpacity, ringWidth, ringWidthFocused, zoom]);
 
   const handleBlur = useCallback(() => {
     focused.value = 0;
     ringOpacity.value = withTiming(ringOpacityIdle, { duration: 120 });
     ringWidth.value = withTiming(ringWidthIdle, { duration: 120 });
-    overlayOpacity.value = withTiming(0, { duration: 120 });
+    overlayOpacity.value = withTiming(0, { duration: 90 });
 
     if (!disableZoom) {
       zoom.value = withSpring(1, SPRING_CONFIG);
@@ -246,22 +332,42 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     if (onBlurItem) {
       onBlurItem();
     }
-  }, [disableZoom, focused, onBlurItem, overlayOpacity, ringOpacity, ringOpacityIdle, ringWidth, ringWidthIdle, zoom]);
+  }, [disableZoom, focused, onBlurItem, overlayOpacity, ringOpacity, ringWidth, zoom]);
+
+  const handlePress = useCallback(() => {
+    onPress(item);
+  }, [item, onPress]);
+
+  const handleImageError = useCallback(() => {
+    if (isLive) {
+      setLiveImageFailed(true);
+    }
+  }, [isLive]);
 
   const containerSizeStyle = useMemo<StyleProp<ViewStyle>>(
-    () => ({ width, height: finalHeight }),
-    [width, finalHeight]
+    () => ({ width: cardWidth, height: finalHeight + focusBleed * 2 }),
+    [cardWidth, finalHeight, focusBleed],
   );
 
   const cardSizeStyle = useMemo<StyleProp<ViewStyle>>(
-    () => ({ width, height: finalHeight, borderRadius: isLive ? scale(12) : scale(8) }),
-    [width, finalHeight, isLive]
+    () => ({ width: cardWidth, height: finalHeight, borderRadius: isLive ? scale(12) : scale(8) }),
+    [cardWidth, finalHeight, isLive],
+  );
+  const cardOffsetStyle = useMemo<StyleProp<ViewStyle>>(
+    () => ({ marginTop: focusBleed }),
+    [focusBleed],
+  );
+
+  // Requirements: 2.2 — quality badge style with resolved color
+  const qualityBadgeStyle = useMemo<StyleProp<ViewStyle>>(
+    () => qualityBadgeColor ? { backgroundColor: qualityBadgeColor, borderColor: 'transparent' } : undefined,
+    [qualityBadgeColor],
   );
 
   return (
     <Pressable
       ref={focusRef}
-      onPress={() => onPress(item)}
+      onPress={handlePress}
       onFocus={handleFocus}
       onBlur={handleBlur}
       focusable={focusable}
@@ -287,24 +393,39 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           styles.cardBase,
           isLive && styles.cardLive,
           cardSizeStyle,
+          cardOffsetStyle,
           cardAnimatedStyle,
         ]}
       >
-        <FastImageComponent
-          source={{ uri: imageUri }}
-          style={styles.image}
-          resizeMode={isLive ? 'contain' : 'cover'}
-        />
-
-        {/* Focus ring sits ABOVE the image so it never disappears */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.focusRing,
-            isLive && styles.focusRingLive,
-            ringAnimatedStyle,
-          ]}
-        />
+        {shouldShowLivePlaceholder ? (
+          <View style={styles.livePlaceholder}>
+            <View style={styles.livePlaceholderIconWrap}>
+              <Icon name="television" size={scale(28)} color="rgba(255,255,255,0.9)" />
+            </View>
+          </View>
+        ) : (
+          isLive ? (
+            // Requirements: 1.5 — white surface + padded inner frame; contain keeps logos balanced
+            <View style={styles.liveImageFrame}>
+              <FastImageComponent
+                source={{ uri: hasUsableImage ? imageUri : FALLBACK_POSTER }}
+                style={[styles.image, styles.imageLive]}
+                resizeMode="contain"
+                onError={handleImageError}
+                enableColdFade={false}
+              />
+            </View>
+          ) : (
+            <FastImageComponent
+              source={{ uri: hasUsableImage ? imageUri : FALLBACK_POSTER }}
+              fallbackSource={{ uri: FALLBACK_POSTER }}
+              style={styles.image}
+              resizeMode="cover"
+              onError={handleImageError}
+              enableColdFade={false}
+            />
+          )
+        )}
 
         {/* Live overlay (cheap) */}
         {isLive && (
@@ -314,22 +435,32 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           />
         )}
 
-        {/* Badge */}
+        {/* Badge — quality badge uses resolved theme color (req 2.2), live badge uses liveColor */}
         {badge && (
-          <View style={[styles.badge, badge.isLive && styles.badgeLive]}>
+          <View style={[styles.badge, badge.isLive ? styles.badgeLive : qualityBadgeStyle]}>
             {badge.isLive && <View style={styles.liveDot} />}
             <Text style={styles.badgeText}>{badge.text}</Text>
           </View>
         )}
 
-        {/* Rating */}
+        {/* Rating — star color uses theme.colors.warning (req 2.3) */}
         {!isLive && item.rating ? (
           <View style={styles.ratingBadge}>
             <Text style={styles.ratingText}>
-              ⭐ {!isNaN(Number(item.rating)) ? Number(item.rating).toFixed(1) : '0.0'}
+              {'\u2B50'} {!isNaN(Number(item.rating)) ? Number(item.rating).toFixed(1) : '0.0'}
             </Text>
           </View>
         ) : null}
+
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.focusRing,
+            isLive && styles.focusRingLive,
+            ringAnimatedStyle,
+          ]}
+        />
+
       </Animated.View>
     </Pressable>
   );

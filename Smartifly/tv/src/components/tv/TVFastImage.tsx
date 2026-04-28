@@ -14,7 +14,6 @@ import {
     isRemoteImageUri,
     markImageWarm,
     normalizeImageUri,
-    prefetchImage,
 } from '../../utils/image';
 
 interface Props {
@@ -36,7 +35,13 @@ const COLD_FADE_DURATION_MS = 80;
 const resolveSource = (input: any) => {
     if (!input) return null;
     if (typeof input === 'string') {
-        return { uri: input };
+        return { uri: normalizeImageUri(input) };
+    }
+    if (typeof input === 'object' && 'uri' in input) {
+        return {
+            ...input,
+            uri: normalizeImageUri((input as any).uri),
+        };
     }
     return input;
 };
@@ -94,11 +99,6 @@ const FastImageComponent: React.FC<Props> = ({
         setError(false);
         setIsReady(initialReady);
     }, [initialReady, sourceUri]);
-
-    useEffect(() => {
-        if (!sourceIsRemote || !sourceUri) return;
-        prefetchImage(sourceUri);
-    }, [sourceIsRemote, sourceUri]);
 
     const shouldUseFallback = error && Boolean(normalizedFallback);
     const renderSource = shouldUseFallback ? normalizedFallback : normalizedSource;
@@ -164,6 +164,27 @@ const FastImageComponent: React.FC<Props> = ({
     }, [resizeMode]);
 
     if (!renderSource && !error) return <View style={[styles.container, style]} />;
+
+    const shouldUseAnimatedWrapper = shouldAnimateOnLoad || (showLoader && !isReady && !shouldUseFallback);
+
+    if (!shouldUseAnimatedWrapper) {
+        return (
+            <View style={[styles.container, style]}>
+                <FastImage
+                    style={StyleSheet.absoluteFill}
+                    source={fastImageSource}
+                    onLoad={handleLoad}
+                    onLoadEnd={handleLoadEnd}
+                    onError={handleError}
+                    resizeMode={fastResizeMode}
+                />
+
+                {error && !normalizedFallback && (
+                    <View style={styles.errorContainer} />
+                )}
+            </View>
+        );
+    }
 
     return (
         <View style={[styles.container, style]}>

@@ -5,7 +5,7 @@ import {
     StyleSheet,
     ScrollView,
     Animated,
-    TouchableOpacity,
+    Pressable,
     Image,
 } from 'react-native';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
@@ -46,6 +46,7 @@ const SEARCH_WINDOW_LONG_QUERY = 320;
 const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const [query, setQuery] = useState('');
+    const [focusedSuggestion, setFocusedSuggestion] = useState<number | null>(null);
     // State for text suggestions
     const [textSuggestions] = useState<string[]>([]);
     const [results, setResults] = useState<SearchResults>({ live: [], movies: [], series: [] });
@@ -344,9 +345,14 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                 {query.length > 0 && textSuggestions.length > 0 && (
                     <View style={styles.suggestionsContainer}>
                         {textSuggestions.map((suggestion, index) => (
-                            <TouchableOpacity
+                            <Pressable
                                 key={index}
-                                style={styles.suggestionButton}
+                                style={[
+                                    styles.suggestionButton,
+                                    focusedSuggestion === index && styles.suggestionButtonFocused,
+                                ]}
+                                onFocus={() => setFocusedSuggestion(index)}
+                                onBlur={() => setFocusedSuggestion((current) => current === index ? null : current)}
                                 onPress={() => {
                                     setQuery(suggestion);
                                     const domainWindow = suggestion.length >= 5
@@ -367,7 +373,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                                 <Text style={styles.suggestionText} numberOfLines={1}>
                                     {suggestion}
                                 </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                         ))}
                     </View>
                 )}
@@ -532,6 +538,11 @@ const styles = StyleSheet.create({
         borderRadius: scale(20),
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    suggestionButtonFocused: {
+        borderColor: colors.accent,
+        backgroundColor: 'rgba(0, 229, 255, 0.12)',
+        transform: [{ scale: 1.04 }],
     },
     suggestionText: {
         color: 'rgba(255, 255, 255, 0.8)',

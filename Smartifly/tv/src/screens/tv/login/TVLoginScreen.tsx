@@ -140,7 +140,7 @@ const stepStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: scale(24),
+        marginBottom: scale(2),
         paddingHorizontal: scale(16),
     },
     stepButton: {
@@ -148,15 +148,15 @@ const stepStyles = StyleSheet.create({
         opacity: 1,
     },
     stepDot: {
-        width: scale(28),
-        height: scale(28),
-        borderRadius: scale(14),
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        width: scale(34),
+        height: scale(34),
+        borderRadius: scale(17),
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
         borderWidth: scale(2),
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderColor: 'rgba(255, 255, 255, 0.24)',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: scale(6),
+        marginBottom: scale(7),
     },
     stepDotActive: {
         backgroundColor: 'rgba(0, 229, 255, 0.2)',
@@ -171,7 +171,7 @@ const stepStyles = StyleSheet.create({
         borderColor: colors.accent || '#00E5FF',
     },
     stepNumber: {
-        fontSize: scaleFont(12),
+        fontSize: scaleFont(15),
         color: 'rgba(255, 255, 255, 0.4)',
         fontWeight: '600',
     },
@@ -179,10 +179,10 @@ const stepStyles = StyleSheet.create({
         color: colors.accent || '#00E5FF',
     },
     stepLabel: {
-        fontSize: scaleFont(11),
-        color: 'rgba(255, 255, 255, 0.4)',
+        fontSize: scaleFont(13.5),
+        color: 'rgba(255, 255, 255, 0.5)',
         fontWeight: '500',
-        letterSpacing: 0.3,
+        letterSpacing: 0.5,
     },
     stepLabelActive: {
         color: colors.accent || '#00E5FF',
@@ -192,11 +192,11 @@ const stepStyles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.7)',
     },
     connector: {
-        width: scale(40),
+        width: scale(44),
         height: scale(2),
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        backgroundColor: 'rgba(255, 255, 255, 0.18)',
         marginHorizontal: scale(8),
-        marginBottom: scale(20),
+        marginBottom: scale(21),
         borderRadius: scale(1),
     },
     connectorCompleted: {
@@ -473,18 +473,20 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
             <View style={styles.vignetteBottom} pointerEvents="none" />
 
             {/* BRAND LOGO - Top Right */}
-            <Animated.View
-                style={[
-                    styles.brandHeader,
-                    { transform: [{ scale: logoScaleAnim }] },
-                ]}
-            >
-                <Image
-                    source={require('../../../assets/smartifly_icon.png')}
-                    style={styles.logoImage}
-                    resizeMode="contain"
-                />
-            </Animated.View>
+            {currentStep === 'portal' && (
+                <Animated.View
+                    style={[
+                        styles.brandHeader,
+                        { transform: [{ scale: logoScaleAnim }] },
+                    ]}
+                >
+                    <Image
+                        source={require('../../../assets/smartifly_icon.png')}
+                        style={styles.logoImage}
+                        resizeMode="contain"
+                    />
+                </Animated.View>
+            )}
 
             {/* PORTAL STEP - Centered Full-Width Layout */}
             {currentStep === 'portal' && (
@@ -496,9 +498,9 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
                 >
                     {/* Welcome Header */}
                     <View style={styles.centeredWelcome}>
-                        <Text style={styles.welcomeTitle}>Welcome Back</Text>
+                        <Text style={styles.welcomeTitle}>Continue Your Journey</Text>
                         <Text style={styles.welcomeSubtitle}>
-                            Sign in to continue your entertainment journey
+                            Enter your account details to keep watching
                         </Text>
                     </View>
 
@@ -554,107 +556,123 @@ const TVLoginScreen: React.FC = ({ navigation }: any) => {
 
             {/* USERNAME/PASSWORD STEPS - Two Column Layout */}
             {currentStep !== 'portal' && (
-                <>
-                    {/* LEFT SECTION - Keyboard */}
+                <View style={styles.credentialShell}>
                     <Animated.View
                         style={[
-                            styles.keyboardSection,
+                            styles.credentialPanel,
                             { opacity: fadeAnim },
                         ]}
                     >
-                        {/* Welcome Header */}
-                        <View style={styles.welcomeSection}>
-                            <Text style={styles.welcomeTitle}>Welcome Back</Text>
-                            <Text style={styles.welcomeSubtitle}>
-                                Sign in to continue your entertainment journey
-                            </Text>
-                        </View>
-
-                        {/* Step Indicator */}
-                        <StepIndicator
-                            currentStep={currentStep}
-                            onStepPress={handleStepPress}
-                        />
-
-                        {/* Virtual Keyboard */}
-                        <TVKeyboard
-                            onKeyPress={handleKeyPress}
-                            onBackspace={handleBackspace}
-                            onSubmit={handleLogin}
-                            onNextField={handleNextField}
-                            onBack={handleBack}
-                        />
-                    </Animated.View>
-
-                    {/* RIGHT SECTION - Form */}
-                    <Animated.View
-                        style={[
-                            styles.formSection,
-                            {
-                                opacity: fadeAnim,
-                                transform: [{ translateX: slideAnim }],
-                            },
-                        ]}
-                    >
-                        {/* Username Input - Step 2 */}
-                        {currentStep === 'username' && (
-                            <View style={styles.inputsSection}>
-                                <TVInput
-                                    ref={usernameInputRef}
-                                    label="Username"
-                                    placeholder="Enter your username"
-                                    value={username}
-                                    onChangeText={setUsername}
-                                    leftIcon="user"
-                                    error={errors.username}
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                    returnKeyType="next"
-                                    onFocus={() => setActiveField('username')}
-                                    onSubmitEditing={handleNextField}
-                                />
-                            </View>
-                        )}
-
-                        {/* Password Input - Step 3 */}
-                        {currentStep === 'password' && (
-                            <View style={styles.inputsSection}>
-                                <TVInput
-                                    ref={passwordInputRef}
-                                    label="Password"
-                                    placeholder="Enter your password"
-                                    value={password}
-                                    onChangeText={setPassword}
-                                    secureTextEntry
-                                    showPasswordToggle
-                                    leftIcon="lock"
-                                    error={errors.password}
-                                    returnKeyType="done"
-                                    onFocus={() => setActiveField('password')}
-                                    onSubmitEditing={handleNextField}
-                                />
-                            </View>
-                        )}
-
-                        {/* Error Banner */}
-                        {errors.general && (
-                            <View style={styles.errorBanner}>
-                                <View style={styles.errorIconWrapper}>
-                                    <Icon name="warning" size={scale(22)} color="#EF4444" />
+                        <View style={styles.panelInner}>
+                            {/* LEFT SECTION - Keyboard */}
+                            <View style={styles.keyboardSection}>
+                                <View style={styles.welcomeSection}>
+                                    <Text style={styles.welcomeTitle}>Continue Your Journey</Text>
+                                    <Text style={styles.welcomeSubtitle}>
+                                        Enter your account details to keep watching
+                                    </Text>
                                 </View>
-                                <Text style={styles.errorText}>{errors.general}</Text>
-                            </View>
-                        )}
 
-                        {/* Footer */}
-                        <View style={styles.footer}>
-                            <Text style={styles.footerText}>
-                                Need assistance?{' '}
-                                <Text style={styles.footerLink}>smartifly.io/support</Text>
-                            </Text>
+                                <View style={styles.leftStepOffset}>
+                                    <StepIndicator
+                                        currentStep={currentStep}
+                                        onStepPress={handleStepPress}
+                                    />
+                                </View>
+
+                                <View style={styles.keyboardWrap}>
+                                    <TVKeyboard
+                                        onKeyPress={handleKeyPress}
+                                        onBackspace={handleBackspace}
+                                        onSubmit={handleLogin}
+                                        onNextField={handleNextField}
+                                        onBack={handleBack}
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.panelDivider} />
+
+                            {/* RIGHT SECTION - Form */}
+                            <Animated.View
+                                style={[
+                                    styles.formSection,
+                                    {
+                                        opacity: fadeAnim,
+                                        transform: [{ translateX: slideAnim }],
+                                    },
+                                ]}
+                            >
+                                <Animated.View
+                                    style={[
+                                        styles.panelBrandHeader,
+                                        { transform: [{ scale: logoScaleAnim }] },
+                                    ]}
+                                >
+                                    <Image
+                                        source={require('../../../assets/smartifly_icon.png')}
+                                        style={styles.panelLogoImage}
+                                        resizeMode="contain"
+                                    />
+                                </Animated.View>
+
+                                {currentStep === 'username' && (
+                                    <View style={styles.inputsSection}>
+                                        <TVInput
+                                            ref={usernameInputRef}
+                                            label="Username"
+                                            placeholder="Enter your username"
+                                            value={username}
+                                            onChangeText={setUsername}
+                                            leftIcon="user"
+                                            error={errors.username}
+                                            autoCapitalize="none"
+                                            autoCorrect={false}
+                                            returnKeyType="next"
+                                            onFocus={() => setActiveField('username')}
+                                            onSubmitEditing={handleNextField}
+                                        />
+                                    </View>
+                                )}
+
+                                {currentStep === 'password' && (
+                                    <View style={styles.inputsSection}>
+                                        <TVInput
+                                            ref={passwordInputRef}
+                                            label="Password"
+                                            placeholder="Enter your password"
+                                            value={password}
+                                            onChangeText={setPassword}
+                                            secureTextEntry
+                                            showPasswordToggle
+                                            leftIcon="lock"
+                                            error={errors.password}
+                                            returnKeyType="done"
+                                            onFocus={() => setActiveField('password')}
+                                            onSubmitEditing={handleNextField}
+                                        />
+                                    </View>
+                                )}
+
+                                {errors.general && (
+                                    <View style={styles.errorBanner}>
+                                        <View style={styles.errorIconWrapper}>
+                                            <Icon name="warning" size={scale(22)} color="#EF4444" />
+                                        </View>
+                                        <Text style={styles.errorText}>{errors.general}</Text>
+                                    </View>
+                                )}
+
+                                <View style={styles.footer}>
+                                    <Text style={styles.footerText}>
+                                        Need assistance?{' '}
+                                        <Text style={styles.footerLink}>smartifly.io/support</Text>
+                                    </Text>
+                                </View>
+                            </Animated.View>
                         </View>
                     </Animated.View>
-                </>
+                </View>
             )}
 
             {/* Navigation Hint */}
@@ -688,7 +706,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         width: '100%',
         height: '100%',
-        backgroundColor: 'rgba(0, 0, 0, 0.45)',
+        backgroundColor: 'rgba(0, 0, 0, 0.52)',
     },
     vignetteTop: {
         position: 'absolute',
@@ -720,28 +738,81 @@ const styles = StyleSheet.create({
     },
 
     // Left Section - Keyboard
-    keyboardSection: {
-        width: '50%',
+    credentialShell: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
         justifyContent: 'center',
-        paddingLeft: TV_SAFE_AREA.title.horizontal,
-        paddingRight: scale(16),
+        paddingHorizontal: scale(48),
+        paddingVertical: scale(34),
+        zIndex: 15,
+    },
+    credentialPanel: {
+        width: '100%',
+        maxWidth: scale(1680),
+        minHeight: scale(880),
+        borderRadius: scale(34),
+        borderWidth: 1,
+        borderColor: 'rgba(185, 203, 226, 0.30)',
+        backgroundColor: 'rgba(30, 40, 54, 0.54)',
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: scale(10) },
+        shadowOpacity: 0.12,
+        shadowRadius: scale(16),
+        overflow: 'hidden',
+    },
+    panelInner: {
+        flex: 1,
+        flexDirection: 'row',
+        paddingHorizontal: scale(44),
+        paddingTop: scale(60),
+        paddingBottom: scale(20),
+    },
+    keyboardSection: {
+        flex: 1.04,
+        justifyContent: 'flex-start',
+        paddingHorizontal: scale(10),
+        paddingTop: scale(44),
+        paddingBottom: scale(4),
         zIndex: 10,
     },
+    leftStepOffset: {
+        marginTop: scale(10),
+        transform: [{ translateY: scale(88) }],
+    },
     welcomeSection: {
-        marginBottom: scale(16),
+        marginBottom: scale(20),
         alignSelf: 'flex-start',
+        transform: [{ translateY: scale(56) }],
     },
     welcomeTitle: {
-        fontSize: scaleFont(48),
+        fontSize: scaleFont(58),
         fontFamily: fontFamily.bold,
-        color: '#FFFFFF',
-        marginBottom: scale(10),
-        fontStyle: 'italic',
+        color: 'rgba(246, 249, 255, 0.94)',
+        marginBottom: scale(12),
+        fontWeight: '900',
+        textShadowColor: 'rgba(0, 0, 0, 0.35)',
+        textShadowOffset: { width: 0, height: scale(2) },
+        textShadowRadius: scale(6),
     },
     welcomeSubtitle: {
-        fontSize: scaleFont(16),
-        color: 'rgba(255, 255, 255, 0.6)',
-        lineHeight: scaleFont(24),
+        fontSize: scaleFont(21),
+        color: 'rgba(231, 236, 244, 0.86)',
+        lineHeight: scaleFont(30),
+        maxWidth: scale(620),
+    },
+    keyboardWrap: {
+        flex: 1,
+        justifyContent: 'flex-start',
+        paddingTop: scale(88),
+    },
+    panelDivider: {
+        width: 1,
+        marginVertical: scale(22),
+        backgroundColor: 'rgba(170, 189, 214, 0.18)',
     },
     portalHint: {
         flexDirection: 'row',
@@ -799,17 +870,32 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     formSection: {
-        width: '50%',
-        justifyContent: 'center',
-        paddingRight: TV_SAFE_AREA.title.horizontal,
-        paddingLeft: scale(32),
+        flex: 0.9,
+        justifyContent: 'flex-start',
+        paddingLeft: scale(42),
+        paddingRight: scale(24),
+        paddingTop: scale(82),
+        paddingBottom: scale(36),
         zIndex: 10,
+    },
+    panelBrandHeader: {
+        alignSelf: 'flex-end',
+        marginBottom: scale(138),
+        marginRight: scale(-24),
+    },
+    panelLogoImage: {
+        width: scale(380),
+        height: scale(104),
+        opacity: 0.98,
     },
     selectorSection: {
         marginBottom: scale(24),
     },
     inputsSection: {
-        marginBottom: scale(24),
+        width: '100%',
+        maxWidth: scale(760),
+        marginBottom: scale(18),
+        marginTop: scale(72),
     },
     buttonSection: {
         marginBottom: scale(20),
@@ -838,27 +924,43 @@ const styles = StyleSheet.create({
 
     // Footer
     footer: {
-        paddingTop: scale(16),
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255, 255, 255, 0.08)',
+        width: '100%',
+        maxWidth: scale(760),
+        paddingTop: scale(14),
+        transform: [{ translateY: scale(12) }],
     },
     footerText: {
-        fontSize: scaleFont(14),
-        color: 'rgba(255, 255, 255, 0.5)',
-        letterSpacing: 0.3,
+        fontSize: scaleFont(15.5),
+        color: 'rgba(231, 236, 244, 0.76)',
+        letterSpacing: 0.2,
+        lineHeight: scaleFont(22),
     },
     footerLink: {
-        color: colors.accent || '#00E5FF',
-        fontWeight: '600',
+        color: '#FFFFFF',
+        fontWeight: '700',
+        textDecorationLine: 'underline',
     },
 
     // Navigation Hint
     navigationHint: {
         position: 'absolute',
-        bottom: TV_SAFE_AREA.title.vertical,
-        left: TV_SAFE_AREA.title.horizontal,
+        bottom: scale(6),
+        left: '50%',
+        marginLeft: scale(-210),
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: scale(420),
+        height: scale(76),
+        paddingHorizontal: scale(26),
+        borderRadius: scale(38),
+        backgroundColor: 'rgba(16, 24, 36, 0.9)',
+        borderWidth: 1,
+        borderColor: 'rgba(170, 189, 214, 0.18)',
+        shadowColor: colors.accent || '#00E5FF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.16,
+        shadowRadius: scale(14),
         zIndex: 20,
     },
     hintIcon: {

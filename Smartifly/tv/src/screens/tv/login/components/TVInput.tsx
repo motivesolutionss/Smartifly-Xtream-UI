@@ -14,17 +14,20 @@ import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     TextInputProps,
     ViewStyle,
     Animated,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import {
     colors,
     Icon,
     scale,
     scaleFont,
+    typographyTV,
+    useTheme,
 } from '../../../../theme';
 
 // =============================================================================
@@ -63,8 +66,10 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
     onBlur,
     ...props
 }, ref) => {
+    const { colors: themeColors } = useTheme();
     const [isFocused, setIsFocused] = useState(false);
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+    const [isPasswordVisible, setIsPasswordVisible] = useState(true);
+    const [isPasswordToggleFocused, setIsPasswordToggleFocused] = useState(false);
 
     const focusAnim = useRef(new Animated.Value(0)).current;
     const glowAnim = useRef(new Animated.Value(0)).current;
@@ -95,30 +100,29 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
     // Color helpers
     const getBorderColor = () => {
         if (disabled) return 'rgba(255, 255, 255, 0.08)';
-        if (error) return '#EF4444';
+        if (error) return themeColors.error;
         if (isValid) return colors.success || '#10B981';
-        if (isFocused) return colors.accent || '#00E5FF';
-        return 'rgba(255, 255, 255, 0.12)';
+        if (isFocused) return '#1E3448';
+        return '#1E3448';
     };
 
     const getBackgroundColor = () => {
         if (disabled) return 'rgba(0, 0, 0, 0.3)';
-        if (error) return 'rgba(239, 68, 68, 0.1)';
-        if (isFocused) return 'rgba(0, 30, 40, 0.8)';
-        return 'rgba(0, 20, 30, 0.7)';
+        if (error) return themeColors.errorBackground;
+        return 'transparent';
     };
 
     const getIconColor = () => {
-        if (error) return '#EF4444';
+        if (error) return themeColors.error;
         if (isValid) return colors.success || '#10B981';
         if (isFocused) return '#FFFFFF';
-        return 'rgba(255, 255, 255, 0.5)';
+        return '#E7ECF4';
     };
 
     // Icon renderer
     const renderLeftIcon = () => {
         if (!leftIcon) return null;
-        const iconSize = scale(30);
+        const iconSize = scale(22);
         const iconColor = getIconColor();
 
         const iconMap: Record<string, string> = {
@@ -147,6 +151,14 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
 
     const togglePasswordVisibility = () => {
         setIsPasswordVisible(!isPasswordVisible);
+    };
+
+    const handleFieldPress = () => {
+        // TV fallback: some devices won't move focus into nested controls.
+        // Pressing OK on focused password field toggles visibility.
+        if (showPasswordToggle && secureTextEntry && !disabled) {
+            togglePasswordVisibility();
+        }
     };
 
     const shouldHidePassword = secureTextEntry && !isPasswordVisible;
@@ -201,12 +213,13 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                     />
                 )}
 
-                <TouchableOpacity
-                    activeOpacity={1}
+                <Pressable
+                    onPress={handleFieldPress}
                     onFocus={handleFocus}
                     onBlur={handleBlur}
                     disabled={disabled}
                     style={styles.touchableInput}
+                    focusable={!disabled}
                 >
                     <Animated.View
                         style={[
@@ -219,9 +232,21 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                             disabled && styles.inputContainerDisabled,
                         ]}
                     >
+                        {!error && !disabled && (
+                            <Svg pointerEvents="none" style={styles.fieldGradient}>
+                                <Defs>
+                                    <LinearGradient id="fieldGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <Stop offset="0" stopColor="#13263A" />
+                                        <Stop offset="1" stopColor="#0E1C2C" />
+                                    </LinearGradient>
+                                </Defs>
+                                <Rect x="0" y="0" width="100%" height="100%" rx={scale(12)} ry={scale(12)} fill="url(#fieldGradient)" />
+                            </Svg>
+                        )}
+
                         {/* Left Icon */}
                         {leftIcon && (
-                            <View style={styles.leftIconContainer}>
+                            <View style={styles.leftIconCapsule}>
                                 {renderLeftIcon()}
                             </View>
                         )}
@@ -261,16 +286,21 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
 
                             {!showPasswordToggle && error && (
                                 <View style={styles.statusIcon}>
-                                    <Icon name="alert" size={scale(24)} color="#EF4444" />
+                                    <Icon name="alert" size={scale(24)} color={themeColors.error} />
                                 </View>
                             )}
 
                             {/* Password Toggle */}
                             {showPasswordToggle && secureTextEntry && (
-                                <TouchableOpacity
-                                    style={styles.toggleButton}
+                                <Pressable
+                                    style={[
+                                        styles.toggleButton,
+                                        isPasswordToggleFocused && styles.toggleButtonFocused,
+                                    ]}
                                     onPress={togglePasswordVisibility}
-                                    activeOpacity={0.7}
+                                    focusable={!disabled}
+                                    onFocus={() => setIsPasswordToggleFocused(true)}
+                                    onBlur={() => setIsPasswordToggleFocused(false)}
                                     accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
                                     accessibilityRole="button"
                                 >
@@ -279,17 +309,17 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                                         size={scale(28)}
                                         color={getIconColor()}
                                     />
-                                </TouchableOpacity>
+                                </Pressable>
                             )}
                         </View>
                     </Animated.View>
-                </TouchableOpacity>
+                </Pressable>
             </View>
 
             {/* Error Message */}
             {error && (
                 <View style={styles.errorContainer}>
-                    <Icon name="alert" size={scale(18)} color="#EF4444" />
+                    <Icon name="alert" size={scale(18)} color={themeColors.error} />
                     <Text style={styles.errorText}>{error}</Text>
                 </View>
             )}
@@ -315,13 +345,13 @@ const styles = StyleSheet.create({
     labelContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: scale(14),
+        marginBottom: scale(8),
     },
     label: {
-        fontSize: scaleFont(17),
+        fontSize: scaleFont(18),
         fontWeight: '700',
-        color: 'rgba(255, 255, 255, 0.65)',
-        letterSpacing: 1,
+        color: '#E7ECF4',
+        letterSpacing: 1.3,
         textTransform: 'uppercase',
     },
     labelError: {
@@ -343,10 +373,10 @@ const styles = StyleSheet.create({
         position: 'absolute',
         width: '100%',
         height: '100%',
-        borderRadius: scale(18),
+        borderRadius: scale(12),
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 1,
-        shadowRadius: scale(30),
+        shadowRadius: scale(10),
         elevation: 0,
     },
     touchableInput: {
@@ -355,25 +385,37 @@ const styles = StyleSheet.create({
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderRadius: scale(18),
-        minHeight: scale(76),
+        borderRadius: scale(12),
+        minHeight: scale(74),
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    fieldGradient: {
+        ...StyleSheet.absoluteFillObject,
     },
     inputContainerDisabled: {
         opacity: 0.4,
     },
-    leftIconContainer: {
-        paddingLeft: scale(26),
-        paddingRight: scale(14),
+    leftIconCapsule: {
+        marginLeft: scale(16),
+        width: scale(64),
+        height: scale(44),
+        borderRadius: scale(14),
+        backgroundColor: 'rgba(0, 229, 255, 0.20)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: scale(12),
     },
     input: {
         flex: 1,
-        paddingHorizontal: scale(26),
-        paddingVertical: scale(20),
-        color: '#FFFFFF',
-        fontSize: scaleFont(22),
+        paddingHorizontal: scale(18),
+        paddingVertical: scale(16),
+        color: colors.textPrimary,
+        fontSize: scaleFont(20),
+        fontWeight: '500',
     },
     inputWithLeftIcon: {
-        paddingLeft: scale(14),
+        paddingLeft: scale(4),
     },
     inputWithRightIcon: {
         paddingRight: scale(10),
@@ -389,6 +431,11 @@ const styles = StyleSheet.create({
     toggleButton: {
         padding: scale(16),
         borderRadius: scale(14),
+    },
+    toggleButtonFocused: {
+        backgroundColor: 'rgba(0, 229, 255, 0.12)',
+        borderWidth: 1,
+        borderColor: colors.accent || '#00E5FF',
     },
     statusIcon: {
         padding: scale(16),
@@ -407,7 +454,7 @@ const styles = StyleSheet.create({
     },
     hintText: {
         fontSize: scaleFont(14),
-        color: 'rgba(255, 255, 255, 0.35)',
+        color: 'rgba(255, 255, 255, 0.45)',
         marginTop: scale(12),
         paddingHorizontal: scale(6),
     },

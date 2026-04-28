@@ -173,12 +173,8 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   hasPreferredFocus,
 }) => {
   const [initialFocusHandled, setInitialFocusHandled] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
   const baseOpacity = useRef(new Animated.Value(1)).current;
   const incomingOpacity = useRef(new Animated.Value(0)).current;
-  const baseReveal = useRef(new Animated.Value(0)).current;
-  const baseLoadedRef = useRef(false);
   const loadedBackdropsRef = useRef<Set<string>>(new Set());
 
   const [displayItem, setDisplayItem] = useState<TVHeroItem>(item);
@@ -211,39 +207,6 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   const sidebarNode = sidebarTargetRef?.current
     ? findNodeHandle(sidebarTargetRef.current)
     : undefined;
-
-  const runEntranceAnimation = useCallback(() => {
-    if (hasMounted.current) return;
-    hasMounted.current = true;
-
-    fadeAnim.setValue(0);
-    slideAnim.setValue(20);
-
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
-
-  useEffect(() => {
-    if (loadedBackdropsRef.current.has(displayBackdropUri)) {
-      baseLoadedRef.current = true;
-      baseReveal.setValue(1);
-      runEntranceAnimation();
-      return;
-    }
-
-    baseLoadedRef.current = false;
-    baseReveal.setValue(0);
-  }, [displayBackdropUri, baseReveal, runEntranceAnimation]);
 
   const startCrossfade = useCallback(() => {
     if (!incomingItemRef.current || !incomingKeyRef.current) return;
@@ -400,25 +363,13 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   );
 
   const handleBaseLoad = useCallback(() => {
-    if (baseLoadedRef.current) return;
-    baseLoadedRef.current = true;
     if (displayBackdropUri) {
       loadedBackdropsRef.current.add(displayBackdropUri);
     }
-    Animated.timing(baseReveal, {
-      toValue: 1,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-    runEntranceAnimation();
-  }, [baseReveal, displayBackdropUri, runEntranceAnimation]);
+  }, [displayBackdropUri]);
 
   const handleBaseError = useCallback(() => {
-    if (baseLoadedRef.current) return;
-    baseLoadedRef.current = true;
-    baseReveal.setValue(1);
-    runEntranceAnimation();
-  }, [baseReveal, runEntranceAnimation]);
+  }, []);
 
   const handleIncomingLoad = useCallback(() => {
     if (incomingBackdropUri) {
@@ -431,8 +382,8 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
     cancelIncoming();
   }, [cancelIncoming]);
 
-  const baseLayerOpacity = Animated.multiply(baseOpacity, baseReveal);
-  const incomingLayerOpacity = Animated.multiply(incomingOpacity, baseReveal);
+  const baseLayerOpacity = baseOpacity;
+  const incomingLayerOpacity = incomingOpacity;
 
   return (
     <View style={styles.container}>
@@ -443,6 +394,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
             style={styles.backdropImage}
             resizeMode="cover"
             priority="high"
+            enableColdFade={false}
             onLoad={handleBaseLoad}
             onError={handleBaseError}
           />
@@ -455,6 +407,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
               style={styles.backdropImage}
               resizeMode="cover"
               priority="high"
+              enableColdFade={false}
               onLoad={handleIncomingLoad}
               onError={handleIncomingError}
             />
@@ -464,12 +417,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
         <HeroGradients bg={bg} />
       </View>
 
-      <Animated.View
-        style={[
-          styles.contentContainer,
-          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-        ]}
-      >
+      <View style={styles.contentContainer}>
         <Image
           source={require('../../../../assets/smartifly_icon.png')}
           style={styles.appLogo}
@@ -550,7 +498,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
             </Pressable>
           ) : null}
         </View>
-      </Animated.View>
+      </View>
     </View>
   );
 };
@@ -558,16 +506,16 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    height: scale(680),
+    height: scale(820),
     position: 'relative',
-    marginBottom: scale(40),
+    marginBottom: scale(28),
   },
   backdropContainer: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
-    width: '70%',
+    width: '74%',
     height: '100%',
   },
   backdropLayer: {
@@ -604,7 +552,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     position: 'absolute',
     left: scale(30),
-    bottom: scale(80),
+    bottom: scale(152),
     maxWidth: scale(600),
     zIndex: 2,
     alignItems: 'flex-start',
