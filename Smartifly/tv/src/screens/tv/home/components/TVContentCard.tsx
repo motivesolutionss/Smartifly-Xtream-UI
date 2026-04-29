@@ -318,7 +318,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
     if (onFocusItem) {
       onFocusItem(item);
     }
-  }, [disableZoom, focused, item, onFocusItem, overlayOpacity, ringOpacity, ringWidth, ringWidthFocused, zoom]);
+  }, [disableZoom, focused, isLive, item, onFocusItem, overlayOpacity, ringOpacity, ringWidth, ringWidthFocused, zoom]);
 
   const handleBlur = useCallback(() => {
     focused.value = 0;

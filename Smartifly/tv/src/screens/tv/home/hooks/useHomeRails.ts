@@ -133,7 +133,7 @@ export const useHomeRails = (): HomeRailsResult => {
       id: heroCurrent.id,
       title: heroCurrent.title,
       description: heroCurrent.description,
-      backdrop: heroCurrent.backdrop || heroCurrent.poster || '',
+      backdrop: heroCurrent.backdrop || '',
       rating: heroCurrent.rating,
       tags: heroCurrent.tags || [],
       type: heroCurrent.type,

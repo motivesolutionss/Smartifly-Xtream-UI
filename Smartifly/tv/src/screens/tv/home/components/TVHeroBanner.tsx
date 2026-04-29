@@ -18,7 +18,6 @@ import AnimatedRe, {
 import { colors, scale, scaleFont } from '../../../../theme';
 import { usePerfProfile } from '../../../../utils/perf';
 import { prefetchImage } from '../../../../utils/image';
-import { FALLBACK_POSTER } from '../HomeRailConfig';
 
 // =============================================================================
 // TYPES
@@ -28,7 +27,7 @@ export interface TVHeroItem {
   id: string | number;
   title: string;
   description?: string;
-  backdrop: string;
+  backdrop?: string;
   logo?: string;
   tags?: string[];
   rating?: number;
@@ -106,9 +105,9 @@ const isUsableUri = (value?: string): boolean => {
 };
 
 const getBackdropUri = (hero?: TVHeroItem | null): string => {
-  const raw = (hero as any)?.backdrop ?? (hero as any)?.image;
+  const raw = (hero as any)?.backdrop;
   if (isUsableUri(raw)) return raw;
-  return FALLBACK_POSTER;
+  return '';
 };
 
 const HeroTextBlock = React.memo(function HeroTextBlock({ item }: { item: TVHeroItem }) {
@@ -354,11 +353,11 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   }));
 
   const displayBackdropSource = useMemo(
-    () => ({ uri: displayBackdropUri }),
+    () => (displayBackdropUri ? { uri: displayBackdropUri } : null),
     [displayBackdropUri]
   );
   const incomingBackdropSource = useMemo(
-    () => ({ uri: incomingBackdropUri }),
+    () => (incomingBackdropUri ? { uri: incomingBackdropUri } : null),
     [incomingBackdropUri]
   );
 
@@ -389,18 +388,20 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
     <View style={styles.container}>
       <View style={styles.backdropContainer}>
         <Animated.View style={[styles.backdropLayer, { opacity: baseLayerOpacity }]}>
-          <FastImageComponent
-            source={displayBackdropSource}
-            style={styles.backdropImage}
-            resizeMode="cover"
-            priority="high"
-            enableColdFade={false}
-            onLoad={handleBaseLoad}
-            onError={handleBaseError}
-          />
+          {displayBackdropSource ? (
+            <FastImageComponent
+              source={displayBackdropSource}
+              style={styles.backdropImage}
+              resizeMode="cover"
+              priority="high"
+              enableColdFade={false}
+              onLoad={handleBaseLoad}
+              onError={handleBaseError}
+            />
+          ) : null}
         </Animated.View>
 
-        {incomingItem ? (
+        {incomingItem && incomingBackdropSource ? (
           <Animated.View style={[styles.backdropLayer, { opacity: incomingLayerOpacity }]}>
             <FastImageComponent
               source={incomingBackdropSource}

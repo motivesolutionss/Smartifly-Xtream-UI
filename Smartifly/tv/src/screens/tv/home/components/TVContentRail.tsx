@@ -21,6 +21,7 @@ const CARD_MARGIN = scale(18);
 const LEFT_ANCHOR = scale(30);
 const LIST_VIEWPORT_OFFSET = scale(24);
 const LIST_INNER_LEFT_PAD = scale(6);
+
 interface TVContentRailProps {
   title: string;
   data: TVContentItem[];

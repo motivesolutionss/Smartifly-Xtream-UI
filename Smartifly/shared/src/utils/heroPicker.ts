@@ -149,11 +149,9 @@ const buildMoviePick = (movie: any): HeroPick | null => {
   if (!title) return null;
 
   const backdrop =
-    (Array.isArray(movie?.backdrop_path) ? movie.backdrop_path[0] : movie?.backdrop_path) ||
-    movie?.stream_icon ||
-    movie?.cover;
+    (Array.isArray(movie?.backdrop_path) ? movie.backdrop_path[0] : movie?.backdrop_path);
 
-  const poster = movie?.stream_icon || movie?.cover || backdrop;
+  const poster = movie?.stream_icon || movie?.cover;
   const genre = movie?.genre ? String(movie.genre) : undefined;
   const year = toYear(movie?.releasedate || movie?.releaseDate || movie?.release_date || movie?.year);
 
@@ -177,10 +175,9 @@ const buildSeriesPick = (series: any): HeroPick | null => {
   if (!title) return null;
 
   const backdrop =
-    (Array.isArray(series?.backdrop_path) ? series.backdrop_path[0] : series?.backdrop_path) ||
-    series?.cover;
+    (Array.isArray(series?.backdrop_path) ? series.backdrop_path[0] : series?.backdrop_path);
 
-  const poster = series?.cover || backdrop;
+  const poster = series?.cover;
   const genre = series?.genre ? String(series.genre) : undefined;
   const year = toYear(series?.releasedate || series?.releaseDate || series?.release_date || series?.year);
 
@@ -215,7 +212,7 @@ export const getHeroCandidates = (
     const rating = computeRating(pick.rating);
     const recency = computeRecency(timestampMs, now);
     const rand = (hash32(`${seedKey}|${pick.id}`) % 10000) / 10000;
-    const hasImage = Boolean(pick.backdrop || pick.poster);
+    const hasImage = Boolean(pick.backdrop);
     const score = computeScore({ rating, recency, random: rand, hasImage });
     pushCandidate(ranked, { score, pick }, maxCandidates);
   };

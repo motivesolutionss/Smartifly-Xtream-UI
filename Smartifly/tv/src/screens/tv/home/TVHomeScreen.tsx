@@ -41,7 +41,6 @@ import TVDownloadsScreen from '../TVDownloadsScreen';
 
 import TVLoadingState from '../components/TVLoadingState';
 import { prefetchImages } from '../../../utils/image';
-import { FALLBACK_POSTER } from './HomeRailConfig';
 import { usePerfProfile } from '../../../utils/perf';
 
 // Netflix-grade resolver
@@ -342,7 +341,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                 ? hero.backdrop
                 : isUsableUri(details.backdrop)
                     ? String(details.backdrop)
-                : FALLBACK_POSTER;
+                    : undefined;
 
         return {
             ...hero,
