@@ -26,6 +26,15 @@ const FAQ = dynamic(() => import("@/components/home/FAQ").then(mod => mod.FAQ), 
   ssr: true,
 });
 
+const DownloadApps = dynamic(() => import("@/components/home/DownloadApps").then(mod => mod.DownloadApps), {
+  loading: () => (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  ),
+  ssr: true,
+});
+
 const CTA = dynamic(() => import("@/components/home/CTA").then(mod => mod.CTA), {
   loading: () => (
     <div className="flex items-center justify-center min-h-[400px]">
@@ -61,6 +70,7 @@ export default function HomePage() {
     <>
       <Hero />
       <Features />
+      <DownloadApps />
       <FAQ />
       <CTA />
     </>
