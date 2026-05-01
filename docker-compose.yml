@@ -39,6 +39,7 @@ services:
       - nginx-proxy
     volumes:
       - xtream_uploads:/app/uploads
+      - xtream_backups:/app/backups
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -73,6 +74,8 @@ services:
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=admin.xtreamui.duckdns.org
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -85,7 +88,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/" ]
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/" ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -109,6 +112,8 @@ services:
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=xtreamui.duckdns.org
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -121,7 +126,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/" ]
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/" ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -134,3 +139,4 @@ networks:
 volumes:
   xtream_db_data:
   xtream_uploads:
+  xtream_backups:
