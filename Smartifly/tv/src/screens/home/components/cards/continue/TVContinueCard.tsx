@@ -14,12 +14,13 @@ import FastImageComponent from '../../../.././../components/tv/TVFastImage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { colors, scale, scaleFont, useTheme } from '../../../.././../theme';
 import { FALLBACK_POSTER } from '../.././../HomeRailConfig';
 import { WatchProgress } from '@smartifly/shared/src/store/watchHistoryStore';
+import BaseInteractiveCard from '../base/BaseInteractiveCard';
+import { useCardFocus } from '../base/useCardFocus';
 
 // =============================================================================
 // TYPES
@@ -32,6 +33,7 @@ interface TVContinueCardProps {
   width?: number;
   height?: number;
   nextFocusLeft?: number | null;
+  onRequestSidebarFocus?: () => void;
 }
 
 // =============================================================================
@@ -88,13 +90,11 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
   width = scale(220),
   height = scale(130),
   nextFocusLeft,
+  onRequestSidebarFocus,
 }) => {
   const { theme } = useTheme();
   const accentColor = theme.colors.accent ?? '#00E5FF';
 
-  // UI-thread focus state
-  const focused = useSharedValue(0);
-  const zoom = useSharedValue(1);
   const removeOpacity = useSharedValue(0);
 
   const isLive = item.type === 'live';
@@ -128,17 +128,26 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
 
   // Reserve bleed space on all sides so focused scale/border never gets clipped by rail edges.
   const containerSize = useMemo(
-    () => ({ width: width + FOCUS_BLEED * 2, height: height + FOCUS_BLEED * 2 }),
+    () => ({ width, height: height + FOCUS_BLEED * 2 }),
     [height, width]
   );
   const cardSize = useMemo(() => ({ width, height }), [width, height]);
-  const cardOffset = useMemo(() => ({ marginTop: FOCUS_BLEED, marginLeft: FOCUS_BLEED }), []);
+  const cardOffset = useMemo(() => ({ marginTop: FOCUS_BLEED }), []);
+
+  const { focused, handleFocus, handleBlur, focusStyle } = useCardFocus({
+    zoomScaleFocused: 1.03,
+    zoomEnabled: true,
+    ringWidthFocused: FOCUS_BORDER_WIDTH,
+    onFocused: undefined,
+    onBlurred: undefined,
+    item,
+    springConfig: SPRING,
+  });
 
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const f = focused.value === 1;
 
     return {
-      transform: [{ scale: zoom.value }],
       borderWidth: f ? FOCUS_BORDER_WIDTH : 1,
       borderColor: f ? accentColor : 'rgba(255,255,255,0.10)',
       // lightweight glow – noticeable but not heavy
@@ -154,34 +163,39 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
     return { opacity: removeOpacity.value };
   });
 
-  const handleFocus = useCallback(() => {
-    focused.value = 1;
+  const handleCardFocus = useCallback(() => {
+    handleFocus();
     removeOpacity.value = withTiming(1, { duration: 120 });
-    zoom.value = withSpring(1.03, SPRING);
-  }, [focused, removeOpacity, zoom]);
+  }, [handleFocus, removeOpacity]);
 
-  const handleBlur = useCallback(() => {
-    focused.value = 0;
+  const handleCardBlur = useCallback(() => {
+    handleBlur();
     removeOpacity.value = withTiming(0, { duration: 120 });
-    zoom.value = withSpring(1, SPRING);
-  }, [focused, removeOpacity, zoom]);
+  }, [handleBlur, removeOpacity]);
 
   const handlePress = useCallback(() => onPress(item), [onPress, item]);
 
   const handleRemove = useCallback(() => {
     if (onRemove) onRemove(item);
   }, [onRemove, item]);
-
+  const handleKeyDown = useCallback((event: any) => {
+    const key = String(event?.nativeEvent?.key ?? '').toLowerCase();
+    const keyCode = Number(event?.nativeEvent?.keyCode ?? -1);
+    const isLeft = key === 'arrowleft' || key === 'left' || key === 'dpadleft' || keyCode === 21;
+    if (isLeft) {
+      onRequestSidebarFocus?.();
+    }
+  }, [onRequestSidebarFocus]);
   return (
-    <Pressable
+    <BaseInteractiveCard
       onPress={handlePress}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      // @ts-ignore TV-only focus prop
-      nextFocusLeft={nextFocusLeft ?? undefined}
-      style={[styles.container, containerSize]}
+      onFocus={handleCardFocus}
+      onBlur={handleCardBlur}
+      onKeyDown={handleKeyDown}
+      nextFocusLeft={nextFocusLeft}
+      containerStyle={[styles.container, containerSize]}
+      cardStyle={[styles.card, cardSize, cardOffset, focusStyle, cardAnimatedStyle]}
     >
-      <Animated.View style={[styles.card, cardSize, cardOffset, cardAnimatedStyle]}>
         <FastImageComponent
           source={imageSource}
           style={styles.image}
@@ -238,8 +252,7 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
             {watchedLabel}
           </Text>
         </View>
-      </Animated.View>
-    </Pressable>
+    </BaseInteractiveCard>
   );
 };
 

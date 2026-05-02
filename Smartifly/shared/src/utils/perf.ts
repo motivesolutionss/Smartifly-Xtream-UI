@@ -140,11 +140,14 @@ const chooseTier = async (): Promise<PerfTier> => {
     if (Platform.OS === 'android') {
       if (totalMemory && totalMemory < 3e9) return 'low';
       if (totalMemory && totalMemory < 6e9) return 'normal';
-      return 'high';
+      // TVs with "high" memory still tend to choke on larger render windows,
+      // heavier focus effects, and more aggressive image work. Cap TV hardware
+      // at the normal profile for smoother sustained navigation.
+      return 'normal';
     }
 
     if (totalMemory && totalMemory < 3e9) return 'low';
-    return totalMemory && totalMemory > 6e9 ? 'high' : 'normal';
+    return 'normal';
   } catch {
     return 'normal';
   }

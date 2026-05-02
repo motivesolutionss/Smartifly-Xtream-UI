@@ -1,10 +1,9 @@
 import React, { memo, useMemo, useCallback, useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, StyleProp, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import FastImageComponent from '../../../.././../components/tv/TVFastImage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { scale, scaleFont, useTheme, Icon } from '../../../.././../theme';
@@ -12,6 +11,8 @@ import { ThemeColors } from '../../../.././../theme/themes/types';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import { normalizeImageUri } from '@smartifly/shared/src/utils/image';
 import { FALLBACK_POSTER } from '../.././../HomeRailConfig';
+import BaseInteractiveCard from '../base/BaseInteractiveCard';
+import { useCardFocus } from '../base/useCardFocus';
 
 export type ContentVariant = 'live' | 'movie' | 'series';
 
@@ -45,6 +46,7 @@ interface TVContentCardProps {
   onKeyPress?: (event: any) => void;
   onKeyDown?: (event: any) => void;
   onKeyUp?: (event: any) => void;
+  onRequestSidebarFocus?: () => void;
 }
 
 const SPRING_CONFIG = {
@@ -112,8 +114,15 @@ const createStyles = (
     },
     liveImageFrame: {
       ...StyleSheet.absoluteFillObject,
-      paddingHorizontal: scale(18),
-      paddingVertical: scale(16),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFFFFF',
+    },
+    liveImageInner: {
+      width: '76%',
+      height: '76%',
+      borderRadius: scale(10),
+      overflow: 'hidden',
       backgroundColor: '#FFFFFF',
     },
     livePlaceholder: {
@@ -242,6 +251,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   onKeyPress,
   onKeyDown,
   onKeyUp,
+  onRequestSidebarFocus,
 }) => {
   const { theme } = useTheme();
   const themeColors = theme.colors;
@@ -292,19 +302,28 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   const qualityBadgeColor = item.quality ? resolveQualityBadgeColor(item.quality, themeColors) : null;
 
   const ringWidthFocused = useMemo(() => scale(isLive ? 4.5 : enableGlow ? 3.5 : 2.5), [enableGlow, isLive]);
-  const ringWidthIdle = 0;
-  const ringOpacityIdle = 0;
   const focusShadowRadius = useRef(scale(18)).current;
   // Keep zoomed focus ring fully visible on all sides (no top/bottom clipping in rails).
   const focusBleed = useMemo(() => (disableZoom ? 0 : scale(8)), [disableZoom]);
 
-  // UI-thread state (no React re-render)
-  const focused = useSharedValue(0);
-  const zoom = useSharedValue(1);
-  const ringOpacity = useSharedValue(ringOpacityIdle);
-  const ringWidth = useSharedValue(ringWidthIdle);
   const overlayOpacity = useSharedValue(0);
   const metaOpacity = useSharedValue(0);
+
+  const {
+    focused,
+    handleFocus,
+    handleBlur,
+    focusStyle,
+    ringStyle,
+  } = useCardFocus({
+    zoomScaleFocused: isLive ? 1.03 : 1.04,
+    zoomEnabled: !disableZoom,
+    ringWidthFocused,
+    onFocused: onFocusItem,
+    onBlurred: onBlurItem,
+    item,
+    springConfig: SPRING_CONFIG,
+  });
 
   const badge = useMemo(() => {
     if (isLive) return { text: 'LIVE', isLive: true };
@@ -317,7 +336,6 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const isFocused = focused.value === 1;
     return {
-      transform: [{ scale: disableZoom ? 1 : zoom.value }],
       shadowOpacity: enableGlow && isFocused ? 0.38 : 0,
       shadowRadius: enableGlow && isFocused ? focusShadowRadius : 0,
       shadowOffset: { width: 0, height: 0 },
@@ -325,12 +343,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
       // Android
       elevation: enableGlow && isFocused ? 8 : 0,
     };
-  }, [disableZoom, enableGlow, focusShadowRadius, glowColor]);
-
-  const ringAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: ringOpacity.value,
-    borderWidth: ringWidth.value,
-  }));
+  }, [enableGlow, focusShadowRadius, focused, glowColor]);
 
   const overlayAnimatedStyle = useAnimatedStyle(() => ({
     opacity: overlayOpacity.value,
@@ -341,35 +354,17 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   }));
 
   // Requirements: 10.2 — focus ring animation: withTiming(1, 120ms) / withSpring
-  const handleFocus = useCallback(() => {
-    focused.value = 1;
-    ringOpacity.value = withTiming(1, { duration: 120 });
-    ringWidth.value = withTiming(ringWidthFocused, { duration: 120 });
+  const handleCardFocus = useCallback(() => {
+    handleFocus();
     overlayOpacity.value = withTiming(isLive ? 0.18 : 0, { duration: 90 });
     metaOpacity.value = withTiming(isLive ? 0 : 1, { duration: 120 });
+  }, [handleFocus, isLive, metaOpacity, overlayOpacity]);
 
-    if (!disableZoom) {
-      zoom.value = withSpring(isLive ? 1.03 : 1.04, SPRING_CONFIG);
-    }
-    if (onFocusItem) {
-      onFocusItem(item);
-    }
-  }, [disableZoom, focused, isLive, item, metaOpacity, onFocusItem, overlayOpacity, ringOpacity, ringWidth, ringWidthFocused, zoom]);
-
-  const handleBlur = useCallback(() => {
-    focused.value = 0;
-    ringOpacity.value = withTiming(ringOpacityIdle, { duration: 120 });
-    ringWidth.value = withTiming(ringWidthIdle, { duration: 120 });
+  const handleCardBlur = useCallback(() => {
+    handleBlur();
     overlayOpacity.value = withTiming(0, { duration: 90 });
     metaOpacity.value = withTiming(0, { duration: 90 });
-
-    if (!disableZoom) {
-      zoom.value = withSpring(1, SPRING_CONFIG);
-    }
-    if (onBlurItem) {
-      onBlurItem();
-    }
-  }, [disableZoom, focused, metaOpacity, onBlurItem, overlayOpacity, ringOpacity, ringWidth, zoom]);
+  }, [handleBlur, metaOpacity, overlayOpacity]);
 
   const handlePress = useCallback(() => {
     onPress(item);
@@ -380,6 +375,24 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
       setLiveImageFailed(true);
     }
   }, [isLive]);
+  const shouldRouteLeftToSidebar = useCallback((event: any) => {
+    const key = String(event?.nativeEvent?.key ?? '').toLowerCase();
+    const eventType = String(event?.nativeEvent?.eventType ?? '').toLowerCase();
+    const keyCode = Number(event?.nativeEvent?.keyCode ?? -1);
+    return key === 'arrowleft' || key === 'left' || key === 'dpadleft' || eventType === 'left' || keyCode === 21;
+  }, []);
+  const handleCardKeyDown = useCallback((event: any) => {
+    if (shouldRouteLeftToSidebar(event)) {
+      onRequestSidebarFocus?.();
+    }
+    onKeyDown?.(event);
+  }, [onKeyDown, onRequestSidebarFocus, shouldRouteLeftToSidebar]);
+  const handleCardKeyPress = useCallback((event: any) => {
+    if (shouldRouteLeftToSidebar(event)) {
+      onRequestSidebarFocus?.();
+    }
+    onKeyPress?.(event);
+  }, [onKeyPress, onRequestSidebarFocus, shouldRouteLeftToSidebar]);
 
   const containerSizeStyle = useMemo<StyleProp<ViewStyle>>(
     () => ({ width: cardWidth, height: finalHeight + focusBleed * 2 }),
@@ -402,38 +415,30 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   );
 
   return (
-    <Pressable
-      ref={focusRef}
+    <BaseInteractiveCard
+      cardRef={focusRef}
       onPress={handlePress}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
+      onFocus={handleCardFocus}
+      onBlur={handleCardBlur}
       focusable={focusable}
-      // @ts-ignore
-      onKeyPress={onKeyPress}
-      // @ts-ignore - Android TV key events
-      onKeyDown={onKeyDown}
-      // @ts-ignore - Android TV key events
+      onKeyPress={handleCardKeyPress}
+      onKeyDown={handleCardKeyDown}
       onKeyUp={onKeyUp}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      // @ts-ignore TV-only focus props
-      nextFocusLeft={nextFocusLeft ?? undefined}
-      // @ts-ignore TV-only focus props
-      nextFocusRight={nextFocusRight ?? undefined}
-      // @ts-ignore TV-only focus props
-      nextFocusUp={nextFocusUp ?? undefined}
-      // @ts-ignore TV-only focus props
-      nextFocusDown={nextFocusDown ?? undefined}
-      style={[styles.container, containerSizeStyle, style]}
+      nextFocusLeft={nextFocusLeft}
+      nextFocusRight={nextFocusRight}
+      nextFocusUp={nextFocusUp}
+      nextFocusDown={nextFocusDown}
+      containerStyle={[styles.container, containerSizeStyle, style]}
+      cardStyle={[
+        styles.cardBase,
+        isLive && styles.cardLive,
+        cardSizeStyle,
+        cardOffsetStyle,
+        focusStyle,
+        cardAnimatedStyle,
+      ]}
     >
-      <Animated.View
-        style={[
-          styles.cardBase,
-          isLive && styles.cardLive,
-          cardSizeStyle,
-          cardOffsetStyle,
-          cardAnimatedStyle,
-        ]}
-      >
         {shouldShowLivePlaceholder ? (
           <View style={styles.livePlaceholder}>
             <View style={styles.livePlaceholderIconWrap}>
@@ -442,15 +447,16 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           </View>
         ) : (
           isLive ? (
-            // Requirements: 1.5 — white surface + padded inner frame; contain keeps logos balanced
             <View style={styles.liveImageFrame}>
-              <FastImageComponent
-                source={cardImageSource}
-                style={[styles.image, styles.imageLive]}
-                resizeMode="contain"
-                onError={handleImageError}
-                enableColdFade={false}
-              />
+              <View style={styles.liveImageInner}>
+                <FastImageComponent
+                  source={cardImageSource}
+                  style={[styles.image, styles.imageLive]}
+                  resizeMode="contain"
+                  onError={handleImageError}
+                  enableColdFade={false}
+                />
+              </View>
             </View>
           ) : (
             <FastImageComponent
@@ -508,12 +514,10 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           style={[
             styles.focusRing,
             isLive && styles.focusRingLive,
-            ringAnimatedStyle,
+            ringStyle,
           ]}
         />
-
-      </Animated.View>
-    </Pressable>
+    </BaseInteractiveCard>
   );
 };
 

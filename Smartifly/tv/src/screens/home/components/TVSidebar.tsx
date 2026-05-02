@@ -31,6 +31,7 @@ interface TVSidebarProps {
   onProfilePress?: () => void;
   searchRef?: React.RefObject<View | null>;
   onHomeNodeReady?: (node: number | undefined) => void;
+  onSearchNodeReady?: (node: number | undefined) => void;
   focusTargets?: Partial<Record<SidebarRoute, number | null>>;
 }
 
@@ -75,6 +76,7 @@ const TVSidebar = ({
   onProfilePress,
   searchRef: providedSearchRef,
   onHomeNodeReady,
+  onSearchNodeReady,
   focusTargets,
 }: TVSidebarProps) => {
   const { theme } = useTheme();
@@ -149,6 +151,19 @@ const TVSidebar = ({
 
     return () => clearInterval(interval);
   }, [onHomeNodeReady]);
+
+  useEffect(() => {
+    if (!onHomeNodeReady || !homeRef.current) return;
+    const node = findNodeHandle(homeRef.current) ?? undefined;
+    if (node) onHomeNodeReady(node);
+  }, [activeRoute, focusedId, onHomeNodeReady]);
+
+  useEffect(() => {
+    if (!onSearchNodeReady || !searchRef.current) return;
+    const node = findNodeHandle(searchRef.current) ?? undefined;
+    if (node) onSearchNodeReady(node);
+  }, [activeRoute, focusedId, onSearchNodeReady, searchRef]);
+
 
   const clearPendingBlur = useCallback(() => {
     if (blurTimeoutRef.current) {
@@ -309,6 +324,7 @@ const TVSidebar = ({
       <Pressable
         key={item.id}
         ref={itemRef as React.RefObject<any>}
+        collapsable={false}
         onPress={() => {
           isPressClosingRef.current = true;
           clearPendingBlur();
@@ -334,6 +350,13 @@ const TVSidebar = ({
         }}
         onFocus={() => handleFocus(item.id)}
         onBlur={handleBlur}
+        onLayout={item.id === 'Home' && onHomeNodeReady ? () => {
+          const node = getNode(itemRef);
+          if (node) onHomeNodeReady(node);
+        } : item.id === 'Search' && onSearchNodeReady ? () => {
+          const node = getNode(itemRef);
+          if (node) onSearchNodeReady(node);
+        } : undefined}
         {...({
           nextFocusRight: rightNode,
           nextFocusLeft: selfNode,
@@ -405,6 +428,8 @@ const TVSidebar = ({
     getFocusTarget,
     getUpNode,
     getDownNode,
+    onHomeNodeReady,
+    onSearchNodeReady,
   ]);
 
   return (
@@ -416,6 +441,7 @@ const TVSidebar = ({
         <View style={styles.header}>
           <Pressable
             ref={profileRef}
+            collapsable={false}
             onPress={onProfilePress}
             onFocus={() => handleFocus('Profile')}
             onBlur={handleBlur}

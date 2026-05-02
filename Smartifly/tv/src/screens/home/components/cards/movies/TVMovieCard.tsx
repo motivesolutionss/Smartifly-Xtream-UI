@@ -1,5 +1,5 @@
 import React from 'react';
-import TVContentCard, { TVContentItem } from '../catalog/TVContentCard';
+import TVContentCard, { TVContentItem } from '../base/BaseContentCard';
 
 type TVMovieCardProps = React.ComponentProps<typeof TVContentCard> & {
   item: TVContentItem;
