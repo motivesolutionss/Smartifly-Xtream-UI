@@ -1,1 +1,1 @@
-﻿export * from '@smartifly/shared/src/api';
+﻿export * from '@smartifly/shared/src/api/index';

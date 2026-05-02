@@ -28,17 +28,25 @@ interface TVDownloadButtonProps {
         type: 'movie' | 'series';
     };
     style?: any;
+    labelStyle?: any;
+    iconSize?: number;
     onFocus?: () => void;
     onBlur?: () => void;
     isFocused?: boolean;
+    invertOnFocus?: boolean;
+    focusMode?: 'primary' | 'secondary';
 }
 
 const TVDownloadButton: React.FC<TVDownloadButtonProps> = ({
     item,
     style,
+    labelStyle,
+    iconSize,
     onFocus,
     onBlur,
-    isFocused = false
+    isFocused = false,
+    invertOnFocus = true,
+    focusMode = 'primary',
 }) => {
     const downloads = useDownloadStore((state) => state.downloads);
     const addDownload = useDownloadStore((state) => state.addDownload);
@@ -136,7 +144,7 @@ const TVDownloadButton: React.FC<TVDownloadButtonProps> = ({
             onBlur={onBlur}
             style={({ pressed }) => [
                 styles.button,
-                isFocused && styles.buttonFocused,
+                isFocused && (focusMode === 'secondary' ? styles.buttonFocusedSecondary : styles.buttonFocused),
                 pressed && { transform: [{ scale: 0.98 }] },
                 style,
             ]}
@@ -146,14 +154,15 @@ const TVDownloadButton: React.FC<TVDownloadButtonProps> = ({
             ) : (
                 <Icon
                     name={content.icon}
-                    size={scale(20)}
-                    color={isFocused ? colors.background : content.color}
+                    size={iconSize ?? scale(20)}
+                    color={isFocused && invertOnFocus ? colors.background : content.color}
                     style={styles.icon}
                 />
             )}
             <Text style={[
                 styles.buttonText,
-                isFocused && { color: colors.background }
+                labelStyle,
+                isFocused && invertOnFocus && { color: colors.background }
             ]}>
                 {content.label}
             </Text>
@@ -174,6 +183,15 @@ const styles = StyleSheet.create({
     },
     buttonFocused: {
         backgroundColor: '#FFF',
+        borderColor: '#FFF',
+        transform: [{ scale: 1.05 }],
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+    },
+    buttonFocusedSecondary: {
+        backgroundColor: 'rgba(255,255,255,0.3)',
         borderColor: '#FFF',
         transform: [{ scale: 1.05 }],
         shadowColor: "#000",

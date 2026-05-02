@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Text, findNodeHandle } from 'react-native';
 import Animated, {
+  Easing,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -29,6 +30,7 @@ interface TVSidebarProps {
   onCollapse?: () => void;
   onProfilePress?: () => void;
   searchRef?: React.RefObject<View | null>;
+  onHomeNodeReady?: (node: number | undefined) => void;
   focusTargets?: Partial<Record<SidebarRoute, number | null>>;
 }
 
@@ -72,11 +74,15 @@ const TVSidebar = ({
   onCollapse,
   onProfilePress,
   searchRef: providedSearchRef,
+  onHomeNodeReady,
   focusTargets,
 }: TVSidebarProps) => {
   const { theme } = useTheme();
   const [focusedId, setFocusedId] = useState<SidebarRoute | 'Profile' | null>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressNavigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPressClosingRef = useRef(false);
 
   const profileRef = React.useRef<View>(null);
   const internalSearchRef = React.useRef<View>(null);
@@ -98,16 +104,51 @@ const TVSidebar = ({
       if (blurTimeoutRef.current) {
         clearTimeout(blurTimeoutRef.current);
       }
+      if (pressNavigateTimeoutRef.current) {
+        clearTimeout(pressNavigateTimeoutRef.current);
+      }
+      if (pressUnlockTimeoutRef.current) {
+        clearTimeout(pressUnlockTimeoutRef.current);
+      }
     };
   }, []);
 
   useEffect(() => {
     const isSidebarFocused = focusedId !== null;
-    expandProgress.value = withSpring(isSidebarFocused ? 1 : 0, SPRING_CONFIG);
+    if (isSidebarFocused) {
+      expandProgress.value = withSpring(1, SPRING_CONFIG);
+    } else {
+      expandProgress.value = withTiming(0, {
+        duration: 165,
+        easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+      });
+    }
 
     if (isSidebarFocused && onExpand) onExpand();
     if (!isSidebarFocused && onCollapse) onCollapse();
   }, [focusedId, onExpand, onCollapse, expandProgress]);
+
+  useEffect(() => {
+    if (!onHomeNodeReady) return;
+    const tryResolve = () => {
+      const node = homeRef.current ? (findNodeHandle(homeRef.current) ?? undefined) : undefined;
+      if (node) {
+        onHomeNodeReady(node);
+        return true;
+      }
+      return false;
+    };
+
+    if (tryResolve()) return;
+
+    const interval = setInterval(() => {
+      if (tryResolve()) {
+        clearInterval(interval);
+      }
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [onHomeNodeReady]);
 
   const clearPendingBlur = useCallback(() => {
     if (blurTimeoutRef.current) {
@@ -118,6 +159,7 @@ const TVSidebar = ({
 
   const handleFocus = useCallback(
     (id: SidebarRoute | 'Profile') => {
+      if (isPressClosingRef.current) return;
       clearPendingBlur();
       setFocusedId(id);
     },
@@ -125,6 +167,14 @@ const TVSidebar = ({
   );
 
   const handleBlur = useCallback(() => {
+    if (isPressClosingRef.current) {
+      isPressClosingRef.current = false;
+      if (pressUnlockTimeoutRef.current) {
+        clearTimeout(pressUnlockTimeoutRef.current);
+        pressUnlockTimeoutRef.current = null;
+      }
+      return;
+    }
     clearPendingBlur();
     blurTimeoutRef.current = setTimeout(() => {
       setFocusedId(null);
@@ -163,6 +213,7 @@ const TVSidebar = ({
   const focusedFill = 'rgba(255, 255, 255, 0.18)';
   const focusedBorder = 'rgba(255, 255, 255, 0.22)';
   const focusedShadow = 'rgba(255, 255, 255, 0.18)';
+  const shouldRenderLabels = focusedId !== null;
 
   const getFocusTarget = useCallback(
     (route: SidebarRoute) => focusTargets?.[route] ?? undefined,
@@ -246,7 +297,7 @@ const TVSidebar = ({
     }
   }, [announcementsRef, downloadsRef, favoritesRef, getNode, homeRef, liveRef, moviesRef, seriesRef]);
 
-  const renderMenuItem = (item: MenuItem) => {
+  const renderMenuItem = useCallback((item: MenuItem) => {
     const isActive = activeRoute === item.id;
     const isFocused = focusedId === item.id;
 
@@ -259,9 +310,27 @@ const TVSidebar = ({
         key={item.id}
         ref={itemRef as React.RefObject<any>}
         onPress={() => {
+          isPressClosingRef.current = true;
           clearPendingBlur();
           setFocusedId(null);
-          handlePress(item.id);
+          expandProgress.value = withTiming(0, {
+            duration: 145,
+            easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+          });
+          if (pressNavigateTimeoutRef.current) {
+            clearTimeout(pressNavigateTimeoutRef.current);
+          }
+          if (pressUnlockTimeoutRef.current) {
+            clearTimeout(pressUnlockTimeoutRef.current);
+          }
+          pressNavigateTimeoutRef.current = setTimeout(() => {
+            handlePress(item.id);
+            pressNavigateTimeoutRef.current = null;
+          }, 100);
+          pressUnlockTimeoutRef.current = setTimeout(() => {
+            isPressClosingRef.current = false;
+            pressUnlockTimeoutRef.current = null;
+          }, 450);
         }}
         onFocus={() => handleFocus(item.id)}
         onBlur={handleBlur}
@@ -299,22 +368,44 @@ const TVSidebar = ({
             />
           </View>
 
-          <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
-            <Text
-              style={[
-                styles.label,
-                isFocused && styles.labelFocused,
-                isActive && !isFocused && { color: activeColor },
-                isActive && isFocused && { color: '#FFFFFF' },
-              ]}
-            >
-              {item.label}
-            </Text>
-          </Animated.View>
+          {shouldRenderLabels && (
+            <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
+              <Text
+                style={[
+                  styles.label,
+                  isFocused && styles.labelFocused,
+                  isActive && !isFocused && { color: activeColor },
+                  isActive && isFocused && { color: '#FFFFFF' },
+                ]}
+              >
+                {item.label}
+              </Text>
+            </Animated.View>
+          )}
         </View>
       </Pressable>
     );
-  };
+  }, [
+    activeRoute,
+    focusedId,
+    activeColor,
+    inactiveColor,
+    focusedFill,
+    focusedBorder,
+    focusedShadow,
+    shouldRenderLabels,
+    animatedLabelStyle,
+    expandProgress,
+    clearPendingBlur,
+    handlePress,
+    handleFocus,
+    handleBlur,
+    getItemRef,
+    getNode,
+    getFocusTarget,
+    getUpNode,
+    getDownNode,
+  ]);
 
   return (
     <View style={styles.outerContainer}>
@@ -352,9 +443,11 @@ const TVSidebar = ({
                   color={focusedId === 'Profile' ? '#FFFFFF' : inactiveColor}
                 />
               </View>
-              <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
-                <Text style={[styles.label, focusedId === 'Profile' && styles.labelFocused]}>Profile</Text>
-              </Animated.View>
+              {shouldRenderLabels && (
+                <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
+                  <Text style={[styles.label, focusedId === 'Profile' && styles.labelFocused]}>Profile</Text>
+                </Animated.View>
+              )}
             </View>
           </Pressable>
           <View style={styles.divider} />

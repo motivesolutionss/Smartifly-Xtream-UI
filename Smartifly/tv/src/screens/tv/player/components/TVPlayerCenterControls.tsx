@@ -12,6 +12,7 @@ interface TVPlayerCenterControlsProps {
     focusedElement: string | null;
     setFocusedElement: (element: string | null) => void;
     handleSeekBy: (delta: number) => void;
+    handleLiveChannelStep: (delta: number) => void;
     showHUD: () => void;
     isHudVisible: boolean;
     playPauseRef?: any;
@@ -26,6 +27,7 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
     focusedElement,
     setFocusedElement,
     handleSeekBy,
+    handleLiveChannelStep,
     showHUD,
     isHudVisible,
     playPauseRef,
@@ -33,6 +35,42 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
     lockButtonRef,
 }) => {
     const { colors } = useTheme();
+
+    /**
+     * Key handler for the play/pause button.
+     * Intercepts Left/Right D-pad to seek instead of moving focus to
+     * the rewind/forward buttons.  This lets the user continuously
+     * press Left/Right on the remote to skip without needing to press OK.
+     */
+    const handlePlayPauseKeyDown = (event: any) => {
+        const nativeEvent = event?.nativeEvent;
+        const key = nativeEvent?.key;
+        const keyCode = nativeEvent?.keyCode;
+
+        const isRight = key === 'ArrowRight' || key === 'Right' || keyCode === 22;
+        const isLeft = key === 'ArrowLeft' || key === 'Left' || keyCode === 21;
+
+        if (isRight) {
+            if (isLive) {
+                handleLiveChannelStep(1);
+            } else {
+                handleSeekBy(SEEK_STEP_SECONDS);
+            }
+            showHUD();
+            return;
+        }
+
+        if (isLeft) {
+            if (isLive) {
+                handleLiveChannelStep(-1);
+            } else {
+                handleSeekBy(-SEEK_STEP_SECONDS);
+            }
+            showHUD();
+            return;
+        }
+    };
+
     return (
         <View style={styles.centerControls}>
             {/* Rewind */}
@@ -41,20 +79,25 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                     styles.seekButton,
                     focusedElement === 'seek-rewind' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
                 ]}
-                onPress={() => handleSeekBy(-SEEK_STEP_SECONDS)}
+                onPress={() => {
+                    if (isLive) {
+                        handleLiveChannelStep(-1);
+                    } else {
+                        handleSeekBy(-SEEK_STEP_SECONDS);
+                    }
+                }}
                 onFocus={() => {
                     setFocusedElement('seek-rewind');
                     showHUD();
                 }}
                 onBlur={() => setFocusedElement(null)}
-                disabled={isLive}
                 {...({
                     nextFocusRight: findNodeHandle(playPauseRef.current),
                     nextFocusUp: findNodeHandle(lockButtonRef.current)
                 } as any)}
             >
-                <Icon name="arrowCounterClockwise" size={scale(40)} color={isLive ? 'rgba(255,255,255,0.3)' : '#FFFFFF'} />
-                <Text style={[styles.seekLabel, isLive && styles.seekLabelDisabled]}>10</Text>
+                <Icon name={isLive ? 'arrowLeft' : 'arrowCounterClockwise'} size={scale(40)} color="#FFFFFF" />
+                <Text style={styles.seekLabel}>{isLive ? 'CH-' : '10'}</Text>
             </Pressable>
 
             {/* Play / Pause */}
@@ -70,10 +113,15 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                     showHUD();
                 }}
                 onBlur={() => setFocusedElement(null)}
+                // @ts-ignore – Android TV key events
+                onKeyDown={handlePlayPauseKeyDown}
                 {...({
                     hasTVPreferredFocus: isHudVisible,
                     nextFocusDown: findNodeHandle(progressPressableRef.current),
                     nextFocusUp: findNodeHandle(lockButtonRef.current),
+                    // Keep Left/Right focus on play/pause so onKeyDown fires
+                    nextFocusLeft: findNodeHandle(playPauseRef.current),
+                    nextFocusRight: findNodeHandle(playPauseRef.current),
                 } as any)}
             >
                 <Icon name={paused ? 'play' : 'pause'} size={scale(48)} color="#FFFFFF" />
@@ -85,20 +133,25 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                     styles.seekButton,
                     focusedElement === 'seek-forward' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
                 ]}
-                onPress={() => handleSeekBy(SEEK_STEP_SECONDS)}
+                onPress={() => {
+                    if (isLive) {
+                        handleLiveChannelStep(1);
+                    } else {
+                        handleSeekBy(SEEK_STEP_SECONDS);
+                    }
+                }}
                 onFocus={() => {
                     setFocusedElement('seek-forward');
                     showHUD();
                 }}
                 onBlur={() => setFocusedElement(null)}
-                disabled={isLive}
                 {...({
                     nextFocusLeft: findNodeHandle(playPauseRef.current),
                     nextFocusUp: findNodeHandle(lockButtonRef.current)
                 } as any)}
             >
-                <Icon name="arrowRight" size={scale(40)} color={isLive ? 'rgba(255,255,255,0.3)' : '#FFFFFF'} />
-                <Text style={[styles.seekLabel, isLive && styles.seekLabelDisabled]}>10</Text>
+                <Icon name="arrowRight" size={scale(40)} color="#FFFFFF" />
+                <Text style={styles.seekLabel}>{isLive ? 'CH+' : '10'}</Text>
             </Pressable>
         </View>
     );
@@ -130,9 +183,6 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(13),
         fontWeight: '700',
         marginTop: scale(2),
-    },
-    seekLabelDisabled: {
-        color: 'rgba(255,255,255,0.3)',
     },
     playPauseButton: {
         width: scale(110),

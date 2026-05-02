@@ -27,6 +27,7 @@ import { useContentFilter } from '../../store/profileStore';
 import { scheduleIdleWork } from '../../utils/idle';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '../../utils/perf';
+import { seededShuffle } from '../../utils/shuffle';
 
 // =============================================================================
 // TYPES
@@ -167,11 +168,11 @@ function createStyles(
         },
         moviesGrid: {
             paddingBottom: scale(60),
-            paddingRight: scale(20),
+            paddingRight: scale(18),
         },
         moviesRow: {
             justifyContent: 'flex-start',
-            marginBottom: scale(30),
+            marginBottom: 0,
         },
         loadingState: {
             paddingVertical: scale(40),
@@ -278,8 +279,10 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
 // LIST CONFIG
 // =============================================================================
 
-const GRID_COLUMNS = 7;
+const GRID_COLUMNS = 5;
 const CATEGORY_ROW_SIZE = scale(62); // row height + margin (approx)
+const GRID_CARD_WIDTH = scale(265);
+const GRID_CARD_HEIGHT = scale(398);
 
 // =============================================================================
 // TV MOVIES SCREEN
@@ -309,6 +312,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation, focusEntryR
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoryMap, setCategoryMap] = useState<Record<string, XtreamMovie[]>>({});
     const [isPrepared, setIsPrepared] = useState(false);
+    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
     const perf = usePerfProfile();
     const gridPerf = perf.grid;
     const gridInitialRender = GRID_COLUMNS * gridPerf.initialRows;
@@ -335,18 +339,32 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation, focusEntryR
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
             const filteredAllMovies = filterContent(moviesItems as any[]);
+            const shuffledAllMovies = seededShuffle(
+                filteredAllMovies,
+                (movie) => String(movie.stream_id || ''),
+                `movies:all:${dayShuffleSeed}`
+            );
             const nextMap: Record<string, XtreamMovie[]> = {
-                all: filteredAllMovies,
+                all: shuffledAllMovies,
             };
 
-            for (const movie of filteredAllMovies) {
+            for (const movie of shuffledAllMovies) {
                 const catId = String(movie.category_id);
                 if (!nextMap[catId]) nextMap[catId] = [];
                 nextMap[catId].push(movie);
             }
 
+            for (const [catId, catMovies] of Object.entries(nextMap)) {
+                if (catId === 'all') continue;
+                nextMap[catId] = seededShuffle(
+                    catMovies,
+                    (movie) => String(movie.stream_id || ''),
+                    `movies:${catId}:${dayShuffleSeed}`
+                );
+            }
+
             const nextCategories: Category[] = [
-                { id: 'all', name: 'All Movies', count: filteredAllMovies.length },
+                { id: 'all', name: 'All Movies', count: shuffledAllMovies.length },
             ];
 
             for (const cat of moviesCategories) {
@@ -370,7 +388,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation, focusEntryR
         return () => {
             task.cancel();
         };
-    }, [moviesLoaded, moviesCategories, moviesItems, filterContent]);
+    }, [moviesLoaded, moviesCategories, moviesItems, filterContent, dayShuffleSeed]);
 
     // ==========================================================================
     // MOVIES (filtered by category)
@@ -426,8 +444,9 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation, focusEntryR
                 data: item,
             }}
             onPress={handleMoviePress}
-            width={scale(180)}
-            height={scale(270)}
+            width={GRID_CARD_WIDTH}
+            height={GRID_CARD_HEIGHT}
+            style={{ marginRight: scale(10), marginBottom: scale(20) }}
             disableZoom={true}
         />
     ), [handleMoviePress]);
@@ -469,7 +488,7 @@ const TVMoviesScreen: React.FC<TVMoviesScreenProps> = ({ navigation, focusEntryR
                     keyExtractor={(item) => String(item.stream_id)}
                     numColumns={GRID_COLUMNS}
                     // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
-                    estimatedItemSize={scale(300)}
+                    estimatedItemSize={scale(390)}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.moviesGrid}
                     columnWrapperStyle={styles.moviesRow}

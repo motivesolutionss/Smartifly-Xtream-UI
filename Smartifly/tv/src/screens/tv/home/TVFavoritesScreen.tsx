@@ -67,7 +67,7 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation, focus
             <Pressable
                 ref={focusEntryRef}
                 style={styles.actionButton}
-                onPress={() => navigation.navigate('TVHome')}
+                onPress={() => navigation.navigate('TVShell')}
             >
                 <Text style={styles.actionText}>Go to Home</Text>
             </Pressable>

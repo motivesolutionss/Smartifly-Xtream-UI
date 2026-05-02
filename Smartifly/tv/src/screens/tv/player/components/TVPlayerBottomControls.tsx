@@ -4,6 +4,8 @@ import { scale, scaleFont } from '../../../../theme';
 import { useTheme } from '../../../../theme/ThemeProvider';
 import { typographyTV } from '../../../../theme/typography';
 
+const SEEK_STEP_SECONDS = 10;
+
 interface TVPlayerBottomControlsProps {
     isLive: boolean;
     duration: number;
@@ -16,6 +18,8 @@ interface TVPlayerBottomControlsProps {
     showHUD: () => void;
     progressPressableRef: any;
     playPauseRef?: any;
+    handleSeekBy?: (delta: number) => void;
+    handleLiveChannelStep?: (delta: number) => void;
 }
 
 const formatTime = (value: number) => {
@@ -43,12 +47,47 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
     showHUD,
     progressPressableRef,
     playPauseRef,
+    handleSeekBy,
+    handleLiveChannelStep,
 }) => {
     const { colors } = useTheme();
     const progressTime = isScrubbing ? scrubTime : currentTime;
     const progressPercent = duration > 0 ? Math.min(progressTime / duration, 1) : 0;
     const bufferPercent = duration > 0 ? Math.min(playableDuration / duration, 1) : 0;
     const isFocused = focusedElement === 'progress';
+
+    /**
+     * Key handler for the progress bar.
+     * Left/Right seeks so the remote D-pad works for scrubbing.
+     */
+    const handleProgressKeyDown = (event: any) => {
+        const nativeEvent = event?.nativeEvent;
+        const key = nativeEvent?.key;
+        const keyCode = nativeEvent?.keyCode;
+
+        const isRight = key === 'ArrowRight' || key === 'Right' || keyCode === 22;
+        const isLeft = key === 'ArrowLeft' || key === 'Left' || keyCode === 21;
+
+        if (isRight && handleSeekBy) {
+            if (isLive && handleLiveChannelStep) {
+                handleLiveChannelStep(1);
+            } else {
+                handleSeekBy(SEEK_STEP_SECONDS);
+            }
+            showHUD();
+            return;
+        }
+
+        if (isLeft && handleSeekBy) {
+            if (isLive && handleLiveChannelStep) {
+                handleLiveChannelStep(-1);
+            } else {
+                handleSeekBy(-SEEK_STEP_SECONDS);
+            }
+            showHUD();
+            return;
+        }
+    };
 
     return (
         <View style={styles.bottomControls}>
@@ -63,8 +102,13 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
                     }}
                     onBlur={() => setFocusedElement(null)}
                     style={styles.progressContainer}
+                    // @ts-ignore – Android TV key events
+                    onKeyDown={handleProgressKeyDown}
                     {...({
-                        nextFocusUp: findNodeHandle(playPauseRef.current)
+                        nextFocusUp: findNodeHandle(playPauseRef.current),
+                        // Keep Left/Right focus on progress bar so onKeyDown fires for seeking
+                        nextFocusLeft: findNodeHandle(progressPressableRef.current),
+                        nextFocusRight: findNodeHandle(progressPressableRef.current),
                     } as any)}
                 >
                     <View style={[

@@ -36,6 +36,8 @@ const TVSeriesDetailScreen: React.FC = () => {
 
     // Store
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
+    const downloads = useDownloadStore((state) => state.downloads);
+    const addDownload = useDownloadStore((state) => state.addDownload);
 
     // State
     const [info, setInfo] = useState<any>(null);
@@ -115,9 +117,13 @@ const TVSeriesDetailScreen: React.FC = () => {
 
     useTVBackHandler(
         useCallback(() => {
+            if (isTrailerOpen) {
+                setIsTrailerOpen(false);
+                return true;
+            }
             navigation.goBack();
             return true;
-        }, [navigation])
+        }, [isTrailerOpen, navigation])
     );
 
     const handlePlayEpisode = (episode: any) => {
@@ -175,12 +181,12 @@ const TVSeriesDetailScreen: React.FC = () => {
                 <Icon
                     name={iconName}
                     size={scale(20)}
-                    color={primary ? (isFocused ? colors.background : '#FFF') : '#FFF'}
+                    color={primary ? '#111' : '#FFF'}
                     style={{ marginRight: scale(8) }}
                 />
                 <Text style={[
                     styles.buttonText,
-                    primary && isFocused && { color: colors.background }
+                    primary && { color: '#111' }
                 ]}>
                     {label}
                 </Text>
@@ -221,7 +227,8 @@ const TVSeriesDetailScreen: React.FC = () => {
             >
                 <Text style={[
                     styles.seasonText,
-                    (isSelected || isFocused) && styles.seasonTextActive
+                    isSelected && styles.seasonTextActive,
+                    isFocused && styles.seasonTextFocused,
                 ]}>
                     Season {item}
                 </Text>
@@ -232,7 +239,6 @@ const TVSeriesDetailScreen: React.FC = () => {
     const renderEpisodeItem = ({ item }: { item: any }) => {
         const isFocused = focusedEpisodeId === String(item.id);
         const image = item.info?.movie_image || series.cover;
-        const { downloads, addDownload } = useDownloadStore.getState();
         const download = downloads.find(d => d.id === String(item.id));
 
         const handleEpisodeDownload = () => {
@@ -362,13 +368,11 @@ const TVSeriesDetailScreen: React.FC = () => {
                                 </View>
                             )}
                             <Text style={styles.metaText}>{seasons.length} Seasons</Text>
-                            {genre && (
-                                <>
-                                    <View style={styles.metaDivider} />
-                                    <Text style={styles.metaText}>{genre}</Text>
-                                </>
-                            )}
+                            
                         </View>
+                        {genre && (
+                            <Text style={styles.genreText} numberOfLines={2}>{genre}</Text>
+                        )}
 
                         {/* Credits Row */}
                         <View style={styles.creditsSection}>
@@ -510,12 +514,16 @@ const styles = StyleSheet.create({
         zIndex: 10,
     },
     leftColumn: {
-        width: scale(380),
+        width: scale(460),
         marginRight: scale(40),
         justifyContent: 'center',
     },
     rightColumn: {
-        flex: 1,
+        flex: 0,
+        width: '72%',
+        maxWidth: scale(1500),
+        marginLeft: 'auto',
+        marginTop: scale(24),
         justifyContent: 'center',
     },
     poster: {
@@ -554,12 +562,19 @@ const styles = StyleSheet.create({
     badgeText: {
         color: '#000',
         fontWeight: '900',
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(16),
     },
     metaText: {
         color: '#E0E0E0',
-        fontSize: scaleFont(16),
+        fontSize: scaleFont(22),
         fontWeight: '600',
+    },
+    genreText: {
+        color: '#E0E0E0',
+        fontSize: scaleFont(22),
+        fontWeight: '600',
+        marginTop: scale(4),
+        marginBottom: scale(6),
     },
     metaDivider: {
         width: 1,
@@ -574,10 +589,10 @@ const styles = StyleSheet.create({
         paddingTop: scale(16),
     },
     creditText: {
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(20),
         color: '#FFF',
         marginBottom: scale(4),
-        lineHeight: scaleFont(20),
+        lineHeight: scaleFont(30),
     },
     creditLabel: {
         opacity: 0.6,
@@ -587,14 +602,17 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: scale(24),
+        gap: scale(12),
     },
     button: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: scale(12),
-        paddingHorizontal: scale(24),
+        justifyContent: 'center',
+        paddingVertical: scale(18),
+        paddingHorizontal: scale(20),
+        minWidth: scale(210),
         borderRadius: scale(8),
-        marginRight: scale(16),
+        flexShrink: 0,
         borderWidth: 2,
         borderColor: 'transparent',
     },
@@ -609,7 +627,7 @@ const styles = StyleSheet.create({
         transform: [{ scale: 1.05 }],
     },
     buttonText: {
-        fontSize: scaleFont(16),
+        fontSize: scaleFont(24),
         fontWeight: '700',
         color: '#FFF',
         textTransform: 'uppercase',
@@ -617,8 +635,8 @@ const styles = StyleSheet.create({
     },
     plot: {
         color: '#BBB',
-        fontSize: scaleFont(15),
-        lineHeight: scaleFont(22),
+        fontSize: scaleFont(24),
+        lineHeight: scaleFont(35),
         opacity: 0.9,
     },
     // Seasons
@@ -654,9 +672,12 @@ const styles = StyleSheet.create({
     seasonTextActive: {
         color: '#FFF',
     },
+    seasonTextFocused: {
+        color: '#111',
+    },
     // Episodes
     episodesContainer: {
-        flex: 1,
+        width: '100%',
         backgroundColor: 'rgba(0,0,0,0.2)',
         borderRadius: scale(12),
         padding: scale(10),
@@ -669,7 +690,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.03)',
         borderRadius: scale(10),
         marginBottom: scale(12),
-        height: scale(90),
+        height: scale(108),
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'transparent',
@@ -681,9 +702,9 @@ const styles = StyleSheet.create({
         transform: [{ scale: 1.02 }],
     },
     episodeThumb: {
-        width: scale(160),
+        width: scale(190),
         height: '100%',
-        marginRight: scale(20),
+        marginRight: scale(22),
     },
     episodeInfo: {
         flex: 1,
@@ -692,14 +713,14 @@ const styles = StyleSheet.create({
     },
     episodeNum: {
         color: colors.accent || '#00E5FF',
-        fontSize: scaleFont(12),
+        fontSize: scaleFont(15),
         fontWeight: '900',
         marginBottom: scale(4),
         textTransform: 'uppercase',
     },
     episodeTitle: {
         color: '#FFF',
-        fontSize: scaleFont(18),
+        fontSize: scaleFont(22),
         fontWeight: '700',
         marginBottom: scale(4),
     },
@@ -708,7 +729,7 @@ const styles = StyleSheet.create({
     },
     episodeDuration: {
         color: '#888',
-        fontSize: scaleFont(13),
+        fontSize: scaleFont(17),
         fontWeight: '600',
     },
     episodeDownloadBtn: {

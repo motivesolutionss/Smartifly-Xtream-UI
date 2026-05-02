@@ -16,9 +16,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { MMKV } from 'react-native-mmkv';
+import type { StateStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfileStore } from './profileStore';
-import { createDebouncedStorage } from '../utils/storage';
 
 // =============================================================================
 // TYPES
@@ -96,7 +97,9 @@ const generateId = (
     streamId: number,
     profileId?: string
 ): string => {
-    const pId = profileId || useProfileStore.getState().activeProfileId || 'default';
+    const profileState = useProfileStore.getState();
+    const fallbackProfileId = profileState.profiles?.[0]?.id;
+    const pId = profileId || profileState.activeProfileId || fallbackProfileId || 'default';
     return `${pId}-${type}-${streamId}`;
 };
 
@@ -104,20 +107,79 @@ const generateId = (
  * Get current profile ID for watch history operations.
  */
 const getCurrentProfileId = (): string => {
-    return useProfileStore.getState().activeProfileId || 'default';
+    const profileState = useProfileStore.getState();
+    return profileState.activeProfileId || profileState.profiles?.[0]?.id || 'default';
 };
 
 const isCompleted = (progress: number): boolean => progress >= 90;
+const MAX_CONTINUE_WATCHING_ITEMS = 10;
+
+const getContinueIdentity = (item: WatchProgress): string => {
+    if (item.type === 'series') {
+        // Collapse multiple episode stream variants into one series-level continue card when seriesId exists.
+        if (typeof item.seriesId === 'number' && Number.isFinite(item.seriesId) && item.seriesId > 0) {
+            return `series-${item.seriesId}`;
+        }
+        return `series-${item.streamId}`;
+    }
+    return `${item.type}-${item.streamId}`;
+};
 
 // =============================================================================
-// PERSISTENCE OPTIMIZATIONS
+// PERSISTENCE
 // =============================================================================
+// Watch history should survive quick reloads and restarts.
+// Prefer MMKV (sync writes) with AsyncStorage fallback.
+const isJsiAvailable = (): boolean => {
+    return typeof (globalThis as any)?.nativeCallSyncHook === 'function';
+};
 
-const WATCH_HISTORY_DEBOUNCE_MS = 1000;
+let watchMmkv: MMKV | null = null;
+const getWatchMmkv = (): MMKV | null => {
+    if (!isJsiAvailable()) return null;
+    if (watchMmkv) return watchMmkv;
+    try {
+        watchMmkv = new MMKV({ id: 'smartifly-watch-history-v2' });
+        return watchMmkv;
+    } catch {
+        return null;
+    }
+};
 
-const watchHistoryStorage = createJSONStorage(() =>
-    createDebouncedStorage(AsyncStorage, WATCH_HISTORY_DEBOUNCE_MS)
-);
+const watchStorageBackend: StateStorage = {
+    getItem: (name: string) => {
+        const mmkv = getWatchMmkv();
+        if (mmkv) {
+            const mmkvValue = mmkv.getString(name);
+            if (mmkvValue != null) return mmkvValue;
+            return AsyncStorage.getItem(name).then((fallback) => {
+                if (fallback != null) {
+                    mmkv.set(name, fallback);
+                }
+                return fallback;
+            });
+        }
+        return AsyncStorage.getItem(name);
+    },
+    setItem: (name: string, value: string) => {
+        const mmkv = getWatchMmkv();
+        if (mmkv) {
+            mmkv.set(name, value);
+            return;
+        }
+        return AsyncStorage.setItem(name, value);
+    },
+    removeItem: (name: string) => {
+        const mmkv = getWatchMmkv();
+        if (mmkv) {
+            mmkv.delete(name);
+            return;
+        }
+        return AsyncStorage.removeItem(name);
+    },
+};
+
+const watchHistoryStorage = createJSONStorage(() => watchStorageBackend);
 
 const sanitizeHistoryForStorage = (
     history: Record<string, WatchProgress>
@@ -156,16 +218,39 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
                 const completed = isCompleted(progress.progress);
 
                 set((state) => ({
-                    history: {
-                        ...state.history,
-                        [id]: {
-                            ...progress,
-                            id,
-                            lastWatched: Date.now(),
-                            completed,
-                            source: 'xtream', // Default source
-                        },
-                    },
+                    history: (() => {
+                        const nextHistory: Record<string, WatchProgress> = {
+                            ...state.history,
+                            [id]: {
+                                ...progress,
+                                id,
+                                lastWatched: Date.now(),
+                                completed,
+                                source: 'xtream', // Default source
+                            },
+                        };
+
+                        // Keep only latest N in-progress items to avoid rail bloat across reloads/sessions.
+                        const inProgress = Object.values(nextHistory)
+                            .filter((item) => !item.completed && item.progress > 0)
+                            .sort((a, b) => b.lastWatched - a.lastWatched);
+
+                        if (inProgress.length > MAX_CONTINUE_WATCHING_ITEMS) {
+                            const keepIds = new Set(
+                                inProgress
+                                    .slice(0, MAX_CONTINUE_WATCHING_ITEMS)
+                                    .map((item) => item.id)
+                            );
+
+                            for (const [key, value] of Object.entries(nextHistory)) {
+                                if (!value.completed && value.progress > 0 && !keepIds.has(key)) {
+                                    delete nextHistory[key];
+                                }
+                            }
+                        }
+
+                        return nextHistory;
+                    })(),
                 }));
             },
 
@@ -175,22 +260,26 @@ export const useWatchHistoryStore = create<WatchHistoryState>()(
             },
 
             getContinueWatching: (limit = 10) => {
-                const profileId = getCurrentProfileId();
                 const items = Object.values(get().history)
-                    // Filter by current profile (entries start with profileId)
-                    .filter((item) => item.id.startsWith(profileId))
                     .filter((item) => !item.completed && item.progress > 0)
-                    .sort((a, b) => b.lastWatched - a.lastWatched)
-                    .slice(0, limit);
+                    .sort((a, b) => b.lastWatched - a.lastWatched);
 
-                return items;
+                // Deduplicate repeated cards (same movie/live/series identity), keep most recent.
+                const seen = new Set<string>();
+                const deduped: WatchProgress[] = [];
+                for (const item of items) {
+                    const identity = getContinueIdentity(item);
+                    if (seen.has(identity)) continue;
+                    seen.add(identity);
+                    deduped.push(item);
+                    if (deduped.length >= limit) break;
+                }
+
+                return deduped;
             },
 
             getRecentlyWatched: (limit = 20) => {
-                const profileId = getCurrentProfileId();
                 const items = Object.values(get().history)
-                    // Filter by current profile (entries start with profileId)
-                    .filter((item) => item.id.startsWith(profileId))
                     .sort((a, b) => b.lastWatched - a.lastWatched)
                     .slice(0, limit);
 

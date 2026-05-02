@@ -88,7 +88,7 @@ const schedulePrefetch = () => {
         } else {
             // Fallback for versions where preload does not return a Promise.
             // Do not mark warm here because completion cannot be verified.
-            setTimeout(onComplete, 200);
+            setTimeout(onComplete, 1000);
         }
     }
 };

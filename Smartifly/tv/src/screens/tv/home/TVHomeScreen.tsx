@@ -9,11 +9,13 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
+    Animated,
     View,
     Text,
     StyleSheet,
     BackHandler,
     StatusBar,
+    Easing,
     findNodeHandle,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -42,22 +44,15 @@ import TVDownloadsScreen from '../TVDownloadsScreen';
 import TVLoadingState from '../components/TVLoadingState';
 import { prefetchImages } from '../../../utils/image';
 import { usePerfProfile } from '../../../utils/perf';
+import {
+    PreparedHeroDetails,
+    getCachedHeroDetails,
+    optimizeHeroBackdropUri,
+} from '../../../services/HeroPreparationService';
 
 // Netflix-grade resolver
 import { useHomeRails } from './hooks/useHomeRails';
 import { TVHomeScreenProps, MovieItem, SeriesItem } from '../../../navigation/types';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface HeroDetails {
-    description?: string;
-    rating?: number;
-    backdrop?: string;
-    tags?: string[];
-    year?: string;
-}
 
 const isUsableUri = (value?: string): boolean => {
     if (!value || typeof value !== 'string') return false;
@@ -76,7 +71,7 @@ type HomeSection =
     | {
         key: string;
         type: 'rail';
-        rail: { id: string; title: string; items: TVContentItem[] };
+        rail: { id: string; title: string; type?: string; items: TVContentItem[] };
         lift: boolean;
     };
 
@@ -91,7 +86,9 @@ const PLACEHOLDER_CARDS_PER_RAIL = 6;
 
 const HERO_BANNER_HEIGHT = scale(820);
 const HERO_BANNER_MARGIN = scale(28);
-const RAIL_SECTION_ESTIMATE = scale(340);
+const CONTINUE_SECTION_ESTIMATE = scale(250);
+const LIVE_SECTION_ESTIMATE = scale(240);
+const CONTENT_SECTION_ESTIMATE = scale(430);
 
 // =============================================================================
 // HOME PLACEHOLDERS
@@ -156,120 +153,42 @@ const HeroPlaceholder: React.FC = React.memo(() => (
 type HomeSectionProps = {
     navigation: TVHomeScreenProps['navigation'];
     searchRef: React.RefObject<View | null>;
+    sidebarHomeNode?: number;
     heroPlayRef?: React.Ref<View>;
     activeRoute: SidebarRoute;
     isInteracted: boolean;
 };
 
-const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, searchRef, heroPlayRef, activeRoute, isInteracted }) => {
+const pickBackdrop = (...values: any[]): string | undefined => {
+    for (const value of values) {
+        if (Array.isArray(value)) {
+            for (const entry of value) {
+                const optimized = optimizeHeroBackdropUri(entry);
+                if (optimized) return optimized;
+            }
+            continue;
+        }
+        const optimized = optimizeHeroBackdropUri(value);
+        if (optimized) return optimized;
+    }
+    return undefined;
+};
+
+const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, searchRef, sidebarHomeNode, heroPlayRef, activeRoute, isInteracted }) => {
     const { rails, continueWatching, hero, isLoading } = useHomeRails();
     const perf = usePerfProfile();
     const prefetchRailsLimit = perf.tier === 'low' ? 2 : perf.tier === 'high' ? 5 : 4;
     const prefetchItemsPerRail = perf.tier === 'low' ? 4 : perf.tier === 'high' ? 8 : 6;
     const drawDistance = perf.home.drawDistance || HOME_DRAW_DISTANCE;
 
-    const getXtreamAPI = useStore((state) => state.getXtreamAPI);
+    const moviesItems = useStore((state) => state.content.movies.items);
+    const seriesItems = useStore((state) => state.content.series.items);
     const removeFromHistory = useWatchHistoryStore((state) => state.removeFromHistory);
 
-    const [heroDetails, setHeroDetails] = useState<HeroDetails | null>(null);
-    const [heroDetailsStatus, setHeroDetailsStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
     const [stableHero, setStableHero] = useState<TVHeroItem | null>(null);
-    const heroDetailsCache = useRef<Record<string, HeroDetails>>({});
-    const heroDetailsKeyRef = useRef<string>('');
     const stableHeroIdRef = useRef<string>('');
     const prefetchedImages = useRef<Set<string>>(new Set());
     const heroId = hero ? String(hero.id) : '';
-    const heroType = hero?.type;
-    const heroMovieId = heroType === 'movie' ? hero?.data?.stream_id : undefined;
-    const heroSeriesId = heroType === 'series' ? hero?.data?.series_id : undefined;
-
-    // =========================================================================
-    // HERO DETAILS FETCH (Home only)
-    // =========================================================================
-    useEffect(() => {
-        let isMounted = true;
-
-        if (!heroId || !heroType) {
-            setHeroDetails(null);
-            setHeroDetailsStatus('idle');
-            heroDetailsKeyRef.current = '';
-            return () => {
-                isMounted = false;
-            };
-        }
-
-        heroDetailsKeyRef.current = heroId;
-
-        const cached = heroDetailsCache.current[heroId];
-        if (cached) {
-            setHeroDetails(cached);
-            setHeroDetailsStatus('ready');
-            return () => {
-                isMounted = false;
-            };
-        }
-
-        setHeroDetails(null);
-        setHeroDetailsStatus('loading');
-
-        const fetchHeroDetails = async () => {
-            try {
-                const api = getXtreamAPI?.();
-                if (!api) throw new Error('API unavailable');
-
-                let details: HeroDetails = {};
-
-                if (heroType === 'movie') {
-                    if (!heroMovieId) throw new Error('Missing movie id');
-                    const info = await api.getVodInfo(heroMovieId);
-                    if (info?.info) {
-                        details = {
-                            description: info.info.plot,
-                            rating: info.info.rating,
-                            backdrop: info.info.backdrop_path?.[0],
-                            tags: info.info.genre
-                                ? info.info.genre.split(',').map((g: string) => g.trim())
-                                : [],
-                            year: info.info.releasedate ? info.info.releasedate.split('-')[0] : '',
-                        };
-                    }
-                } else if (heroType === 'series') {
-                    if (!heroSeriesId) throw new Error('Missing series id');
-                    const info = await api.getSeriesInfo(heroSeriesId);
-                    if (info?.info) {
-                        details = {
-                            description: info.info.plot,
-                            rating: info.info.rating,
-                            backdrop: info.info.backdrop_path?.[0],
-                            tags: info.info.genre
-                                ? info.info.genre.split(',').map((g: string) => g.trim())
-                                : [],
-                            year: info.info.releaseDate ? info.info.releaseDate.split('-')[0] : '',
-                        };
-                    }
-                }
-
-                if (isMounted && heroDetailsKeyRef.current === heroId) {
-                    heroDetailsCache.current[heroId] = details;
-                    setHeroDetails(details);
-                    setHeroDetailsStatus('ready');
-                }
-            } catch (err) {
-                console.warn('[TVHome] Error fetching hero details:', err);
-                if (isMounted && heroDetailsKeyRef.current === heroId) {
-                    heroDetailsCache.current[heroId] = {};
-                    setHeroDetails({});
-                    setHeroDetailsStatus('ready');
-                }
-            }
-        };
-
-        fetchHeroDetails();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [heroId, heroType, heroMovieId, heroSeriesId, getXtreamAPI]);
 
     const handleContentPress = useCallback(
         (item: TVContentItem | any) => {
@@ -336,12 +255,8 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
     const heroItem = useMemo<TVHeroItem | null>(() => {
         if (!hero) return null;
 
-        const details = heroDetails ?? {};
-        const resolvedBackdrop = isUsableUri(hero.backdrop)
-                ? hero.backdrop
-                : isUsableUri(details.backdrop)
-                    ? String(details.backdrop)
-                    : undefined;
+        const details: Partial<PreparedHeroDetails> = getCachedHeroDetails(heroId) ?? {};
+        const resolvedBackdrop = pickBackdrop(hero.backdrop, details.backdrop);
 
         return {
             ...hero,
@@ -352,28 +267,70 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
             year: details.year,
             backdrop: resolvedBackdrop,
         };
-    }, [hero, heroDetails]);
+    }, [hero, heroId]);
 
     useEffect(() => {
         if (!heroItem) return;
 
         const nextId = String(heroItem.id);
-        const shouldPromote =
-            !stableHero ||
-            stableHeroIdRef.current !== nextId ||
-            heroDetailsStatus === 'ready';
-
-        if (!shouldPromote) return;
+        if (stableHeroIdRef.current === nextId) return;
 
         stableHeroIdRef.current = nextId;
         setStableHero(heroItem);
-    }, [heroItem, heroDetailsStatus, stableHero]);
+    }, [heroItem]);
 
     const heroSlotItem = stableHero ?? heroItem;
 
-    // =========================================================================
-    // PREFETCH (Home only, staged so first interaction wins)
-    // =========================================================================
+    const continueWatchingResolved = useMemo<WatchProgress[]>(() => {
+        if (!continueWatching.length) return continueWatching;
+
+        const movieById = new Map<number, any>();
+        for (const movie of moviesItems || []) {
+            const id = Number((movie as any)?.stream_id);
+            if (Number.isFinite(id) && id > 0) {
+                movieById.set(id, movie);
+            }
+        }
+
+        const seriesById = new Map<number, any>();
+        for (const series of seriesItems || []) {
+            const id = Number((series as any)?.series_id);
+            if (Number.isFinite(id) && id > 0) {
+                seriesById.set(id, series);
+            }
+        }
+
+        return continueWatching.map((entry) => {
+            const data = (entry.data || {}) as any;
+            const movieId = Number(data?.stream_id ?? entry.streamId);
+            const seriesId = Number(data?.series_id ?? entry.seriesId);
+
+            const movie = entry.type === 'movie' ? movieById.get(movieId) : undefined;
+            const series = entry.type === 'series' ? seriesById.get(seriesId) : undefined;
+
+            const resolvedBackdrop = pickBackdrop(
+                Array.isArray(data?.backdrop_path) ? data.backdrop_path[0] : data?.backdrop_path,
+                data?.backdrop,
+                data?.cover_big,
+                data?.movie_image,
+                data?.cover,
+                Array.isArray(movie?.backdrop_path) ? movie.backdrop_path[0] : movie?.backdrop_path,
+                movie?.backdrop,
+                movie?.cover_big,
+                movie?.movie_image,
+                movie?.cover,
+                Array.isArray(series?.backdrop_path) ? series.backdrop_path[0] : series?.backdrop_path,
+                series?.backdrop,
+                series?.cover_big,
+                series?.cover,
+                entry.thumbnail
+            );
+
+            if (!resolvedBackdrop || resolvedBackdrop === entry.thumbnail) return entry;
+            return { ...entry, thumbnail: resolvedBackdrop };
+        });
+    }, [continueWatching, moviesItems, seriesItems]);
+
     useEffect(() => {
         if (isLoading) return;
 
@@ -390,7 +347,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         pushUnique(essential, stableHero?.backdrop);
         pushUnique(essential, heroItem?.backdrop);
 
-        for (const item of continueWatching.slice(0, prefetchItemsPerRail)) {
+        for (const item of continueWatchingResolved.slice(0, prefetchItemsPerRail)) {
             pushUnique(secondary, item.thumbnail);
         }
 
@@ -423,7 +380,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         isLoading,
         stableHero?.backdrop,
         heroItem?.backdrop,
-        continueWatching,
+        continueWatchingResolved,
         rails,
         prefetchItemsPerRail,
         prefetchRailsLimit,
@@ -431,46 +388,55 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         isInteracted,
     ]);
 
-    const homeSections = useMemo<HomeSection[]>(() => {
-        const sections: HomeSection[] = [];
-
-        let liftNext = true;
-
-        if (continueWatching.length > 0) {
-            sections.push({
+    const continueSections = useMemo<HomeSection[]>(() => {
+        if (continueWatchingResolved.length === 0) return [];
+        return [
+            {
                 key: 'continue',
                 type: 'continue',
-                data: continueWatching,
-                lift: liftNext,
-            });
-            liftNext = false;
-        }
+                data: continueWatchingResolved,
+                lift: true,
+            },
+        ];
+    }, [continueWatchingResolved]);
 
-        for (const rail of rails) {
-            sections.push({
+    const railSections = useMemo<HomeSection[]>(() => {
+        let liftNext = continueSections.length === 0;
+        return rails.map((rail) => {
+            const section: HomeSection = {
                 key: `rail-${rail.id}`,
                 type: 'rail',
                 rail: {
                     id: rail.id,
                     title: rail.title,
+                    type: rail.type,
                     items: rail.items as TVContentItem[],
                 },
                 lift: liftNext,
-            });
+            };
             liftNext = false;
-        }
+            return section;
+        });
+    }, [continueSections.length, rails]);
 
-        return sections;
-    }, [continueWatching, rails]);
+    const listSections = useMemo<HomeSection[]>(() => {
+        return [...continueSections, ...railSections];
+    }, [continueSections, railSections]);
 
     const getItemType = useCallback((item: HomeSection) => item.type, []);
     const overrideItemLayout = useCallback(
         (layout: { size?: number; span?: number }, item: HomeSection) => {
             switch (item.type) {
                 case 'continue':
+                    layout.size = CONTINUE_SECTION_ESTIMATE;
+                    break;
                 case 'rail':
+                    layout.size = item.rail.items[0]?.type === 'live'
+                        ? LIVE_SECTION_ESTIMATE
+                        : CONTENT_SECTION_ESTIMATE;
+                    break;
                 default:
-                    layout.size = RAIL_SECTION_ESTIMATE;
+                    layout.size = CONTENT_SECTION_ESTIMATE;
                     break;
             }
         },
@@ -504,6 +470,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                                 data={item.data}
                                 onPressItem={handleContinuePress}
                                 onRemoveItem={(entry) => removeFromHistory(entry.id)}
+                                sidebarTargetNode={sidebarHomeNode}
                             />
                         </View>
                     );
@@ -515,6 +482,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                                 title={item.rail.title}
                                 data={item.rail.items}
                                 onPressItem={handleContentPress}
+                                sidebarTargetNode={sidebarHomeNode}
                             />
                         </View>
                     );
@@ -523,11 +491,11 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                     return null;
             }
         },
-        [handleContinuePress, handleContentPress, removeFromHistory]
+        [handleContinuePress, handleContentPress, removeFromHistory, sidebarHomeNode]
     );
 
-    // ✅ While loading: render ONLY placeholder (avoid heavy list underneath)
-    if (isLoading) {
+    // While loading: render ONLY placeholder (avoid heavy list underneath)
+    if (isLoading && continueSections.length === 0) {
         return (
             <View style={styles.homeSection}>
                 <View style={styles.placeholderOverlayLocal}>
@@ -542,12 +510,12 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
             <FlashList
                 style={styles.scrollViewWithSidebarGap}
                 contentContainerStyle={styles.scrollContent}
-                data={homeSections}
+                data={listSections}
                 renderItem={renderHomeItem}
                 keyExtractor={(item) => item.key}
                 ListHeaderComponent={renderHeroHeader}
                 // @ts-ignore
-                estimatedItemSize={RAIL_SECTION_ESTIMATE}
+                estimatedItemSize={CONTENT_SECTION_ESTIMATE}
                 getItemType={getItemType}
                 overrideItemLayout={overrideItemLayout}
                 drawDistance={drawDistance}
@@ -566,17 +534,10 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     const [activeRoute, setActiveRoute] = useState<SidebarRoute>('Home');
     const [isInteracted, setIsInteracted] = useState(false);
     const [focusTargets, setFocusTargets] = useState<Record<string, number | undefined>>({});
-    const [mountedRoutes, setMountedRoutes] = useState<Record<string, boolean>>({
-        Home: true,
-    });
+    const [sidebarHomeNode, setSidebarHomeNode] = useState<number | undefined>(undefined);
     const searchRef = useRef<View | null>(null);
-    const perf = usePerfProfile();
-    const keepVisitedMounted = perf.tier !== 'low';
-
-    useEffect(() => {
-        if (!keepVisitedMounted) return;
-        setMountedRoutes(prev => (prev[activeRoute] ? prev : { ...prev, [activeRoute]: true }));
-    }, [activeRoute, keepVisitedMounted]);
+    const contentFade = useRef(new Animated.Value(1)).current;
+    const contentShift = useRef(new Animated.Value(0)).current;
 
     const updateFocusTarget = useCallback((route: string, node: View | null) => {
         if (!node) {
@@ -585,11 +546,10 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         }
 
         const handle = findNodeHandle(node);
-        if (handle) {
-            setFocusTargets(prev => ({ ...prev, [route]: handle }));
-            // Any content focus means we've interacted with the screen
-            setIsInteracted(true);
-        }
+        if (!handle) return;
+
+        setFocusTargets((prev) => (prev[route] === handle ? prev : { ...prev, [route]: handle }));
+        setIsInteracted((prev) => (prev ? prev : true));
     }, []);
 
     const homeFocusRef = useCallback((node: View | null) => updateFocusTarget('Home', node), [updateFocusTarget]);
@@ -622,46 +582,103 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         setActiveRoute(route);
     }, []);
 
-    const renderPinnedSection = useCallback(
-        (route: SidebarRoute, node: React.ReactNode, withSidebarGap = true) => {
-            if (!mountedRoutes[route]) return null;
-            const isActive = activeRoute === route;
-            return (
-                <View
-                    pointerEvents={isActive ? 'auto' : 'none'}
-                    accessibilityElementsHidden={!isActive}
-                    importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
-                    style={[
-                        styles.sectionBase,
-                        withSidebarGap && styles.sectionWithSidebar,
-                        isActive ? styles.sectionVisible : styles.sectionHidden,
-                    ]}
-                >
-                    {node}
-                </View>
-            );
-        },
-        [activeRoute, mountedRoutes]
+    useEffect(() => {
+        // Keep transition subtle to avoid a "shock" feel on TV.
+        contentFade.stopAnimation();
+        contentShift.stopAnimation();
+        contentFade.setValue(0.97);
+        contentShift.setValue(0);
+
+        Animated.timing(contentFade, {
+            toValue: 1,
+            duration: 140,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+        }).start();
+    }, [activeRoute, contentFade, contentShift]);
+
+    const contentTransitionStyle = useMemo(
+        () => ({
+            opacity: contentFade,
+            transform: [{ translateX: contentShift }],
+        }),
+        [contentFade, contentShift]
     );
 
-    const renderActiveSection = useCallback(
-        (route: SidebarRoute, node: React.ReactNode, withSidebarGap = true) => {
-            if (activeRoute !== route) return null;
-            return (
-                <View
-                    pointerEvents="auto"
-                    style={[
-                        styles.sectionBase,
-                        withSidebarGap && styles.sectionWithSidebar,
-                        styles.sectionVisible,
-                    ]}
-                >
-                    {node}
-                </View>
-            );
-        },
-        [activeRoute]
-    );
+    const renderActiveSection = useCallback(() => {
+        let node: React.ReactNode = null;
+        let withSidebarGap = true;
+
+        switch (activeRoute) {
+            case 'Home':
+                withSidebarGap = false;
+                node = (
+                    <HomeSection
+                        navigation={navigation}
+                        searchRef={searchRef}
+                        sidebarHomeNode={sidebarHomeNode}
+                        heroPlayRef={homeFocusRef}
+                        activeRoute={activeRoute}
+                        isInteracted={isInteracted}
+                    />
+                );
+                break;
+            case 'Live':
+                node = <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />;
+                break;
+            case 'Movies':
+                node = <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />;
+                break;
+            case 'Series':
+                node = <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />;
+                break;
+            case 'Announcements':
+                node = <TVAnnouncementsScreen navigation={navigation} focusEntryRef={announcementsFocusRef} />;
+                break;
+            case 'Search':
+                node = <TVSearchScreen navigation={navigation} focusEntryRef={searchFocusRef} />;
+                break;
+            case 'Favorites':
+                node = <TVFavoritesScreen navigation={navigation} focusEntryRef={favoritesFocusRef} />;
+                break;
+            case 'Downloads':
+                node = <TVDownloadsScreen navigation={navigation} focusEntryRef={downloadsFocusRef} />;
+                break;
+            case 'Settings':
+                node = <TVSettingsScreen navigation={navigation} focusEntryRef={settingsFocusRef} />;
+                break;
+            default:
+                return null;
+        }
+
+        return (
+            <View
+                pointerEvents="auto"
+                style={[
+                    styles.sectionBase,
+                    withSidebarGap && styles.sectionWithSidebar,
+                    styles.sectionVisible,
+                ]}
+            >
+                {node}
+            </View>
+        );
+    }, [
+        activeRoute,
+        navigation,
+        searchRef,
+        sidebarHomeNode,
+        homeFocusRef,
+        isInteracted,
+        liveFocusRef,
+        moviesFocusRef,
+        seriesFocusRef,
+        announcementsFocusRef,
+        searchFocusRef,
+        favoritesFocusRef,
+        downloadsFocusRef,
+        settingsFocusRef,
+    ]);
 
     return (
         <View style={styles.container}>
@@ -677,52 +694,16 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
                     onCollapse={() => { }}
                     onProfilePress={() => navigation.navigate('ProfileSwitcher')}
                     searchRef={searchRef}
+                    onHomeNodeReady={setSidebarHomeNode}
                     // @ts-ignore - Prop exists in TVSidebar but TS server sometimes fails to resolve it after interface updates
                     focusTargets={focusTargets}
                 />
             </View>
 
             {/* Main Content Area */}
-            <View style={styles.contentContainer}>
-                {keepVisitedMounted
-                    ? renderPinnedSection(
-                        'Home',
-                        <HomeSection
-                            navigation={navigation}
-                            searchRef={searchRef}
-                            heroPlayRef={homeFocusRef}
-                            activeRoute={activeRoute}
-                            isInteracted={isInteracted}
-                        />,
-                        false
-                    )
-                    : renderActiveSection(
-                        'Home',
-                        <HomeSection
-                            navigation={navigation}
-                            searchRef={searchRef}
-                            heroPlayRef={homeFocusRef}
-                            activeRoute={activeRoute}
-                            isInteracted={isInteracted}
-                        />,
-                        false
-                    )}
-                {keepVisitedMounted
-                    ? renderPinnedSection('Live', <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />)
-                    : renderActiveSection('Live', <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />)}
-                {keepVisitedMounted
-                    ? renderPinnedSection('Movies', <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />)
-                    : renderActiveSection('Movies', <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />)}
-                {keepVisitedMounted
-                    ? renderPinnedSection('Series', <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />)
-                    : renderActiveSection('Series', <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />)}
-
-                {renderActiveSection('Announcements', <TVAnnouncementsScreen navigation={navigation} focusEntryRef={announcementsFocusRef} />)}
-                {renderActiveSection('Search', <TVSearchScreen navigation={navigation} focusEntryRef={searchFocusRef} />)}
-                {renderActiveSection('Favorites', <TVFavoritesScreen navigation={navigation} focusEntryRef={favoritesFocusRef} />)}
-                {renderActiveSection('Downloads', <TVDownloadsScreen navigation={navigation} focusEntryRef={downloadsFocusRef} />)}
-                {renderActiveSection('Settings', <TVSettingsScreen navigation={navigation} focusEntryRef={settingsFocusRef} />)}
-            </View>
+            <Animated.View style={[styles.contentContainer, contentTransitionStyle]}>
+                {renderActiveSection()}
+            </Animated.View>
         </View>
     );
 };
@@ -883,7 +864,7 @@ const styles = StyleSheet.create({
         zIndex: 10,
     },
     railsLift: {
-        marginTop: -scale(132),
+        marginTop: -scale(170),
     },
 });
 

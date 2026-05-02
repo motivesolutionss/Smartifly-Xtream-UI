@@ -24,6 +24,7 @@ import { TVLiveScreenProps } from '../../navigation/types';
 import { scheduleIdleWork } from '../../utils/idle';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '../../utils/perf';
+import { seededShuffle } from '../../utils/shuffle';
 
 // =============================================================================
 // TYPES
@@ -184,6 +185,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoryMap, setCategoryMap] = useState<Record<string, XtreamLiveStream[]>>({});
     const [isPrepared, setIsPrepared] = useState(false);
+    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
     const perf = usePerfProfile();
     const gridPerf = perf.grid;
     const gridInitialRender = GRID_COLUMNS * gridPerf.initialRows;
@@ -197,7 +199,11 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
         if (!liveLoaded || !liveCategories) { setCategories([]); setCategoryMap({}); setIsPrepared(false); return; }
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
-            const items = liveItems;
+            const items = seededShuffle(
+                liveItems,
+                (channel) => String(channel.stream_id || ''),
+                `live:all:${dayShuffleSeed}`
+            );
             const nextMap: Record<string, XtreamLiveStream[]> = { all: items };
             const countMap: Record<string, number> = {};
             for (const ch of items) {
@@ -205,6 +211,14 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
                 countMap[catId] = (countMap[catId] || 0) + 1;
                 if (!nextMap[catId]) nextMap[catId] = [];
                 nextMap[catId].push(ch);
+            }
+            for (const [catId, catChannels] of Object.entries(nextMap)) {
+                if (catId === 'all') continue;
+                nextMap[catId] = seededShuffle(
+                    catChannels,
+                    (channel) => String(channel.stream_id || ''),
+                    `live:${catId}:${dayShuffleSeed}`
+                );
             }
             const nextCategories: Category[] = [{ id: 'all', name: 'All Channels', count: items.length }];
             for (const cat of liveCategories) {
@@ -215,7 +229,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
             setCategoryMap(nextMap); setCategories(nextCategories); setIsPrepared(true);
         });
         return () => { task.cancel(); };
-    }, [liveLoaded, liveCategories, liveItems]);
+    }, [liveLoaded, liveCategories, liveItems, dayShuffleSeed]);
 
     const channels = useMemo((): XtreamLiveStream[] => {
         if (!liveLoaded || !isPrepared) return [];

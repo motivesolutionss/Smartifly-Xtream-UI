@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { scale, scaleFont, Icon } from '../../../../theme';
 import { SelectedTrackType, SelectedVideoTrackType } from 'react-native-video';
@@ -66,6 +66,8 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
     selectedAudioTrack,
     selectedTextTrack,
 }) => {
+    const [focusedKey, setFocusedKey] = useState<string | null>(null);
+
     const renderSettingsHeader = (title: string) => (
         <View style={styles.settingsHeader}>
             <Pressable onPress={() => setSettingsView('root')} style={styles.settingsBack}>
@@ -80,34 +82,57 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
         option: TrackOption,
         isSelected: boolean,
         onPress: () => void
-    ) => (
+    ) => {
+        const isFocused = focusedKey === option.key;
+        return (
         <Pressable
             key={option.key}
-            style={[styles.settingsOption, isSelected && styles.settingsOptionSelected]}
+            style={[
+                styles.settingsOption,
+                isSelected && styles.settingsOptionSelected,
+                isFocused && styles.settingsOptionFocused,
+            ]}
             onPress={onPress}
+            onFocus={() => setFocusedKey(option.key)}
+            onBlur={() => setFocusedKey((current) => current === option.key ? null : current)}
         >
             <View style={styles.settingsOptionText}>
-                <Text style={[styles.settingsOptionLabel, isSelected && styles.settingsOptionLabelSelected]}>
+                <Text style={[
+                    styles.settingsOptionLabel,
+                    isSelected && styles.settingsOptionLabelSelected,
+                    isFocused && styles.settingsTextFocused,
+                ]}>
                     {option.label}
                 </Text>
                 {option.description ? (
-                    <Text style={styles.settingsOptionDescription}>{option.description}</Text>
+                    <Text style={[styles.settingsOptionDescription, isFocused && styles.settingsDescriptionFocused]}>
+                        {option.description}
+                    </Text>
                 ) : null}
             </View>
-            {isSelected ? <Icon name="check" size={scale(22)} color="#E50914" /> : null}
+            {isSelected ? <Icon name="check" size={scale(22)} color={isFocused ? '#111111' : '#E50914'} /> : null}
         </Pressable>
-    );
+        );
+    };
 
-    const renderToggleRow = (label: string, value: boolean, onPress: () => void) => (
-        <Pressable style={styles.settingsRow} onPress={onPress}>
-            <Text style={styles.settingsRowLabel}>{label}</Text>
+    const renderToggleRow = (key: string, label: string, value: boolean, onPress: () => void) => {
+        const isFocused = focusedKey === key;
+        return (
+        <Pressable
+            style={[styles.settingsRow, isFocused && styles.settingsRowFocused]}
+            onPress={onPress}
+            onFocus={() => setFocusedKey(key)}
+            onBlur={() => setFocusedKey((current) => current === key ? null : current)}
+        >
+            <Text style={[styles.settingsRowLabel, isFocused && styles.settingsTextFocused]}>{label}</Text>
             <View style={[styles.togglePill, value && styles.togglePillActive]}>
                 <Text style={[styles.toggleText, value && styles.toggleTextActive]}>
                     {value ? 'ON' : 'OFF'}
                 </Text>
             </View>
         </Pressable>
-    );
+        );
+    };
 
     return (
         <Modal
@@ -116,47 +141,72 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
             animationType="fade"
             onRequestClose={handleSettingsClose}
         >
-            <Pressable style={styles.modalBackdrop} onPress={handleSettingsClose} />
+            <View style={styles.modalBackdrop} pointerEvents="none" />
             <View style={styles.settingsSheet}>
                 <ScrollView showsVerticalScrollIndicator={false}>
                     {settingsView === 'root' && (
                         <View>
                             <Text style={styles.settingsTitleMain}>Settings</Text>
 
-                            <Pressable style={styles.settingsRow} onPress={() => setSettingsView('quality')}>
-                                <Text style={styles.settingsRowLabel}>Quality</Text>
+                            <Pressable
+                                style={[styles.settingsRow, focusedKey === 'root-quality' && styles.settingsRowFocused]}
+                                onPress={() => setSettingsView('quality')}
+                                onFocus={() => setFocusedKey('root-quality')}
+                                onBlur={() => setFocusedKey((current) => current === 'root-quality' ? null : current)}
+                            >
+                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-quality' && styles.settingsTextFocused]}>Quality</Text>
                                 <View style={styles.settingsRowRight}>
                                     <Text style={styles.settingsRowValue}>{selectedQualityLabel}</Text>
                                     <Icon name="chevronRight" size={scale(18)} color="#666" />
                                 </View>
                             </Pressable>
 
-                            <Pressable style={styles.settingsRow} onPress={() => setSettingsView('audio')}>
-                                <Text style={styles.settingsRowLabel}>Audio</Text>
+                            <Pressable
+                                style={[styles.settingsRow, focusedKey === 'root-audio' && styles.settingsRowFocused]}
+                                onPress={() => setSettingsView('audio')}
+                                onFocus={() => setFocusedKey('root-audio')}
+                                onBlur={() => setFocusedKey((current) => current === 'root-audio' ? null : current)}
+                            >
+                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-audio' && styles.settingsTextFocused]}>Audio</Text>
                                 <View style={styles.settingsRowRight}>
                                     <Text style={styles.settingsRowValue}>{selectedAudioLabel}</Text>
                                     <Icon name="chevronRight" size={scale(18)} color="#666" />
                                 </View>
                             </Pressable>
 
-                            <Pressable style={styles.settingsRow} onPress={() => setSettingsView('subtitles')}>
-                                <Text style={styles.settingsRowLabel}>Subtitles</Text>
+                            <Pressable
+                                style={[styles.settingsRow, focusedKey === 'root-subtitles' && styles.settingsRowFocused]}
+                                onPress={() => setSettingsView('subtitles')}
+                                onFocus={() => setFocusedKey('root-subtitles')}
+                                onBlur={() => setFocusedKey((current) => current === 'root-subtitles' ? null : current)}
+                            >
+                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-subtitles' && styles.settingsTextFocused]}>Subtitles</Text>
                                 <View style={styles.settingsRowRight}>
                                     <Text style={styles.settingsRowValue}>{selectedSubtitleLabel}</Text>
                                     <Icon name="chevronRight" size={scale(18)} color="#666" />
                                 </View>
                             </Pressable>
 
-                            <Pressable style={styles.settingsRow} onPress={() => setSettingsView('speed')}>
-                                <Text style={styles.settingsRowLabel}>Speed</Text>
+                            <Pressable
+                                style={[styles.settingsRow, focusedKey === 'root-speed' && styles.settingsRowFocused]}
+                                onPress={() => setSettingsView('speed')}
+                                onFocus={() => setFocusedKey('root-speed')}
+                                onBlur={() => setFocusedKey((current) => current === 'root-speed' ? null : current)}
+                            >
+                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-speed' && styles.settingsTextFocused]}>Speed</Text>
                                 <View style={styles.settingsRowRight}>
                                     <Text style={styles.settingsRowValue}>{playbackRate}x</Text>
                                     <Icon name="chevronRight" size={scale(18)} color="#666" />
                                 </View>
                             </Pressable>
 
-                            <Pressable style={styles.settingsRow} onPress={() => setSettingsView('aspect')}>
-                                <Text style={styles.settingsRowLabel}>Aspect Ratio</Text>
+                            <Pressable
+                                style={[styles.settingsRow, focusedKey === 'root-aspect' && styles.settingsRowFocused]}
+                                onPress={() => setSettingsView('aspect')}
+                                onFocus={() => setFocusedKey('root-aspect')}
+                                onBlur={() => setFocusedKey((current) => current === 'root-aspect' ? null : current)}
+                            >
+                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-aspect' && styles.settingsTextFocused]}>Aspect Ratio</Text>
                                 <View style={styles.settingsRowRight}>
                                     <Text style={styles.settingsRowValue}>{resizeMode}</Text>
                                     <Icon name="chevronRight" size={scale(18)} color="#666" />
@@ -165,9 +215,9 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
 
                             <View style={styles.settingsDivider} />
 
-                            {renderToggleRow('Mute', isMuted, () => setIsMuted(prev => !prev))}
-                            {renderToggleRow('Repeat', repeatEnabled, () => setRepeatEnabled(prev => !prev))}
-                            {renderToggleRow('Stats Overlay', showStats, () => setShowStats(prev => !prev))}
+                            {renderToggleRow('root-mute', 'Mute', isMuted, () => setIsMuted(prev => !prev))}
+                            {renderToggleRow('root-repeat', 'Repeat', repeatEnabled, () => setRepeatEnabled(prev => !prev))}
+                            {renderToggleRow('root-stats', 'Stats Overlay', showStats, () => setShowStats(prev => !prev))}
                         </View>
                     )}
 
@@ -299,8 +349,14 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingVertical: scale(14),
+        paddingHorizontal: scale(8),
+        borderRadius: scale(8),
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: 'rgba(255,255,255,0.08)',
+    },
+    settingsRowFocused: {
+        backgroundColor: '#FFFFFF',
+        borderBottomColor: 'transparent',
     },
     settingsRowLabel: {
         color: '#E5E5E5',
@@ -346,6 +402,9 @@ const styles = StyleSheet.create({
     settingsOptionSelected: {
         backgroundColor: 'rgba(229, 9, 20, 0.08)',
     },
+    settingsOptionFocused: {
+        backgroundColor: '#FFFFFF',
+    },
     settingsOptionText: {
         flex: 1,
     },
@@ -358,10 +417,17 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
     },
+    settingsTextFocused: {
+        color: '#111111',
+        fontWeight: '700',
+    },
     settingsOptionDescription: {
         color: '#666666',
         fontSize: scaleFont(14),
         marginTop: scale(3),
+    },
+    settingsDescriptionFocused: {
+        color: '#333333',
     },
     togglePill: {
         backgroundColor: 'rgba(255,255,255,0.1)',

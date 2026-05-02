@@ -172,9 +172,9 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   hasPreferredFocus,
 }) => {
   const [initialFocusHandled, setInitialFocusHandled] = useState(false);
+  const [sidebarNode, setSidebarNode] = useState<number | undefined>(undefined);
   const baseOpacity = useRef(new Animated.Value(1)).current;
   const incomingOpacity = useRef(new Animated.Value(0)).current;
-  const loadedBackdropsRef = useRef<Set<string>>(new Set());
 
   const [displayItem, setDisplayItem] = useState<TVHeroItem>(item);
   const [incomingItem, setIncomingItem] = useState<TVHeroItem | null>(null);
@@ -184,7 +184,6 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   const queuedKeyRef = useRef<string>('');
   const queuedItemRef = useRef<TVHeroItem | null>(null);
   const isTransitioningRef = useRef(false);
-  const hasMounted = useRef(false);
 
   // UI-thread focus flags (no React setState)
   const playFocus = useSharedValue(0);
@@ -202,10 +201,29 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
   const logoUri =
     typeof item?.logo === 'string' && item.logo.trim().length > 0 ? item.logo : '';
 
-  // Compute nextFocusLeft safely
-  const sidebarNode = sidebarTargetRef?.current
-    ? findNodeHandle(sidebarTargetRef.current)
-    : undefined;
+  useEffect(() => {
+    if (!sidebarTargetRef) return;
+    const tryResolve = () => {
+      const node = sidebarTargetRef.current
+        ? (findNodeHandle(sidebarTargetRef.current) ?? undefined)
+        : undefined;
+      if (node && node !== sidebarNode) {
+        setSidebarNode(node);
+        return true;
+      }
+      return false;
+    };
+
+    if (tryResolve()) return;
+
+    const interval = setInterval(() => {
+      if (tryResolve()) {
+        clearInterval(interval);
+      }
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [sidebarNode, sidebarTargetRef]);
 
   const startCrossfade = useCallback(() => {
     if (!incomingItemRef.current || !incomingKeyRef.current) return;
@@ -299,7 +317,7 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
     setIncomingItem(item);
   }, [item, nextBackdropUri, incomingOpacity]);
 
-  // ✅ Prefetch only when strings change (no whole item in deps)
+  // Prefetch only when strings change (no whole item in deps)
   useEffect(() => {
     if (nextBackdropUri) prefetchImage(nextBackdropUri);
     if (logoUri && perf.tier !== 'low') prefetchImage(logoUri);
@@ -361,21 +379,12 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
     [incomingBackdropUri]
   );
 
-  const handleBaseLoad = useCallback(() => {
-    if (displayBackdropUri) {
-      loadedBackdropsRef.current.add(displayBackdropUri);
-    }
-  }, [displayBackdropUri]);
-
   const handleBaseError = useCallback(() => {
   }, []);
 
   const handleIncomingLoad = useCallback(() => {
-    if (incomingBackdropUri) {
-      loadedBackdropsRef.current.add(incomingBackdropUri);
-    }
     startCrossfade();
-  }, [incomingBackdropUri, startCrossfade]);
+  }, [startCrossfade]);
 
   const handleIncomingError = useCallback(() => {
     cancelIncoming();
@@ -395,7 +404,6 @@ const TVHeroBanner: React.FC<TVHeroBannerProps> = ({
               resizeMode="cover"
               priority="high"
               enableColdFade={false}
-              onLoad={handleBaseLoad}
               onError={handleBaseError}
             />
           ) : null}
@@ -553,7 +561,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     position: 'absolute',
     left: scale(30),
-    bottom: scale(152),
+    bottom: scale(194),
     maxWidth: scale(600),
     zIndex: 2,
     alignItems: 'flex-start',

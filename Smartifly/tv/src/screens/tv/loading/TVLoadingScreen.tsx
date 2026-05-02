@@ -23,9 +23,11 @@ import {
     Image,
 } from 'react-native';
 import useStore from '../../../store';
+import { useProfileStore } from '../../../store/profileStore';
 import { logger } from '../../../config';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
 import { TVLoadingScreenProps } from '../../../navigation/types';
+import { prepareHomeHero } from '../../../services/HeroPreparationService';
 
 // TV Safe Area
 const TV_SAFE_AREA = {
@@ -140,6 +142,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
     const isRetrying = useStore((state) => state.isRetrying);
     const retryCount = useStore((state) => state.retryCount);
     const maxRetries = useStore((state) => state.maxRetries);
+    const [heroPrepared, setHeroPrepared] = useState(false);
 
     // Guards to prevent double prefetch and multiple navigations
     const hasStarted = useRef(false);
@@ -173,12 +176,49 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
 
         if (!success && error) {
             logger.error('Prefetch failed', error);
+            return;
+        }
+
+        if (success) {
+            try {
+                const state = useStore.getState();
+                const profileState = useProfileStore.getState();
+                const seedKey = profileState.activeProfileId || state.userInfo?.username || 'default';
+
+                useStore.setState({
+                    prefetchProgress: {
+                        current: 6,
+                        total: 7,
+                        currentTask: 'Preparing hero banner...',
+                    },
+                });
+
+                await prepareHomeHero({
+                    movies: state.content.movies.items,
+                    series: state.content.series.items,
+                    seedKey,
+                    api: state.getXtreamAPI?.() ?? null,
+                });
+
+                useStore.setState({
+                    prefetchProgress: {
+                        current: 7,
+                        total: 7,
+                        currentTask: 'Complete!',
+                    },
+                });
+            } catch (prepareError) {
+                logger.warn('Hero preparation failed, continuing to Home', prepareError);
+            } finally {
+                setHeroPrepared(true);
+            }
         }
     }, [prefetchAllContent, error, navigation, verifyFatherControl]);
 
     const handleRetry = React.useCallback(async () => {
         hasStarted.current = false;
         hasNavigated.current = false;
+        setHeroPrepared(false);
         useStore.setState({ retryCount: 0 });
         await startPrefetch();
     }, [startPrefetch]);
@@ -275,7 +315,7 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
 
         const contentReady = getContentReady();
 
-        if (contentReady && !isPrefetching) {
+        if (contentReady && !isPrefetching && heroPrepared) {
             hasNavigated.current = true;
             const stats = getContentStats();
             logger.info(`Content loaded: ${stats.live} channels, ${stats.movies} movies, ${stats.series} series`);
@@ -296,12 +336,12 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 setTimeout(() => {
                     navigation.reset({
                         index: 0,
-                        routes: [{ name: 'TVHome' }],
+                        routes: [{ name: 'TVShell' }],
                     });
                 }, 300);
             });
         }
-    }, [getContentReady, isPrefetching, getContentStats, navigation, scaleAnim]);
+    }, [getContentReady, heroPrepared, isPrefetching, getContentStats, navigation, scaleAnim]);
 
     // =============================================================================
     // FUNCTIONS

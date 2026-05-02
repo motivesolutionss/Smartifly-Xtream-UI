@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback, useState, useRef } from 'react';
+import React, { memo, useMemo, useCallback, useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, StyleProp, ViewStyle } from 'react-native';
 import FastImageComponent from '../../../../components/tv/TVFastImage';
 import Animated, {
@@ -86,7 +86,6 @@ const createStyles = (
 ) =>
   StyleSheet.create({
     container: {
-      marginRight: scale(18),
       justifyContent: 'flex-start',
       alignItems: 'center',
     },
@@ -220,6 +219,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   onKeyUp,
 }) => {
   const { theme } = useTheme();
+  const themeColors = theme.colors;
   const perf = usePerfProfile();
   const [liveImageFailed, setLiveImageFailed] = useState(false);
   const cardWidth = width ?? DEFAULT_MOVIE_CARD_WIDTH;
@@ -231,24 +231,32 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 
   const imageUri = useMemo(() => normalizeCardImageUri(item.image), [item.image]);
   const hasUsableImage = useMemo(() => isUsableCardImageUri(imageUri), [imageUri]);
+  const cardImageSource = useMemo(
+    () => (hasUsableImage ? { uri: imageUri } : FALLBACK_POSTER),
+    [hasUsableImage, imageUri]
+  );
   const shouldShowLivePlaceholder = isLive && (!hasUsableImage || liveImageFailed);
   const finalHeight = isLive
     ? (height ?? Math.round(cardWidth * DEFAULT_LIVE_CARD_HEIGHT_RATIO))
     : cardHeight;
 
+  useEffect(() => {
+    setLiveImageFailed(false);
+  }, [imageUri, isLive]);
+
   // Extract primitive color tokens — stable useMemo deps (prevents Issue 1 regression)
   // Requirements: 2.1 — borderFocus for movie/series ring, live for live ring
-  const liveColor = theme.colors.live ?? '#E50914';
-  const borderFocusColor = theme.colors.borderFocus ?? '#FFFFFF';
-  const cardBgColor = theme.colors.cardBackground ?? '#0F151E';
-  const warningColor = theme.colors.warning ?? '#F5C518';
+  const liveColor = themeColors.live ?? '#E50914';
+  const borderFocusColor = themeColors.borderFocus ?? '#FFFFFF';
+  const cardBgColor = themeColors.cardBackground ?? '#0F151E';
+  const warningColor = themeColors.warning ?? '#F5C518';
 
   // Requirements: 2.5 — variant-specific glow color tokens
   const glowColor = isLive
-    ? (theme.colors.liveGlow ?? 'rgba(229,9,20,0.4)')
+    ? (themeColors.liveGlow ?? 'rgba(229,9,20,0.4)')
     : variant === 'series'
-    ? (theme.colors.seriesGlow ?? 'rgba(14,165,233,0.4)')
-    : (theme.colors.moviesGlow ?? 'rgba(147,51,234,0.4)');
+    ? (themeColors.seriesGlow ?? 'rgba(14,165,233,0.4)')
+    : (themeColors.moviesGlow ?? 'rgba(147,51,234,0.4)');
 
   const styles = useMemo(
     () => createStyles(liveColor, borderFocusColor, cardBgColor, warningColor),
@@ -256,10 +264,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   );
 
   // Requirements: 2.2 — quality badge color resolved from theme tokens
-  const qualityBadgeColor = useMemo(
-    () => (item.quality ? resolveQualityBadgeColor(item.quality, theme.colors) : null),
-    [item.quality, theme.colors.qualityUHD, theme.colors.qualityHD, theme.colors.qualitySD, theme.colors.primary],
-  );
+  const qualityBadgeColor = item.quality ? resolveQualityBadgeColor(item.quality, themeColors) : null;
 
   const ringWidthFocused = useMemo(() => scale(isLive ? 4.5 : enableGlow ? 3.5 : 2.5), [enableGlow, isLive]);
   const ringWidthIdle = 0;
@@ -408,7 +413,7 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
             // Requirements: 1.5 — white surface + padded inner frame; contain keeps logos balanced
             <View style={styles.liveImageFrame}>
               <FastImageComponent
-                source={{ uri: hasUsableImage ? imageUri : FALLBACK_POSTER }}
+                source={cardImageSource}
                 style={[styles.image, styles.imageLive]}
                 resizeMode="contain"
                 onError={handleImageError}
@@ -417,8 +422,8 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
             </View>
           ) : (
             <FastImageComponent
-              source={{ uri: hasUsableImage ? imageUri : FALLBACK_POSTER }}
-              fallbackSource={{ uri: FALLBACK_POSTER }}
+              source={cardImageSource}
+              fallbackSource={FALLBACK_POSTER}
               style={styles.image}
               resizeMode="cover"
               onError={handleImageError}

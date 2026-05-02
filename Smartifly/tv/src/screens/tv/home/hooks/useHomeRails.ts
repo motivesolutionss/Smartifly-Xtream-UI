@@ -11,7 +11,8 @@ import { useMemo } from 'react';
 import useStore from '../../../../store';
 import { useWatchHistoryStore, WatchProgress } from '../../../../store/watchHistoryStore';
 import { useContentFilter, useProfileStore } from '../../../../store/profileStore';
-import { useHeroCarousel } from '../../../../utils/heroPicker';
+import { getHeroCandidates, useHeroCarousel } from '../../../../utils/heroPicker';
+import { getPreparedHomeHeroId } from '../../../../services/HeroPreparationService';
 import {
   TV_HOME_RAILS,
   HomeRailConfig,
@@ -58,27 +59,31 @@ const toTime = (v: any): number => {
 };
 
 const selectTopNBy = <T,>(items: T[], n: number, score: (item: T) => number): T[] => {
-  if (n <= 0) return [];
+  if (n <= 0 || items.length === 0) return [];
 
-  const top: { item: T; score: number }[] = [];
+  const top: Array<{ item: T; score: number }> = [];
 
   for (const item of items) {
-    const value = score(item);
+    const itemScore = score(item);
 
     if (top.length < n) {
-      top.push({ item, score: value });
-      top.sort((a, b) => b.score - a.score);
+      top.push({ item, score: itemScore });
       continue;
     }
 
-    if (value <= top[top.length - 1].score) continue;
+    let lowestIndex = 0;
+    for (let i = 1; i < top.length; i += 1) {
+      if (top[i].score < top[lowestIndex].score) {
+        lowestIndex = i;
+      }
+    }
 
-    top.push({ item, score: value });
-    top.sort((a, b) => b.score - a.score);
-    top.length = n;
+    if (itemScore > top[lowestIndex].score) {
+      top[lowestIndex] = { item, score: itemScore };
+    }
   }
 
-  return top.map((x) => x.item);
+  return top.sort((a, b) => b.score - a.score).map((entry) => entry.item);
 };
 
 // =============================================================================
@@ -86,7 +91,7 @@ const selectTopNBy = <T,>(items: T[], n: number, score: (item: T) => number): T[
 // =============================================================================
 
 export const useHomeRails = (): HomeRailsResult => {
-  // ✅ Small selectors (compatible with 1-arg zustand hook)
+  // Small selectors (compatible with 1-arg zustand hook)
   const moviesLoaded = useStore((s: StoreState) => s.content.movies.loaded);
   const moviesItems = useStore((s: StoreState) => s.content.movies.items);
   const moviesCategories = useStore((s: StoreState) => s.content.movies.categories);
@@ -125,7 +130,15 @@ export const useHomeRails = (): HomeRailsResult => {
 
   const heroSeed = activeProfileId || userInfo?.username || 'default';
   const heroCarousel = useHeroCarousel(filteredMovies, filteredSeries, heroSeed, 12, 15000);
-  const heroCurrent = heroCarousel.current;
+  const preparedHeroId = getPreparedHomeHeroId();
+  const preparedHero = useMemo(() => {
+    if (!preparedHeroId) return null;
+    return getHeroCandidates(filteredMovies, filteredSeries, {
+      seedKey: heroSeed,
+      maxCandidates: 30,
+    }).find((item) => item.id === preparedHeroId) ?? null;
+  }, [filteredMovies, filteredSeries, heroSeed, preparedHeroId]);
+  const heroCurrent = preparedHero ?? heroCarousel.current;
 
   const hero = useMemo(() => {
     if (!heroCurrent) return null;
@@ -177,8 +190,12 @@ export const useHomeRails = (): HomeRailsResult => {
   // =========================================================================
 
   const continueWatching = useMemo(() => {
-    return history ? getContinueWatching(10) : [];
-  }, [getContinueWatching, history]);
+    if (!history) return [];
+    const profilePrefix = `${activeProfileId || 'default'}-`;
+    return getContinueWatching(50)
+      .filter((item) => item.id.startsWith(profilePrefix))
+      .slice(0, 10);
+  }, [activeProfileId, getContinueWatching, history]);
 
   const isLoading = !moviesLoaded || !seriesLoaded;
 
@@ -306,9 +323,9 @@ function resolveMovieCategories(config: HomeRailConfig, content: any, filteredMo
   }
 
   const rails: ResolvedRail[] = [];
-  const categories = content.movies.categories.slice(0, MAX_HOME_MOVIE_CATEGORIES);
 
-  for (const category of categories) {
+  for (const category of content.movies.categories) {
+    if (rails.length >= MAX_HOME_MOVIE_CATEGORIES) break;
     const catId = String(category.category_id);
     const catItems = groupMap[catId] || [];
     if (catItems.length === 0) continue;
@@ -346,9 +363,9 @@ function resolveSeriesCategories(config: HomeRailConfig, content: any, filteredS
   }
 
   const rails: ResolvedRail[] = [];
-  const categories = content.series.categories.slice(0, MAX_HOME_SERIES_CATEGORIES);
 
-  for (const category of categories) {
+  for (const category of content.series.categories) {
+    if (rails.length >= MAX_HOME_SERIES_CATEGORIES) break;
     const catId = String(category.category_id);
     const catItems = groupMap[catId] || [];
     if (catItems.length === 0) continue;

@@ -31,6 +31,7 @@ interface TVContinueCardProps {
   onRemove?: (item: WatchProgress) => void;
   width?: number;
   height?: number;
+  nextFocusLeft?: number | null;
 }
 
 // =============================================================================
@@ -43,7 +44,42 @@ const SPRING = {
   mass: 0.6,
 };
 const FOCUS_BORDER_WIDTH = scale(3);
-const FOCUS_SHADOW_RADIUS = scale(10);
+const FOCUS_BLEED = scale(8);
+
+const isUsableUri = (value?: string): value is string => {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^(https?:\/\/|\/\/|file:\/\/|content:\/\/|data:|asset:)/i.test(trimmed);
+};
+
+const pickBackdropUri = (item: WatchProgress): string | undefined => {
+  const data = (item?.data || {}) as any;
+  const movieCandidates: Array<string | undefined> = [
+    // Prefer 16:9-ish covers for continue cards; ultra-wide backdrops crop too aggressively.
+    data?.cover_big,
+    Array.isArray(data?.backdrop_path) ? data.backdrop_path[0] : data?.backdrop_path,
+    data?.backdrop,
+    // Some providers return extra backdrop-like slots in movie payload.
+    data?.background,
+    data?.fanart,
+    item?.thumbnail,
+  ];
+  const seriesCandidates: Array<string | undefined> = [
+    Array.isArray(data?.backdrop_path) ? data.backdrop_path[0] : data?.backdrop_path,
+    data?.backdrop,
+    data?.fanart,
+    // Series often has this as a wide image, but keep after explicit backdrops.
+    data?.cover_big,
+    item?.thumbnail,
+  ];
+  const candidates = item.type === 'movie' ? movieCandidates : seriesCandidates;
+
+  for (const candidate of candidates) {
+    if (isUsableUri(candidate)) return candidate;
+  }
+  return undefined;
+};
 
 const TVContinueCard: React.FC<TVContinueCardProps> = ({
   item,
@@ -51,8 +87,10 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
   onRemove,
   width = scale(220),
   height = scale(130),
+  nextFocusLeft,
 }) => {
   const { theme } = useTheme();
+  const accentColor = theme.colors.accent ?? '#00E5FF';
 
   // UI-thread focus state
   const focused = useSharedValue(0);
@@ -60,10 +98,37 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
   const removeOpacity = useSharedValue(0);
 
   const isLive = item.type === 'live';
-  const imageUri = item.thumbnail || FALLBACK_POSTER;
+  const backdropUri = useMemo(() => pickBackdropUri(item), [item]);
+  const imageSource = backdropUri ? { uri: backdropUri } : FALLBACK_POSTER;
+  const displayTitle = item.episodeTitle || item.title;
+  const progressPercent = useMemo(() => {
+    const value = Number(item.progress || 0);
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, value));
+  }, [item.progress]);
 
-  const containerSize = useMemo(() => ({ width }), [width]);
+  const formatTime = useCallback((seconds?: number) => {
+    if (!seconds || seconds <= 0) return '00:00';
+    const total = Math.max(0, Math.floor(seconds));
+    const hh = Math.floor(total / 3600);
+    const mm = Math.floor((total % 3600) / 60);
+    const ss = total % 60;
+    if (hh > 0) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    }
+    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  }, []);
+
+  const watchedLabel = useMemo(() => {
+    if (isLive) return 'Live Now';
+    const watched = formatTime(item.position);
+    const remaining = formatTime(Math.max(0, (item.duration || 0) - (item.position || 0)));
+    return `${watched} watched  •  ${remaining} left`;
+  }, [formatTime, isLive, item.duration, item.position]);
+
+  const containerSize = useMemo(() => ({ width, height: height + FOCUS_BLEED * 2 }), [height, width]);
   const cardSize = useMemo(() => ({ width, height }), [width, height]);
+  const cardOffset = useMemo(() => ({ marginTop: FOCUS_BLEED }), []);
 
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const f = focused.value === 1;
@@ -71,15 +136,15 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
     return {
       transform: [{ scale: zoom.value }],
       borderWidth: f ? FOCUS_BORDER_WIDTH : 1,
-      borderColor: f ? (theme.colors.accent || '#00E5FF') : 'rgba(255,255,255,0.10)',
+      borderColor: f ? accentColor : 'rgba(255,255,255,0.10)',
       // lightweight glow – noticeable but not heavy
-      shadowOpacity: f ? 0.55 : 0,
-      shadowRadius: f ? FOCUS_SHADOW_RADIUS : 0,
+      shadowOpacity: 0,
+      shadowRadius: 0,
       shadowOffset: { width: 0, height: 0 },
-      shadowColor: theme.colors.accent || '#00E5FF',
-      elevation: f ? 12 : 0,
+      shadowColor: accentColor,
+      elevation: 0,
     };
-  }, [theme.colors.accent]);
+  }, [accentColor]);
 
   const removeAnimatedStyle = useAnimatedStyle(() => {
     return { opacity: removeOpacity.value };
@@ -108,11 +173,13 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
       onPress={handlePress}
       onFocus={handleFocus}
       onBlur={handleBlur}
+      // @ts-ignore TV-only focus prop
+      nextFocusLeft={nextFocusLeft ?? undefined}
       style={[styles.container, containerSize]}
     >
-      <Animated.View style={[styles.card, cardSize, cardAnimatedStyle]}>
+      <Animated.View style={[styles.card, cardSize, cardOffset, cardAnimatedStyle]}>
         <FastImageComponent
-          source={{ uri: imageUri }}
+          source={imageSource}
           style={styles.image}
           resizeMode="cover"
           enableColdFade={false}
@@ -126,6 +193,7 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
             <Pressable
               // TV behavior: doesn't steal focus; but still clickable if user presses OK on it
               onPress={handleRemove}
+              focusable={false}
               style={styles.removeButton}
               accessibilityLabel="Remove from continue watching"
             >
@@ -142,9 +210,9 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
         </View>
 
         {/* Progress bar */}
-        {!isLive && item.progress > 0 ? (
+        {!isLive && progressPercent > 0 ? (
           <View style={styles.progressContainer} pointerEvents="none">
-            <View style={[styles.progressBar, { width: `${item.progress}%` }]} />
+            <View style={[styles.progressBar, { width: `${progressPercent}%` }]} />
           </View>
         ) : null}
 
@@ -155,6 +223,17 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
             {isLive ? 'LIVE' : item.type === 'series' ? 'SERIES' : 'MOVIE'}
           </Text>
         </View>
+
+        {/* Content metadata */}
+        <View style={styles.metaWrap} pointerEvents="none">
+          <View style={styles.metaBg} />
+          <Text style={styles.metaTitle} numberOfLines={1}>
+            {displayTitle}
+          </Text>
+          <Text style={styles.metaSubTitle} numberOfLines={1}>
+            {watchedLabel}
+          </Text>
+        </View>
       </Animated.View>
     </Pressable>
   );
@@ -162,7 +241,6 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginRight: scale(16),
   },
   card: {
     borderRadius: scale(10),
@@ -240,6 +318,37 @@ const styles = StyleSheet.create({
     color: '#FFF',
     letterSpacing: 0.5,
   },
+  metaWrap: {
+    position: 'absolute',
+    left: scale(10),
+    right: scale(10),
+    bottom: scale(10),
+    paddingHorizontal: scale(8),
+    paddingVertical: scale(6),
+    borderRadius: scale(8),
+    overflow: 'hidden',
+  },
+  metaBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.56)',
+  },
+  metaTitle: {
+    color: '#FFFFFF',
+    fontSize: scaleFont(16),
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: scale(2),
+  },
+  metaSubTitle: {
+    marginTop: scale(2),
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: scaleFont(12.5),
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: scale(2),
+  },
 
   // Remove button
   removeWrap: {
@@ -263,3 +372,4 @@ const styles = StyleSheet.create({
 });
 
 export default memo(TVContinueCard);
+

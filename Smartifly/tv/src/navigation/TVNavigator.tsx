@@ -31,7 +31,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const StartupGateScreen: React.FC = () => {
   const logoPulse = React.useRef(new Animated.Value(0)).current;
-  const loaderSweep = React.useRef(new Animated.Value(0)).current;
+  const loaderProgress = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const pulseLoop = Animated.loop(
@@ -51,24 +51,19 @@ const StartupGateScreen: React.FC = () => {
       ])
     );
 
-    const sweepLoop = Animated.loop(
-      Animated.timing(loaderSweep, {
-        toValue: 1,
-        duration: 1300,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      })
-    );
-
     pulseLoop.start();
-    sweepLoop.start();
+    Animated.timing(loaderProgress, {
+      toValue: 1,
+      duration: 1400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
 
     return () => {
       pulseLoop.stop();
-      sweepLoop.stop();
-      loaderSweep.setValue(0);
+      loaderProgress.setValue(0);
     };
-  }, [loaderSweep, logoPulse]);
+  }, [loaderProgress, logoPulse]);
 
   const logoAnimatedStyle = {
     opacity: logoPulse.interpolate({
@@ -86,14 +81,10 @@ const StartupGateScreen: React.FC = () => {
   };
 
   const loaderAnimatedStyle = {
-    transform: [
-      {
-        translateX: loaderSweep.interpolate({
-          inputRange: [0, 1],
-          outputRange: [scale(-88), scale(176)],
-        }),
-      },
-    ],
+    width: loaderProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, scale(280)],
+    }),
   };
 
   return (
@@ -110,7 +101,7 @@ const StartupGateScreen: React.FC = () => {
         </Animated.View>
 
         <View style={styles.loaderTrack}>
-          <Animated.View style={[styles.loaderSweep, loaderAnimatedStyle]} />
+          <Animated.View style={[styles.loaderFill, loaderAnimatedStyle]} />
         </View>
       </View>
     </View>
@@ -169,8 +160,8 @@ const TVNavigator: React.FC = () => {
       return 'Loading';
     }
 
-    logger.debug('TV: Cache valid, proceeding to Home');
-    return 'TVHome';
+    logger.debug('TV: Cache valid, proceeding to TV shell');
+    return 'TVShell';
   }, [fatherControl.status, isAuthenticated, savedAccountsCount, profiles.length, activeProfileId, isCacheValid]);
 
   // Hydration gate prevents initial route decisions before persisted state is ready.
@@ -197,7 +188,7 @@ const TVNavigator: React.FC = () => {
       <Stack.Screen name="Login" component={TVLoginScreen} />
       <Stack.Screen name="TVAccountSwitcher" component={TVAccountSwitcherScreen} />
       <Stack.Screen name="Loading" component={TVLoadingScreen} />
-      <Stack.Screen name="TVHome" component={TVHomeScreen} />
+      <Stack.Screen name="TVShell" component={TVHomeScreen} />
       <Stack.Screen name="FullscreenPlayer" component={TVPlayerScreen} />
       <Stack.Screen name="TVMovieDetail" component={TVMovieDetailScreen} />
       <Stack.Screen name="TVSeriesDetail" component={TVSeriesDetailScreen} />
@@ -236,8 +227,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.14)',
     overflow: 'hidden',
   },
-  loaderSweep: {
-    width: scale(88),
+  loaderFill: {
     height: '100%',
     borderRadius: scale(2),
     backgroundColor: colors.primary || '#E50914',

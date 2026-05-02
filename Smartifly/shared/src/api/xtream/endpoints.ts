@@ -190,18 +190,21 @@ export const getVodStreamUrl = (
 };
 
 export const getVodInfo = async (
-    ctx: Pick<XtreamEndpointContext, 'client' | 'username' | 'password'>,
+    ctx: Pick<XtreamEndpointContext, 'client' | 'username' | 'password' | 'buildRequestKey' | 'requestCached' | 'listCacheMs'>,
     vodId: number
 ): Promise<any> => {
-    const response = await ctx.client.get('/player_api.php', {
-        params: {
-            username: ctx.username,
-            password: ctx.password,
-            action: 'get_vod_info',
-            vod_id: vodId,
-        },
+    const cacheKey = ctx.buildRequestKey('get_vod_info', { vodId });
+    return ctx.requestCached(cacheKey, ctx.listCacheMs, async () => {
+        const response = await ctx.client.get('/player_api.php', {
+            params: {
+                username: ctx.username,
+                password: ctx.password,
+                action: 'get_vod_info',
+                vod_id: vodId,
+            },
+        });
+        return response.data;
     });
-    return response.data;
 };
 
 export const getSeriesCategories = async (ctx: XtreamEndpointContext): Promise<XtreamCategory[]> => {
@@ -244,18 +247,21 @@ export const getSeriesPage = async (
 };
 
 export const getSeriesInfo = async (
-    ctx: Pick<XtreamEndpointContext, 'client' | 'username' | 'password'>,
+    ctx: Pick<XtreamEndpointContext, 'client' | 'username' | 'password' | 'buildRequestKey' | 'requestCached' | 'listCacheMs'>,
     seriesId: number
 ): Promise<any> => {
-    const response = await ctx.client.get('/player_api.php', {
-        params: {
-            username: ctx.username,
-            password: ctx.password,
-            action: 'get_series_info',
-            series_id: seriesId,
-        },
+    const cacheKey = ctx.buildRequestKey('get_series_info', { seriesId });
+    return ctx.requestCached(cacheKey, ctx.listCacheMs, async () => {
+        const response = await ctx.client.get('/player_api.php', {
+            params: {
+                username: ctx.username,
+                password: ctx.password,
+                action: 'get_series_info',
+                series_id: seriesId,
+            },
+        });
+        return response.data;
     });
-    return response.data;
 };
 
 export const getSeriesEpisodeUrl = (

@@ -27,6 +27,7 @@ import { useContentFilter } from '../../store/profileStore';
 import { scheduleIdleWork } from '../../utils/idle';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '../../utils/perf';
+import { seededShuffle } from '../../utils/shuffle';
 
 // =============================================================================
 // TYPES
@@ -167,11 +168,11 @@ function createStyles(
         },
         seriesGrid: {
             paddingBottom: scale(60),
-            paddingRight: scale(20),
+            paddingRight: scale(18),
         },
         seriesRow: {
             justifyContent: 'flex-start',
-            marginBottom: scale(30),
+            marginBottom: 0,
         },
         loadingState: {
             paddingVertical: scale(40),
@@ -278,8 +279,10 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
 // LIST CONFIG
 // =============================================================================
 
-const GRID_COLUMNS = 7;
+const GRID_COLUMNS = 5;
 const CATEGORY_ROW_SIZE = scale(62); // row height + margin (approx)
+const GRID_CARD_WIDTH = scale(265);
+const GRID_CARD_HEIGHT = scale(398);
 
 // =============================================================================
 // TV SERIES SCREEN
@@ -309,6 +312,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoryMap, setCategoryMap] = useState<Record<string, XtreamSeries[]>>({});
     const [isPrepared, setIsPrepared] = useState(false);
+    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
     const perf = usePerfProfile();
     const gridPerf = perf.grid;
     const gridInitialRender = GRID_COLUMNS * gridPerf.initialRows;
@@ -335,18 +339,32 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
             const filteredAllSeries = filterContent(seriesItems as any[]);
+            const shuffledAllSeries = seededShuffle(
+                filteredAllSeries,
+                (entry) => String(entry.series_id || ''),
+                `series:all:${dayShuffleSeed}`
+            );
             const nextMap: Record<string, XtreamSeries[]> = {
-                all: filteredAllSeries,
+                all: shuffledAllSeries,
             };
 
-            for (const series of filteredAllSeries) {
+            for (const series of shuffledAllSeries) {
                 const catId = String(series.category_id);
                 if (!nextMap[catId]) nextMap[catId] = [];
                 nextMap[catId].push(series);
             }
 
+            for (const [catId, catSeries] of Object.entries(nextMap)) {
+                if (catId === 'all') continue;
+                nextMap[catId] = seededShuffle(
+                    catSeries,
+                    (entry) => String(entry.series_id || ''),
+                    `series:${catId}:${dayShuffleSeed}`
+                );
+            }
+
             const nextCategories: Category[] = [
-                { id: 'all', name: 'All Series', count: filteredAllSeries.length },
+                { id: 'all', name: 'All Series', count: shuffledAllSeries.length },
             ];
 
             for (const cat of seriesCategories) {
@@ -370,7 +388,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
         return () => {
             task.cancel();
         };
-    }, [seriesLoaded, seriesCategories, seriesItems, filterContent]);
+    }, [seriesLoaded, seriesCategories, seriesItems, filterContent, dayShuffleSeed]);
 
     // ==========================================================================
     // SERIES (filtered by category)
@@ -425,8 +443,9 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
                 data: item,
             }}
             onPress={handleSeriesPress}
-            width={scale(180)}
-            height={scale(270)}
+            width={GRID_CARD_WIDTH}
+            height={GRID_CARD_HEIGHT}
+            style={{ marginRight: scale(10), marginBottom: scale(20) }}
             disableZoom={true}
         />
     ), [handleSeriesPress]);
@@ -468,7 +487,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
                     keyExtractor={(item) => String(item.series_id)}
                     numColumns={GRID_COLUMNS}
                     // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
-                    estimatedItemSize={scale(300)}
+                    estimatedItemSize={scale(390)}
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.seriesGrid}
                     columnWrapperStyle={styles.seriesRow}

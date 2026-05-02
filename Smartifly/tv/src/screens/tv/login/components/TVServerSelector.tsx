@@ -125,9 +125,7 @@ interface ServerCardProps {
     portal: Portal;
     isSelected: boolean;
     onSelect: () => void;
-    onFocusSelect: () => void;
     status?: ServerStatus;
-    index: number;
     cardSize: ServerCardSize;
     hasInitialFocus?: boolean;
 }
@@ -189,9 +187,7 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
     portal,
     isSelected,
     onSelect,
-    onFocusSelect,
     status,
-    index,
     cardSize,
     hasInitialFocus = false,
 }) => {
@@ -218,9 +214,6 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
     const handleFocus = () => {
         setIsFocused(true);
         animateFocus(true);
-        if (!isSelected) {
-            onFocusSelect();
-        }
     };
 
     const handleBlur = () => {
@@ -328,7 +321,16 @@ const ServerCard: React.FC<ServerCardProps> = React.memo(({
 
                 {/* Selection Badge */}
                 {isSelected && (
-                    <View style={styles.selectedBadge}>
+                    <View
+                        style={[
+                            styles.selectedBadge,
+                            {
+                                width: badgeSize,
+                                height: badgeSize,
+                                borderRadius: badgeSize / 2,
+                            },
+                        ]}
+                    >
                         <Icon name="check" size={badgeGlyph} color="#000" weight="bold" />
                     </View>
                 )}
@@ -455,11 +457,13 @@ const TVServerSelector: React.FC<TVServerSelectorProps> = ({
                                     portal={item.portal}
                                     isSelected={selectedPortal?.id === item.portal.id}
                                     onSelect={() => onSelectPortal(item.portal)}
-                                    onFocusSelect={() => onSelectPortal(item.portal)}
                                     status={serverStatuses.get(item.portal.id)}
-                                    index={item.index}
                                     cardSize={cardSize}
-                                    hasInitialFocus={!selectedPortal && item.index === 0}
+                                    hasInitialFocus={
+                                        selectedPortal
+                                            ? selectedPortal.id === item.portal.id
+                                            : item.index === 0
+                                    }
                                 />
                             </View>
                         ))}

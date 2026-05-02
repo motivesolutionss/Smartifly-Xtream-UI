@@ -50,6 +50,7 @@ const TVPinEntry: React.FC<TVPinEntryProps> = ({ navigation, route }) => {
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
+    const timeoutRefs = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
     useEffect(() => {
         Animated.parallel([
@@ -65,7 +66,19 @@ const TVPinEntry: React.FC<TVPinEntryProps> = ({ navigation, route }) => {
                 useNativeDriver: true,
             }),
         ]).start();
+        return () => {
+            timeoutRefs.current.forEach(clearTimeout);
+            timeoutRefs.current = [];
+        };
     }, [fadeAnim, scaleAnim]);
+
+    const scheduleTimeout = (callback: () => void, delay: number) => {
+        const timeoutId = setTimeout(() => {
+            timeoutRefs.current = timeoutRefs.current.filter((item) => item !== timeoutId);
+            callback();
+        }, delay);
+        timeoutRefs.current.push(timeoutId);
+    };
 
     const handlePinComplete = (pin: string) => {
         if (!profile) {
@@ -87,13 +100,12 @@ const TVPinEntry: React.FC<TVPinEntryProps> = ({ navigation, route }) => {
 
             if (attempts >= 2) {
                 setErrorMessage('Too many attempts. Try again later.');
-                setTimeout(() => {
+                scheduleTimeout(() => {
                     navigation.goBack();
                 }, 2000);
             } else {
                 setErrorMessage('Incorrect PIN. Please try again.');
-                // Reset error state after animation
-                setTimeout(() => setError(false), 500);
+                scheduleTimeout(() => setError(false), 500);
             }
 
             logger.warn('Invalid PIN attempt', { profileId, attempts: attempts + 1 });

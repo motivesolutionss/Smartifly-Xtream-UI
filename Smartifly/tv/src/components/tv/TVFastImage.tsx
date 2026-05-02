@@ -72,20 +72,37 @@ const FastImageComponent: React.FC<Props> = ({
     const perf = usePerfProfile();
     const effectivePriority = perf.tier === 'low' ? 'low' : priority;
 
-    const normalizedSource = useMemo(() => resolveSource(source), [source]);
-    const normalizedFallback = useMemo(() => resolveSource(fallbackSource), [fallbackSource]);
-    const sourceUri = useMemo(() => extractSourceUri(normalizedSource), [normalizedSource]);
-    const sourceIsRemote = useMemo(() => isRemoteImageUri(sourceUri), [sourceUri]);
+    const {
+        normalizedSource,
+        normalizedFallback,
+        sourceUri,
+        sourceIsRemote,
+    } = useMemo(() => {
+        const nextSource = resolveSource(source);
+        const nextFallback = resolveSource(fallbackSource);
+        const nextUri = extractSourceUri(nextSource);
+        return {
+            normalizedSource: nextSource,
+            normalizedFallback: nextFallback,
+            sourceUri: nextUri,
+            sourceIsRemote: isRemoteImageUri(nextUri),
+        };
+    }, [fallbackSource, source]);
+
+    const warmAtSourceChange = useMemo(() => {
+        if (!sourceIsRemote) return true;
+        return isImageWarm(sourceUri);
+    }, [sourceIsRemote, sourceUri]);
 
     const initialReady = useMemo(() => {
         if (!showLoader) return true;
         if (!sourceIsRemote) return true;
-        return isImageWarm(sourceUri);
-    }, [showLoader, sourceIsRemote, sourceUri]);
+        return warmAtSourceChange;
+    }, [showLoader, sourceIsRemote, warmAtSourceChange]);
 
     const shouldAnimateOnLoad = useMemo(() => (
-        enableColdFade && sourceIsRemote && !isImageWarm(sourceUri)
-    ), [enableColdFade, sourceIsRemote, sourceUri]);
+        enableColdFade && sourceIsRemote && !warmAtSourceChange
+    ), [enableColdFade, sourceIsRemote, warmAtSourceChange]);
 
     const [isReady, setIsReady] = useState(initialReady);
     const imageOpacityRef = useRef(new Animated.Value(1));
@@ -118,11 +135,9 @@ const FastImageComponent: React.FC<Props> = ({
         } else {
             imageOpacity.setValue(1);
         }
-        if (!isReady) {
-            setIsReady(true);
-        }
+        setIsReady((prev) => (prev ? prev : true));
         onLoad?.(event);
-    }, [imageOpacity, isReady, onLoad, renderSourceUri, shouldAnimateOnLoad]);
+    }, [imageOpacity, onLoad, renderSourceUri, shouldAnimateOnLoad]);
 
     const handleError = useCallback(() => {
         setError(true);
@@ -163,32 +178,17 @@ const FastImageComponent: React.FC<Props> = ({
         }
     }, [resizeMode]);
 
+    const animatedStyle = useMemo(
+        () => [StyleSheet.absoluteFill, { opacity: shouldAnimateOnLoad ? imageOpacity : 1 }],
+        [imageOpacity, shouldAnimateOnLoad]
+    );
+    const shouldShowLoaderOverlay = showLoader && !isReady && !shouldUseFallback;
+
     if (!renderSource && !error) return <View style={[styles.container, style]} />;
-
-    const shouldUseAnimatedWrapper = shouldAnimateOnLoad || (showLoader && !isReady && !shouldUseFallback);
-
-    if (!shouldUseAnimatedWrapper) {
-        return (
-            <View style={[styles.container, style]}>
-                <FastImage
-                    style={StyleSheet.absoluteFill}
-                    source={fastImageSource}
-                    onLoad={handleLoad}
-                    onLoadEnd={handleLoadEnd}
-                    onError={handleError}
-                    resizeMode={fastResizeMode}
-                />
-
-                {error && !normalizedFallback && (
-                    <View style={styles.errorContainer} />
-                )}
-            </View>
-        );
-    }
 
     return (
         <View style={[styles.container, style]}>
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: imageOpacity }]}>
+            <Animated.View style={animatedStyle}>
                 <FastImage
                     style={StyleSheet.absoluteFill}
                     source={fastImageSource}
@@ -199,7 +199,7 @@ const FastImageComponent: React.FC<Props> = ({
                 />
             </Animated.View>
 
-            {showLoader && !isReady && !shouldUseFallback && (
+            {shouldShowLoaderOverlay && (
                 <View style={styles.loadingOverlay} />
             )}
 

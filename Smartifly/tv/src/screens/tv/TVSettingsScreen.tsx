@@ -23,7 +23,7 @@ import DeviceInfo from 'react-native-device-info';
 import UpdateService, { UpdateInfo } from '../../services/UpdateService';
 import { CommonActions } from '@react-navigation/native';
 import useStore from '../../store';
-import config from '../../config';
+import config, { logger } from '../../config';
 import { useProfileStore } from '../../store/profileStore';
 import ProfileAvatar from '../../components/tv/TVProfileAvatar';
 import {
@@ -496,7 +496,7 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
             const info = await UpdateService.checkForUpdates();
             setUpdateInfo(info);
         } catch (error) {
-            console.error('Update check failed:', error);
+            logger.error('TVSettings: update check failed', error);
         } finally {
             setIsChecking(false);
         }

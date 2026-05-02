@@ -69,11 +69,9 @@ export interface EpisodeItem {
 export type RootStackParamList = {
     Login: undefined;
     Loading: undefined;
-    TVHome: undefined;
+    // TVShell is the main TV shell (shared sidebar + embedded sections).
+    TVShell: undefined;
     TVAccountSwitcher: undefined;
-    TVLive: undefined;
-    TVMovies: undefined;
-    TVSeries: undefined;
     TVMovieDetail: { movie: MovieItem };
     TVSeriesDetail: { series: SeriesItem };
     FullscreenPlayer: {
@@ -86,12 +84,11 @@ export type RootStackParamList = {
     ProfileSwitcher: undefined;
     ProfileEditor: { profileId?: string };
     PinEntry: { profileId: string; returnTo: keyof RootStackParamList };
-    Downloads: undefined;
     Blocked: { message?: string; status?: string } | undefined;
 };
 
 // TV Screen Props - for standalone screens
-export type TVHomeScreenProps = NativeStackScreenProps<RootStackParamList, 'TVHome'>;
+export type TVHomeScreenProps = NativeStackScreenProps<RootStackParamList, 'TVShell'>;
 export type TVLoadingScreenProps = NativeStackScreenProps<RootStackParamList, 'Loading'>;
 export type TVMovieDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVMovieDetail'>;
 export type TVSeriesDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVSeriesDetail'>;

@@ -90,6 +90,8 @@ const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
 let cachedProfile: PerfProfile | null = null;
 let pendingProfile: Promise<PerfProfile> | null = null;
 let initialPrefetchConfigured = false;
+let activeProfile: PerfProfile | null = null;
+const profileListeners = new Set<(profile: PerfProfile) => void>();
 
 const configurePrefetchForProfile = (profile: PerfProfile) => {
   configurePrefetch({
@@ -99,6 +101,7 @@ const configurePrefetchForProfile = (profile: PerfProfile) => {
 };
 
 const getInitialPerfProfile = (): PerfProfile => {
+  if (activeProfile) return activeProfile;
   if (cachedProfile) return cachedProfile;
 
   // TV hardware is the sensitive target. Start conservatively so the first
@@ -148,13 +151,20 @@ const chooseTier = async (): Promise<PerfTier> => {
 };
 
 export const getPerfProfile = async (): Promise<PerfProfile> => {
-  if (cachedProfile) return cachedProfile;
-  ensureInitialPrefetchConfig(getInitialPerfProfile());
+  if (cachedProfile) {
+    activeProfile = cachedProfile;
+    return cachedProfile;
+  }
+  const initial = getInitialPerfProfile();
+  activeProfile = initial;
+  ensureInitialPrefetchConfig(initial);
   if (!pendingProfile) {
     pendingProfile = chooseTier().then((tier) => {
       cachedProfile = PERF_PROFILES[tier] || PERF_PROFILES.normal;
+      activeProfile = cachedProfile;
       // Configure image prefetching for the resolved tier
       configurePrefetchForProfile(cachedProfile);
+      profileListeners.forEach((listener) => listener(cachedProfile as PerfProfile));
       return cachedProfile;
     });
   }
@@ -162,21 +172,30 @@ export const getPerfProfile = async (): Promise<PerfProfile> => {
 };
 
 export const usePerfProfile = (): PerfProfile => {
-  const [profile, setProfile] = useState<PerfProfile>(getInitialPerfProfile());
+  const [profile, setProfile] = useState<PerfProfile>(() => {
+    const initial = getInitialPerfProfile();
+    activeProfile = initial;
+    ensureInitialPrefetchConfig(initial);
+    return initial;
+  });
 
   useEffect(() => {
-    ensureInitialPrefetchConfig(profile);
-    let isActive = true;
-    getPerfProfile().then((next) => {
-      if (!isActive) return;
-      if (next.tier !== profile.tier) {
-        setProfile(next);
-      }
-    });
-    return () => {
-      isActive = false;
+    const listener = (next: PerfProfile) => {
+      setProfile((prev) => (prev.tier === next.tier ? prev : next));
     };
-  }, [profile.tier]);
+    profileListeners.add(listener);
+
+    if (cachedProfile) {
+      listener(cachedProfile);
+    } else {
+      // Trigger async resolution; listener will receive updates.
+      getPerfProfile();
+    }
+
+    return () => {
+      profileListeners.delete(listener);
+    };
+  }, []);
 
   return profile;
 };

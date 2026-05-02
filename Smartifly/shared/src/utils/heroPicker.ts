@@ -148,10 +148,16 @@ const buildMoviePick = (movie: any): HeroPick | null => {
   const title = movie?.name ? String(movie.name) : '';
   if (!title) return null;
 
-  const backdrop =
+  // backdrop_path is only in store data for some servers; often requires getVodInfo().
+  // Do NOT fall back to stream_icon — it is a portrait poster and looks wrong
+  // stretched across a widescreen hero banner.
+  // The hero will show a dark gradient immediately; the real backdrop crossfades in
+  // once getVodInfo() completes (cached in-memory after first load).
+  const backdropRaw =
     (Array.isArray(movie?.backdrop_path) ? movie.backdrop_path[0] : movie?.backdrop_path);
-
   const poster = movie?.stream_icon || movie?.cover;
+  const backdrop = backdropRaw || undefined;
+
   const genre = movie?.genre ? String(movie.genre) : undefined;
   const year = toYear(movie?.releasedate || movie?.releaseDate || movie?.release_date || movie?.year);
 
@@ -174,10 +180,13 @@ const buildSeriesPick = (series: any): HeroPick | null => {
   const title = series?.name ? String(series.name) : '';
   if (!title) return null;
 
-  const backdrop =
+  // Same as movies: backdrop_path only arrives from getSeriesInfo().
+  // Do NOT fall back to cover/poster for hero backdrops.
+  const backdropRaw =
     (Array.isArray(series?.backdrop_path) ? series.backdrop_path[0] : series?.backdrop_path);
-
   const poster = series?.cover;
+  const backdrop = backdropRaw || undefined;
+
   const genre = series?.genre ? String(series.genre) : undefined;
   const year = toYear(series?.releasedate || series?.releaseDate || series?.release_date || series?.year);
 

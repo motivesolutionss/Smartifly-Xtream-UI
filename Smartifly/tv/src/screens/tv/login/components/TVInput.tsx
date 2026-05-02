@@ -26,7 +26,6 @@ import {
     Icon,
     scale,
     scaleFont,
-    typographyTV,
     useTheme,
 } from '../../../../theme';
 

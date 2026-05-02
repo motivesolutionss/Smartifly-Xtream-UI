@@ -4,7 +4,7 @@ import { colors, scale } from '../../theme';
 
 const SmartiflyPreloaderScreen: React.FC = () => {
   const logoPulse = React.useRef(new Animated.Value(0)).current;
-  const loaderSweep = React.useRef(new Animated.Value(0)).current;
+  const loaderProgress = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     const pulseLoop = Animated.loop(
@@ -24,24 +24,19 @@ const SmartiflyPreloaderScreen: React.FC = () => {
       ])
     );
 
-    const sweepLoop = Animated.loop(
-      Animated.timing(loaderSweep, {
-        toValue: 1,
-        duration: 1300,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      })
-    );
-
     pulseLoop.start();
-    sweepLoop.start();
+    Animated.timing(loaderProgress, {
+      toValue: 1,
+      duration: 1400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
 
     return () => {
       pulseLoop.stop();
-      sweepLoop.stop();
-      loaderSweep.setValue(0);
+      loaderProgress.setValue(0);
     };
-  }, [loaderSweep, logoPulse]);
+  }, [loaderProgress, logoPulse]);
 
   const logoAnimatedStyle = {
     opacity: logoPulse.interpolate({
@@ -59,14 +54,10 @@ const SmartiflyPreloaderScreen: React.FC = () => {
   };
 
   const loaderAnimatedStyle = {
-    transform: [
-      {
-        translateX: loaderSweep.interpolate({
-          inputRange: [0, 1],
-          outputRange: [scale(-88), scale(176)],
-        }),
-      },
-    ],
+    width: loaderProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, scale(280)],
+    }),
   };
 
   return (
@@ -83,7 +74,7 @@ const SmartiflyPreloaderScreen: React.FC = () => {
         </Animated.View>
 
         <View style={styles.loaderTrack}>
-          <Animated.View style={[styles.loaderSweep, loaderAnimatedStyle]} />
+          <Animated.View style={[styles.loaderFill, loaderAnimatedStyle]} />
         </View>
       </View>
     </View>
@@ -117,8 +108,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.14)',
     overflow: 'hidden',
   },
-  loaderSweep: {
-    width: scale(88),
+  loaderFill: {
     height: '100%',
     borderRadius: scale(2),
     backgroundColor: colors.primary || '#E50914',

@@ -55,7 +55,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
             isTV,
             setActiveTheme: switchTheme,
         }),
-        [themeId, switchTheme]
+        [isTV, themeId, switchTheme]
     );
 
     return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

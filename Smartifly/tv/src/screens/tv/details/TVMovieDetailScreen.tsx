@@ -132,18 +132,23 @@ const TVMovieDetailScreen: React.FC = () => {
     // ==========================================================================
 
     const movieData = info?.info || {};
-    // Fallback logic for images
-    const backdrop = movieData.backdrop_path?.[0] || movieData.movie_image || movie.stream_icon;
-    const poster = movieData.movie_image || movie.stream_icon;
+    const movieMeta = info?.movie_data || {};
+    const backdrop =
+        movieData.backdrop_path?.[0] ||
+        movieMeta.backdrop_path?.[0] ||
+        movieMeta.backdrop ||
+        movieData.movie_image ||
+        movie.stream_icon;
+    const poster = movieData.movie_image || movieMeta.movie_image || movie.stream_icon;
     const name = movieData.name || movie.name;
-    const plot = movieData.plot || movieData.description || 'No description available.';
-    const rating = movieData.rating || movie.rating_5based;
-    const cast = movieData.cast;
-    const director = movieData.director;
-    const genre = movieData.genre;
-    const duration = movieData.duration;
-    const year = movieData.releasedate || movie.added;
-    const youtube_trailer = movieData.youtube_trailer;
+    const plot = movieData.plot || movieMeta.plot || movieData.description || movie.plot || 'No description available.';
+    const rating = movieData.rating || movieMeta.rating || movie.rating_5based;
+    const cast = movieData.cast || movieMeta.cast;
+    const director = movieData.director || movieMeta.director;
+    const genre = movieData.genre || movieMeta.genre || movie.genre;
+    const duration = movieData.duration || movieMeta.duration;
+    const year = movieData.releasedate || movieMeta.releasedate || movie.added;
+    const youtube_trailer = movieData.youtube_trailer || movieMeta.youtube_trailer;
 
     // ==========================================================================
     // RENDER HELPERS
@@ -175,12 +180,12 @@ const TVMovieDetailScreen: React.FC = () => {
                 <Icon
                     name={iconName}
                     size={scale(24)}
-                    color={primary ? (isFocused ? colors.background : '#FFF') : '#FFF'}
+                    color={primary ? colors.background : '#FFF'}
                     style={{ marginRight: scale(12) }}
                 />
                 <Text style={[
                     styles.buttonText,
-                    primary && isFocused && { color: colors.background } // Invert text on focus for primary
+                    primary && { color: colors.background } // Ensure primary label is visible on light button
                 ]}>
                     {label}
                 </Text>
@@ -283,7 +288,7 @@ const TVMovieDetailScreen: React.FC = () => {
                             </View>
                         )}
                         {cast && (
-                            <View style={[styles.creditItem, { marginLeft: scale(30) }]}>
+                            <View style={styles.creditItem}>
                                 <Text style={styles.creditLabel}>Starring </Text>
                                 <Text style={styles.creditValue} numberOfLines={1}>{cast}</Text>
                             </View>
@@ -307,10 +312,14 @@ const TVMovieDetailScreen: React.FC = () => {
                                 container_extension: movie.container_extension || info?.movie_data?.container_extension,
                                 type: 'movie',
                             }}
+                            iconSize={scale(24)}
+                            labelStyle={styles.buttonText}
+                            invertOnFocus={false}
+                            focusMode="secondary"
                             onFocus={() => setFocusedButton('download')}
                             onBlur={() => setFocusedButton(null)}
                             isFocused={focusedButton === 'download'}
-                            style={{ marginRight: scale(20) }}
+                            style={styles.downloadButton}
                         />
                         {youtube_trailer && renderButton(
                             'trailer',
@@ -392,16 +401,16 @@ const styles = StyleSheet.create({
     contentContainer: {
         flex: 1,
         flexDirection: 'row',
-        paddingHorizontal: scale(60),
+        paddingHorizontal: scale(70),
         alignItems: 'center',
     },
     leftColumn: {
-        marginRight: scale(60),
+        marginRight: scale(84),
     },
     poster: {
-        width: scale(300),
+        width: scale(380),
         aspectRatio: 2 / 3,
-        borderRadius: scale(16),
+        borderRadius: scale(20),
         borderWidth: 3,
         borderColor: 'rgba(255,255,255,0.1)',
         shadowColor: "#000",
@@ -417,7 +426,7 @@ const styles = StyleSheet.create({
     metaTagsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: scale(20),
+        marginBottom: scale(22),
     },
     ratingBadge: {
         flexDirection: 'row',
@@ -431,11 +440,11 @@ const styles = StyleSheet.create({
     ratingText: {
         color: '#000',
         fontWeight: '900',
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(16),
     },
     metaText: {
         color: '#E0E0E0',
-        fontSize: scaleFont(16),
+        fontSize: scaleFont(24),
         fontWeight: '600',
         letterSpacing: 0.5,
     },
@@ -455,13 +464,13 @@ const styles = StyleSheet.create({
     },
     hdText: {
         color: '#DDD',
-        fontSize: scaleFont(12),
+        fontSize: scaleFont(16),
         fontWeight: '900',
     },
     // Typography
     title: {
-        fontSize: scaleFont(64),
-        lineHeight: scaleFont(72),
+        fontSize: scaleFont(68),
+        lineHeight: scaleFont(76),
         fontWeight: '900',
         color: '#FFF',
         marginBottom: scale(20),
@@ -470,32 +479,33 @@ const styles = StyleSheet.create({
         textShadowRadius: 10,
     },
     plot: {
-        fontSize: scaleFont(18),
-        lineHeight: scaleFont(28),
+        fontSize: scaleFont(28),
+        lineHeight: scaleFont(40),
         color: '#B0B0B0',
-        marginBottom: scale(24),
-        maxWidth: scale(800),
+        marginBottom: scale(28),
+        maxWidth: scale(860),
     },
     creditsRow: {
-        flexDirection: 'row',
-        marginBottom: scale(32),
+        flexDirection: 'column',
+        marginBottom: scale(36),
         borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.1)',
-        paddingTop: scale(20),
-        maxWidth: scale(800),
+        paddingTop: scale(22),
+        maxWidth: scale(860),
+        gap: scale(8),
     },
     creditItem: {
         flexDirection: 'row',
         alignItems: 'baseline',
     },
     creditLabel: {
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(21),
         color: '#FFF',
         opacity: 0.6,
         fontWeight: '600',
     },
     creditValue: {
-        fontSize: scaleFont(14),
+        fontSize: scaleFont(21),
         color: '#FFF',
         fontWeight: '500',
     },
@@ -507,12 +517,22 @@ const styles = StyleSheet.create({
     button: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: scale(16),
-        paddingHorizontal: scale(32),
+        justifyContent: 'center',
+        paddingVertical: scale(18),
+        paddingHorizontal: scale(28),
+        width: scale(238),
         borderRadius: scale(12),
-        marginRight: scale(20),
+        marginRight: scale(10),
         borderWidth: 2,
         borderColor: 'transparent',
+    },
+    downloadButton: {
+        width: scale(238),
+        paddingVertical: scale(18),
+        paddingHorizontal: scale(28),
+        justifyContent: 'center',
+        marginRight: scale(10),
+        borderRadius: scale(12),
     },
     buttonPrimary: {
         backgroundColor: colors.accent || '#00E5FF',
@@ -531,11 +551,11 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
     },
     buttonText: {
-        fontSize: scaleFont(18),
+        fontSize: scaleFont(26),
         fontWeight: '700',
         color: '#FFF',
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: 1.1,
     },
     // Modal
     modalOverlay: {

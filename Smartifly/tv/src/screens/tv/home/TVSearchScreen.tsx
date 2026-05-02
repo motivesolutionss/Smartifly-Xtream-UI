@@ -7,6 +7,7 @@ import {
     Animated,
     Pressable,
     Image,
+    LayoutChangeEvent,
 } from 'react-native';
 import { colors, scale, scaleFont, Icon } from '../../../theme';
 import TVSearchKeypad from './components/TVSearchKeypad';
@@ -24,6 +25,7 @@ import { useContentFilter } from '../../../store/profileStore';
 import { scheduleIdleWork } from '../../../utils/idle';
 import TVLoadingState from '../components/TVLoadingState';
 import { usePerfProfile } from '../../../utils/perf';
+import { logger } from '../../../config';
 
 // =============================================================================
 // TYPES
@@ -37,6 +39,9 @@ interface SearchResults {
 
 const SEARCH_WINDOW_SHORT_QUERY = 160;
 const SEARCH_WINDOW_LONG_QUERY = 320;
+const SEARCH_GRID_GAP = 16;
+const MOVIE_SERIES_COLUMNS = 4;
+const LIVE_COLUMNS = 3;
 
 // =============================================================================
 // TV SEARCH SCREEN
@@ -45,6 +50,7 @@ const SEARCH_WINDOW_LONG_QUERY = 320;
 
 const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    const [rightPanelWidth, setRightPanelWidth] = useState(0);
     const [query, setQuery] = useState('');
     const [focusedSuggestion, setFocusedSuggestion] = useState<number | null>(null);
     // State for text suggestions
@@ -102,7 +108,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                 series: filterContent(result.series),
             });
         } catch (e) {
-            console.error("Search failed", e);
+            logger.error('TVSearch: search failed', e);
         } finally {
             setIsSearching(false);
         }
@@ -264,15 +270,52 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
         live: results.live.slice(0, 12),
     }), [results]);
 
+    const cardLayout = useMemo(() => {
+        const contentHorizontalPadding = scale(30) * 2;
+        const gapPx = scale(SEARCH_GRID_GAP);
+        const usableWidth = Math.max(0, rightPanelWidth - contentHorizontalPadding);
+
+        const movieSeriesWidth = Math.floor(
+            (usableWidth - (gapPx * (MOVIE_SERIES_COLUMNS - 1))) / MOVIE_SERIES_COLUMNS
+        );
+        const liveWidth = Math.floor(
+            (usableWidth - (gapPx * (LIVE_COLUMNS - 1))) / LIVE_COLUMNS
+        );
+
+        return {
+            movieSeriesWidth: Math.max(scale(150), movieSeriesWidth),
+            movieSeriesHeight: Math.max(scale(220), Math.floor(movieSeriesWidth * 1.42)),
+            liveWidth: Math.max(scale(220), liveWidth),
+            liveHeight: scale(150),
+        };
+    }, [rightPanelWidth]);
+
+    const handleRightPanelLayout = useCallback((event: LayoutChangeEvent) => {
+        const nextWidth = Math.floor(event.nativeEvent.layout.width);
+        setRightPanelWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+    }, []);
+
     const renderResultSection = (title: string, data: (XtreamLiveStream | XtreamMovie | XtreamSeries)[], type: 'live' | 'movie' | 'series') => {
         if (!data || data.length === 0) return null;
+        const isLiveSection = type === 'live';
+        const columns = isLiveSection ? LIVE_COLUMNS : MOVIE_SERIES_COLUMNS;
+        const sectionCardWidth = isLiveSection ? cardLayout.liveWidth : cardLayout.movieSeriesWidth;
+        const sectionCardHeight = isLiveSection ? cardLayout.liveHeight : cardLayout.movieSeriesHeight;
 
         return (
             <View style={styles.resultSection}>
                 <Text style={styles.sectionTitle}>{title} ({data.length})</Text>
                 <View style={styles.cardsGrid}>
-                    {data.map((item) => (
-                        <View key={getItemId(item)} style={styles.cardWrapper}>
+                    {data.map((item, index) => (
+                        <View
+                            key={getItemId(item)}
+                            style={[
+                                styles.cardWrapper,
+                                {
+                                    marginRight: (index + 1) % columns === 0 ? 0 : scale(SEARCH_GRID_GAP),
+                                },
+                            ]}
+                        >
                             <TVContentCard
                                 item={{
                                     id: getItemId(item),
@@ -281,7 +324,9 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                                     type: type,
                                 }}
                                 onPress={() => handleContentPress(item, type)}
-                                width={scale(160)} // Slightly larger cards to fill space
+                                width={sectionCardWidth}
+                                height={sectionCardHeight}
+                                style={styles.searchCard}
                             />
                         </View>
                     ))}
@@ -380,7 +425,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
             </View>
 
             {/* RIGHT: RESULTS (3/4 Width) - Expanded */}
-            <View style={styles.rightPanel}>
+            <View style={styles.rightPanel} onLayout={handleRightPanelLayout}>
                 {isSearching ? (
                     <TVLoadingState style={styles.centerContainer} />
                 ) : !isPrepared ? (
@@ -568,10 +613,12 @@ const styles = StyleSheet.create({
     cardsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: scale(15),
     },
     cardWrapper: {
-        marginBottom: scale(15),
+        marginBottom: scale(16),
+    },
+    searchCard: {
+        marginRight: 0,
     },
     centerContainer: {
         flex: 1,
