@@ -11,22 +11,22 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
 // Theme
 import { colors, scale } from '../theme';
-import useStore from '../store';
+import useStore from '@smartifly/shared/src/store';
 import { logger } from '../config';
-import BlockedScreen from '../screens/tv/TVBlockedScreen';
+import BlockedScreen from '../screens/TVBlockedScreen';
 
 // TV Screens
-import TVLoginScreen from '../screens/tv/login/TVLoginScreen';
-import TVLoadingScreen from '../screens/tv/loading/TVLoadingScreen';
-import TVHomeScreen from '../screens/tv/home/TVHomeScreen';
-import TVPlayerScreen from '../screens/tv/player/TVPlayerScreen';
+import TVLoginScreen from '../screens/login/TVLoginScreen';
+import TVLoadingScreen from '../screens/loading/TVLoadingScreen';
+import TVHomeScreen from '../screens/home/TVHomeScreen';
+import TVPlayerScreen from '../screens/player/TVPlayerScreen';
 // Re-importing to fix Metro resolution
-import TVMovieDetailScreen from '../screens/tv/details/TVMovieDetailScreen';
-import TVSeriesDetailScreen from '../screens/tv/details/TVSeriesDetailScreen';
-import TVAccountSwitcherScreen from '../screens/tv/account/TVAccountSwitcherScreen';
+import TVMovieDetailScreen from '../screens/details/TVMovieDetailScreen';
+import TVSeriesDetailScreen from '../screens/details/TVSeriesDetailScreen';
+import TVAccountSwitcherScreen from '../screens/account/TVAccountSwitcherScreen';
 // Profile Screens (Parental Controls)
-import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/tv/profiles';
-import { useProfileStore } from '../store/profileStore';
+import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/profiles';
+import { useProfileStore } from '@smartifly/shared/src/store/profileStore';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const StartupGateScreen: React.FC = () => {

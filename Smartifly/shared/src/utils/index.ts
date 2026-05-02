@@ -7,3 +7,4 @@ export * from './platform';
 export * from './perf';
 export * from './requestMetrics';
 export * from './storage';
+export * from './shuffle';

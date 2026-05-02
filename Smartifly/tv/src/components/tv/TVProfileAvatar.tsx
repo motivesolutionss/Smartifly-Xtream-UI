@@ -17,7 +17,7 @@ import {
     ViewStyle,
     TextStyle,
 } from 'react-native';
-import { AvatarId, AVATAR_CHARACTERS, AVATAR_COLORS, AVATAR_IMAGE_URLS } from '../../store/profileStore';
+import { AvatarId, AVATAR_CHARACTERS, AVATAR_COLORS, AVATAR_IMAGE_URLS } from '@smartifly/shared/src/store/profileStore';
 import { colors, scale, scaleFont, Icon } from '../../theme';
 
 // =============================================================================

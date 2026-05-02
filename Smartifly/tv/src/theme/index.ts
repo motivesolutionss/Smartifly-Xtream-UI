@@ -257,6 +257,8 @@ export {
 
 export { ThemeProvider, useTheme, useThemeId } from './ThemeProvider';
 export type { ThemeContextValue, ThemeProviderProps } from './ThemeProvider';
+export { uiTokens } from './uiTokens';
+export type { UiTokens } from './uiTokens';
 
 export { getTheme, isTV, theme, tvTheme } from './platformTheme';
 

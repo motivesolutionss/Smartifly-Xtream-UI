@@ -8,13 +8,13 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { View, StyleSheet, StyleProp, Animated, Easing } from 'react-native';
 import FastImage, { ImageStyle, OnLoadEvent } from '@d11/react-native-fast-image';
 import { colors } from '../../theme';
-import { usePerfProfile } from '../../utils/perf';
+import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import {
     isImageWarm,
     isRemoteImageUri,
     markImageWarm,
     normalizeImageUri,
-} from '../../utils/image';
+} from '@smartifly/shared/src/utils/image';
 
 interface Props {
     source: any;

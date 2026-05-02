@@ -14,9 +14,9 @@ import {
     Alert,
 } from 'react-native';
 import { colors, scale, scaleFont, Icon } from '../../theme';
-import useDownloadStore from '../../store/downloadStore';
-import downloadService from '../../services/downloadService';
-import useStore from '../../store';
+import useDownloadStore from '@smartifly/shared/src/store/downloadStore';
+import downloadService from '@smartifly/shared/src/services/downloadService';
+import useStore from '@smartifly/shared/src/store';
 import { logger } from '../../config';
 
 interface TVDownloadButtonProps {

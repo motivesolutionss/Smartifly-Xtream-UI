@@ -15,7 +15,7 @@ import {
     Pressable,
     Animated,
 } from 'react-native';
-import { PIN_LENGTH } from '../../store/profileStore';
+import { PIN_LENGTH } from '@smartifly/shared/src/store/profileStore';
 import { colors, scale, scaleFont, Icon } from '../../theme';
 
 // =============================================================================
