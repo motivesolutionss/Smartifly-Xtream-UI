@@ -67,6 +67,12 @@ type HomeSection =
         type: 'rail';
         rail: { id: string; title: string; type?: string; items: TVContentItem[] };
         lift: boolean;
+    }
+    | {
+        key: string;
+        type: 'placeholder';
+        index: number;
+        lift: boolean;
     };
 
 // =============================================================================
@@ -77,6 +83,7 @@ const HOME_DRAW_DISTANCE = scale(900);
 
 const PLACEHOLDER_RAIL_COUNT = 3;
 const PLACEHOLDER_CARDS_PER_RAIL = 6;
+const ABOVE_FOLD_SECTION_COUNT = 2;
 
 const HERO_BANNER_HEIGHT = scale(820);
 const HERO_BANNER_MARGIN = scale(28);
@@ -439,6 +446,37 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         return [...continueSections, ...railSections];
     }, [continueSections, railSections]);
 
+    const displaySections = useMemo<HomeSection[]>(() => {
+        if (!isLoading) return listSections;
+
+        const neededPlaceholders = Math.max(0, ABOVE_FOLD_SECTION_COUNT - listSections.length);
+        if (neededPlaceholders === 0) return listSections;
+
+        const placeholders: HomeSection[] = Array.from({ length: neededPlaceholders }, (_, index) => ({
+            key: `placeholder-rail-${index}`,
+            type: 'placeholder',
+            index,
+            lift: listSections.length === 0 && index === 0,
+        }));
+
+        return [...listSections, ...placeholders];
+    }, [isLoading, listSections]);
+
+    const aboveFoldSections = useMemo<HomeSection[]>(
+        () => displaySections.slice(0, ABOVE_FOLD_SECTION_COUNT),
+        [displaySections]
+    );
+
+    const deferredSections = useMemo<HomeSection[]>(
+        () => displaySections.slice(ABOVE_FOLD_SECTION_COUNT),
+        [displaySections]
+    );
+
+    const headerRenderKey = useMemo(
+        () => `${heroSlotItem?.id ?? 'hero-placeholder'}::${aboveFoldSections.map((section) => section.key).join('|')}`,
+        [heroSlotItem?.id, aboveFoldSections]
+    );
+
     const getItemType = useCallback((item: HomeSection) => item.type, []);
     const overrideItemLayout = useCallback(
         (layout: { size?: number; span?: number }, item: HomeSection) => {
@@ -451,6 +489,9 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                         ? LIVE_SECTION_ESTIMATE
                         : CONTENT_SECTION_ESTIMATE;
                     break;
+                case 'placeholder':
+                    layout.size = CONTENT_SECTION_ESTIMATE;
+                    break;
                 default:
                     layout.size = CONTENT_SECTION_ESTIMATE;
                     break;
@@ -459,62 +500,83 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         []
     );
 
-    const renderHeroHeader = useCallback(() => {
-        if (!heroSlotItem) {
-            return <HeroPlaceholder />;
+    const renderSection = useCallback((item: HomeSection) => {
+        switch (item.type) {
+            case 'continue':
+                return (
+                    <View key={item.key} style={[styles.railsWrapper, item.lift && styles.railsLift]}>
+                        <TVContinueRail
+                            title="Continue Watching"
+                            data={item.data}
+                            onPressItem={handleContinuePress}
+                            onRemoveItem={(entry) => removeFromHistory(entry.id)}
+                            sidebarTargetNode={sidebarTargetNode}
+                            onRequestSidebarFocus={onRequestSidebarFocus}
+                        />
+                    </View>
+                );
+
+            case 'rail':
+                return (
+                    <View key={item.key} style={[styles.railsWrapper, item.lift && styles.railsLift]}>
+                        <TVContentRail
+                            title={item.rail.title}
+                            data={item.rail.items}
+                            layoutPreset={item.rail.items[0]?.type === 'live' ? 'fiveUpLive' : 'sixUpPoster'}
+                            onPressItem={handleContentPress}
+                            sidebarTargetNode={sidebarTargetNode}
+                            onRequestSidebarFocus={onRequestSidebarFocus}
+                        />
+                    </View>
+                );
+
+            case 'placeholder':
+                return (
+                    <View key={item.key} style={[styles.railsWrapper, item.lift && styles.railsLift]}>
+                        <HomePlaceholderRail index={item.index} />
+                    </View>
+                );
+
+            default:
+                return null;
         }
-        return (
-            <TVHeroBanner
-                item={heroSlotItem}
-                onPlay={handleHeroPlay}
-                onInfo={handleHeroInfo}
-                sidebarTargetRef={searchRef}
-                primaryActionRef={heroPlayRef}
-                hasPreferredFocus={activeRoute === 'Home' && !isInteracted}
-            />
-        );
-    }, [heroSlotItem, handleHeroPlay, handleHeroInfo, searchRef, heroPlayRef, activeRoute, isInteracted]);
+    }, [onRequestSidebarFocus, sidebarTargetNode, handleContinuePress, handleContentPress, removeFromHistory]);
+
+    const renderHeroHeader = useCallback(() => (
+        <View>
+            {heroSlotItem ? (
+                <TVHeroBanner
+                    item={heroSlotItem}
+                    onPlay={handleHeroPlay}
+                    onInfo={handleHeroInfo}
+                    sidebarTargetRef={searchRef}
+                    primaryActionRef={heroPlayRef}
+                    hasPreferredFocus={activeRoute === 'Home' && !isInteracted}
+                />
+            ) : (
+                <HeroPlaceholder />
+            )}
+            {aboveFoldSections.map(renderSection)}
+        </View>
+    ), [
+        aboveFoldSections,
+        heroSlotItem,
+        handleHeroPlay,
+        handleHeroInfo,
+        searchRef,
+        heroPlayRef,
+        activeRoute,
+        isInteracted,
+        renderSection,
+    ]);
 
     const renderHomeItem = useCallback(
-        ({ item }: { item: HomeSection }) => {
-            switch (item.type) {
-                case 'continue':
-                    return (
-                        <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
-                            <TVContinueRail
-                                title="Continue Watching"
-                                data={item.data}
-                                onPressItem={handleContinuePress}
-                                onRemoveItem={(entry) => removeFromHistory(entry.id)}
-                                sidebarTargetNode={sidebarTargetNode}
-                                onRequestSidebarFocus={onRequestSidebarFocus}
-                            />
-                        </View>
-                    );
-
-                case 'rail':
-                    return (
-                        <View style={[styles.railsWrapper, item.lift && styles.railsLift]}>
-                            <TVContentRail
-                                title={item.rail.title}
-                                data={item.rail.items}
-                                layoutPreset={item.rail.items[0]?.type === 'live' ? 'fiveUpLive' : 'sixUpPoster'}
-                                onPressItem={handleContentPress}
-                                sidebarTargetNode={sidebarTargetNode}
-                                onRequestSidebarFocus={onRequestSidebarFocus}
-                            />
-                        </View>
-                    );
-
-                default:
-                    return null;
-            }
-        },
-        [onRequestSidebarFocus, sidebarTargetNode, handleContinuePress, handleContentPress, removeFromHistory]
+        ({ item }: { item: HomeSection }) => renderSection(item),
+        [renderSection]
     );
 
     // While loading: render ONLY placeholder (avoid heavy list underneath)
-    if (isLoading && continueSections.length === 0) {
+    if (isLoading && !heroSlotItem && listSections.length === 0) {
         return (
             <View style={styles.homeSection}>
                 <View style={styles.placeholderOverlayLocal}>
@@ -529,10 +591,11 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
             <FlashList
                 style={styles.scrollViewWithSidebarGap}
                 contentContainerStyle={styles.scrollContent}
-                data={listSections}
+                data={deferredSections}
                 renderItem={renderHomeItem}
                 keyExtractor={(item) => item.key}
                 ListHeaderComponent={renderHeroHeader}
+                extraData={headerRenderKey}
                 // @ts-ignore
                 estimatedItemSize={CONTENT_SECTION_ESTIMATE}
                 getItemType={getItemType}
@@ -587,22 +650,16 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         setFocusGateTargets((prev) => (prev[route] === handle ? prev : { ...prev, [route]: handle }));
     }, []);
 
-    const focusActualTarget = useCallback((route: SectionFocusRoute) => {
-        const target = focusTargetNodesRef.current[route] as any;
-        if (!target) return;
-
-        if (typeof target.focus === 'function') {
-            target.focus();
-            return;
-        }
-
-        if (typeof target.setNativeProps === 'function') {
-            target.setNativeProps({ hasTVPreferredFocus: true });
-            setTimeout(() => {
-                target.setNativeProps({ hasTVPreferredFocus: false });
-            }, 80);
-        }
+    const focusNode = useCallback((node: View | null | undefined) => {
+        const target = node as any;
+        if (!target || typeof target.focus !== 'function') return false;
+        target.focus();
+        return true;
     }, []);
+
+    const focusActualTarget = useCallback((route: SectionFocusRoute) => {
+        focusNode(focusTargetNodesRef.current[route]);
+    }, [focusNode]);
 
     const createFocusGateRef = useCallback(
         (route: SectionFocusRoute) => (node: View | null) => updateFocusGateTarget(route, node),
@@ -610,7 +667,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     );
 
     const handleFocusGate = useCallback((route: SectionFocusRoute) => {
-        requestAnimationFrame(() => focusActualTarget(route));
+        focusActualTarget(route);
     }, [focusActualTarget]);
 
     const homeFocusRef = useCallback((node: View | null) => updateFocusTarget('Home', node), [updateFocusTarget]);
@@ -662,13 +719,8 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         setActiveRoute(route);
     }, []);
     const requestSidebarFocus = useCallback(() => {
-        const target = searchRef.current as any;
-        if (!target || typeof target.setNativeProps !== 'function') return;
-        target.setNativeProps({ hasTVPreferredFocus: true });
-        setTimeout(() => {
-            target.setNativeProps({ hasTVPreferredFocus: false });
-        }, 80);
-    }, []);
+        focusNode(searchRef.current);
+    }, [focusNode]);
 
     useEffect(() => {
         // Keep transition subtle to avoid a "shock" feel on TV.

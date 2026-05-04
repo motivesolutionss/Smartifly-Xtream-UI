@@ -1,13 +1,16 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet, Pressable, Text, findNodeHandle } from 'react-native';
 import Animated, {
   Easing,
-  useSharedValue,
+  Extrapolate,
+  createAnimatedComponent,
+  interpolate,
+  interpolateColor,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
   withTiming,
-  interpolate,
-  Extrapolate,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { scale, scaleFont, Icon, useTheme } from '../.././../theme';
 
@@ -21,6 +24,8 @@ export type SidebarRoute =
   | 'Favorites'
   | 'Downloads'
   | 'Settings';
+
+type SidebarItemId = SidebarRoute | 'Profile';
 
 interface TVSidebarProps {
   activeRoute: SidebarRoute;
@@ -39,6 +44,26 @@ interface MenuItem {
   id: SidebarRoute;
   icon: string;
   label: string;
+}
+
+interface SidebarNavItemProps {
+  id: SidebarItemId;
+  icon: string;
+  label: string;
+  isActive: boolean;
+  activeColor: string;
+  inactiveColor: string;
+  expandProgress: SharedValue<number>;
+  itemRef: React.RefObject<View | null>;
+  onPress: () => void;
+  onFocusItem: (id: SidebarItemId) => void;
+  onBlurItem: (id: SidebarItemId) => void;
+  nextFocusLeft?: number;
+  nextFocusRight?: number;
+  nextFocusUp?: number;
+  nextFocusDown?: number;
+  onHomeNodeReady?: (node: number | undefined) => void;
+  onSearchNodeReady?: (node: number | undefined) => void;
 }
 
 const MENU_ITEMS: MenuItem[] = [
@@ -67,6 +92,152 @@ const SPRING_CONFIG = {
   mass: 1.2,
 };
 
+const AnimatedPressable = createAnimatedComponent(Pressable);
+
+const SidebarNavItem = memo(({
+  id,
+  icon,
+  label,
+  isActive,
+  activeColor,
+  inactiveColor,
+  expandProgress,
+  itemRef,
+  onPress,
+  onFocusItem,
+  onBlurItem,
+  nextFocusLeft,
+  nextFocusRight,
+  nextFocusUp,
+  nextFocusDown,
+  onHomeNodeReady,
+  onSearchNodeReady,
+}: SidebarNavItemProps) => {
+  const focusProgress = useSharedValue(0);
+
+  const handleFocus = useCallback(() => {
+    focusProgress.value = withTiming(1, { duration: 110, easing: Easing.out(Easing.quad) });
+    onFocusItem(id);
+  }, [focusProgress, id, onFocusItem]);
+
+  const handleBlur = useCallback(() => {
+    focusProgress.value = withTiming(0, { duration: 110, easing: Easing.out(Easing.quad) });
+    onBlurItem(id);
+  }, [focusProgress, id, onBlurItem]);
+
+  const handleLayout = useCallback(() => {
+    if (id === 'Home' && onHomeNodeReady) {
+      const node = findNodeHandle(itemRef.current) ?? undefined;
+      if (node) onHomeNodeReady(node);
+    }
+
+    if (id === 'Search' && onSearchNodeReady) {
+      const node = findNodeHandle(itemRef.current) ?? undefined;
+      if (node) onSearchNodeReady(node);
+    }
+  }, [id, itemRef, onHomeNodeReady, onSearchNodeReady]);
+
+  const animatedItemStyle = useAnimatedStyle(() => {
+    const visualFocusProgress = focusProgress.value * expandProgress.value;
+
+    return {
+      backgroundColor: interpolateColor(
+        visualFocusProgress,
+        [0, 1],
+        ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.18)']
+      ),
+      borderColor: interpolateColor(
+        visualFocusProgress,
+        [0, 1],
+        ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.22)']
+      ),
+      transform: [{ scale: interpolate(visualFocusProgress, [0, 1], [1, 1.02]) }],
+    };
+  });
+
+  const animatedLabelContainerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(expandProgress.value, [0, 1], [0, 1], Extrapolate.CLAMP),
+    transform: [
+      {
+        translateX: interpolate(expandProgress.value, [0, 1], [-18, 0], Extrapolate.CLAMP),
+      },
+    ],
+  }));
+
+  const baseIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(focusProgress.value, [0, 1], [1, 0], Extrapolate.CLAMP),
+  }));
+
+  const focusedIconStyle = useAnimatedStyle(() => ({
+    opacity: focusProgress.value,
+  }));
+
+  const baseLabelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(focusProgress.value, [0, 1], [1, 0], Extrapolate.CLAMP),
+  }));
+
+  const focusedLabelStyle = useAnimatedStyle(() => ({
+    opacity: focusProgress.value,
+  }));
+
+  const iconBaseColor = isActive ? activeColor : inactiveColor;
+
+  return (
+    <AnimatedPressable
+      ref={itemRef as React.RefObject<any>}
+      collapsable={false}
+      onPress={onPress}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      onLayout={handleLayout}
+      {...({
+        nextFocusLeft,
+        nextFocusRight,
+        nextFocusUp,
+        nextFocusDown,
+      } as any)}
+      style={[styles.menuItem, animatedItemStyle]}
+    >
+      {isActive && <View style={styles.activeHalo} pointerEvents="none" />}
+      {isActive && <View style={styles.activeIndicator} pointerEvents="none" />}
+
+      <View style={styles.menuItemContent}>
+        <View
+          style={[
+            styles.iconWrapper,
+            isActive && styles.iconActiveBorder,
+            isActive && { borderBottomColor: activeColor },
+          ]}
+        >
+          <Animated.View style={[styles.iconLayer, baseIconStyle]} pointerEvents="none">
+            <Icon name={icon} size={scaleFont(28)} color={iconBaseColor} />
+          </Animated.View>
+          <Animated.View style={[styles.iconLayer, focusedIconStyle]} pointerEvents="none">
+            <Icon name={icon} size={scaleFont(28)} color="#FFFFFF" />
+          </Animated.View>
+        </View>
+
+        <Animated.View style={[styles.labelContainer, animatedLabelContainerStyle]} pointerEvents="none">
+          <Animated.Text
+            numberOfLines={1}
+            style={[styles.label, isActive && { color: activeColor }, baseLabelStyle]}
+          >
+            {label}
+          </Animated.Text>
+          <Animated.Text
+            numberOfLines={1}
+            style={[styles.label, styles.labelFocused, styles.labelOverlay, focusedLabelStyle]}
+          >
+            {label}
+          </Animated.Text>
+        </Animated.View>
+      </View>
+    </AnimatedPressable>
+  );
+});
+
+SidebarNavItem.displayName = 'SidebarNavItem';
+
 const TVSidebar = ({
   activeRoute,
   onNavigate,
@@ -80,58 +251,28 @@ const TVSidebar = ({
   focusTargets,
 }: TVSidebarProps) => {
   const { theme } = useTheme();
-  const [focusedId, setFocusedId] = useState<SidebarRoute | 'Profile' | null>(null);
-  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressNavigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isPressClosingRef = useRef(false);
 
-  const profileRef = React.useRef<View>(null);
-  const internalSearchRef = React.useRef<View>(null);
-  const homeRef = React.useRef<View>(null);
-  const liveRef = React.useRef<View>(null);
-  const moviesRef = React.useRef<View>(null);
-  const seriesRef = React.useRef<View>(null);
-  const announcementsRef = React.useRef<View>(null);
-  const favoritesRef = React.useRef<View>(null);
-  const downloadsRef = React.useRef<View>(null);
-  const settingsRef = React.useRef<View>(null);
+  const profileRef = useRef<View>(null);
+  const internalSearchRef = useRef<View>(null);
+  const homeRef = useRef<View>(null);
+  const liveRef = useRef<View>(null);
+  const moviesRef = useRef<View>(null);
+  const seriesRef = useRef<View>(null);
+  const announcementsRef = useRef<View>(null);
+  const favoritesRef = useRef<View>(null);
+  const downloadsRef = useRef<View>(null);
+  const settingsRef = useRef<View>(null);
 
   const searchRef = providedSearchRef ?? internalSearchRef;
 
   const expandProgress = useSharedValue(0);
-
-  useEffect(() => {
-    return () => {
-      if (blurTimeoutRef.current) {
-        clearTimeout(blurTimeoutRef.current);
-      }
-      if (pressNavigateTimeoutRef.current) {
-        clearTimeout(pressNavigateTimeoutRef.current);
-      }
-      if (pressUnlockTimeoutRef.current) {
-        clearTimeout(pressUnlockTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const isSidebarFocused = focusedId !== null;
-    if (isSidebarFocused) {
-      expandProgress.value = withSpring(1, SPRING_CONFIG);
-    } else {
-      expandProgress.value = withTiming(0, {
-        duration: 165,
-        easing: Easing.bezier(0.22, 0.61, 0.36, 1),
-      });
-    }
-
-    if (isSidebarFocused && onExpand) onExpand();
-    if (!isSidebarFocused && onCollapse) onCollapse();
-  }, [focusedId, onExpand, onCollapse, expandProgress]);
+  const focusedItemsRef = useRef<Set<SidebarItemId>>(new Set());
+  const isExpandedRef = useRef(false);
+  const blurTokenRef = useRef(0);
 
   useEffect(() => {
     if (!onHomeNodeReady) return;
+
     const tryResolve = () => {
       const node = homeRef.current ? (findNodeHandle(homeRef.current) ?? undefined) : undefined;
       if (node) {
@@ -144,9 +285,7 @@ const TVSidebar = ({
     if (tryResolve()) return;
 
     const interval = setInterval(() => {
-      if (tryResolve()) {
-        clearInterval(interval);
-      }
+      if (tryResolve()) clearInterval(interval);
     }, 120);
 
     return () => clearInterval(interval);
@@ -156,79 +295,66 @@ const TVSidebar = ({
     if (!onHomeNodeReady || !homeRef.current) return;
     const node = findNodeHandle(homeRef.current) ?? undefined;
     if (node) onHomeNodeReady(node);
-  }, [activeRoute, focusedId, onHomeNodeReady]);
+  }, [activeRoute, onHomeNodeReady]);
 
   useEffect(() => {
     if (!onSearchNodeReady || !searchRef.current) return;
     const node = findNodeHandle(searchRef.current) ?? undefined;
     if (node) onSearchNodeReady(node);
-  }, [activeRoute, focusedId, onSearchNodeReady, searchRef]);
+  }, [activeRoute, onSearchNodeReady, searchRef]);
 
+  const setSidebarExpanded = useCallback((expanded: boolean) => {
+    if (isExpandedRef.current === expanded) return;
+    isExpandedRef.current = expanded;
 
-  const clearPendingBlur = useCallback(() => {
-    if (blurTimeoutRef.current) {
-      clearTimeout(blurTimeoutRef.current);
-      blurTimeoutRef.current = null;
-    }
-  }, []);
-
-  const handleFocus = useCallback(
-    (id: SidebarRoute | 'Profile') => {
-      if (isPressClosingRef.current) return;
-      clearPendingBlur();
-      setFocusedId(id);
-    },
-    [clearPendingBlur]
-  );
-
-  const handleBlur = useCallback(() => {
-    if (isPressClosingRef.current) {
-      isPressClosingRef.current = false;
-      if (pressUnlockTimeoutRef.current) {
-        clearTimeout(pressUnlockTimeoutRef.current);
-        pressUnlockTimeoutRef.current = null;
-      }
+    if (expanded) {
+      expandProgress.value = withSpring(1, SPRING_CONFIG);
+      onExpand?.();
       return;
     }
-    clearPendingBlur();
-    blurTimeoutRef.current = setTimeout(() => {
-      setFocusedId(null);
-      blurTimeoutRef.current = null;
-    }, 90);
-  }, [clearPendingBlur]);
+
+    expandProgress.value = withTiming(0, {
+      duration: 165,
+      easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+    });
+    onCollapse?.();
+  }, [expandProgress, onCollapse, onExpand]);
+
+  const handleItemFocus = useCallback((id: SidebarItemId) => {
+    blurTokenRef.current += 1;
+    focusedItemsRef.current.add(id);
+    setSidebarExpanded(true);
+  }, [setSidebarExpanded]);
+
+  const handleItemBlur = useCallback((id: SidebarItemId) => {
+    focusedItemsRef.current.delete(id);
+    const token = ++blurTokenRef.current;
+
+    Promise.resolve().then(() => {
+      if (blurTokenRef.current !== token) return;
+      if (focusedItemsRef.current.size === 0) {
+        setSidebarExpanded(false);
+      }
+    });
+  }, [setSidebarExpanded]);
+
+  const collapseSidebar = useCallback(() => {
+    focusedItemsRef.current.clear();
+    blurTokenRef.current += 1;
+    setSidebarExpanded(false);
+  }, [setSidebarExpanded]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
-    width: interpolate(
+    width: interpolate(expandProgress.value, [0, 1], [MINI_WIDTH, MAX_WIDTH], Extrapolate.CLAMP),
+    backgroundColor: interpolateColor(
       expandProgress.value,
       [0, 1],
-      [MINI_WIDTH, MAX_WIDTH],
-      Extrapolate.CLAMP
+      ['rgba(18, 20, 23, 0.82)', 'rgba(18, 20, 23, 0.92)']
     ),
-    backgroundColor: `rgba(18, 20, 23, ${interpolate(expandProgress.value, [0, 1], [0.82, 0.92])})`,
   }));
-
-  const animatedLabelStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(expandProgress.value > 0.75 ? 1 : 0, { duration: 180 }),
-    transform: [
-      {
-        translateX: interpolate(expandProgress.value, [0.4, 1], [-25, 0], Extrapolate.CLAMP),
-      },
-    ],
-  }));
-
-  const handlePress = useCallback(
-    (id: SidebarRoute) => {
-      if (id !== activeRoute) onNavigate(id);
-    },
-    [activeRoute, onNavigate]
-  );
 
   const activeColor = theme.colors.primary || '#E50914';
   const inactiveColor = theme.colors.icon || theme.colors.textMuted || '#9CA3AF';
-  const focusedFill = 'rgba(255, 255, 255, 0.18)';
-  const focusedBorder = 'rgba(255, 255, 255, 0.22)';
-  const focusedShadow = 'rgba(255, 255, 255, 0.18)';
-  const shouldRenderLabels = focusedId !== null;
 
   const getFocusTarget = useCallback(
     (route: SidebarRoute) => focusTargets?.[route] ?? undefined,
@@ -312,122 +438,56 @@ const TVSidebar = ({
     }
   }, [announcementsRef, downloadsRef, favoritesRef, getNode, homeRef, liveRef, moviesRef, seriesRef]);
 
-  const renderMenuItem = useCallback((item: MenuItem) => {
-    const isActive = activeRoute === item.id;
-    const isFocused = focusedId === item.id;
+  const handleRoutePress = useCallback((id: SidebarRoute) => {
+    collapseSidebar();
+    if (id !== activeRoute) onNavigate(id);
+  }, [activeRoute, collapseSidebar, onNavigate]);
 
+  const handleProfilePress = useCallback(() => {
+    collapseSidebar();
+    onProfilePress?.();
+  }, [collapseSidebar, onProfilePress]);
+
+  const renderMenuItem = useCallback((item: MenuItem) => {
     const itemRef = getItemRef(item.id);
     const selfNode = getNode(itemRef);
     const rightNode = getFocusTarget(item.id) ?? getFocusTarget(activeRoute);
 
     return (
-      <Pressable
+      <SidebarNavItem
         key={item.id}
-        ref={itemRef as React.RefObject<any>}
-        collapsable={false}
-        onPress={() => {
-          isPressClosingRef.current = true;
-          clearPendingBlur();
-          setFocusedId(null);
-          expandProgress.value = withTiming(0, {
-            duration: 145,
-            easing: Easing.bezier(0.22, 0.61, 0.36, 1),
-          });
-          if (pressNavigateTimeoutRef.current) {
-            clearTimeout(pressNavigateTimeoutRef.current);
-          }
-          if (pressUnlockTimeoutRef.current) {
-            clearTimeout(pressUnlockTimeoutRef.current);
-          }
-          pressNavigateTimeoutRef.current = setTimeout(() => {
-            handlePress(item.id);
-            pressNavigateTimeoutRef.current = null;
-          }, 100);
-          pressUnlockTimeoutRef.current = setTimeout(() => {
-            isPressClosingRef.current = false;
-            pressUnlockTimeoutRef.current = null;
-          }, 450);
-        }}
-        onFocus={() => handleFocus(item.id)}
-        onBlur={handleBlur}
-        onLayout={item.id === 'Home' && onHomeNodeReady ? () => {
-          const node = getNode(itemRef);
-          if (node) onHomeNodeReady(node);
-        } : item.id === 'Search' && onSearchNodeReady ? () => {
-          const node = getNode(itemRef);
-          if (node) onSearchNodeReady(node);
-        } : undefined}
-        {...({
-          nextFocusRight: rightNode,
-          nextFocusLeft: selfNode,
-          nextFocusUp: getUpNode(item.id),
-          nextFocusDown: getDownNode(item.id),
-        } as any)}
-        style={[
-          styles.menuItem,
-          isFocused && styles.menuItemFocused,
-          isFocused && {
-            backgroundColor: focusedFill,
-            borderColor: focusedBorder,
-            shadowColor: focusedShadow,
-          },
-        ]}
-      >
-        {isActive && <View style={styles.activeHalo} pointerEvents="none" />}
-        {isActive && <View style={styles.activeIndicator} pointerEvents="none" />}
-
-        <View style={styles.menuItemContent}>
-          <View
-            style={[
-              styles.iconWrapper,
-              (isActive || isFocused) && styles.iconActiveBorder,
-              isActive && { borderBottomColor: activeColor },
-            ]}
-          >
-            <Icon
-              name={item.icon}
-              size={scaleFont(28)}
-              color={isFocused || isActive ? '#FFFFFF' : inactiveColor}
-            />
-          </View>
-
-          {shouldRenderLabels && (
-            <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
-              <Text
-                style={[
-                  styles.label,
-                  isFocused && styles.labelFocused,
-                  isActive && !isFocused && { color: activeColor },
-                  isActive && isFocused && { color: '#FFFFFF' },
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Animated.View>
-          )}
-        </View>
-      </Pressable>
+        id={item.id}
+        icon={item.icon}
+        label={item.label}
+        isActive={activeRoute === item.id}
+        activeColor={activeColor}
+        inactiveColor={inactiveColor}
+        expandProgress={expandProgress}
+        itemRef={itemRef}
+        onPress={() => handleRoutePress(item.id)}
+        onFocusItem={handleItemFocus}
+        onBlurItem={handleItemBlur}
+        nextFocusLeft={selfNode}
+        nextFocusRight={rightNode}
+        nextFocusUp={getUpNode(item.id)}
+        nextFocusDown={getDownNode(item.id)}
+        onHomeNodeReady={onHomeNodeReady}
+        onSearchNodeReady={onSearchNodeReady}
+      />
     );
   }, [
-    activeRoute,
-    focusedId,
     activeColor,
-    inactiveColor,
-    focusedFill,
-    focusedBorder,
-    focusedShadow,
-    shouldRenderLabels,
-    animatedLabelStyle,
+    activeRoute,
     expandProgress,
-    clearPendingBlur,
-    handlePress,
-    handleFocus,
-    handleBlur,
+    getDownNode,
+    getFocusTarget,
     getItemRef,
     getNode,
-    getFocusTarget,
     getUpNode,
-    getDownNode,
+    handleItemBlur,
+    handleItemFocus,
+    handleRoutePress,
+    inactiveColor,
     onHomeNodeReady,
     onSearchNodeReady,
   ]);
@@ -439,43 +499,23 @@ const TVSidebar = ({
         <View style={styles.innerLiquidGlow} pointerEvents="none" />
 
         <View style={styles.header}>
-          <Pressable
-            ref={profileRef}
-            collapsable={false}
-            onPress={onProfilePress}
-            onFocus={() => handleFocus('Profile')}
-            onBlur={handleBlur}
-            {...({
-              nextFocusUp: getNode(profileRef),
-              nextFocusLeft: getNode(profileRef),
-              nextFocusRight: getFocusTarget(activeRoute),
-              nextFocusDown: getNode(searchRef),
-            } as any)}
-            style={[
-              styles.profileButton,
-              focusedId === 'Profile' && styles.profileFocused,
-              focusedId === 'Profile' && {
-                backgroundColor: focusedFill,
-                borderColor: focusedBorder,
-                shadowColor: focusedShadow,
-              },
-            ]}
-          >
-            <View style={styles.menuItemContent}>
-              <View style={styles.iconWrapper}>
-                <Icon
-                  name="user"
-                  size={scaleFont(26)}
-                  color={focusedId === 'Profile' ? '#FFFFFF' : inactiveColor}
-                />
-              </View>
-              {shouldRenderLabels && (
-                <Animated.View style={[styles.labelContainer, animatedLabelStyle]}>
-                  <Text style={[styles.label, focusedId === 'Profile' && styles.labelFocused]}>Profile</Text>
-                </Animated.View>
-              )}
-            </View>
-          </Pressable>
+          <SidebarNavItem
+            id="Profile"
+            icon="user"
+            label="Profile"
+            isActive={false}
+            activeColor={activeColor}
+            inactiveColor={inactiveColor}
+            expandProgress={expandProgress}
+            itemRef={profileRef}
+            onPress={handleProfilePress}
+            onFocusItem={handleItemFocus}
+            onBlurItem={handleItemBlur}
+            nextFocusUp={getNode(profileRef)}
+            nextFocusLeft={getNode(profileRef)}
+            nextFocusRight={getFocusTarget(activeRoute)}
+            nextFocusDown={getNode(searchRef)}
+          />
           <View style={styles.divider} />
         </View>
 
@@ -531,21 +571,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingTop: scale(20),
   },
-  profileButton: {
-    width: '100%',
-    height: scale(62),
-    borderRadius: scale(31),
-    justifyContent: 'center',
-    paddingHorizontal: ITEM_LEFT_PADDING,
-  },
-  profileFocused: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderColor: 'rgba(255, 255, 255, 0.22)',
-    borderWidth: 1.5,
-    shadowOpacity: 0.18,
-    shadowRadius: scale(10),
-    transform: [{ scale: 1.02 }],
-  },
   divider: {
     width: '70%',
     alignSelf: 'center',
@@ -583,15 +608,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  menuItemFocused: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderColor: 'rgba(255, 255, 255, 0.22)',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.18,
-    shadowRadius: scale(10),
-    elevation: 4,
-    transform: [{ scale: 1.02 }],
-  },
   menuItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -602,6 +618,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconActiveBorder: {
     borderBottomWidth: scale(3),
     borderBottomColor: 'transparent',
@@ -609,6 +630,8 @@ const styles = StyleSheet.create({
   labelContainer: {
     marginLeft: scale(22),
     flex: 1,
+    minHeight: scale(28),
+    justifyContent: 'center',
   },
   label: {
     color: 'rgba(255, 255, 255, 0.75)',
@@ -622,6 +645,12 @@ const styles = StyleSheet.create({
   labelFocused: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  labelOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   activeIndicator: {
     position: 'absolute',

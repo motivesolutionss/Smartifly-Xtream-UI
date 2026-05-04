@@ -18,6 +18,13 @@ import {
     Animated,
     Modal,
 } from 'react-native';
+import Reanimated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import FastImageComponent from '../../components/tv/TVFastImage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
@@ -27,6 +34,67 @@ import { colors, scale, scaleFont, Icon } from '../../theme';
 import useTVBackHandler from '../../utils/useTVBackHandler';
 import { logger } from '../../config';
 import TVDownloadButton from '../../components/tv/TVDownloadButton';
+
+const FocusActionButton: React.FC<{
+    label: string;
+    iconName: string;
+    onPress: () => void;
+    primary?: boolean;
+}> = ({ label, iconName, onPress, primary = false }) => {
+    const focused = useSharedValue(0);
+    const scaleValue = useSharedValue(1);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [primary ? (colors.accent || '#00E5FF') : 'rgba(255,255,255,0.15)', primary ? '#FFFFFF' : 'rgba(255,255,255,0.3)']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['transparent', '#FFFFFF']
+        ),
+        transform: [{ scale: scaleValue.value }],
+        shadowOpacity: focused.value > 0 ? 0.5 : 0,
+        shadowRadius: focused.value > 0 ? 10 : 0,
+    }));
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            [primary ? colors.background : '#FFFFFF', primary ? colors.background : '#FFFFFF']
+        ),
+    }));
+
+    return (
+        <Reanimated.View style={[styles.button, primary ? styles.buttonPrimary : styles.buttonSecondary, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                    scaleValue.value = withSpring(1.05, { damping: 16, stiffness: 220, mass: 0.6 });
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                    scaleValue.value = withSpring(1, { damping: 16, stiffness: 220, mass: 0.6 });
+                }}
+                style={({ pressed }) => [styles.focusButtonPressable, pressed && styles.buttonPressed]}
+            >
+                <Icon
+                    name={iconName}
+                    size={scale(24)}
+                    color={primary ? colors.background : '#FFF'}
+                    style={styles.buttonIcon}
+                />
+                <Reanimated.Text style={[styles.buttonText, primary && styles.buttonTextPrimary, textStyle]}>
+                    {label}
+                </Reanimated.Text>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
 
 const TVMovieDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
@@ -38,7 +106,6 @@ const TVMovieDetailScreen: React.FC = () => {
     const [info, setInfo] = useState<any>(null);
 
     // UI State
-    const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | 'back' | 'download' | null>('play');
     const [isTrailerModalOpen, setIsTrailerModalOpen] = useState(false);
     const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
 
@@ -154,45 +221,6 @@ const TVMovieDetailScreen: React.FC = () => {
     // RENDER HELPERS
     // ==========================================================================
 
-    const renderButton = (
-        id: 'play' | 'trailer' | 'back',
-        label: string,
-        iconName: string,
-        onPress: () => void,
-        primary = false
-    ) => {
-        const isFocused = focusedButton === id;
-
-        return (
-            <Pressable
-                onPress={onPress}
-                onFocus={() => setFocusedButton(id)}
-                onBlur={() => setFocusedButton(null)}
-                style={({ pressed }) => [
-                    styles.button,
-                    primary ? styles.buttonPrimary : styles.buttonSecondary,
-                    isFocused && styles.buttonFocused,
-                    isFocused && primary && styles.buttonFocusedPrimary,
-                    isFocused && !primary && styles.buttonFocusedSecondary,
-                    pressed && styles.buttonPressed
-                ]}
-            >
-                <Icon
-                    name={iconName}
-                    size={scale(24)}
-                    color={primary ? colors.background : '#FFF'}
-                    style={styles.buttonIcon}
-                />
-                <Text style={[
-                    styles.buttonText,
-                    primary && styles.buttonTextPrimary
-                ]}>
-                    {label}
-                </Text>
-            </Pressable>
-        );
-    };
-
     return (
         <View
             style={styles.container}
@@ -297,13 +325,12 @@ const TVMovieDetailScreen: React.FC = () => {
 
                     {/* Action Buttons */}
                     <View style={styles.actionsContainer}>
-                        {renderButton(
-                            'play',
-                            'Watch Now',
-                            'playCircle',
-                            handlePlay,
-                            true
-                        )}
+                        <FocusActionButton
+                            label="Watch Now"
+                            iconName="playCircle"
+                            onPress={handlePlay}
+                            primary
+                        />
                         <TVDownloadButton
                             item={{
                                 id: String(movie.stream_id),
@@ -316,23 +343,20 @@ const TVMovieDetailScreen: React.FC = () => {
                             labelStyle={styles.buttonText}
                             invertOnFocus={false}
                             focusMode="secondary"
-                            onFocus={() => setFocusedButton('download')}
-                            onBlur={() => setFocusedButton(null)}
-                            isFocused={focusedButton === 'download'}
                             style={styles.downloadButton}
                         />
-                        {youtube_trailer && renderButton(
-                            'trailer',
-                            'Trailer',
-                            'filmStrip',
-                            () => setIsTrailerModalOpen(true)
-                        )}
-                        {renderButton(
-                            'back',
-                            'Go Back',
-                            'arrow-left',
-                            () => navigation.goBack()
-                        )}
+                        {youtube_trailer ? (
+                            <FocusActionButton
+                                label="Trailer"
+                                iconName="filmStrip"
+                                onPress={() => setIsTrailerModalOpen(true)}
+                            />
+                        ) : null}
+                        <FocusActionButton
+                            label="Go Back"
+                            iconName="arrow-left"
+                            onPress={() => navigation.goBack()}
+                        />
                     </View>
                 </View>
 
@@ -528,10 +552,16 @@ const styles = StyleSheet.create({
     },
     downloadButton: {
         width: scale(238),
+        marginRight: scale(10),
+        borderRadius: scale(12),
+    },
+    focusButtonPressable: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
         paddingVertical: scale(18),
         paddingHorizontal: scale(28),
-        justifyContent: 'center',
-        marginRight: scale(10),
+        width: scale(238),
         borderRadius: scale(12),
     },
     buttonPrimary: {

@@ -1,5 +1,12 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useCallback } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import { scale, scaleFont, Icon } from '../.././../theme';
 import { SelectedTrackType, SelectedVideoTrackType } from 'react-native-video';
 
@@ -38,6 +45,47 @@ interface TVPlayerSettingsModalProps {
     selectedTextTrack: any;
 }
 
+const SPRING = {
+    damping: 16,
+    stiffness: 220,
+    mass: 0.6,
+};
+
+type FocusRowProps = {
+    children: React.ReactNode;
+    baseStyle: any;
+    focusedStyle?: any;
+    onPress?: () => void;
+};
+
+const FocusRow: React.FC<FocusRowProps> = ({ children, baseStyle, focusedStyle, onPress }) => {
+    const focused = useSharedValue(0);
+    const animatedStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(0,0,0,0)', '#FFFFFF']
+        ),
+        transform: [{ scale: focused.value ? 1.01 : 1 }],
+    }));
+
+    const handleFocus = useCallback(() => {
+        focused.value = withTiming(1, { duration: 90 });
+    }, [focused]);
+
+    const handleBlur = useCallback(() => {
+        focused.value = withTiming(0, { duration: 90 });
+    }, [focused]);
+
+    return (
+        <Animated.View style={[baseStyle, animatedStyle, focusedStyle]}>
+            <Pressable onPress={onPress} onFocus={handleFocus} onBlur={handleBlur} style={styles.rowPressable}>
+                {typeof children === 'function' ? (children as any)(focused) : children}
+            </Pressable>
+        </Animated.View>
+    );
+};
+
 const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
     showSettings,
     settingsView,
@@ -66,8 +114,6 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
     selectedAudioTrack,
     selectedTextTrack,
 }) => {
-    const [focusedKey, setFocusedKey] = useState<string | null>(null);
-
     const renderSettingsHeader = (title: string) => (
         <View style={styles.settingsHeader}>
             <Pressable onPress={() => setSettingsView('root')} style={styles.settingsBack}>
@@ -78,146 +124,66 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
         </View>
     );
 
-    const renderSettingsOption = (
-        option: TrackOption,
-        isSelected: boolean,
-        onPress: () => void
-    ) => {
-        const isFocused = focusedKey === option.key;
-        return (
-        <Pressable
-            key={option.key}
-            style={[
-                styles.settingsOption,
-                isSelected && styles.settingsOptionSelected,
-                isFocused && styles.settingsOptionFocused,
-            ]}
-            onPress={onPress}
-            onFocus={() => setFocusedKey(option.key)}
-            onBlur={() => setFocusedKey((current) => current === option.key ? null : current)}
-        >
-            <View style={styles.settingsOptionText}>
-                <Text style={[
-                    styles.settingsOptionLabel,
-                    isSelected && styles.settingsOptionLabelSelected,
-                    isFocused && styles.settingsTextFocused,
-                ]}>
-                    {option.label}
-                </Text>
-                {option.description ? (
-                    <Text style={[styles.settingsOptionDescription, isFocused && styles.settingsDescriptionFocused]}>
-                        {option.description}
+    const renderSettingsOption = (option: TrackOption, isSelected: boolean, onPress: () => void) => (
+        <FocusRow key={option.key} baseStyle={[styles.settingsOption, isSelected && styles.settingsOptionSelected]} onPress={onPress}>
+            <>
+                <View style={styles.settingsOptionText}>
+                    <Text style={[styles.settingsOptionLabel, isSelected && styles.settingsOptionLabelSelected]}>
+                        {option.label}
                     </Text>
-                ) : null}
-            </View>
-            {isSelected ? <Icon name="check" size={scale(22)} color={isFocused ? '#111111' : '#E50914'} /> : null}
-        </Pressable>
-        );
-    };
+                    {option.description ? (
+                        <Text style={styles.settingsOptionDescription}>
+                            {option.description}
+                        </Text>
+                    ) : null}
+                </View>
+                {isSelected ? <Icon name="check" size={scale(22)} color="#E50914" /> : null}
+            </>
+        </FocusRow>
+    );
 
-    const renderToggleRow = (key: string, label: string, value: boolean, onPress: () => void) => {
-        const isFocused = focusedKey === key;
-        return (
-        <Pressable
-            style={[styles.settingsRow, isFocused && styles.settingsRowFocused]}
-            onPress={onPress}
-            onFocus={() => setFocusedKey(key)}
-            onBlur={() => setFocusedKey((current) => current === key ? null : current)}
-        >
-            <Text style={[styles.settingsRowLabel, isFocused && styles.settingsTextFocused]}>{label}</Text>
-            <View style={[styles.togglePill, value && styles.togglePillActive]}>
-                <Text style={[styles.toggleText, value && styles.toggleTextActive]}>
-                    {value ? 'ON' : 'OFF'}
-                </Text>
-            </View>
-        </Pressable>
-        );
-    };
+    const renderToggleRow = (key: string, label: string, value: boolean, onPress: () => void) => (
+        <FocusRow key={key} baseStyle={styles.settingsRow} onPress={onPress}>
+            <>
+                <Text style={styles.settingsRowLabel}>{label}</Text>
+                <View style={[styles.togglePill, value && styles.togglePillActive]}>
+                    <Text style={[styles.toggleText, value && styles.toggleTextActive]}>
+                        {value ? 'ON' : 'OFF'}
+                    </Text>
+                </View>
+            </>
+        </FocusRow>
+    );
+
+    const renderRootNavRow = (rowKey: string, label: string, value: string, onPress: () => void) => (
+        <FocusRow key={rowKey} baseStyle={styles.settingsRow} onPress={onPress}>
+            <>
+                <Text style={styles.settingsRowLabel}>{label}</Text>
+                <View style={styles.settingsRowRight}>
+                    <Text style={styles.settingsRowValue}>{value}</Text>
+                    <Icon name="chevronRight" size={scale(18)} color="#666" />
+                </View>
+            </>
+        </FocusRow>
+    );
 
     return (
-        <Modal
-            visible={showSettings}
-            transparent
-            animationType="fade"
-            onRequestClose={handleSettingsClose}
-        >
+        <Modal visible={showSettings} transparent animationType="fade" onRequestClose={handleSettingsClose}>
             <View style={styles.modalBackdrop} pointerEvents="none" />
             <View style={styles.settingsSheet}>
                 <ScrollView showsVerticalScrollIndicator={false}>
                     {settingsView === 'root' && (
                         <View>
                             <Text style={styles.settingsTitleMain}>Settings</Text>
-
-                            <Pressable
-                                style={[styles.settingsRow, focusedKey === 'root-quality' && styles.settingsRowFocused]}
-                                onPress={() => setSettingsView('quality')}
-                                onFocus={() => setFocusedKey('root-quality')}
-                                onBlur={() => setFocusedKey((current) => current === 'root-quality' ? null : current)}
-                            >
-                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-quality' && styles.settingsTextFocused]}>Quality</Text>
-                                <View style={styles.settingsRowRight}>
-                                    <Text style={styles.settingsRowValue}>{selectedQualityLabel}</Text>
-                                    <Icon name="chevronRight" size={scale(18)} color="#666" />
-                                </View>
-                            </Pressable>
-
-                            <Pressable
-                                style={[styles.settingsRow, focusedKey === 'root-audio' && styles.settingsRowFocused]}
-                                onPress={() => setSettingsView('audio')}
-                                onFocus={() => setFocusedKey('root-audio')}
-                                onBlur={() => setFocusedKey((current) => current === 'root-audio' ? null : current)}
-                            >
-                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-audio' && styles.settingsTextFocused]}>Audio</Text>
-                                <View style={styles.settingsRowRight}>
-                                    <Text style={styles.settingsRowValue}>{selectedAudioLabel}</Text>
-                                    <Icon name="chevronRight" size={scale(18)} color="#666" />
-                                </View>
-                            </Pressable>
-
-                            <Pressable
-                                style={[styles.settingsRow, focusedKey === 'root-subtitles' && styles.settingsRowFocused]}
-                                onPress={() => setSettingsView('subtitles')}
-                                onFocus={() => setFocusedKey('root-subtitles')}
-                                onBlur={() => setFocusedKey((current) => current === 'root-subtitles' ? null : current)}
-                            >
-                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-subtitles' && styles.settingsTextFocused]}>Subtitles</Text>
-                                <View style={styles.settingsRowRight}>
-                                    <Text style={styles.settingsRowValue}>{selectedSubtitleLabel}</Text>
-                                    <Icon name="chevronRight" size={scale(18)} color="#666" />
-                                </View>
-                            </Pressable>
-
-                            <Pressable
-                                style={[styles.settingsRow, focusedKey === 'root-speed' && styles.settingsRowFocused]}
-                                onPress={() => setSettingsView('speed')}
-                                onFocus={() => setFocusedKey('root-speed')}
-                                onBlur={() => setFocusedKey((current) => current === 'root-speed' ? null : current)}
-                            >
-                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-speed' && styles.settingsTextFocused]}>Speed</Text>
-                                <View style={styles.settingsRowRight}>
-                                    <Text style={styles.settingsRowValue}>{playbackRate}x</Text>
-                                    <Icon name="chevronRight" size={scale(18)} color="#666" />
-                                </View>
-                            </Pressable>
-
-                            <Pressable
-                                style={[styles.settingsRow, focusedKey === 'root-aspect' && styles.settingsRowFocused]}
-                                onPress={() => setSettingsView('aspect')}
-                                onFocus={() => setFocusedKey('root-aspect')}
-                                onBlur={() => setFocusedKey((current) => current === 'root-aspect' ? null : current)}
-                            >
-                                <Text style={[styles.settingsRowLabel, focusedKey === 'root-aspect' && styles.settingsTextFocused]}>Aspect Ratio</Text>
-                                <View style={styles.settingsRowRight}>
-                                    <Text style={styles.settingsRowValue}>{resizeMode}</Text>
-                                    <Icon name="chevronRight" size={scale(18)} color="#666" />
-                                </View>
-                            </Pressable>
-
+                            {renderRootNavRow('root-quality', 'Quality', selectedQualityLabel, () => setSettingsView('quality'))}
+                            {renderRootNavRow('root-audio', 'Audio', selectedAudioLabel, () => setSettingsView('audio'))}
+                            {renderRootNavRow('root-subtitles', 'Subtitles', selectedSubtitleLabel, () => setSettingsView('subtitles'))}
+                            {renderRootNavRow('root-speed', 'Speed', `${playbackRate}x`, () => setSettingsView('speed'))}
+                            {renderRootNavRow('root-aspect', 'Aspect Ratio', resizeMode, () => setSettingsView('aspect'))}
                             <View style={styles.settingsDivider} />
-
-                            {renderToggleRow('root-mute', 'Mute', isMuted, () => setIsMuted(prev => !prev))}
-                            {renderToggleRow('root-repeat', 'Repeat', repeatEnabled, () => setRepeatEnabled(prev => !prev))}
-                            {renderToggleRow('root-stats', 'Stats Overlay', showStats, () => setShowStats(prev => !prev))}
+                            {renderToggleRow('root-mute', 'Mute', isMuted, () => setIsMuted((prev) => !prev))}
+                            {renderToggleRow('root-repeat', 'Repeat', repeatEnabled, () => setRepeatEnabled((prev) => !prev))}
+                            {renderToggleRow('root-stats', 'Stats Overlay', showStats, () => setShowStats((prev) => !prev))}
                         </View>
                     )}
 
@@ -291,21 +257,9 @@ const TVPlayerSettingsModal: React.FC<TVPlayerSettingsModalProps> = memo(({
                     {settingsView === 'aspect' && (
                         <View>
                             {renderSettingsHeader('Aspect Ratio')}
-                            {renderSettingsOption(
-                                { key: 'aspect-contain', label: 'Fit (Contain)' },
-                                resizeMode === 'contain',
-                                () => setResizeMode('contain')
-                            )}
-                            {renderSettingsOption(
-                                { key: 'aspect-cover', label: 'Fill (Cover)' },
-                                resizeMode === 'cover',
-                                () => setResizeMode('cover')
-                            )}
-                            {renderSettingsOption(
-                                { key: 'aspect-stretch', label: 'Stretch' },
-                                resizeMode === 'stretch',
-                                () => setResizeMode('stretch')
-                            )}
+                            {renderSettingsOption({ key: 'aspect-contain', label: 'Fit (Contain)' }, resizeMode === 'contain', () => setResizeMode('contain'))}
+                            {renderSettingsOption({ key: 'aspect-cover', label: 'Fill (Cover)' }, resizeMode === 'cover', () => setResizeMode('cover'))}
+                            {renderSettingsOption({ key: 'aspect-stretch', label: 'Stretch' }, resizeMode === 'stretch', () => setResizeMode('stretch'))}
                         </View>
                     )}
                 </ScrollView>
@@ -344,19 +298,18 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(22),
         fontWeight: '700',
     },
-    settingsRow: {
+    rowPressable: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        flex: 1,
+    },
+    settingsRow: {
         paddingVertical: scale(14),
         paddingHorizontal: scale(8),
         borderRadius: scale(8),
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: 'rgba(255,255,255,0.08)',
-    },
-    settingsRowFocused: {
-        backgroundColor: '#FFFFFF',
-        borderBottomColor: 'transparent',
     },
     settingsRowLabel: {
         color: '#E5E5E5',
@@ -392,18 +345,12 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     settingsOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
         paddingVertical: scale(13),
         paddingHorizontal: scale(8),
         borderRadius: scale(8),
     },
     settingsOptionSelected: {
         backgroundColor: 'rgba(229, 9, 20, 0.08)',
-    },
-    settingsOptionFocused: {
-        backgroundColor: '#FFFFFF',
     },
     settingsOptionText: {
         flex: 1,
@@ -417,17 +364,10 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
     },
-    settingsTextFocused: {
-        color: '#111111',
-        fontWeight: '700',
-    },
     settingsOptionDescription: {
         color: '#666666',
         fontSize: scaleFont(14),
         marginTop: scale(3),
-    },
-    settingsDescriptionFocused: {
-        color: '#333333',
     },
     togglePill: {
         backgroundColor: 'rgba(255,255,255,0.1)',

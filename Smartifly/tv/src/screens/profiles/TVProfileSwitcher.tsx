@@ -115,7 +115,7 @@ const TVProfileSwitcher: React.FC<TVProfileSwitcherProps> = ({ navigation }) => 
         if (profile.pinRequired) {
             navigation.navigate('PinEntry', {
                 profileId: profile.id,
-                returnTo: 'Home',
+                returnTo: 'TVShell',
             });
             return;
         }
@@ -123,7 +123,7 @@ const TVProfileSwitcher: React.FC<TVProfileSwitcherProps> = ({ navigation }) => 
         const success = switchProfile(profile.id);
         if (success) {
             logger.info('Profile switched', { profileId: profile.id });
-            navigation.replace('Home');
+            navigation.replace('TVShell');
         }
     };
 

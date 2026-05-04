@@ -1,21 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     View,
-    Text,
     Pressable,
     StyleSheet,
 } from 'react-native';
 import Animated, {
-    useSharedValue,
+    interpolateColor,
     useAnimatedStyle,
+    useSharedValue,
     withSpring,
+    withTiming,
 } from 'react-native-reanimated';
 import { colors, scale, scaleFont } from '../.././../theme';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 interface TVSearchKeypadProps {
     onKeyPress: (key: string) => void;
@@ -28,79 +25,83 @@ interface TVSearchKeypadProps {
 interface KeyButtonProps {
     label: string;
     onPress: () => void;
-    isActive?: boolean;
-    icon?: string;
-    width?: number; // Optional customization
     isControl?: boolean;
     pressableRef?: React.Ref<View>;
     enableGlow?: boolean;
+    containerStyle?: object;
+    textStyle?: object;
 }
 
-// =============================================================================
-// KEY COMPONENT
-// =============================================================================
-
-// Spring config - SAME as TVContentCard for consistency
 const SPRING_CONFIG = {
     damping: 15,
     stiffness: 200,
     mass: 0.5,
 };
+const KEY_GLOW_RADIUS = scale(16);
 
 const SearchKey: React.FC<KeyButtonProps> = React.memo(({
     label,
     onPress,
-    icon,
     isControl,
     pressableRef,
     enableGlow = true,
+    containerStyle,
+    textStyle,
 }) => {
-    const [focused, setFocused] = useState(false);
-
-    // Reanimated shared value for 60fps UI-thread animations
+    const focused = useSharedValue(0);
     const scaleValue = useSharedValue(1);
 
-    // Animated style - runs on UI thread
-    const animatedStyle = useAnimatedStyle(() => ({
+    const animatedShellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isControl ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.05)', colors.primary || '#E50914']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255, 255, 255, 0.1)', colors.primary || '#E50914']
+        ),
+        shadowOpacity: enableGlow ? focused.value * 0.8 : 0,
+        shadowRadius: focused.value > 0 ? KEY_GLOW_RADIUS : 0,
+        elevation: focused.value > 0 ? 10 : 0,
+        shadowColor: colors.primary || '#E50914',
+        shadowOffset: { width: 0, height: 0 },
         transform: [{ scale: scaleValue.value }],
+    }), [enableGlow, isControl, scaleValue]);
+
+    const animatedTextStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255, 255, 255, 0.9)', '#FFFFFF']
+        ),
     }));
 
-    const handleFocus = () => {
+    const handleFocus = useCallback(() => {
+        focused.value = withTiming(1, { duration: 90 });
         scaleValue.value = withSpring(1.05, SPRING_CONFIG);
-        setFocused(true);
-    };
+    }, [focused, scaleValue]);
 
-    const handleBlur = () => {
+    const handleBlur = useCallback(() => {
+        focused.value = withTiming(0, { duration: 90 });
         scaleValue.value = withSpring(1, SPRING_CONFIG);
-        setFocused(false);
-    };
+    }, [focused, scaleValue]);
 
     return (
-        <Animated.View style={[styles.keyWrapper, animatedStyle]}>
+        <Animated.View style={[styles.keyWrapper, styles.key, isControl && styles.controlKey, containerStyle, animatedShellStyle]}>
             <Pressable
                 ref={pressableRef}
                 onPress={onPress}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
-                style={[
-                    styles.key,
-                    isControl && styles.controlKey,
-                    focused && (enableGlow ? styles.focusedKey : styles.focusedKeyFlat),
-                ]}
+                style={styles.keyPressable}
             >
-                {icon ? (
-                    <Text style={[styles.keyText, focused && styles.focusedKeyText]}>{icon}</Text>
-                ) : (
-                    <Text style={[styles.keyText, focused && styles.focusedKeyText]}>{label}</Text>
-                )}
+                <Animated.Text style={[styles.keyText, textStyle, animatedTextStyle]}>{label}</Animated.Text>
             </Pressable>
         </Animated.View>
     );
 });
-
-// =============================================================================
-// MAIN KEYPAD COMPONENT
-// =============================================================================
 
 const TVSearchKeypad = ({
     onKeyPress,
@@ -111,21 +112,14 @@ const TVSearchKeypad = ({
 }: TVSearchKeypadProps) => {
     const perf = usePerfProfile();
     const enableGlow = perf.enableFocusGlow;
-    // 6-Column Grid Layout
+
     const rows = useMemo(() => ([
-        // Row 1: a-f
         { id: 'r1', keys: 'abcdef'.split('') },
-        // Row 2: g-l
         { id: 'r2', keys: 'ghijkl'.split('') },
-        // Row 3: m-r
         { id: 'r3', keys: 'mnopqr'.split('') },
-        // Row 4: s-x
         { id: 'r4', keys: 'stuvwx'.split('') },
-        // Row 5: y-z, 1-4
         { id: 'r5', keys: [...'yz'.split(''), ...'1234'.split('')] },
-        // Row 6: 5-0
         { id: 'r6', keys: '567890'.split('') },
-        // Row 7: Space (Full Width)
         {
             id: 'r7',
             type: 'control',
@@ -133,13 +127,12 @@ const TVSearchKeypad = ({
                 { id: 'space', label: 'Space', action: onSpace, width: 1 }
             ]
         },
-        // Row 8: Actions (Clear, Backspace)
         {
             id: 'r8',
             type: 'control',
             keys: [
                 { id: 'clear', label: 'Clear All', action: onClear, width: 1 },
-                { id: 'backspace', label: '⌫', action: onBackspace, width: 1 } // Using flex 1 for equal split
+                { id: 'backspace', label: 'Backspace', action: onBackspace, width: 1 }
             ]
         },
     ]), [onSpace, onClear, onBackspace]);
@@ -149,7 +142,6 @@ const TVSearchKeypad = ({
             {rows.map((row, rowIndex) => (
                 <View key={row.id} style={styles.row}>
                     {(row as any).type === 'control' ? (
-                        // Special handling for control row
                         (row.keys as any[]).map((key: any) => (
                             <View key={key.id} style={key.width === 1 ? styles.flex1 : { flex: key.width }}>
                                 <SearchKey
@@ -157,11 +149,12 @@ const TVSearchKeypad = ({
                                     onPress={key.action}
                                     isControl
                                     enableGlow={enableGlow}
+                                    containerStyle={row.id === 'r7' ? styles.spaceKey : styles.actionKey}
+                                    textStyle={row.id === 'r7' ? styles.spaceKeyText : styles.actionKeyText}
                                 />
                             </View>
                         ))
                     ) : (
-                        // Standard grid rows
                         (row.keys as string[]).map((char, colIndex) => (
                             <View key={char} style={styles.flex1}>
                                 <SearchKey
@@ -179,10 +172,6 @@ const TVSearchKeypad = ({
     );
 };
 
-// =============================================================================
-// STYLES
-// =============================================================================
-
 const styles = StyleSheet.create({
     container: {
         width: '100%',
@@ -190,53 +179,52 @@ const styles = StyleSheet.create({
     },
     row: {
         flexDirection: 'row',
-        marginBottom: scale(6), // Reduced margin
-        gap: scale(6), // Reduced gap
+        marginBottom: scale(6),
+        gap: scale(6),
     },
     keyWrapper: {
-        height: scale(60), // Increased height (was 50)
+        height: scale(60),
         width: '100%',
     },
     key: {
-        flex: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)', // Glassy background
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderRadius: scale(12),
-        justifyContent: 'center',
-        alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     controlKey: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)', // Slightly distinctive for controls
-        aspectRatio: undefined, // Allow non-square aspect ratio
-        height: '100%',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        height: scale(60),
     },
-    focusedKey: {
-        backgroundColor: colors.primary || '#E50914',
-        borderColor: colors.primary || '#E50914',
-        // Scale removed
-        zIndex: 10,
-        // Add shadow for glow effect
-        shadowColor: colors.primary || '#E50914',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: scale(16),
-        elevation: 10,
+    spaceKey: {
+        height: scale(60),
+        borderRadius: scale(14),
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
     },
-    focusedKeyFlat: {
-        backgroundColor: colors.primary || '#E50914',
-        borderColor: colors.primary || '#E50914',
-        zIndex: 10,
+    actionKey: {
+        height: scale(60),
+        borderRadius: scale(14),
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    keyPressable: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     keyText: {
         color: 'rgba(255, 255, 255, 0.9)',
-        fontSize: scaleFont(24), // Increased font size (was 20)
+        fontSize: scaleFont(24),
         fontWeight: '500',
     },
-    focusedKeyText: {
-        fontSize: scaleFont(26), // Increased focused font size (was 22)
+    spaceKeyText: {
+        fontSize: scaleFont(22),
+        fontWeight: '600',
+        letterSpacing: 0.3,
+    },
+    actionKeyText: {
+        fontSize: scaleFont(18),
         fontWeight: '700',
-        color: '#FFFFFF',
+        letterSpacing: 0.3,
     },
     flex1: {
         flex: 1,

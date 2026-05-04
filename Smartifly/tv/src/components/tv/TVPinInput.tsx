@@ -2,9 +2,6 @@
  * PIN Input Component
  *
  * 4-digit PIN entry with TV-optimized virtual numpad.
- * Features shake animation on incorrect PIN.
- *
- * @enterprise-grade
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -15,35 +12,136 @@ import {
     Pressable,
     Animated,
 } from 'react-native';
+import Reanimated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import { PIN_LENGTH } from '@smartifly/shared/src/store/profileStore';
 import { colors, scale, scaleFont, Icon } from '../../theme';
 
-// =============================================================================
-// TYPES
-// =============================================================================
-
 interface PinInputProps {
-    /** Callback when PIN is complete */
     onComplete: (pin: string) => void;
-    /** Callback when PIN changes */
     onChange?: (pin: string) => void;
-    /** Error state (triggers shake animation) */
     error?: boolean;
-    /** Error message to display */
     errorMessage?: string;
-    /** Title text */
     title?: string;
-    /** Subtitle text */
     subtitle?: string;
-    /** Profile name for display */
     profileName?: string;
-    /** On cancel/back */
     onCancel?: () => void;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const SPRING = {
+    damping: 16,
+    stiffness: 220,
+    mass: 0.6,
+};
+
+type PinKeyProps = {
+    label?: string;
+    onPress: () => void;
+    hasTVPreferredFocus?: boolean;
+};
+
+const PinKey: React.FC<PinKeyProps> = ({ label, onPress, hasTVPreferredFocus = false }) => {
+    const focused = useSharedValue(0);
+    const scaleValue = useSharedValue(1);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.1)', colors.accent || '#00E5FF']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.1)', '#FFFFFF']
+        ),
+        transform: [{ scale: scaleValue.value }],
+    }));
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['#FFFFFF', '#000000']
+        ),
+    }));
+
+    const handleFocus = useCallback(() => {
+        focused.value = withTiming(1, { duration: 90 });
+        scaleValue.value = withSpring(1.05, SPRING);
+    }, [focused, scaleValue]);
+
+    const handleBlur = useCallback(() => {
+        focused.value = withTiming(0, { duration: 90 });
+        scaleValue.value = withSpring(1, SPRING);
+    }, [focused, scaleValue]);
+
+    return (
+        <Reanimated.View style={[styles.key, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                focusable
+                hasTVPreferredFocus={hasTVPreferredFocus}
+                style={styles.keyPressable}
+            >
+                <Reanimated.Text style={[styles.keyText, textStyle]}>
+                    {label}
+                </Reanimated.Text>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
+
+const CancelButton: React.FC<{ onPress: () => void }> = ({ onPress }) => {
+    const focused = useSharedValue(0);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(0,0,0,0)', 'rgba(255,255,255,0.1)']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.2)', colors.accent || '#00E5FF']
+        ),
+    }));
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.7)', '#FFFFFF']
+        ),
+    }));
+
+    return (
+        <Reanimated.View style={[styles.cancelButton, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                }}
+                style={styles.cancelPressable}
+            >
+                <Reanimated.Text style={[styles.cancelText, textStyle]}>
+                    Cancel
+                </Reanimated.Text>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
 
 const PinInput: React.FC<PinInputProps> = ({
     onComplete,
@@ -56,10 +154,8 @@ const PinInput: React.FC<PinInputProps> = ({
     onCancel,
 }) => {
     const [pin, setPin] = useState('');
-    const [focusedKey, setFocusedKey] = useState<string | null>(null);
     const shakeAnim = useRef(new Animated.Value(0)).current;
 
-    // Trigger shake on error
     useEffect(() => {
         if (error) {
             Animated.sequence([
@@ -74,7 +170,6 @@ const PinInput: React.FC<PinInputProps> = ({
         }
     }, [error, shakeAnim]);
 
-    // Auto-submit when PIN is complete
     useEffect(() => {
         if (pin.length === PIN_LENGTH) {
             onComplete(pin);
@@ -92,130 +187,58 @@ const PinInput: React.FC<PinInputProps> = ({
         }
     }, [pin]);
 
-    // Render PIN dots
-    const renderDots = () => (
-        <Animated.View style={[styles.dotsContainer, { transform: [{ translateX: shakeAnim }] }]}>
-            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-                <View
-                    key={i}
-                    style={[
-                        styles.dot,
-                        i < pin.length && styles.dotFilled,
-                        error && styles.dotError,
-                    ]}
-                />
-            ))}
-        </Animated.View>
-    );
-
-    // Render numpad key
-    const renderKey = (key: string, label?: string, icon?: string, isWide = false) => {
-        const isFocused = focusedKey === key;
-
-        return (
-            <Pressable
-                key={key}
-                onPress={() => handleKeyPress(key)}
-                onFocus={() => setFocusedKey(key)}
-                onBlur={() => setFocusedKey(null)}
-                focusable
-                hasTVPreferredFocus={key === '1'}
-                style={[
-                    styles.key,
-                    isWide && styles.keyWide,
-                    isFocused && styles.keyFocused,
-                ]}
-            >
-                {icon ? (
-                    <Icon
-                        name={icon}
-                        size={scale(24)}
-                        color={isFocused ? '#000' : '#FFF'}
-                    />
-                ) : (
-                    <Text style={[styles.keyText, isFocused && styles.keyTextFocused]}>
-                        {label || key}
-                    </Text>
-                )}
-            </Pressable>
-        );
-    };
-
-    // Render virtual numpad
-    const renderNumpad = () => (
-        <View style={styles.numpad}>
-            <View style={styles.numpadRow}>
-                {renderKey('1')}
-                {renderKey('2')}
-                {renderKey('3')}
-            </View>
-            <View style={styles.numpadRow}>
-                {renderKey('4')}
-                {renderKey('5')}
-                {renderKey('6')}
-            </View>
-            <View style={styles.numpadRow}>
-                {renderKey('7')}
-                {renderKey('8')}
-                {renderKey('9')}
-            </View>
-            <View style={styles.numpadRow}>
-                {renderKey('clear', 'CLR')}
-                {renderKey('0')}
-                {renderKey('delete', undefined, 'backspace')}
-            </View>
-        </View>
-    );
-
     return (
         <View style={styles.container}>
-            {/* Header */}
             <View style={styles.header}>
-                {profileName && (
-                    <Text style={styles.profileName}>{profileName}</Text>
-                )}
+                {profileName ? <Text style={styles.profileName}>{profileName}</Text> : null}
                 <Text style={styles.title}>{title}</Text>
-                {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+                {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
             </View>
 
-            {/* PIN Dots */}
-            {renderDots()}
-
-            {/* Error Message */}
-            {error && errorMessage && (
-                <Text style={styles.errorText}>{errorMessage}</Text>
-            )}
-
-            {renderNumpad()}
-
-            {/* Cancel Button */}
-            {onCancel && (
-                <Pressable
-                    onPress={onCancel}
-                    onFocus={() => setFocusedKey('cancel')}
-                    onBlur={() => setFocusedKey(null)}
-                    style={[
-                        styles.cancelButton,
-                        focusedKey === 'cancel' && styles.cancelButtonFocused,
-                    ]}
-                >
-                    <Text
+            <Animated.View style={[styles.dotsContainer, { transform: [{ translateX: shakeAnim }] }]}>
+                {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+                    <View
+                        key={i}
                         style={[
-                            styles.cancelText,
-                            focusedKey === 'cancel' && styles.cancelTextFocused,
+                            styles.dot,
+                            i < pin.length && styles.dotFilled,
+                            error && styles.dotError,
                         ]}
-                    >
-                        Cancel
-                    </Text>
-                </Pressable>
-            )}
+                    />
+                ))}
+            </Animated.View>
+
+            {error && errorMessage ? (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+            ) : null}
+
+            <View style={styles.numpad}>
+                <View style={styles.numpadRow}>
+                    <PinKey label="1" onPress={() => handleKeyPress('1')} hasTVPreferredFocus />
+                    <PinKey label="2" onPress={() => handleKeyPress('2')} />
+                    <PinKey label="3" onPress={() => handleKeyPress('3')} />
+                </View>
+                <View style={styles.numpadRow}>
+                    <PinKey label="4" onPress={() => handleKeyPress('4')} />
+                    <PinKey label="5" onPress={() => handleKeyPress('5')} />
+                    <PinKey label="6" onPress={() => handleKeyPress('6')} />
+                </View>
+                <View style={styles.numpadRow}>
+                    <PinKey label="7" onPress={() => handleKeyPress('7')} />
+                    <PinKey label="8" onPress={() => handleKeyPress('8')} />
+                    <PinKey label="9" onPress={() => handleKeyPress('9')} />
+                </View>
+                <View style={styles.numpadRow}>
+                    <PinKey label="CLR" onPress={() => handleKeyPress('clear')} />
+                    <PinKey label="0" onPress={() => handleKeyPress('0')} />
+                    <PinKey label="DEL" onPress={() => handleKeyPress('delete')} />
+                </View>
+            </View>
+
+            {onCancel ? <CancelButton onPress={onCancel} /> : null}
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -282,49 +305,35 @@ const styles = StyleSheet.create({
     key: {
         width: scale(80),
         height: scale(60),
-        backgroundColor: 'rgba(255,255,255,0.1)',
         borderRadius: scale(12),
-        alignItems: 'center',
-        justifyContent: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(255,255,255,0.1)',
     },
-    keyWide: {
-        width: scale(124),
-    },
-    keyFocused: {
-        backgroundColor: colors.accent || '#00E5FF',
-        borderColor: '#FFF',
-        transform: [{ scale: 1.05 }],
+    keyPressable: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     keyText: {
         fontSize: scaleFont(24),
         color: '#FFF',
         fontWeight: '600',
     },
-    keyTextFocused: {
-        color: '#000',
-        fontWeight: '700',
-    },
     cancelButton: {
         marginTop: scale(30),
-        paddingVertical: scale(12),
-        paddingHorizontal: scale(40),
         borderRadius: scale(8),
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.2)',
     },
-    cancelButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        borderColor: colors.accent || '#00E5FF',
+    cancelPressable: {
+        paddingVertical: scale(12),
+        paddingHorizontal: scale(40),
     },
     cancelText: {
         fontSize: scaleFont(16),
         color: 'rgba(255,255,255,0.7)',
         fontWeight: '600',
-    },
-    cancelTextFocused: {
-        color: '#FFF',
     },
 });
 

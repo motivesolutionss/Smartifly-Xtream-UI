@@ -18,6 +18,12 @@ import {
 
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import Animated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
+} from 'react-native-reanimated';
 import useStore from '@smartifly/shared/src/store';
 import { scale, typographyTV, useTheme } from '../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
@@ -53,6 +59,8 @@ type CategoryItemProps = {
     onSelect: (categoryId: string) => void;
     focusEntryRef?: React.Ref<View>;
     styles: ReturnType<typeof createStyles>;
+    textOnPrimary: string;
+    textDisabled: string;
 };
 
 // =============================================================================
@@ -104,6 +112,8 @@ function createStyles(
             paddingBottom: scale(40),
         },
         categoryItem: {
+            position: 'relative',
+            overflow: 'hidden',
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -118,9 +128,16 @@ function createStyles(
             borderWidth: 1,
             borderColor: borderMedium,
         },
-        categoryItemFocused: {
+        categoryItemContent: {
+            flex: 1,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            zIndex: 1,
+        },
+        categoryItemFocusFill: {
+            ...StyleSheet.absoluteFillObject,
             backgroundColor: primaryColor,
-            transform: [{ scale: 1.02 }],
         },
         categoryName: {
             ...typographyTV.bodyMedium,
@@ -190,43 +207,73 @@ function createStyles(
 // =============================================================================
 
 const CategoryItem: React.FC<CategoryItemProps> = React.memo(
-    ({ item, isSelected, onSelect, focusEntryRef, styles }) => {
-        const [isFocused, setIsFocused] = useState(false);
+    ({ item, isSelected, onSelect, focusEntryRef, styles, textOnPrimary, textDisabled }) => {
+        const focused = useSharedValue(0);
         const handlePress = useCallback(() => {
             onSelect(item.id);
         }, [item.id, onSelect]);
+        const handleFocus = useCallback(() => {
+            focused.value = withTiming(1, { duration: 90 });
+        }, [focused]);
+        const handleBlur = useCallback(() => {
+            focused.value = withTiming(0, { duration: 90 });
+        }, [focused]);
+        const shellStyle = useAnimatedStyle(() => ({
+            transform: [{ scale: focused.value ? 1.02 : 1 }],
+        }));
+        const focusFillStyle = useAnimatedStyle(() => ({
+            opacity: focused.value,
+        }));
+        const nameStyle = useAnimatedStyle(() => ({
+            color: interpolateColor(
+                focused.value,
+                [0, 1],
+                [isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.72)', textOnPrimary]
+            ),
+        }), [isSelected, textOnPrimary]);
+        const countStyle = useAnimatedStyle(() => ({
+            color: interpolateColor(
+                focused.value,
+                [0, 1],
+                [textDisabled, textOnPrimary]
+            ),
+        }), [textDisabled, textOnPrimary]);
 
         return (
-            <Pressable
-                ref={item.id === 'all' ? focusEntryRef : undefined}
-                onPress={handlePress}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                style={[
-                    styles.categoryItem,
-                    isSelected && styles.categoryItemSelected,
-                    isFocused && styles.categoryItemFocused,
-                ]}
-            >
-                <Text
+            <Animated.View style={shellStyle}>
+                <Pressable
+                    ref={item.id === 'all' ? focusEntryRef : undefined}
+                    onPress={handlePress}
+                    onFocus={handleFocus}
+                    onBlur={handleBlur}
                     style={[
-                        styles.categoryName,
-                        isSelected && styles.categoryNameSelected,
-                        isFocused && styles.categoryNameFocused,
-                    ]}
-                    numberOfLines={1}
-                >
-                    {item.name}
-                </Text>
-                <Text
-                    style={[
-                        styles.categoryCount,
-                        isFocused && styles.categoryCountFocused,
+                        styles.categoryItem,
+                        isSelected && styles.categoryItemSelected,
                     ]}
                 >
-                    {item.count}
-                </Text>
-            </Pressable>
+                    <Animated.View pointerEvents="none" style={[styles.categoryItemFocusFill, focusFillStyle]} />
+                    <View style={styles.categoryItemContent}>
+                        <Animated.Text
+                            style={[
+                                styles.categoryName,
+                                isSelected && styles.categoryNameSelected,
+                                nameStyle,
+                            ]}
+                            numberOfLines={1}
+                        >
+                            {item.name}
+                        </Animated.Text>
+                        <Animated.Text
+                            style={[
+                                styles.categoryCount,
+                                countStyle,
+                            ]}
+                        >
+                            {item.count}
+                        </Animated.Text>
+                    </View>
+                </Pressable>
+            </Animated.View>
         );
     }
 );
@@ -251,6 +298,8 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
                         onSelect={onSelect}
                         focusEntryRef={focusEntryRef}
                         styles={styles}
+                        textOnPrimary={styles.categoryNameFocused.color as string}
+                        textDisabled={styles.categoryCount.color as string}
                     />
                 );
             },

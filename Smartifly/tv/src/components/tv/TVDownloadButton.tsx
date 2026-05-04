@@ -13,6 +13,13 @@ import {
     ActivityIndicator,
     Alert,
 } from 'react-native';
+import Animated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import { colors, scale, scaleFont, Icon } from '../../theme';
 import useDownloadStore from '@smartifly/shared/src/store/downloadStore';
 import downloadService from '@smartifly/shared/src/services/downloadService';
@@ -136,68 +143,94 @@ const TVDownloadButton: React.FC<TVDownloadButtonProps> = ({
     };
 
     const content = getButtonContent();
+    const focused = useSharedValue(isFocused ? 1 : 0);
+    const scaleValue = useSharedValue(isFocused ? 1.05 : 1);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.15)', focusMode === 'secondary' ? 'rgba(255,255,255,0.3)' : '#FFFFFF']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['rgba(255,255,255,0.1)', '#FFFFFF']
+        ),
+        transform: [{ scale: scaleValue.value }],
+        shadowOpacity: focused.value > 0 ? 0.5 : 0,
+        shadowRadius: focused.value > 0 ? 10 : 0,
+    }), [focusMode, scaleValue]);
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            ['#FFFFFF', invertOnFocus ? colors.background : '#FFFFFF']
+        ),
+    }));
+
+    const handleFocusLocal = () => {
+        focused.value = withTiming(1, { duration: 90 });
+        scaleValue.value = withSpring(1.05, { damping: 16, stiffness: 220, mass: 0.6 });
+        onFocus?.();
+    };
+
+    const handleBlurLocal = () => {
+        focused.value = withTiming(0, { duration: 90 });
+        scaleValue.value = withSpring(1, { damping: 16, stiffness: 220, mass: 0.6 });
+        onBlur?.();
+    };
 
     return (
-        <Pressable
-            onPress={handleDownload}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            style={({ pressed }) => [
-                styles.button,
-                isFocused && (focusMode === 'secondary' ? styles.buttonFocusedSecondary : styles.buttonFocused),
-                pressed && { transform: [{ scale: 0.98 }] },
-                style,
-            ]}
-        >
-            {content.loading ? (
-                <ActivityIndicator size="small" color={content.color} style={styles.icon} />
-            ) : (
-                <Icon
-                    name={content.icon}
-                    size={iconSize ?? scale(20)}
-                    color={isFocused && invertOnFocus ? colors.background : content.color}
-                    style={styles.icon}
-                />
-            )}
-            <Text style={[
-                styles.buttonText,
-                labelStyle,
-                isFocused && invertOnFocus && { color: colors.background }
-            ]}>
-                {content.label}
-            </Text>
-        </Pressable>
+        <Animated.View style={[styles.button, shellStyle, style]}>
+            <Pressable
+                onPress={handleDownload}
+                onFocus={handleFocusLocal}
+                onBlur={handleBlurLocal}
+                style={({ pressed }) => [
+                    styles.pressable,
+                    pressed && styles.pressed,
+                ]}
+            >
+                {content.loading ? (
+                    <ActivityIndicator size="small" color={content.color} style={styles.icon} />
+                ) : (
+                    <Icon
+                        name={content.icon}
+                        size={iconSize ?? scale(20)}
+                        color={invertOnFocus ? content.color : content.color}
+                        style={styles.icon}
+                    />
+                )}
+                <Animated.Text style={[styles.buttonText, labelStyle, textStyle]}>
+                    {content.label}
+                </Animated.Text>
+            </Pressable>
+        </Animated.View>
     );
 };
 
 const styles = StyleSheet.create({
     button: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 6 },
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: scale(14),
-        paddingHorizontal: scale(24),
         borderRadius: scale(10),
         backgroundColor: 'rgba(255,255,255,0.15)',
         borderWidth: 2,
         borderColor: 'rgba(255,255,255,0.1)',
     },
-    buttonFocused: {
-        backgroundColor: '#FFF',
-        borderColor: '#FFF',
-        transform: [{ scale: 1.05 }],
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
+    pressable: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: scale(14),
+        paddingHorizontal: scale(24),
+        borderRadius: scale(10),
     },
-    buttonFocusedSecondary: {
-        backgroundColor: 'rgba(255,255,255,0.3)',
-        borderColor: '#FFF',
-        transform: [{ scale: 1.05 }],
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
+    pressed: {
+        transform: [{ scale: 0.98 }],
     },
     buttonText: {
         fontSize: scaleFont(16),

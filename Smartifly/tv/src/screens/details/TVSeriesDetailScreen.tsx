@@ -1,10 +1,7 @@
 /**
  * TV Series Detail Screen
- * 
+ *
  * Cinematic detail view for Series on TV.
- * Features: Season selector, Episode list, Metdata.
- * 
- * @enterprise-grade
  */
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
@@ -17,6 +14,13 @@ import {
     FlatList,
     Modal,
 } from 'react-native';
+import Reanimated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import FastImageComponent from '../../components/tv/TVFastImage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
@@ -29,38 +33,197 @@ import { prefetchImage } from '@smartifly/shared/src/utils/image';
 import useDownloadStore from '@smartifly/shared/src/store/downloadStore';
 import downloadService from '@smartifly/shared/src/services/downloadService';
 
+const SPRING = {
+    damping: 16,
+    stiffness: 220,
+    mass: 0.6,
+};
+
+const FocusSeriesButton: React.FC<{
+    label: string;
+    iconName: string;
+    onPress: () => void;
+    primary?: boolean;
+}> = ({ label, iconName, onPress, primary = false }) => {
+    const focused = useSharedValue(0);
+    const scaleValue = useSharedValue(1);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [primary ? (colors.accent || '#00E5FF') : 'rgba(255,255,255,0.15)', primary ? '#FFFFFF' : 'rgba(255,255,255,0.3)']
+        ),
+        borderColor: interpolateColor(focused.value, [0, 1], ['transparent', '#FFFFFF']),
+        transform: [{ scale: scaleValue.value }],
+    }));
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            [primary ? '#111111' : '#FFFFFF', primary ? '#111111' : '#FFFFFF']
+        ),
+    }));
+
+    return (
+        <Reanimated.View style={[styles.button, primary ? styles.buttonPrimary : styles.buttonSecondary, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                    scaleValue.value = withSpring(1.05, SPRING);
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                    scaleValue.value = withSpring(1, SPRING);
+                }}
+                style={styles.focusButtonPressable}
+            >
+                <Icon name={iconName} size={scale(20)} color={primary ? '#111' : '#FFF'} style={styles.buttonIcon} />
+                <Reanimated.Text style={[styles.buttonText, primary && styles.buttonTextPrimary, textStyle]}>
+                    {label}
+                </Reanimated.Text>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
+
+const SeasonChip: React.FC<{
+    season: string;
+    isSelected: boolean;
+    hasTVPreferredFocus?: boolean;
+    onPress: () => void;
+    onInitialFocus?: () => void;
+}> = ({ season, isSelected, hasTVPreferredFocus = false, onPress, onInitialFocus }) => {
+    const focused = useSharedValue(0);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)', colors.accent || '#00E5FF']
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.05)', '#FFFFFF']
+        ),
+        transform: [{ scale: focused.value > 0 ? 1.05 : 1 }],
+    }), [isSelected]);
+
+    const textStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? '#FFFFFF' : '#AAAAAA', '#111111']
+        ),
+    }), [isSelected]);
+
+    return (
+        <Reanimated.View style={[styles.seasonChip, isSelected && styles.seasonChipSelected, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                    onInitialFocus?.();
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                }}
+                hasTVPreferredFocus={hasTVPreferredFocus}
+                style={styles.seasonPressable}
+            >
+                <Reanimated.Text style={[styles.seasonText, isSelected && styles.seasonTextActive, textStyle]}>
+                    Season {season}
+                </Reanimated.Text>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
+
+const EpisodeCard: React.FC<{
+    item: any;
+    image: string;
+    dlIcon: { name: string; color: string | undefined };
+    onPress: () => void;
+    onDownloadPress: () => void;
+}> = ({ item, image, dlIcon, onPress, onDownloadPress }) => {
+    const focused = useSharedValue(0);
+
+    const shellStyle = useAnimatedStyle(() => ({
+        borderColor: interpolateColor(focused.value, [0, 1], ['transparent', colors.accent || '#00E5FF']),
+        backgroundColor: interpolateColor(focused.value, [0, 1], ['rgba(255,255,255,0.03)', 'rgba(255,255,255,0.1)']),
+        transform: [{ scale: focused.value > 0 ? 1.02 : 1 }],
+    }));
+
+    const titleStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(focused.value, [0, 1], ['#FFFFFF', colors.accent || '#00E5FF']),
+    }));
+
+    const playOpacity = useAnimatedStyle(() => ({
+        opacity: focused.value,
+    }));
+
+    return (
+        <Reanimated.View style={[styles.episodeCard, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                }}
+                style={styles.episodePressable}
+            >
+                <FastImageComponent
+                    source={{ uri: image }}
+                    style={styles.episodeThumb}
+                    resizeMode="cover"
+                />
+                <View style={styles.episodeInfo}>
+                    <Text style={styles.episodeNum}>Episode {item.episode_num}</Text>
+                    <Reanimated.Text style={[styles.episodeTitle, titleStyle]} numberOfLines={1}>
+                        {item.title}
+                    </Reanimated.Text>
+                    {item.info?.duration ? (
+                        <Text style={styles.episodeDuration}>{item.info.duration}</Text>
+                    ) : null}
+                </View>
+                <Pressable onPress={onDownloadPress} style={styles.episodeDownloadBtn}>
+                    <Icon name={dlIcon.name} size={scale(20)} color={dlIcon.color} />
+                </Pressable>
+                <Reanimated.View style={[styles.playIconContainer, playOpacity]}>
+                    <Text style={styles.playIcon}>▶</Text>
+                </Reanimated.View>
+            </Pressable>
+        </Reanimated.View>
+    );
+};
+
 const TVSeriesDetailScreen: React.FC = () => {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const { series } = route.params;
 
-    // Store
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const downloads = useDownloadStore((state) => state.downloads);
     const addDownload = useDownloadStore((state) => state.addDownload);
 
-    // State
     const [info, setInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
-    const [focusedEpisodeId, setFocusedEpisodeId] = useState<string | null>(null);
-    const [focusedSeasonId, setFocusedSeasonId] = useState<string | null>(null);
     const [hasInitialFocus, setHasInitialFocus] = useState(false);
-    const [focusedButton, setFocusedButton] = useState<'play' | 'trailer' | null>(null);
     const [isTrailerOpen, setIsTrailerOpen] = useState(false);
     const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
 
-    // Helper to extract YouTube ID
     const getYoutubeId = (url: string) => {
         if (!url) return null;
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : url;
     };
-
-    // ==========================================================================
-    // DATA FETCHING
-    // ==========================================================================
 
     useEffect(() => {
         let isMounted = true;
@@ -73,12 +236,10 @@ const TVSeriesDetailScreen: React.FC = () => {
                 const data = await api.getSeriesInfo(series.series_id);
                 if (isMounted) {
                     setInfo(data);
-
-                    // Auto-select first season
                     if (data.episodes) {
-                        const seasons = Object.keys(data.episodes).sort((a, b) => Number(a) - Number(b));
-                        if (seasons.length > 0) {
-                            setSelectedSeason(seasons[0]);
+                        const seasonKeys = Object.keys(data.episodes).sort((a, b) => Number(a) - Number(b));
+                        if (seasonKeys.length > 0) {
+                            setSelectedSeason(seasonKeys[0]);
                         }
                     }
                 }
@@ -96,10 +257,6 @@ const TVSeriesDetailScreen: React.FC = () => {
         };
     }, [series.series_id, getXtreamAPI]);
 
-    // ==========================================================================
-    // DATA PROCESSING
-    // ==========================================================================
-
     const seasons = useMemo(() => {
         if (!info?.episodes) return [];
         return Object.keys(info.episodes).sort((a, b) => Number(a) - Number(b));
@@ -110,10 +267,6 @@ const TVSeriesDetailScreen: React.FC = () => {
         const raw = info.episodes[selectedSeason];
         return Array.isArray(raw) ? raw : Object.values(raw);
     }, [selectedSeason, info]);
-
-    // ==========================================================================
-    // HANDLERS
-    // ==========================================================================
 
     useTVBackHandler(
         useCallback(() => {
@@ -126,7 +279,7 @@ const TVSeriesDetailScreen: React.FC = () => {
         }, [isTrailerOpen, navigation])
     );
 
-    const handlePlayEpisode = (episode: any) => {
+    const handlePlayEpisode = useCallback((episode: any) => {
         const api = getXtreamAPI();
         if (!api) return;
 
@@ -138,7 +291,7 @@ const TVSeriesDetailScreen: React.FC = () => {
             item: { ...episode, name: `${series.name} - ${episode.title}` },
             episodeUrl,
         });
-    };
+    }, [getXtreamAPI, navigation, series.name]);
 
     const seriesData = info?.info || {};
     const backdrop = seriesData.backdrop_path?.[0] || seriesData.cover || series.cover;
@@ -150,49 +303,10 @@ const TVSeriesDetailScreen: React.FC = () => {
     const director = seriesData.director;
     const genre = seriesData.genre;
 
-
     useEffect(() => {
         prefetchImage(backdrop);
         prefetchImage(poster);
     }, [backdrop, poster]);
-
-    const renderButton = (
-        id: 'play' | 'trailer',
-        label: string,
-        iconName: string,
-        onPress: () => void,
-        primary = false
-    ) => {
-        const isFocused = focusedButton === id;
-
-        return (
-            <Pressable
-                onPress={onPress}
-                onFocus={() => setFocusedButton(id)}
-                onBlur={() => setFocusedButton(null)}
-                style={[
-                    styles.button,
-                    primary ? styles.buttonPrimary : styles.buttonSecondary,
-                    isFocused && styles.buttonFocused,
-                    isFocused && primary && styles.buttonFocusedPrimary,
-                    isFocused && !primary && styles.buttonFocusedSecondary,
-                ]}
-            >
-                <Icon
-                    name={iconName}
-                    size={scale(20)}
-                    color={primary ? '#111' : '#FFF'}
-                    style={styles.buttonIcon}
-                />
-                <Text style={[
-                    styles.buttonText,
-                    primary && styles.buttonTextPrimary
-                ]}>
-                    {label}
-                </Text>
-            </Pressable>
-        );
-    };
 
     useEffect(() => {
         episodes.slice(0, 8).forEach((episode: any) => {
@@ -201,45 +315,21 @@ const TVSeriesDetailScreen: React.FC = () => {
         });
     }, [episodes, series.cover]);
 
-    // ==========================================================================
-    // RENDER
-    // ==========================================================================
+    const renderSeasonItem = useCallback(({ item, index }: { item: string; index: number }) => (
+        <SeasonChip
+            season={item}
+            isSelected={selectedSeason === item}
+            hasTVPreferredFocus={index === 0 && !hasInitialFocus}
+            onPress={() => setSelectedSeason(item)}
+            onInitialFocus={() => {
+                if (!hasInitialFocus) setHasInitialFocus(true);
+            }}
+        />
+    ), [hasInitialFocus, selectedSeason]);
 
-    const renderSeasonItem = ({ item, index }: { item: string; index: number }) => {
-        const isSelected = selectedSeason === item;
-        const isFocused = focusedSeasonId === item;
-
-        return (
-            <Pressable
-                onPress={() => setSelectedSeason(item)}
-                onFocus={() => {
-                    setFocusedSeasonId(item);
-                    if (!hasInitialFocus) setHasInitialFocus(true);
-                }}
-                onBlur={() => setFocusedSeasonId(null)}
-                focusable
-                hasTVPreferredFocus={index === 0 && !hasInitialFocus}
-                style={[
-                    styles.seasonChip,
-                    isSelected && styles.seasonChipSelected,
-                    isFocused && styles.seasonChipFocused,
-                ]}
-            >
-                <Text style={[
-                    styles.seasonText,
-                    isSelected && styles.seasonTextActive,
-                    isFocused && styles.seasonTextFocused,
-                ]}>
-                    Season {item}
-                </Text>
-            </Pressable>
-        );
-    };
-
-    const renderEpisodeItem = ({ item }: { item: any }) => {
-        const isFocused = focusedEpisodeId === String(item.id);
+    const renderEpisodeItem = useCallback(({ item }: { item: any }) => {
         const image = item.info?.movie_image || series.cover;
-        const download = downloads.find(d => d.id === String(item.id));
+        const download = downloads.find((d) => d.id === String(item.id));
 
         const handleEpisodeDownload = () => {
             if (download?.status === 'completed' || download?.status === 'downloading') return;
@@ -263,62 +353,29 @@ const TVSeriesDetailScreen: React.FC = () => {
             downloadService.startDownload(String(item.id), url, `${item.id}.${extension}`);
         };
 
-        const getDownloadIcon = () => {
-            if (download?.status === 'completed') return { name: 'checkCircle', color: colors.success };
-            if (download?.status === 'downloading') return { name: 'arrowCounterClockwise', color: colors.primary };
-            return { name: 'downloadSimple', color: '#FFF' };
-        };
-        const dlIcon = getDownloadIcon();
+        const dlIcon =
+            download?.status === 'completed'
+                ? { name: 'checkCircle', color: colors.success }
+                : download?.status === 'downloading'
+                ? { name: 'arrowCounterClockwise', color: colors.primary }
+                : { name: 'downloadSimple', color: '#FFF' };
 
         return (
-            <Pressable
+            <EpisodeCard
+                item={item}
+                image={image}
+                dlIcon={dlIcon}
                 onPress={() => handlePlayEpisode(item)}
-                onFocus={() => setFocusedEpisodeId(String(item.id))}
-                onBlur={() => setFocusedEpisodeId(null)}
-                focusable
-                style={[
-                    styles.episodeCard,
-                    isFocused && styles.episodeCardFocused
-                ]}
-            >
-                <FastImageComponent
-                    source={{ uri: image }}
-                    style={styles.episodeThumb}
-                    resizeMode="cover"
-                />
-                <View style={styles.episodeInfo}>
-                    <Text style={styles.episodeNum}>Episode {item.episode_num}</Text>
-                    <Text style={[
-                        styles.episodeTitle,
-                        isFocused && styles.episodeTitleFocused
-                    ]} numberOfLines={1}>
-                        {item.title}
-                    </Text>
-                    {item.info?.duration && (
-                        <Text style={styles.episodeDuration}>{item.info.duration}</Text>
-                    )}
-                </View>
-                <Pressable
-                    onPress={handleEpisodeDownload}
-                    style={styles.episodeDownloadBtn}
-                >
-                    <Icon name={dlIcon.name} size={scale(20)} color={dlIcon.color} />
-                </Pressable>
-                {isFocused && (
-                    <View style={styles.playIconContainer}>
-                        <Text style={styles.playIcon}>▶</Text>
-                    </View>
-                )}
-            </Pressable>
+                onDownloadPress={handleEpisodeDownload}
+            />
         );
-    };
+    }, [addDownload, downloads, getXtreamAPI, handlePlayEpisode, series.cover, series.name]);
 
     return (
         <View
             style={styles.container}
             importantForAccessibility={isTrailerOpen ? 'no-hide-descendants' : 'auto'}
         >
-            {/* 1. Full Screen Backdrop */}
             <FastImageComponent
                 source={{ uri: backdrop }}
                 style={styles.backdrop}
@@ -326,7 +383,6 @@ const TVSeriesDetailScreen: React.FC = () => {
                 priority="high"
             />
 
-            {/* 2. Gradient Overlay (Cinema Mode) */}
             <View style={StyleSheet.absoluteFill}>
                 <Svg height="100%" width="100%">
                     <Defs>
@@ -348,7 +404,6 @@ const TVSeriesDetailScreen: React.FC = () => {
             </View>
 
             <View style={styles.contentContainer}>
-                {/* Left Column: Series Info */}
                 <View style={styles.leftColumn}>
                     <FastImageComponent
                         source={{ uri: poster }}
@@ -360,67 +415,59 @@ const TVSeriesDetailScreen: React.FC = () => {
                     <View style={styles.infoContainer}>
                         <Text style={styles.title} numberOfLines={2}>{name}</Text>
 
-                        {/* Metadata Row */}
                         <View style={styles.metaRow}>
-                            {rating && (
+                            {rating ? (
                                 <View style={styles.badge}>
                                     <Text style={styles.badgeText}>★ {rating}</Text>
                                 </View>
-                            )}
+                            ) : null}
                             <Text style={styles.metaText}>{seasons.length} Seasons</Text>
-                            
                         </View>
-                        {genre && (
-                            <Text style={styles.genreText} numberOfLines={2}>{genre}</Text>
-                        )}
 
-                        {/* Credits Row */}
+                        {genre ? <Text style={styles.genreText} numberOfLines={2}>{genre}</Text> : null}
+
                         <View style={styles.creditsSection}>
-                            {director && (
+                            {director ? (
                                 <Text style={styles.creditText}>
                                     <Text style={styles.creditLabel}>Director: </Text>
                                     {director}
                                 </Text>
-                            )}
-                            {cast && (
+                            ) : null}
+                            {cast ? (
                                 <Text style={styles.creditText} numberOfLines={2}>
                                     <Text style={styles.creditLabel}>Cast: </Text>
                                     {cast}
                                 </Text>
-                            )}
+                            ) : null}
                         </View>
 
-                        {/* Action Buttons */}
                         <View style={styles.actionsContainer}>
-                            {renderButton(
-                                'play',
-                                'Watch Now',
-                                'playCircle',
-                                () => {
+                            <FocusSeriesButton
+                                label="Watch Now"
+                                iconName="playCircle"
+                                onPress={() => {
                                     if (episodes.length > 0) handlePlayEpisode(episodes[0]);
-                                },
-                                true
-                            )}
-                            {seriesData.youtube_trailer && renderButton(
-                                'trailer',
-                                'Trailer',
-                                'filmStrip',
-                                () => setIsTrailerOpen(true),
-                                false
-                            )}
+                                }}
+                                primary
+                            />
+                            {seriesData.youtube_trailer ? (
+                                <FocusSeriesButton
+                                    label="Trailer"
+                                    iconName="filmStrip"
+                                    onPress={() => setIsTrailerOpen(true)}
+                                />
+                            ) : null}
                         </View>
 
                         <Text style={styles.plot} numberOfLines={5}>{plot}</Text>
                     </View>
                 </View>
 
-                {/* Right Column: Seasons & Episodes */}
                 <View style={styles.rightColumn}>
                     {loading ? (
                         <ActivityIndicator size="large" color={colors.primary} />
                     ) : (
                         <>
-                            {/* Seasons List */}
                             <View style={styles.seasonsContainer}>
                                 <FlatList
                                     data={seasons}
@@ -432,7 +479,6 @@ const TVSeriesDetailScreen: React.FC = () => {
                                 />
                             </View>
 
-                            {/* Episodes List */}
                             <View style={styles.episodesContainer}>
                                 <FlatList
                                     data={episodes}
@@ -447,7 +493,6 @@ const TVSeriesDetailScreen: React.FC = () => {
                 </View>
             </View>
 
-            {/* YouTube Trailer Modal */}
             <Modal
                 visible={isTrailerOpen && !!seriesData.youtube_trailer}
                 transparent
@@ -502,10 +547,6 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         width: '100%',
         height: '100%',
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.5)',
     },
     contentContainer: {
         flex: 1,
@@ -576,12 +617,6 @@ const styles = StyleSheet.create({
         marginTop: scale(4),
         marginBottom: scale(6),
     },
-    metaDivider: {
-        width: 1,
-        height: scale(14),
-        backgroundColor: 'rgba(255,255,255,0.4)',
-        marginHorizontal: scale(16),
-    },
     creditsSection: {
         marginBottom: scale(24),
         borderTopWidth: 1,
@@ -605,6 +640,13 @@ const styles = StyleSheet.create({
         gap: scale(12),
     },
     button: {
+        minWidth: scale(210),
+        borderRadius: scale(8),
+        borderWidth: 2,
+        borderColor: 'transparent',
+        flexShrink: 0,
+    },
+    focusButtonPressable: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -612,19 +654,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: scale(20),
         minWidth: scale(210),
         borderRadius: scale(8),
-        flexShrink: 0,
-        borderWidth: 2,
-        borderColor: 'transparent',
     },
     buttonPrimary: {
         backgroundColor: colors.accent || '#00E5FF',
     },
     buttonSecondary: {
         backgroundColor: 'rgba(255,255,255,0.15)',
-    },
-    buttonFocused: {
-        borderColor: '#FFF',
-        transform: [{ scale: 1.05 }],
     },
     buttonText: {
         fontSize: scaleFont(24),
@@ -645,7 +680,6 @@ const styles = StyleSheet.create({
         lineHeight: scaleFont(35),
         opacity: 0.9,
     },
-    // Seasons
     seasonsContainer: {
         marginBottom: scale(24),
     },
@@ -653,22 +687,19 @@ const styles = StyleSheet.create({
         paddingVertical: scale(5),
     },
     seasonChip: {
-        paddingHorizontal: scale(24),
-        paddingVertical: scale(12),
-        backgroundColor: 'rgba(255,255,255,0.1)',
         borderRadius: scale(20),
         marginRight: scale(12),
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: 'rgba(255,255,255,0.1)',
     },
     seasonChipSelected: {
         backgroundColor: 'rgba(255,255,255,0.2)',
         borderColor: 'rgba(255,255,255,0.3)',
     },
-    seasonChipFocused: {
-        backgroundColor: colors.accent || '#00E5FF',
-        borderColor: '#FFF',
-        transform: [{ scale: 1.05 }],
+    seasonPressable: {
+        paddingHorizontal: scale(24),
+        paddingVertical: scale(12),
     },
     seasonText: {
         color: '#AAA',
@@ -678,10 +709,6 @@ const styles = StyleSheet.create({
     seasonTextActive: {
         color: '#FFF',
     },
-    seasonTextFocused: {
-        color: '#111',
-    },
-    // Episodes
     episodesContainer: {
         width: '100%',
         backgroundColor: 'rgba(0,0,0,0.2)',
@@ -692,20 +719,18 @@ const styles = StyleSheet.create({
         paddingBottom: scale(20),
     },
     episodeCard: {
-        flexDirection: 'row',
-        backgroundColor: 'rgba(255,255,255,0.03)',
         borderRadius: scale(10),
         marginBottom: scale(12),
         height: scale(108),
-        alignItems: 'center',
         borderWidth: 1,
         borderColor: 'transparent',
         overflow: 'hidden',
+        backgroundColor: 'rgba(255,255,255,0.03)',
     },
-    episodeCardFocused: {
-        borderColor: colors.accent || '#00E5FF',
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        transform: [{ scale: 1.02 }],
+    episodePressable: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
     },
     episodeThumb: {
         width: scale(190),
@@ -729,9 +754,6 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(22),
         fontWeight: '700',
         marginBottom: scale(4),
-    },
-    episodeTitleFocused: {
-        color: colors.accent || '#00E5FF',
     },
     episodeDuration: {
         color: '#888',
@@ -761,7 +783,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: scale(2),
     },
-    // Modal
     modalOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.9)',
@@ -805,12 +826,6 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         backgroundColor: '#000',
     },
-    buttonFocusedPrimary: {
-        backgroundColor: '#FFF',
-    },
-    buttonFocusedSecondary: {
-        backgroundColor: 'rgba(255,255,255,0.3)',
-    }
 });
 
 export default TVSeriesDetailScreen;

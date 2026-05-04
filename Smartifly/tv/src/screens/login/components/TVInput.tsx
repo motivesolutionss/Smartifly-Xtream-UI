@@ -1,6 +1,6 @@
 /**
  * Smartifly TV Input Component - Clean Edition
- * 
+ *
  * TV-optimized text input with:
  * - Focus glow effects
  * - Password visibility toggle
@@ -9,7 +9,7 @@
  * - D-pad navigation support
  */
 
-import React, { useState, forwardRef, useCallback, useRef } from 'react';
+import React, { useState, forwardRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -18,9 +18,17 @@ import {
     StyleSheet,
     TextInputProps,
     ViewStyle,
-    Animated,
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import Animated, {
+    createAnimatedComponent,
+    interpolate,
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import {
     colors,
     Icon,
@@ -28,10 +36,6 @@ import {
     scaleFont,
     useTheme,
 } from '../.././../theme';
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 export interface TVInputProps extends Omit<TextInputProps, 'tabIndex'> {
     label?: string;
@@ -45,9 +49,10 @@ export interface TVInputProps extends Omit<TextInputProps, 'tabIndex'> {
     disabled?: boolean;
 }
 
-// =============================================================================
-// TV INPUT COMPONENT
-// =============================================================================
+const AnimatedPressable = createAnimatedComponent(Pressable);
+const FOCUS_BORDER_REST = scale(2);
+const FOCUS_BORDER_ACTIVE = scale(4);
+const GLOW_RADIUS = scale(10);
 
 const TVInput = forwardRef<TextInput, TVInputProps>(({
     label,
@@ -66,151 +71,142 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
     ...props
 }, ref) => {
     const { colors: themeColors } = useTheme();
-    const [isFocused, setIsFocused] = useState(false);
     const [isPasswordVisible, setIsPasswordVisible] = useState(true);
-    const [isPasswordToggleFocused, setIsPasswordToggleFocused] = useState(false);
 
-    const focusAnim = useRef(new Animated.Value(0)).current;
-    const glowAnim = useRef(new Animated.Value(0)).current;
-    const scaleAnim = useRef(new Animated.Value(1)).current;
+    const focusProgress = useSharedValue(0);
+    const toggleFocusProgress = useSharedValue(0);
+    const scaleProgress = useSharedValue(1);
 
-    // Animate focus state
-    const animateFocus = useCallback((focused: boolean) => {
-        Animated.parallel([
-            Animated.timing(focusAnim, {
-                toValue: focused ? 1 : 0,
-                duration: 200,
-                useNativeDriver: false,
-            }),
-            Animated.timing(glowAnim, {
-                toValue: focused ? 1 : 0,
-                duration: 200,
-                useNativeDriver: true,
-            }),
-            Animated.spring(scaleAnim, {
-                toValue: focused ? 1.02 : 1,
-                tension: 120,
-                friction: 8,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, [focusAnim, glowAnim, scaleAnim]);
+    const togglePasswordVisibility = useCallback(() => {
+        setIsPasswordVisible((prev) => !prev);
+    }, []);
 
-    // Color helpers
-    const getBorderColor = () => {
-        if (disabled) return 'rgba(255, 255, 255, 0.08)';
-        if (error) return themeColors.error;
-        if (isValid) return colors.success || '#10B981';
-        if (isFocused) return '#1E3448';
-        return '#1E3448';
-    };
-
-    const getBackgroundColor = () => {
-        if (disabled) return 'rgba(0, 0, 0, 0.3)';
-        if (error) return themeColors.errorBackground;
-        return 'transparent';
-    };
-
-    const getIconColor = () => {
-        if (error) return themeColors.error;
-        if (isValid) return colors.success || '#10B981';
-        if (isFocused) return '#FFFFFF';
-        return '#E7ECF4';
-    };
-
-    // Icon renderer
-    const renderLeftIcon = () => {
-        if (!leftIcon) return null;
-        const iconSize = scale(22);
-        const iconColor = getIconColor();
-
-        const iconMap: Record<string, string> = {
-            user: 'user',
-            lock: 'lock',
-            email: 'email',
-            search: 'search',
-            server: 'server',
-        };
-
-        return <Icon name={iconMap[leftIcon] || leftIcon} size={iconSize} color={iconColor} />;
-    };
-
-    // Event handlers
-    const handleFocus = (e: any) => {
-        setIsFocused(true);
-        animateFocus(true);
+    const handleFocus = useCallback((e: any) => {
+        focusProgress.value = withTiming(1, { duration: 180 });
+        scaleProgress.value = withSpring(1.02, { damping: 14, stiffness: 180, mass: 0.7 });
         onFocus?.(e);
-    };
+    }, [focusProgress, onFocus, scaleProgress]);
 
-    const handleBlur = (e: any) => {
-        setIsFocused(false);
-        animateFocus(false);
+    const handleBlur = useCallback((e: any) => {
+        focusProgress.value = withTiming(0, { duration: 180 });
+        scaleProgress.value = withSpring(1, { damping: 14, stiffness: 180, mass: 0.7 });
         onBlur?.(e);
-    };
+    }, [focusProgress, onBlur, scaleProgress]);
 
-    const togglePasswordVisibility = () => {
-        setIsPasswordVisible(!isPasswordVisible);
-    };
-
-    const handleFieldPress = () => {
-        // TV fallback: some devices won't move focus into nested controls.
-        // Pressing OK on focused password field toggles visibility.
+    const handleFieldPress = useCallback(() => {
         if (showPasswordToggle && secureTextEntry && !disabled) {
             togglePasswordVisibility();
         }
-    };
+    }, [disabled, secureTextEntry, showPasswordToggle, togglePasswordVisibility]);
 
     const shouldHidePassword = secureTextEntry && !isPasswordVisible;
+    const iconName = leftIcon ? ({
+        user: 'user',
+        lock: 'lock',
+        email: 'email',
+        search: 'search',
+        server: 'server',
+    }[leftIcon] || leftIcon) : undefined;
 
-    // Animated values
-    const borderWidth = focusAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [scale(2), scale(4)],
-    });
+    const isError = Boolean(error);
+    const successColor = colors.success || '#10B981';
+    const accentColor = colors.accent || '#00E5FF';
+    const borderRestColor = disabled
+        ? 'rgba(255, 255, 255, 0.08)'
+        : isError
+            ? themeColors.error
+            : isValid
+                ? successColor
+                : '#1E3448';
+    const borderFocusColor = isError ? themeColors.error : isValid ? successColor : '#1E3448';
+    const backgroundColor = disabled
+        ? 'rgba(0, 0, 0, 0.3)'
+        : isError
+            ? themeColors.errorBackground
+            : 'transparent';
 
-    const glowOpacity = glowAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 0.75],
-    });
+    const containerAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scaleProgress.value }],
+    }));
+
+    const glowAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: isError ? 0 : interpolate(focusProgress.value, [0, 1], [0, 0.75]),
+    }));
+
+    const inputShellAnimatedStyle = useAnimatedStyle(() => ({
+        borderWidth: interpolate(focusProgress.value, [0, 1], [FOCUS_BORDER_REST, FOCUS_BORDER_ACTIVE]),
+        borderColor: interpolateColor(focusProgress.value, [0, 1], [borderRestColor, borderFocusColor]),
+        backgroundColor,
+    }));
+
+    const labelAnimatedStyle = useAnimatedStyle(() => ({
+        color: isError
+            ? '#FBBF24'
+            : interpolateColor(focusProgress.value, [0, 1], ['#E7ECF4', accentColor]),
+    }));
+
+    const baseIconOpacityStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(focusProgress.value, [0, 1], [1, 0]),
+    }));
+
+    const focusedIconOpacityStyle = useAnimatedStyle(() => ({
+        opacity: focusProgress.value,
+    }));
+
+    const toggleButtonAnimatedStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            toggleFocusProgress.value,
+            [0, 1],
+            ['rgba(0, 229, 255, 0)', 'rgba(0, 229, 255, 0.12)']
+        ),
+        borderWidth: interpolate(toggleFocusProgress.value, [0, 1], [0, 1]),
+        borderColor: interpolateColor(
+            toggleFocusProgress.value,
+            [0, 1],
+            ['rgba(0, 229, 255, 0)', accentColor]
+        ),
+    }));
+
+    const renderStaticIndicator = () => {
+        if (!showPasswordToggle && isValid && !error) {
+            return (
+                <View style={styles.statusIcon}>
+                    <Icon name="checkCircle" size={scale(24)} color={successColor} />
+                </View>
+            );
+        }
+
+        if (!showPasswordToggle && error) {
+            return (
+                <View style={styles.statusIcon}>
+                    <Icon name="alert" size={scale(24)} color={themeColors.error} />
+                </View>
+            );
+        }
+
+        return null;
+    };
 
     return (
-        <Animated.View
-            style={[
-                styles.container,
-                containerStyle,
-                { transform: [{ scale: scaleAnim }] },
-            ]}
-        >
-            {/* Label */}
+        <Animated.View style={[styles.container, containerStyle, containerAnimatedStyle]}>
             {label && (
                 <View style={styles.labelContainer}>
-                    <Text
-                        style={[
-                            styles.label,
-                            error && styles.labelError,
-                            isFocused && styles.labelFocused,
-                        ]}
-                    >
+                    <Animated.Text style={[styles.label, labelAnimatedStyle]}>
                         {label}
-                    </Text>
+                    </Animated.Text>
                     {required && <Text style={styles.required}>*</Text>}
                 </View>
             )}
 
-            {/* Input Container */}
             <View style={styles.inputWrapper}>
-                {/* Glow Effect */}
-                {isFocused && !error && (
-                    <Animated.View
-                        style={[
-                            styles.glowEffect,
-                            {
-                                opacity: glowOpacity,
-                                shadowColor: colors.accent || '#00E5FF',
-                            },
-                        ]}
-                    />
-                )}
+                <Animated.View
+                    pointerEvents="none"
+                    style={[
+                        styles.glowEffect,
+                        glowAnimatedStyle,
+                        { shadowColor: accentColor, shadowRadius: GLOW_RADIUS },
+                    ]}
+                />
 
                 <Pressable
                     onPress={handleFieldPress}
@@ -223,11 +219,7 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                     <Animated.View
                         style={[
                             styles.inputContainer,
-                            {
-                                borderWidth,
-                                borderColor: getBorderColor(),
-                                backgroundColor: getBackgroundColor(),
-                            },
+                            inputShellAnimatedStyle,
                             disabled && styles.inputContainerDisabled,
                         ]}
                     >
@@ -243,14 +235,23 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                             </Svg>
                         )}
 
-                        {/* Left Icon */}
-                        {leftIcon && (
+                        {leftIcon && iconName && (
                             <View style={styles.leftIconCapsule}>
-                                {renderLeftIcon()}
+                                <Animated.View style={[styles.iconLayer, baseIconOpacityStyle]} pointerEvents="none">
+                                    <Icon
+                                        name={iconName}
+                                        size={scale(22)}
+                                        color={isError ? themeColors.error : isValid ? successColor : '#E7ECF4'}
+                                    />
+                                </Animated.View>
+                                {!isError && !isValid && (
+                                    <Animated.View style={[styles.iconLayer, focusedIconOpacityStyle]} pointerEvents="none">
+                                        <Icon name={iconName} size={scale(22)} color="#FFFFFF" />
+                                    </Animated.View>
+                                )}
                             </View>
                         )}
 
-                        {/* Text Input - Read-only from system (uses custom keyboard) */}
                         <TextInput
                             ref={ref}
                             style={[
@@ -270,52 +271,35 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                             {...props}
                         />
 
-                        {/* Right Side Icons */}
                         <View style={styles.rightContainer}>
-                            {/* Validation Icon */}
-                            {!showPasswordToggle && isValid && !error && (
-                                <View style={styles.statusIcon}>
-                                    <Icon
-                                        name="checkCircle"
-                                        size={scale(24)}
-                                        color={colors.success || '#10B981'}
-                                    />
-                                </View>
-                            )}
+                            {renderStaticIndicator()}
 
-                            {!showPasswordToggle && error && (
-                                <View style={styles.statusIcon}>
-                                    <Icon name="alert" size={scale(24)} color={themeColors.error} />
-                                </View>
-                            )}
-
-                            {/* Password Toggle */}
                             {showPasswordToggle && secureTextEntry && (
-                                <Pressable
-                                    style={[
-                                        styles.toggleButton,
-                                        isPasswordToggleFocused && styles.toggleButtonFocused,
-                                    ]}
+                                <AnimatedPressable
+                                    style={[styles.toggleButton, toggleButtonAnimatedStyle]}
                                     onPress={togglePasswordVisibility}
                                     focusable={!disabled}
-                                    onFocus={() => setIsPasswordToggleFocused(true)}
-                                    onBlur={() => setIsPasswordToggleFocused(false)}
+                                    onFocus={() => {
+                                        toggleFocusProgress.value = withTiming(1, { duration: 90 });
+                                    }}
+                                    onBlur={() => {
+                                        toggleFocusProgress.value = withTiming(0, { duration: 90 });
+                                    }}
                                     accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
                                     accessibilityRole="button"
                                 >
                                     <Icon
                                         name={isPasswordVisible ? 'eyeOff' : 'eye'}
                                         size={scale(28)}
-                                        color={getIconColor()}
+                                        color={isError ? themeColors.error : '#FFFFFF'}
                                     />
-                                </Pressable>
+                                </AnimatedPressable>
                             )}
                         </View>
                     </Animated.View>
                 </Pressable>
             </View>
 
-            {/* Error Message */}
             {error && (
                 <View style={styles.errorContainer}>
                     <Icon name="alert" size={scale(18)} color={themeColors.error} />
@@ -323,7 +307,6 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
                 </View>
             )}
 
-            {/* Hint Text */}
             {hint && !error && (
                 <Text style={styles.hintText}>{hint}</Text>
             )}
@@ -332,10 +315,6 @@ const TVInput = forwardRef<TextInput, TVInputProps>(({
 });
 
 TVInput.displayName = 'TVInput';
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -349,15 +328,8 @@ const styles = StyleSheet.create({
     label: {
         fontSize: scaleFont(18),
         fontWeight: '700',
-        color: '#E7ECF4',
         letterSpacing: 1.3,
         textTransform: 'uppercase',
-    },
-    labelError: {
-        color: '#FBBF24',
-    },
-    labelFocused: {
-        color: colors.accent || '#00E5FF',
     },
     required: {
         fontSize: scaleFont(16),
@@ -375,7 +347,6 @@ const styles = StyleSheet.create({
         borderRadius: scale(12),
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 1,
-        shadowRadius: scale(10),
         elevation: 0,
     },
     touchableInput: {
@@ -405,6 +376,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginRight: scale(12),
     },
+    iconLayer: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     input: {
         flex: 1,
         paddingHorizontal: scale(18),
@@ -430,11 +406,6 @@ const styles = StyleSheet.create({
     toggleButton: {
         padding: scale(16),
         borderRadius: scale(14),
-    },
-    toggleButtonFocused: {
-        backgroundColor: 'rgba(0, 229, 255, 0.12)',
-        borderWidth: 1,
-        borderColor: colors.accent || '#00E5FF',
     },
     statusIcon: {
         padding: scale(16),

@@ -1,6 +1,6 @@
 /**
  * Smartifly TV Button Component - Clean Edition
- * 
+ *
  * TV-optimized button with:
  * - Focus states with glow effects
  * - Scale animations
@@ -9,7 +9,7 @@
  * - Icon support
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import {
     Pressable,
     Text,
@@ -17,9 +17,17 @@ import {
     ViewStyle,
     TextStyle,
     ActivityIndicator,
-    Animated,
     View,
 } from 'react-native';
+import Animated, {
+    createAnimatedComponent,
+    interpolate,
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import {
     colors,
     Icon,
@@ -27,10 +35,6 @@ import {
     scaleFont,
     useTheme,
 } from '../.././../theme';
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 export type TVButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'accent';
 export type TVButtonSize = 'medium' | 'large';
@@ -50,9 +54,11 @@ export interface TVButtonProps {
     accessibilityLabel?: string;
 }
 
-// =============================================================================
-// TV BUTTON COMPONENT
-// =============================================================================
+const AnimatedPressable = createAnimatedComponent(Pressable);
+const BUTTON_BORDER_WIDTH = scale(2);
+const BUTTON_SHADOW_RADIUS = scale(12);
+const BUTTON_GLOW_RADIUS = scale(16);
+const BUTTON_SHADOW_OFFSET_Y = scale(4);
 
 const TVButton: React.FC<TVButtonProps> = ({
     title,
@@ -68,57 +74,34 @@ const TVButton: React.FC<TVButtonProps> = ({
     hasTVPreferredFocus = false,
     accessibilityLabel,
 }) => {
-    const [isFocused, setIsFocused] = useState(false);
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const glowAnim = useRef(new Animated.Value(0)).current;
-
     const { colors: themeColors } = useTheme();
+    const focusProgress = useSharedValue(0);
+    const pressProgress = useSharedValue(0);
+    const scaleProgress = useSharedValue(1);
 
-    // Animate focus state (scale + glow)
-    const animateFocus = useCallback((focused: boolean) => {
-        Animated.parallel([
-            Animated.timing(scaleAnim, {
-                toValue: focused ? 1.05 : 1, // Scale up slightly on focus
-                duration: 200,
-                useNativeDriver: true,
-            }),
-            Animated.timing(glowAnim, {
-                toValue: focused ? 1 : 0,
-                duration: 200,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, [scaleAnim, glowAnim]);
+    const handleFocus = useCallback(() => {
+        focusProgress.value = withTiming(1, { duration: 160 });
+        scaleProgress.value = withSpring(1.05, { damping: 16, stiffness: 220, mass: 0.65 });
+    }, [focusProgress, scaleProgress]);
 
-    const handleFocus = () => {
-        setIsFocused(true);
-        animateFocus(true);
-    };
+    const handleBlur = useCallback(() => {
+        focusProgress.value = withTiming(0, { duration: 160 });
+        pressProgress.value = withTiming(0, { duration: 90 });
+        scaleProgress.value = withSpring(1, { damping: 16, stiffness: 220, mass: 0.65 });
+    }, [focusProgress, pressProgress, scaleProgress]);
 
-    const handleBlur = () => {
-        setIsFocused(false);
-        animateFocus(false);
-    };
+    const handlePressIn = useCallback(() => {
+        pressProgress.value = withTiming(1, { duration: 70 });
+    }, [pressProgress]);
 
-    const handlePressIn = () => {
-        animateFocus(true);
-    };
+    const handlePressOut = useCallback(() => {
+        pressProgress.value = withTiming(0, { duration: 90 });
+    }, [pressProgress]);
 
-    const handlePressOut = () => {
-        if (!isFocused) {
-            animateFocus(false);
-        }
-    };
+    const isDisabled = disabled || loading;
+    const accentColor = colors.accent || '#00E5FF';
 
-    const handlePress = () => {
-        onPress();
-    };
-
-    // Variant styles
-    const getVariantStyles = (): { container: ViewStyle; text: TextStyle } => {
-        const isDisabled = disabled || loading;
-        const accentColor = colors.accent || '#00E5FF';
-
+    const getVariantStyles = (): { container: ViewStyle; text: TextStyle; shadowColor: string } => {
         switch (variant) {
             case 'primary':
                 return {
@@ -131,6 +114,7 @@ const TVButton: React.FC<TVButtonProps> = ({
                     text: {
                         color: isDisabled ? `${themeColors.textOnPrimary}80` : themeColors.textOnPrimary,
                     },
+                    shadowColor: themeColors.primary,
                 };
             case 'secondary':
                 return {
@@ -141,12 +125,13 @@ const TVButton: React.FC<TVButtonProps> = ({
                     text: {
                         color: isDisabled ? 'rgba(255, 255, 255, 0.4)' : '#FFF',
                     },
+                    shadowColor: accentColor,
                 };
             case 'outline':
                 return {
                     container: {
                         backgroundColor: 'transparent',
-                        borderWidth: scale(2),
+                        borderWidth: BUTTON_BORDER_WIDTH,
                         borderColor: isDisabled ? 'rgba(0, 229, 255, 0.3)' : accentColor,
                         shadowColor: 'transparent',
                         shadowOpacity: 0,
@@ -155,6 +140,7 @@ const TVButton: React.FC<TVButtonProps> = ({
                     text: {
                         color: isDisabled ? 'rgba(0, 229, 255, 0.5)' : accentColor,
                     },
+                    shadowColor: 'transparent',
                 };
             case 'ghost':
                 return {
@@ -165,6 +151,7 @@ const TVButton: React.FC<TVButtonProps> = ({
                     text: {
                         color: isDisabled ? 'rgba(255, 255, 255, 0.4)' : accentColor,
                     },
+                    shadowColor: 'transparent',
                 };
             case 'accent':
                 return {
@@ -177,13 +164,13 @@ const TVButton: React.FC<TVButtonProps> = ({
                     text: {
                         color: isDisabled ? 'rgba(0, 0, 0, 0.5)' : '#000000',
                     },
+                    shadowColor: accentColor,
                 };
             default:
-                return { container: {}, text: {} };
+                return { container: {}, text: {}, shadowColor: accentColor };
         }
     };
 
-    // Size styles
     const getSizeStyles = (): { container: ViewStyle; text: TextStyle; iconSize: number } => {
         switch (size) {
             case 'medium':
@@ -213,56 +200,65 @@ const TVButton: React.FC<TVButtonProps> = ({
     const variantStyles = getVariantStyles();
     const sizeStyles = getSizeStyles();
 
-    const glowOpacity = glowAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 0.3],
+    const scaleContainerStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scaleProgress.value }],
+    }));
+
+    const pressableAnimatedStyle = useAnimatedStyle(() => {
+        const visual = Math.max(focusProgress.value, pressProgress.value);
+
+        return {
+            borderWidth: interpolate(visual, [0, 1], [0, BUTTON_BORDER_WIDTH]),
+            borderColor: interpolateColor(visual, [0, 1], ['rgba(255,255,255,0)', '#FFFFFF']),
+            shadowOpacity: interpolate(visual, [0, 1], [0, 0.4]),
+            shadowRadius: interpolate(visual, [0, 1], [0, BUTTON_SHADOW_RADIUS]),
+            elevation: visual > 0 ? 4 : 0,
+        };
     });
 
-
+    const glowContainerStyle = useAnimatedStyle(() => ({
+        opacity: variant === 'primary' ? interpolate(focusProgress.value, [0, 1], [0, 0.3]) : 0,
+    }));
 
     return (
         <View>
-            {/* Subtle glow - only for primary */}
-            {isFocused && variant === 'primary' && (
-                <Animated.View
+            <Animated.View style={[styles.glowContainer, glowContainerStyle]} pointerEvents="none">
+                <View
                     style={[
-                        styles.glowContainer,
-                        { opacity: glowOpacity },
+                        styles.glow,
+                        styles.glowTransparent,
+                        {
+                            shadowColor: variantStyles.shadowColor,
+                            shadowRadius: BUTTON_GLOW_RADIUS,
+                        },
                     ]}
-                >
-                    <View
-                        style={[
-                            styles.glow,
-                            styles.glowTransparent,
-                            {
-                                shadowColor: variantStyles.container.shadowColor,
-                            },
-                        ]}
-                    />
-                </Animated.View>
-            )}
+                />
+            </Animated.View>
 
-            <Animated.View style={[styles.scaleContainer, { transform: [{ scale: scaleAnim }] }]}>
-                <Pressable
-                    onPress={handlePress}
+            <Animated.View style={[styles.scaleContainer, scaleContainerStyle]}>
+                <AnimatedPressable
+                    onPress={onPress}
                     onFocus={handleFocus}
                     onBlur={handleBlur}
                     onPressIn={handlePressIn}
                     onPressOut={handlePressOut}
-                    disabled={disabled || loading}
+                    disabled={isDisabled}
                     accessibilityLabel={accessibilityLabel || title}
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: disabled || loading }}
+                    accessibilityState={{ disabled: isDisabled }}
                     hasTVPreferredFocus={hasTVPreferredFocus}
-                    style={({ pressed }) => [
+                    style={[
                         styles.container,
                         sizeStyles.container,
                         variantStyles.container,
-                        (isFocused || pressed) && styles.containerFocused,
+                        pressableAnimatedStyle,
+                        {
+                            shadowColor: variantStyles.shadowColor,
+                            shadowOffset: { width: 0, height: BUTTON_SHADOW_OFFSET_Y },
+                        },
                         style,
                     ]}
                 >
-                    {/* Left Icon */}
                     {leftIcon && !loading && (
                         <View style={styles.iconContainer}>
                             <Icon
@@ -273,7 +269,6 @@ const TVButton: React.FC<TVButtonProps> = ({
                         </View>
                     )}
 
-                    {/* Content */}
                     {loading ? (
                         <ActivityIndicator
                             size="small"
@@ -286,7 +281,6 @@ const TVButton: React.FC<TVButtonProps> = ({
                         </Text>
                     )}
 
-                    {/* Right Icon */}
                     {rightIcon && !loading && (
                         <View style={styles.iconContainer}>
                             <Icon
@@ -296,15 +290,11 @@ const TVButton: React.FC<TVButtonProps> = ({
                             />
                         </View>
                     )}
-                </Pressable>
+                </AnimatedPressable>
             </Animated.View>
         </View>
     );
 };
-
-// =============================================================================
-// STYLES
-// =============================================================================
 
 const styles = StyleSheet.create({
     container: {
@@ -312,16 +302,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: scale(14),
-        // No shadow by default
-    },
-    containerFocused: {
-        // Add shadow/glow and border on focus
-        shadowOffset: { width: 0, height: scale(4) },
-        shadowOpacity: 0.4,
-        shadowRadius: scale(12),
-        elevation: 4,
-        borderWidth: scale(2),
-        borderColor: '#FFFFFF', // Clear white border for visibility
     },
     text: {
         fontWeight: '700',
@@ -348,7 +328,6 @@ const styles = StyleSheet.create({
         borderRadius: scale(16),
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.5,
-        shadowRadius: scale(16),
         elevation: 0,
     },
     glowTransparent: {

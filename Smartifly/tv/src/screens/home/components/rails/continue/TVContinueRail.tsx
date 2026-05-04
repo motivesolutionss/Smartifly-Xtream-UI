@@ -3,7 +3,7 @@ import { LayoutChangeEvent, StyleSheet, Text, View, useWindowDimensions } from '
 import { colors, scale, scaleFont } from '../../../.././../theme';
 import { WatchProgress } from '@smartifly/shared/src/store/watchHistoryStore';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
-import TVContentCard, { TVContentItem } from '../../cards/catalog/TVContentCard';
+import TVContinueCard from '../../cards/continue/TVContinueCard';
 import BaseHorizontalRail from '../base/BaseHorizontalRail';
 import {
   HOME_SIDEBAR_GAP,
@@ -54,30 +54,19 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
   }, []);
 
   const renderItem = useCallback(
-    ({ item, index }: { item: WatchProgress; index: number }) => {
-      const contentItem: TVContentItem = {
-        id: item.id,
-        title: item.episodeTitle || item.title,
-        image: item.thumbnail || '',
-        type: item.type === 'live' ? 'live' : item.type === 'series' ? 'series' : 'movie',
-        data: item.data ?? item,
-      };
-
-      return (
-        <TVContentCard
-          item={contentItem}
-          onPress={() => onPressItem(item)}
-          onFocusItem={() => onFocusIndex?.(index)}
-          width={cardWidth}
-          height={cardHeight}
-          disableZoom={true}
-          nextFocusLeft={index === 0 ? sidebarTargetNode : undefined}
-          onRequestSidebarFocus={index === 0 ? onRequestSidebarFocus : undefined}
-          focusable
-        />
-      );
-    },
-    [cardHeight, cardWidth, onFocusIndex, onPressItem, onRequestSidebarFocus, sidebarTargetNode]
+    ({ item, index }: { item: WatchProgress; index: number }) => (
+      <TVContinueCard
+        item={item}
+        onPress={onPressItem}
+        onRemove={_onRemoveItem}
+        onFocusItem={() => onFocusIndex?.(index)}
+        width={cardWidth}
+        height={cardHeight}
+        nextFocusLeft={index === 0 ? sidebarTargetNode : undefined}
+        onRequestSidebarFocus={index === 0 ? onRequestSidebarFocus : undefined}
+      />
+    ),
+    [cardHeight, cardWidth, onPressItem, _onRemoveItem, onRequestSidebarFocus, sidebarTargetNode]
   );
 
   const getItemLayout = useCallback(

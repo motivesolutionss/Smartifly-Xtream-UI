@@ -30,6 +30,7 @@ interface TVContinueCardProps {
   item: WatchProgress;
   onPress: (item: WatchProgress) => void;
   onRemove?: (item: WatchProgress) => void;
+  onFocusItem?: (item: WatchProgress) => void;
   width?: number;
   height?: number;
   nextFocusLeft?: number | null;
@@ -87,6 +88,7 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
   item,
   onPress,
   onRemove,
+  onFocusItem,
   width = scale(220),
   height = scale(130),
   nextFocusLeft,
@@ -165,8 +167,9 @@ const TVContinueCard: React.FC<TVContinueCardProps> = ({
 
   const handleCardFocus = useCallback(() => {
     handleFocus();
+    onFocusItem?.(item);
     removeOpacity.value = withTiming(1, { duration: 120 });
-  }, [handleFocus, removeOpacity]);
+  }, [handleFocus, item, onFocusItem, removeOpacity]);
 
   const handleCardBlur = useCallback(() => {
     handleBlur();

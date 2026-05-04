@@ -19,6 +19,13 @@ import {
     ScrollView,
     ActivityIndicator,
 } from 'react-native';
+import Animated, {
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import DeviceInfo from 'react-native-device-info';
 import UpdateService, { UpdateInfo } from '@smartifly/shared/src/services/UpdateService';
 import { CommonActions } from '@react-navigation/native';
@@ -48,6 +55,12 @@ interface SettingsMenuItem {
     label: string;
     icon: string;
 }
+
+const SPRING = {
+    damping: 16,
+    stiffness: 220,
+    mass: 0.6,
+};
 
 // =============================================================================
 // STYLES FACTORY
@@ -132,6 +145,12 @@ function createStyles(
             height: scale(6),
             borderRadius: 3,
             backgroundColor: '#000',
+        },
+        rowPressable: {
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flex: 1,
         },
 
         // Right Panel
@@ -380,6 +399,168 @@ function createStyles(
     });
 }
 
+type SettingsMenuButtonProps = {
+    item: SettingsMenuItem;
+    isSelected: boolean;
+    isFirst: boolean;
+    onPress: () => void;
+    focusEntryRef?: React.Ref<View>;
+    styles: ReturnType<typeof createStyles>;
+    themeColors: any;
+};
+
+const SettingsMenuButton: React.FC<SettingsMenuButtonProps> = ({
+    item,
+    isSelected,
+    isFirst,
+    onPress,
+    focusEntryRef,
+    styles,
+    themeColors,
+}) => {
+    const focused = useSharedValue(0);
+    const scaleValue = useSharedValue(1);
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? 'rgba(0, 243, 255, 0.08)' : 'rgba(0,0,0,0)', themeColors.primary]
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? 'rgba(0, 243, 255, 0.2)' : 'transparent', themeColors.primary]
+        ),
+        transform: [{ scale: scaleValue.value }],
+    }), [isSelected, themeColors.primary]);
+    const labelStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(
+            focused.value,
+            [0, 1],
+            [isSelected ? '#FFFFFF' : (themeColors.textTertiary || '#8E9AAF'), themeColors.textInverse || '#000000']
+        ),
+    }), [isSelected, themeColors.textInverse, themeColors.textTertiary]);
+    const focusIndicatorStyle = useAnimatedStyle(() => ({
+        opacity: focused.value,
+    }));
+
+    return (
+        <Animated.View style={[styles.menuItem, shellStyle]}>
+            <Pressable
+                ref={isFirst ? focusEntryRef : undefined}
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                    scaleValue.value = withSpring(1.05, SPRING);
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                    scaleValue.value = withSpring(1, SPRING);
+                }}
+                style={styles.rowPressable}
+            >
+                <Icon
+                    name={item.icon}
+                    size={scaleFont(22)}
+                    color={isSelected ? themeColors.primary : (themeColors.textTertiary || '#8E9AAF')}
+                />
+                <Animated.Text style={[styles.menuLabel, isSelected && styles.menuLabelActive, labelStyle]}>
+                    {item.label}
+                </Animated.Text>
+                <Animated.View style={[styles.focusIndicator, focusIndicatorStyle]} />
+            </Pressable>
+        </Animated.View>
+    );
+};
+
+type SettingsDetailButtonProps = {
+    label: string;
+    value: string;
+    isAction?: boolean;
+    onPress?: () => void;
+    danger?: boolean;
+    styles: ReturnType<typeof createStyles>;
+    themeColors: any;
+    childrenRight?: React.ReactNode;
+    extraStyle?: any;
+    children?: React.ReactNode;
+};
+
+const SettingsDetailButton: React.FC<SettingsDetailButtonProps> = ({
+    label,
+    value,
+    isAction = false,
+    onPress,
+    danger = false,
+    styles,
+    themeColors,
+    childrenRight,
+    extraStyle,
+    children,
+}) => {
+    const focused = useSharedValue(0);
+    const scaleValue = useSharedValue(1);
+    const shellStyle = useAnimatedStyle(() => ({
+        backgroundColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [danger ? 'rgba(255, 0, 85, 0.03)' : themeColors.backgroundSecondary, danger ? 'rgba(255, 0, 85, 0.08)' : themeColors.backgroundTertiary]
+        ),
+        borderColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [danger ? 'rgba(255, 0, 85, 0.2)' : themeColors.border, danger ? 'rgba(255, 0, 85, 0.4)' : themeColors.borderFocus]
+        ),
+        borderLeftColor: interpolateColor(
+            focused.value,
+            [0, 1],
+            [danger ? 'rgba(255, 0, 85, 0.2)' : themeColors.border, danger ? '#FF0055' : themeColors.borderFocus]
+        ),
+        transform: [{ scale: scaleValue.value }],
+    }), [danger, themeColors.backgroundSecondary, themeColors.backgroundTertiary, themeColors.border, themeColors.borderFocus]);
+    const labelStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(focused.value, [0, 1], [danger ? themeColors.error : '#E1E5EE', '#FFFFFF']),
+    }), [danger, themeColors.error]);
+    const valueStyle = useAnimatedStyle(() => ({
+        color: interpolateColor(focused.value, [0, 1], [danger ? themeColors.error : '#5C677D', danger ? themeColors.error : '#00F3FF']),
+    }), [danger, themeColors.error]);
+    const decorationStyle = useAnimatedStyle(() => ({
+        opacity: focused.value,
+    }));
+
+    return (
+        <Animated.View style={[styles.detailRow, extraStyle, shellStyle]}>
+            <Pressable
+                onPress={onPress}
+                onFocus={() => {
+                    focused.value = withTiming(1, { duration: 90 });
+                    scaleValue.value = withSpring(1.02, SPRING);
+                }}
+                onBlur={() => {
+                    focused.value = withTiming(0, { duration: 90 });
+                    scaleValue.value = withSpring(1, SPRING);
+                }}
+                disabled={!isAction}
+                style={styles.rowPressable}
+            >
+                <View style={styles.detailLabelContainer}>
+                    <Animated.Text style={[styles.detailLabel, labelStyle]}>
+                        {label}
+                    </Animated.Text>
+                    <Animated.View style={[styles.hudDecoration, danger && { backgroundColor: themeColors.error }, decorationStyle]} />
+                </View>
+                <View style={styles.detailValueContainer}>
+                    <Animated.Text style={[styles.detailValue, valueStyle]}>
+                        {value}
+                    </Animated.Text>
+                    {childrenRight}
+                </View>
+            </Pressable>
+            {children}
+        </Animated.View>
+    );
+};
+
 // =============================================================================
 // COMPONENT
 // =============================================================================
@@ -388,8 +569,6 @@ function createStyles(
 const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEntryRef }) => {
     // State
     const [selectedSection, setSelectedSection] = useState<SettingsSection>('Account');
-    const [focusedSection, setFocusedSection] = useState<SettingsSection | null>(null);
-    const [focusedOption, setFocusedOption] = useState<string | null>(null);
 
     // Update State
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -528,39 +707,17 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
 
     const renderMenuItem = ({ item }: { item: SettingsMenuItem }) => {
         const isSelected = selectedSection === item.id;
-        const isFocused = focusedSection === item.id;
         const isFirst = item.id === sections[0].id;
-
         return (
-            <Pressable
-                ref={isFirst ? focusEntryRef : undefined}
+            <SettingsMenuButton
+                item={item}
+                isSelected={isSelected}
+                isFirst={isFirst}
                 onPress={() => setSelectedSection(item.id)}
-                onFocus={() => setFocusedSection(item.id)}
-                onBlur={() => setFocusedSection(null)}
-                style={[
-                    styles.menuItem,
-                    isSelected && styles.menuItemActive,
-                    isFocused && styles.menuItemFocused,
-                    isFocused && {
-                        backgroundColor: theme.colors.primary,
-                        borderColor: theme.colors.primary,
-                    },
-                ]}
-            >
-                <Icon
-                    name={item.icon}
-                    size={scaleFont(22)}
-                    color={isFocused ? theme.colors.textInverse : (isSelected ? theme.colors.primary : theme.colors.textTertiary)}
-                />
-                <Text style={[
-                    styles.menuLabel,
-                    isSelected && styles.menuLabelActive,
-                    isFocused && styles.menuLabelFocused,
-                ]}>
-                    {item.label}
-                </Text>
-                {isFocused && <View style={styles.focusIndicator} />}
-            </Pressable>
+                focusEntryRef={focusEntryRef}
+                styles={styles}
+                themeColors={theme.colors}
+            />
         );
     };
 
@@ -571,56 +728,28 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
         onPress?: () => void,
         danger: boolean = false
     ) => {
-        const isFocused = focusedOption === label;
-
         return (
-            <Pressable
+            <SettingsDetailButton
+                label={label}
+                value={value}
+                isAction={isAction}
                 onPress={onPress}
-                onFocus={() => setFocusedOption(label)}
-                onBlur={() => setFocusedOption(null)}
-                disabled={!isAction}
-                style={[
-                    styles.detailRow,
-                    isFocused && styles.detailRowFocused,
-                    danger && styles.detailRowDanger,
-                    danger && isFocused && styles.detailRowDangerFocused,
-                ]}
-            >
-                <View style={styles.detailLabelContainer}>
-                    <Text style={[
-                        styles.detailLabel,
-                        isFocused && styles.detailLabelFocused,
-                        danger && { color: theme.colors.error }
-                    ]}>
-                        {label}
-                    </Text>
-                    {isFocused && <View style={[styles.hudDecoration, danger && { backgroundColor: theme.colors.error }]} />}
-                </View>
-
-                <View style={styles.detailValueContainer}>
-                    <Text style={[
-                        styles.detailValue,
-                        isFocused && styles.detailValueFocused,
-                        danger && { color: theme.colors.error }
-                    ]}>
-                        {value}
-                    </Text>
-                    {isAction && (
-                        <Icon
-                            name="chevron-right"
-                            size={scaleFont(16)}
-                            color={danger ? theme.colors.error : (isFocused ? theme.colors.primary : theme.colors.textMuted)}
-                            style={styles.chevronIcon}
-                        />
-                    )}
-                </View>
-            </Pressable>
+                danger={danger}
+                styles={styles}
+                themeColors={theme.colors}
+                childrenRight={isAction ? (
+                    <Icon
+                        name="chevron-right"
+                        size={scaleFont(16)}
+                        color={danger ? theme.colors.error : theme.colors.textMuted}
+                        style={styles.chevronIcon}
+                    />
+                ) : null}
+            />
         );
     };
 
     const renderUpdateItem = () => {
-        const isFocused = focusedOption === 'System Update';
-
         if (isChecking) {
             return (
                 <View style={styles.detailRow}>
@@ -635,35 +764,26 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
         if (updateInfo?.updateAvailable) {
             const progress = isNaN(downloadProgress) ? 0 : downloadProgress;
             return (
-                <Pressable
+                <SettingsDetailButton
+                    label="System Patch Available"
+                    value=""
+                    isAction={true}
                     onPress={handleDownloadUpdate}
-                    onFocus={() => setFocusedOption('System Update')}
-                    onBlur={() => setFocusedOption(null)}
-                    style={[
-                        styles.detailRow,
+                    styles={styles}
+                    themeColors={theme.colors}
+                    extraStyle={[
                         styles.detailRowUpdateBase,
-                        isFocused && styles.detailRowFocused,
-                        isDownloading && styles.detailRowUpdateDownloading
+                        isDownloading && styles.detailRowUpdateDownloading,
                     ]}
-                >
-                    <View style={[styles.updateItemRow, isDownloading && styles.updateItemRowDownloading]}>
-                        <View style={styles.detailLabelContainer}>
-                            <Text style={[styles.detailLabel, isFocused && styles.detailLabelFocused]}>
-                                System Patch Available
-                            </Text>
-                            {isFocused && <View style={styles.hudDecoration} />}
-                        </View>
-
-                        {!isDownloading && (
-                            <View style={styles.badgeContainer}>
-                                <View style={[styles.statusBadge, { backgroundColor: theme.colors.primary }]}>
-                                    <Text style={[styles.statusBadgeText, styles.statusBadgeTextDark]}>DOWNLOAD v{updateInfo.latestVersion}</Text>
-                                </View>
+                    childrenRight={!isDownloading ? (
+                        <View style={styles.badgeContainer}>
+                            <View style={[styles.statusBadge, { backgroundColor: theme.colors.primary }]}>
+                                <Text style={[styles.statusBadgeText, styles.statusBadgeTextDark]}>DOWNLOAD v{updateInfo.latestVersion}</Text>
                             </View>
-                        )}
-                    </View>
-
-                    {isDownloading && (
+                        </View>
+                    ) : null}
+                >
+                    {isDownloading ? (
                         <View style={styles.tvProgressContainer}>
                             <View style={styles.tvProgressBar}>
                                 <View style={[styles.tvProgressFill, { width: `${Math.min(100, progress * 100)}%` }]} />
@@ -672,8 +792,8 @@ const TVSettingsScreen: React.FC<TVSettingsScreenProps> = ({ navigation, focusEn
                                 {Math.round(progress * 100)}% Synchronized
                             </Text>
                         </View>
-                    )}
-                </Pressable>
+                    ) : null}
+                </SettingsDetailButton>
             );
         }
 
