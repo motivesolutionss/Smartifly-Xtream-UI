@@ -30,6 +30,7 @@ import TVHeroBanner, { TVHeroItem } from './components/TVHeroBanner';
 import TVContentRail from './components/TVContentRail';
 import TVContinueRail from './components/TVContinueRail';
 import { TVContentItem } from './components/TVContentCard';
+import { HOME_SIDEBAR_GAP } from './components/layout/railSizing';
 
 import useWatchHistoryStore, { WatchProgress } from '@smartifly/shared/src/store/watchHistoryStore';
 
@@ -927,13 +928,13 @@ const styles = StyleSheet.create({
         display: 'none',
     },
     sectionWithSidebar: {
-        marginLeft: scale(130),
+        marginLeft: HOME_SIDEBAR_GAP,
     },
 
     // Home list styles
     scrollViewWithSidebarGap: {
         flex: 1,
-        marginLeft: scale(130),
+        marginLeft: HOME_SIDEBAR_GAP,
     },
     scrollContent: {
         paddingBottom: scale(50),
@@ -942,7 +943,7 @@ const styles = StyleSheet.create({
     // Placeholder styles
     placeholderOverlayLocal: {
         flex: 1,
-        marginLeft: scale(130),
+        marginLeft: HOME_SIDEBAR_GAP,
         backgroundColor: colors.background,
     },
     placeholderContainerInner: {

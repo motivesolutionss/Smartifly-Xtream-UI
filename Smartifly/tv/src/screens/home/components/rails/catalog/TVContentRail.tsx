@@ -1,5 +1,5 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, LayoutChangeEvent, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { scale, scaleFont } from '../../../.././../theme';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import TVContentCard, { TVContentItem } from '../../cards/catalog/TVContentCard';
@@ -34,9 +34,11 @@ const TVContentRail: React.FC<TVContentRailProps> = ({
   const { width: screenWidth } = useWindowDimensions();
   const perf = usePerfProfile();
   const [railWidth, setRailWidth] = useState<number>(Math.max(0, screenWidth - HOME_SIDEBAR_GAP));
+  const railRef = useRef<FlatList<TVContentItem> | null>(null);
 
   const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
   const isLiveRail = safeData.length > 0 && safeData[0].type === 'live';
+  const visibleCards = layoutPreset === 'sixUpPoster' ? 6 : 5;
   const { cardWidth, cardHeight, cardGap, listLeft, contentLeft, contentRight } = useMemo(
     () => getRailLayoutMetrics(layoutPreset, railWidth),
     [layoutPreset, railWidth]
@@ -51,12 +53,22 @@ const TVContentRail: React.FC<TVContentRailProps> = ({
     }
   }, []);
 
+  const scrollToFocusedIndex = useCallback((index: number) => {
+    const maxStartIndex = Math.max(0, safeData.length - visibleCards);
+    const startIndex = Math.min(Math.max(0, index - visibleCards + 1), maxStartIndex);
+    railRef.current?.scrollToOffset({
+      offset: startIndex * itemLength,
+      animated: true,
+    });
+  }, [itemLength, safeData.length, visibleCards]);
+
   const renderItem = useCallback(
     ({ item, index }: { item: TVContentItem; index: number }) => (
       <TVContentCard
         item={isLiveRail ? { ...item, quality: item.quality ?? 'LIVE' } : item}
         onPress={onPressItem}
         onFocusItem={(focusedItem) => {
+          scrollToFocusedIndex(index);
           onFocusItem?.(focusedItem);
           onFocusIndex?.(index, isLiveRail ? 'live' : 'catalog');
         }}
@@ -67,7 +79,7 @@ const TVContentRail: React.FC<TVContentRailProps> = ({
         focusable
       />
     ),
-    [cardHeight, cardWidth, isLiveRail, onFocusIndex, onFocusItem, onPressItem, onRequestSidebarFocus, sidebarTargetNode]
+    [cardHeight, cardWidth, isLiveRail, onFocusIndex, onFocusItem, onPressItem, onRequestSidebarFocus, scrollToFocusedIndex, sidebarTargetNode]
   );
 
   const getItemLayout = useCallback(
@@ -86,6 +98,7 @@ const TVContentRail: React.FC<TVContentRailProps> = ({
     <View style={styles.container} onLayout={onRailLayout}>
       <Text style={styles.title}>{title}</Text>
       <BaseHorizontalRail
+        railRef={railRef}
         railStyle={[styles.listBase, listStyle]}
         data={safeData}
         extraData={`${isLiveRail ? 'live' : 'catalog'}:${String(sidebarTargetNode ?? '')}:${cardWidth}:${cardHeight}`}
@@ -108,7 +121,7 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     marginBottom: scale(6),
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   title: {
     marginLeft: scale(30),

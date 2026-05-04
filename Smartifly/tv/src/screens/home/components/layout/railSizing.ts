@@ -1,6 +1,6 @@
 import { scale } from '../../../../theme';
 
-export const HOME_SIDEBAR_GAP = scale(130);
+export const HOME_SIDEBAR_GAP = scale(152);
 
 export type RailLayoutPreset = 'fiveUpContinue' | 'fiveUpLive' | 'sixUpPoster';
 
@@ -60,8 +60,8 @@ export const getRailLayoutMetrics = (
       cardWidth: computeGroupACardWidth(railWidth),
       cardHeight: group.cardHeight,
       cardGap: group.cardMargin,
-      listLeft: 0,
-      contentLeft: group.listLeftPadding,
+      listLeft: group.listLeftPadding,
+      contentLeft: 0,
       contentRight: group.listRightPadding,
     };
   }
@@ -70,8 +70,8 @@ export const getRailLayoutMetrics = (
     cardWidth: computeGroupBCardWidth(railWidth),
     cardHeight: railGroupB.cardHeight,
     cardGap: railGroupB.cardMargin,
-    listLeft: railGroupB.listViewportOffset,
-    contentLeft: railGroupB.listInnerLeftPad,
+    listLeft: railGroupB.listViewportOffset + railGroupB.listInnerLeftPad,
+    contentLeft: 0,
     contentRight: railGroupB.listRightPad,
   };
 };

@@ -1,5 +1,5 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, LayoutChangeEvent, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { colors, scale, scaleFont } from '../../../.././../theme';
 import { WatchProgress } from '@smartifly/shared/src/store/watchHistoryStore';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
@@ -32,8 +32,10 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
   const { width: screenWidth } = useWindowDimensions();
   const perf = usePerfProfile();
   const [railWidth, setRailWidth] = useState<number>(Math.max(0, screenWidth - HOME_SIDEBAR_GAP));
+  const railRef = useRef<FlatList<WatchProgress> | null>(null);
 
   const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  const visibleCards = 5;
   const { cardWidth, cardHeight, cardGap, listLeft, contentLeft, contentRight } = useMemo(
     () => getRailLayoutMetrics('fiveUpContinue', railWidth),
     [railWidth]
@@ -53,20 +55,32 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
     }
   }, []);
 
+  const scrollToFocusedIndex = useCallback((index: number) => {
+    const maxStartIndex = Math.max(0, safeData.length - visibleCards);
+    const startIndex = Math.min(Math.max(0, index - visibleCards + 1), maxStartIndex);
+    railRef.current?.scrollToOffset({
+      offset: startIndex * itemLength,
+      animated: true,
+    });
+  }, [itemLength, safeData.length, visibleCards]);
+
   const renderItem = useCallback(
     ({ item, index }: { item: WatchProgress; index: number }) => (
       <TVContinueCard
         item={item}
         onPress={onPressItem}
         onRemove={_onRemoveItem}
-        onFocusItem={() => onFocusIndex?.(index)}
+        onFocusItem={() => {
+          scrollToFocusedIndex(index);
+          onFocusIndex?.(index);
+        }}
         width={cardWidth}
         height={cardHeight}
         nextFocusLeft={index === 0 ? sidebarTargetNode : undefined}
         onRequestSidebarFocus={index === 0 ? onRequestSidebarFocus : undefined}
       />
     ),
-    [cardHeight, cardWidth, onPressItem, _onRemoveItem, onRequestSidebarFocus, sidebarTargetNode]
+    [cardHeight, cardWidth, onFocusIndex, onPressItem, _onRemoveItem, onRequestSidebarFocus, scrollToFocusedIndex, sidebarTargetNode]
   );
 
   const getItemLayout = useCallback(
@@ -82,6 +96,7 @@ const TVContinueRail: React.FC<TVContinueRailProps> = ({
     <View style={styles.container} onLayout={onRailLayout}>
       <Text style={styles.title}>{title}</Text>
       <BaseHorizontalRail
+        railRef={railRef}
         railStyle={[styles.listBase, railStyle]}
         data={safeData}
         extraData={`${String(sidebarTargetNode ?? '')}:${cardWidth}`}
@@ -104,7 +119,7 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     marginBottom: scale(10),
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   title: {
     marginLeft: scale(30),

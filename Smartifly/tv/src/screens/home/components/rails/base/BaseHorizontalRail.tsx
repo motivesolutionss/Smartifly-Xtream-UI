@@ -9,6 +9,7 @@ import {
 
 type BaseHorizontalRailProps<T> = {
   data: T[];
+  railRef?: React.RefObject<FlatList<T> | null>;
   extraData?: FlatListProps<T>['extraData'];
   railStyle?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
@@ -27,6 +28,7 @@ type BaseHorizontalRailProps<T> = {
 
 function BaseHorizontalRailInner<T>({
   data,
+  railRef,
   extraData,
   railStyle,
   contentContainerStyle,
@@ -44,6 +46,7 @@ function BaseHorizontalRailInner<T>({
 }: BaseHorizontalRailProps<T>) {
   return (
     <FlatList
+      ref={railRef}
       style={railStyle}
       horizontal
       data={data}
