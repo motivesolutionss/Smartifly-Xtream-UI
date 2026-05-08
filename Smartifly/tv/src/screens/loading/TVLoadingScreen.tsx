@@ -35,6 +35,9 @@ const TV_SAFE_AREA = {
     vertical: scale(27),
 };
 
+const HERO_PREP_MOVIE_LIMIT = 240;
+const HERO_PREP_SERIES_LIMIT = 240;
+
 // =============================================================================
 // LOADING STEP INDICATOR
 // =============================================================================
@@ -194,8 +197,8 @@ const TVLoadingScreen: React.FC<TVLoadingScreenProps> = ({ navigation }) => {
                 });
 
                 await prepareHomeHero({
-                    movies: state.content.movies.items,
-                    series: state.content.series.items,
+                    movies: state.content.movies.items.slice(0, HERO_PREP_MOVIE_LIMIT),
+                    series: state.content.series.items.slice(0, HERO_PREP_SERIES_LIMIT),
                     seedKey,
                     api: state.getXtreamAPI?.() ?? null,
                 });

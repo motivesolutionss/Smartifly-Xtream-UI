@@ -7,7 +7,7 @@
  * - No duplicate sidebar (main sidebar is on Home only)
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -30,9 +30,9 @@ import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
 import { XtreamSeries } from '@smartifly/shared/src/api/xtream';
 import { TVSeriesScreenProps } from '../navigation/types';
 import { useContentFilter } from '@smartifly/shared/src/store/profileStore';
-import { scheduleIdleWork } from '@smartifly/shared/src/utils/idle';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
+import usePagedCatalog from './hooks/usePagedCatalog';
 import { seededShuffle } from '@smartifly/shared/src/utils/shuffle';
 
 // =============================================================================
@@ -42,7 +42,7 @@ import { seededShuffle } from '@smartifly/shared/src/utils/shuffle';
 interface Category {
     id: string;
     name: string;
-    count: number;
+    countLabel?: string;
 }
 
 type CategoryListProps = {
@@ -263,14 +263,16 @@ const CategoryItem: React.FC<CategoryItemProps> = React.memo(
                         >
                             {item.name}
                         </Animated.Text>
-                        <Animated.Text
-                            style={[
-                                styles.categoryCount,
-                                countStyle,
-                            ]}
-                        >
-                            {item.count}
-                        </Animated.Text>
+                        {item.countLabel ? (
+                            <Animated.Text
+                                style={[
+                                    styles.categoryCount,
+                                    countStyle,
+                                ]}
+                            >
+                                {item.countLabel}
+                            </Animated.Text>
+                        ) : null}
                     </View>
                 </Pressable>
             </Animated.View>
@@ -314,7 +316,7 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
                 extraData={selectedCategoryId}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.categoryList}
-                removeClippedSubviews={true}
+                removeClippedSubviews={false}
                 getItemLayout={(_, index) => ({
                     length: CATEGORY_ROW_SIZE,
                     offset: CATEGORY_ROW_SIZE * index,
@@ -361,105 +363,42 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
     );
 
     // State
-    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [categoryMap, setCategoryMap] = useState<Record<string, XtreamSeries[]>>({});
-    const [isPrepared, setIsPrepared] = useState(false);
-    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
     const perf = usePerfProfile();
     const gridPerf = perf.grid;
     const gridInitialRender = GRID_COLUMNS * gridPerf.initialRows;
     const gridMaxRenderBatch = GRID_COLUMNS * gridPerf.maxRenderBatchRows;
+    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
     // Store (narrow selectors to avoid re-render on other domains)
     const seriesLoaded = useStore((state) => state.content.series.loaded);
-    const seriesItems = useStore((state) => state.content.series.items);
     const seriesCategories = useStore((state) => state.content.series.categories);
-    const { filterContent } = useContentFilter();
+    const { filterContent, maxRating, isKidsMode } = useContentFilter();
 
-    // ==========================================================================
-    // CATEGORIES
-    // ==========================================================================
-
-    useEffect(() => {
-        if (!seriesLoaded || !seriesCategories) {
-            setCategories([]);
-            setCategoryMap({});
-            setIsPrepared(false);
-            return;
-        }
-
-        setIsPrepared(false);
-        const task = scheduleIdleWork(() => {
-            const filteredAllSeries = filterContent(seriesItems as any[]);
-            const shuffledAllSeries = seededShuffle(
-                filteredAllSeries,
-                (entry) => String(entry.series_id || ''),
-                `series:all:${dayShuffleSeed}`
-            );
-            const nextMap: Record<string, XtreamSeries[]> = {
-                all: shuffledAllSeries,
-            };
-
-            for (const series of shuffledAllSeries) {
-                const catId = String(series.category_id);
-                if (!nextMap[catId]) nextMap[catId] = [];
-                nextMap[catId].push(series);
-            }
-
-            for (const [catId, catSeries] of Object.entries(nextMap)) {
-                if (catId === 'all') continue;
-                nextMap[catId] = seededShuffle(
-                    catSeries,
-                    (entry) => String(entry.series_id || ''),
-                    `series:${catId}:${dayShuffleSeed}`
-                );
-            }
-
-            const nextCategories: Category[] = [
-                { id: 'all', name: 'All Series', count: shuffledAllSeries.length },
-            ];
-
-            for (const cat of seriesCategories) {
-                const catId = String(cat.category_id);
-                const count = nextMap[catId]?.length || 0;
-
-                if (count > 0) {
-                    nextCategories.push({
-                        id: catId,
-                        name: cat.category_name,
-                        count,
-                    });
-                }
-            }
-
-            setCategoryMap(nextMap);
-            setCategories(nextCategories);
-            setIsPrepared(true);
-        });
-
-        return () => {
-            task.cancel();
-        };
-    }, [seriesLoaded, seriesCategories, seriesItems, filterContent, dayShuffleSeed]);
-
-    // ==========================================================================
-    // SERIES (filtered by category)
-    // ==========================================================================
-
-    const series = useMemo((): XtreamSeries[] => {
-        if (!seriesLoaded || !isPrepared) return [];
-
-        const key = selectedCategoryId && selectedCategoryId !== 'all'
-            ? selectedCategoryId
-            : 'all';
-
-        return categoryMap[key] || [];
-    }, [seriesLoaded, isPrepared, selectedCategoryId, categoryMap]);
-
-    const selectedCategoryName = useMemo(() => {
-        return categories.find((c) => c.id === (selectedCategoryId || 'all'))?.name;
-    }, [categories, selectedCategoryId]);
+    const {
+        selectedCategoryId,
+        setSelectedCategoryId,
+        categories,
+        items: series,
+        selectedCategoryName,
+        countLabel,
+        isInitialLoading,
+        isLoadingMore,
+        hasMore,
+        loadMore,
+    } = usePagedCatalog<XtreamSeries>({
+        categories: seriesCategories,
+        fetchPage: (api, page, limit, categoryId) => api.getSeriesPage({ page, limit, categoryId }),
+        getItemId: (item) => String(item.series_id),
+        filterItems: (items) => filterContent(items as any[]),
+        shuffleItems: (items, categoryId, page) => seededShuffle(
+            items,
+            (item) => String(item.series_id || ''),
+            `series:${categoryId}:page:${page}:${dayShuffleSeed}`
+        ),
+        countNoun: 'titles',
+        allCategoryName: 'All Series',
+        resetKey: `${seriesLoaded ? 'ready' : 'pending'}:${maxRating}:${isKidsMode ? 'kids' : 'adult'}`,
+    });
 
     // ==========================================================================
     // HANDLERS
@@ -479,7 +418,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
 
     const handleCategorySelect = useCallback((categoryId: string) => {
         setSelectedCategoryId(categoryId);
-    }, []);
+    }, [setSelectedCategoryId]);
 
     // ==========================================================================
     // RENDER
@@ -529,9 +468,7 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
                     <Text style={styles.selectedCategoryName}>
                         {selectedCategoryName}
                     </Text>
-                    <Text style={styles.seriesCount}>
-                        {series.length} titles available
-                    </Text>
+                    <Text style={styles.seriesCount}>{countLabel}</Text>
                 </View>
 
                 <FlashList
@@ -544,16 +481,15 @@ const TVSeriesScreen: React.FC<TVSeriesScreenProps> = ({ navigation, focusEntryR
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.seriesGrid}
                     columnWrapperStyle={styles.seriesRow}
-                    removeClippedSubviews={true}
+                    removeClippedSubviews={false}
                     maxToRenderPerBatch={gridMaxRenderBatch}
                     initialNumToRender={gridInitialRender}
                     windowSize={gridPerf.windowSize}
                     updateCellsBatchingPeriod={gridPerf.updateCellsBatchingPeriod}
-                    ListEmptyComponent={
-                        !isPrepared ? (
-                            <TVLoadingState style={styles.loadingState} />
-                        ) : null
-                    }
+                    onEndReached={hasMore ? loadMore : undefined}
+                    onEndReachedThreshold={0.7}
+                    ListEmptyComponent={isInitialLoading ? <TVLoadingState style={styles.loadingState} /> : null}
+                    ListFooterComponent={isLoadingMore ? <TVLoadingState style={styles.loadingState} size="small" /> : null}
                 />
             </View>
         </View>

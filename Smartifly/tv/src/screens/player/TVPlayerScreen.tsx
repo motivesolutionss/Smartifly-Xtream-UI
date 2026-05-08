@@ -32,6 +32,11 @@ import { colors, scale, scaleFont, Icon } from '../../theme';
 import { logger } from '../../config';
 import { RootStackParamList } from '../../navigation/types';
 import { useTrackProgress } from '@smartifly/shared/src/store/watchHistoryStore';
+import useFavoritesStore, {
+    FavoriteKind,
+    buildFavoriteKey,
+    buildFavoritesScope,
+} from '@smartifly/shared/src/store/favoritesStore';
 import useTVBackHandler from '../../utils/useTVBackHandler';
 import useDownloadStore from '@smartifly/shared/src/store/downloadStore';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -59,8 +64,12 @@ const TVPlayerScreen: React.FC = () => {
 
     const getXtreamAPI = useStore((state) => state.getXtreamAPI);
     const liveChannels = useStore((state) => state.content.live.items);
+    const selectedPortalId = useStore((state) => state.selectedPortal?.id ?? null);
+    const username = useStore((state) => state.userInfo?.username ?? state.credentials?.username ?? null);
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
     const downloads = useDownloadStore((state) => state.downloads);
+    const favoriteEntries = useFavoritesStore((state) => state.entries);
+    const toggleFavorite = useFavoritesStore((state) => state.toggleFavorite);
     const netInfo = useNetInfo();
 
     const isLive = type === 'live';
@@ -113,9 +122,13 @@ const TVPlayerScreen: React.FC = () => {
     const hudTimerRef = useRef<any>(null);
     const progressPressableRef = useRef<any>(null);
     const focusTrapRef = useRef<any>(null);
+    const leftActionRef = useRef<any>(null);
+    const rightActionRef = useRef<any>(null);
     const playPauseRef = useRef<any>(null);
     const backButtonRef = useRef<any>(null);
     const lockButtonRef = useRef<any>(null);
+    const favoriteButtonRef = useRef<any>(null);
+    const horizontalActionOriginRef = useRef<any>(null);
     const errorGoBackRef = useRef<any>(null);
     const errorRetryRef = useRef<any>(null);
     const hasHandledInitialPauseEffectRef = useRef(false);
@@ -132,6 +145,10 @@ const TVPlayerScreen: React.FC = () => {
     const pausedRef = useRef(paused);
     const showSettingsRef = useRef(showSettings);
     const controlsLockedRef = useRef(controlsLocked);
+    const previousHudVisibleRef = useRef(isHudVisible);
+    const currentTimeRef = useRef(currentTime);
+    const scrubTimeRef = useRef(scrubTime);
+    const isScrubbingRef = useRef(isScrubbing);
 
     useEffect(() => {
         pausedRef.current = paused;
@@ -165,12 +182,19 @@ const TVPlayerScreen: React.FC = () => {
     );
 
     // HUD Visibility Management
+    const hideHUD = useCallback(() => {
+        if (hudTimerRef.current) clearTimeout(hudTimerRef.current);
+        setIsHudVisible(false);
+        setFocusedElement('focus-trap');
+    }, []);
+
     const showHUD = useCallback(() => {
         setIsHudVisible(true);
         if (hudTimerRef.current) clearTimeout(hudTimerRef.current);
         hudTimerRef.current = setTimeout(() => {
             if (!pausedRef.current && !showSettingsRef.current && !controlsLockedRef.current) {
                 setIsHudVisible(false);
+                setFocusedElement('focus-trap');
             }
         }, 2000);
     }, []);
@@ -182,11 +206,9 @@ const TVPlayerScreen: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (!showOverlay) return;
-        const timer = setTimeout(() => {
+        if (showOverlay) {
             errorGoBackRef.current?.focus?.();
-        }, 80);
-        return () => clearTimeout(timer);
+        }
     }, [showOverlay]);
 
     // React to pause state
@@ -203,6 +225,24 @@ const TVPlayerScreen: React.FC = () => {
         }
     }, [paused, showHUD]);
 
+    useEffect(() => {
+        const wasHudVisible = previousHudVisibleRef.current;
+        previousHudVisibleRef.current = isHudVisible;
+
+        if (showOverlay || showSettings || controlsLocked) {
+            return;
+        }
+
+        if (isHudVisible && !wasHudVisible) {
+            playPauseRef.current?.focus?.();
+            return;
+        }
+
+        if (!isHudVisible && wasHudVisible) {
+            focusTrapRef.current?.focus?.();
+        }
+    }, [controlsLocked, isHudVisible, showOverlay, showSettings]);
+
 
 
     // Handle Back Button
@@ -216,7 +256,7 @@ const TVPlayerScreen: React.FC = () => {
             return true;
         }
         if (isHudVisible) {
-            setIsHudVisible(false);
+            hideHUD();
             return true;
         }
         navigation.goBack();
@@ -388,9 +428,7 @@ const TVPlayerScreen: React.FC = () => {
         episodeUrl,
         getXtreamAPI,
         item,
-        localDownload?.id,
-        localDownload?.localPath,
-        localDownload?.status,
+        localDownload,
         mediaItem?.container_extension,
         mediaItem?.id,
         mediaItem?.stream_id,
@@ -412,21 +450,28 @@ const TVPlayerScreen: React.FC = () => {
         if (isLive || !videoRef.current || duration <= 0) return;
         const clamped = Math.max(0, Math.min(time, duration));
         videoRef.current.seek(clamped);
+        currentTimeRef.current = clamped;
         setCurrentTime(clamped);
     }, [duration, isLive]);
 
     const handleSeekBy = useCallback((delta: number) => {
         if (isLive) return;
-        const targetTime = Math.max(0, Math.min((isScrubbing ? scrubTime : currentTime) + delta, duration));
+        const baseTime = isScrubbingRef.current ? scrubTimeRef.current : currentTimeRef.current;
+        const targetTime = Math.max(0, Math.min(baseTime + delta, duration));
+        
+        scrubTimeRef.current = targetTime;
+        isScrubbingRef.current = true;
+        
         setScrubTime(targetTime);
         setIsScrubbing(true);
         handleSeek(targetTime);
 
         if (scrubTimerRef.current) clearTimeout(scrubTimerRef.current);
         scrubTimerRef.current = setTimeout(() => {
+            isScrubbingRef.current = false;
             setIsScrubbing(false);
         }, 900);
-    }, [currentTime, duration, handleSeek, isLive, isScrubbing, scrubTime]);
+    }, [duration, handleSeek, isLive]);
 
     const currentLiveChannelIndex = useMemo(() => {
         if (!isLive || !Array.isArray(liveChannels) || liveChannels.length === 0) return -1;
@@ -512,6 +557,79 @@ const TVPlayerScreen: React.FC = () => {
     const handleSettingsClose = useCallback(() => {
         setSettingsView('root');
         setShowSettings(false);
+        showHUD();
+        playPauseRef.current?.focus?.();
+    }, [showHUD]);
+
+    const favoritesScope = useMemo(
+        () => buildFavoritesScope(selectedPortalId, username),
+        [selectedPortalId, username]
+    );
+
+    const favoriteDescriptor = useMemo(() => {
+        const kind: FavoriteKind = type === 'live'
+            ? 'live'
+            : type === 'movie'
+                ? 'movie'
+                : episodeUrl
+                    ? 'episode'
+                    : 'series';
+
+        const entityId = kind === 'episode'
+            ? String(
+                mediaItem?.id
+                || mediaItem?.stream_id
+                || `${mediaItem?.series_id || mediaItem?.seriesId || 'series'}-${mediaItem?.episode_num || mediaItem?.episodeNumber || mediaItem?.name || 'episode'}`
+            )
+            : String(mediaItem?.stream_id || mediaItem?.series_id || mediaItem?.id || mediaItem?.name || 'unknown');
+
+        return {
+            kind,
+            entityId,
+            key: buildFavoriteKey(favoritesScope, kind, entityId),
+        };
+    }, [episodeUrl, favoritesScope, mediaItem, type]);
+
+    const isFavorite = useMemo(
+        () => favoriteEntries.some((entry) => entry.key === favoriteDescriptor.key),
+        [favoriteDescriptor.key, favoriteEntries]
+    );
+
+    const handleToggleFavorite = useCallback(() => {
+        const title = favoriteDescriptor.kind === 'episode'
+            ? (mediaItem?.title || mediaItem?.episodeTitle || mediaItem?.name || 'Episode')
+            : (mediaItem?.name || mediaItem?.title || 'Unknown');
+        const subtitle = favoriteDescriptor.kind === 'episode'
+            ? (mediaItem?.series_name || mediaItem?.seriesTitle || 'Series')
+            : undefined;
+        const image = mediaItem?.info?.movie_image
+            || mediaItem?.movie_image
+            || mediaItem?.stream_icon
+            || mediaItem?.cover_big
+            || mediaItem?.cover
+            || mediaItem?.backdrop_path?.[0];
+
+        toggleFavorite({
+            key: favoriteDescriptor.key,
+            scope: favoritesScope,
+            kind: favoriteDescriptor.kind,
+            entityId: favoriteDescriptor.entityId,
+            title,
+            subtitle,
+            image,
+            rating: mediaItem?.rating_5based || mediaItem?.rating,
+            year: mediaItem?.year || mediaItem?.releaseDate,
+            episodeUrl,
+            data: mediaItem,
+        });
+
+        setOverlayMessage(isFavorite ? 'Removed from favorites' : 'Added to favorites');
+        setShowOverlay(false);
+        showHUD();
+    }, [episodeUrl, favoriteDescriptor, favoritesScope, isFavorite, mediaItem, showHUD, toggleFavorite]);
+
+    const registerHorizontalActionOrigin = useCallback((ref: any) => {
+        horizontalActionOriginRef.current = ref;
     }, []);
 
     const handleVideoError = useCallback((e: unknown) => {
@@ -566,14 +684,15 @@ const TVPlayerScreen: React.FC = () => {
     }, []);
 
     const handleVideoProgress = useCallback(({ currentTime: time, playableDuration: playable }: { currentTime: number; playableDuration: number }) => {
-        if (!isScrubbing) {
+        if (!isScrubbingRef.current) {
+            currentTimeRef.current = time;
             setCurrentTime(time);
         }
         if (typeof playable === 'number') {
             setPlayableDuration(playable);
         }
         handleProgress(time);
-    }, [handleProgress, isScrubbing]);
+    }, [handleProgress]);
 
     const handleVideoEnd = useCallback(() => {
         if (!isLive) {
@@ -637,13 +756,14 @@ const TVPlayerScreen: React.FC = () => {
                     showOverlay={showOverlay}
                     isHudVisible={isHudVisible}
                     focusTrapRef={focusTrapRef}
+                    leftActionRef={leftActionRef}
+                    rightActionRef={rightActionRef}
+                    horizontalActionOriginRef={horizontalActionOriginRef}
                     setFocusedElement={setFocusedElement}
                     showHUD={showHUD}
                     handleSeekBy={handleSeekBy}
                     handleLiveChannelStep={handleLiveChannelStep}
-                    progressPressableRef={progressPressableRef}
-                    playPauseRef={playPauseRef}
-                    focusedElement={focusedElement}
+                    registerHorizontalActionOrigin={registerHorizontalActionOrigin}
                 />
             )}
 
@@ -662,7 +782,10 @@ const TVPlayerScreen: React.FC = () => {
                         isHudVisible={isHudVisible}
                         backButtonRef={backButtonRef}
                         lockButtonRef={lockButtonRef}
+                        favoriteButtonRef={favoriteButtonRef}
                         playPauseRef={playPauseRef}
+                        isFavorite={isFavorite}
+                        onToggleFavorite={handleToggleFavorite}
                     />
 
                     <TVPlayerCenterControls
@@ -678,6 +801,9 @@ const TVPlayerScreen: React.FC = () => {
                         playPauseRef={playPauseRef}
                         progressPressableRef={progressPressableRef}
                         lockButtonRef={lockButtonRef}
+                        leftActionRef={leftActionRef}
+                        rightActionRef={rightActionRef}
+                        registerHorizontalActionOrigin={registerHorizontalActionOrigin}
                     />
 
                     <TVPlayerBottomControls
@@ -694,13 +820,20 @@ const TVPlayerScreen: React.FC = () => {
                         playPauseRef={playPauseRef}
                         handleSeekBy={handleSeekBy}
                         handleLiveChannelStep={handleLiveChannelStep}
+                        leftActionRef={leftActionRef}
+                        rightActionRef={rightActionRef}
+                        registerHorizontalActionOrigin={registerHorizontalActionOrigin}
                     />
                 </View>
             )}
 
             {controlsLocked && !showOverlay && (
                 <View style={styles.lockOverlay}>
-                    <Pressable style={styles.lockButton} onPress={() => setControlsLocked(false)}>
+                    <Pressable
+                        style={styles.lockButton}
+                        onPress={() => setControlsLocked(false)}
+                        hasTVPreferredFocus
+                    >
                         <Icon name="lock" size={scale(28)} color={colors.textPrimary} />
                         <Text style={styles.lockText}>Unlock Controls</Text>
                     </Pressable>

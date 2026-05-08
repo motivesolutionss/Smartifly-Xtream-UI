@@ -91,12 +91,24 @@ export interface CachedContent {
     lastFetchTime: number;
 }
 
+export interface ContentPartialFlags {
+    live: boolean;
+    movies: boolean;
+    series: boolean;
+}
+
 // Initial content state - used instead of null
 const initialContent: CachedContent = {
     live: { categories: [], items: [], loaded: false },
     movies: { categories: [], items: [], loaded: false },
     series: { categories: [], items: [], loaded: false },
     lastFetchTime: 0,
+};
+
+const initialContentPartial: ContentPartialFlags = {
+    live: false,
+    movies: false,
+    series: false,
 };
 
 export interface PrefetchProgress {
@@ -138,6 +150,8 @@ interface StoreState {
 
     // Content Cache - now uses domain structure (never null)
     content: CachedContent;
+    contentPartial: ContentPartialFlags;
+    fullContentLoading: ContentPartialFlags;
 
     // Loading States
     isLoading: boolean;
@@ -189,6 +203,7 @@ interface StoreActions {
 
     // Content Actions
     prefetchAllContent: () => Promise<boolean>;
+    ensureFullContent: (domain: 'live' | 'movies' | 'series') => Promise<void>;
     refreshCacheIfNeeded: () => Promise<void>;
     forceRefresh: () => Promise<boolean>;
 
@@ -243,6 +258,9 @@ type Store = StoreState & StoreActions;
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
 const MAX_PREFETCH_PAGES = 80;
+const MAX_FULL_FETCH_PAGES = 500;
+const LIGHT_PREFETCH_LIMIT = Math.max(100, config.cache.lightPrefetchLimit || 1200);
+type DomainName = 'live' | 'movies' | 'series';
 
 // =============================================================================
 // INITIAL STATE
@@ -258,6 +276,8 @@ const initialState: StoreState = {
     savedAccounts: [],
     credentials: null,
     content: initialContent, // Now uses structured content, never null
+    contentPartial: initialContentPartial,
+    fullContentLoading: initialContentPartial,
     isLoading: false,
     isPrefetching: false,
     prefetchProgress: {
@@ -482,6 +502,8 @@ const useStore = create<Store>()(
                             },
                             // Reset content to initial state (not null)
                             content: initialContent,
+                            contentPartial: initialContentPartial,
+                            fullContentLoading: initialContentPartial,
                             retryCount: 0,
                         });
 
@@ -662,26 +684,42 @@ const useStore = create<Store>()(
                         set({ prefetchProgress: { current: 3, total: 6, currentTask: 'Loading content...' } });
 
                         const fetchDomainContent = async <T,>(
-                            domainName: 'live' | 'movies' | 'series',
+                            domainName: DomainName,
                             fetchAll: () => Promise<T[]>,
                             fetchPage: (page: number, limit: number) => Promise<{ items: T[]; hasMore: boolean; serverPaginated: boolean }>
-                        ): Promise<T[]> => {
+                        ): Promise<{ items: T[]; partial: boolean }> => {
+                            const useLightPrefetch = config.cache.prefetchMode === 'light';
+
                             if (!config.catalog.serverPagination.enabled) {
-                                return fetchAll();
+                                const fullItems = await fetchAll();
+                                return {
+                                    items: useLightPrefetch ? fullItems.slice(0, LIGHT_PREFETCH_LIMIT) : fullItems,
+                                    partial: useLightPrefetch && fullItems.length > LIGHT_PREFETCH_LIMIT,
+                                };
                             }
+
                             try {
                                 const pageSize = Math.max(100, config.catalog.serverPagination.pageSize || 500);
                                 const firstPage = await fetchPage(1, pageSize);
 
                                 if (!firstPage.serverPaginated) {
-                                    return firstPage.items;
+                                    return {
+                                        items: useLightPrefetch ? firstPage.items.slice(0, LIGHT_PREFETCH_LIMIT) : firstPage.items,
+                                        partial: useLightPrefetch && firstPage.items.length > LIGHT_PREFETCH_LIMIT,
+                                    };
                                 }
 
                                 const allItems = [...firstPage.items];
                                 let page = 2;
                                 let hasMore = firstPage.hasMore;
+                                let partial = false;
 
                                 while (hasMore && page <= MAX_PREFETCH_PAGES) {
+                                    if (useLightPrefetch && allItems.length >= LIGHT_PREFETCH_LIMIT) {
+                                        partial = true;
+                                        break;
+                                    }
+
                                     const nextPage = await fetchPage(page, pageSize);
                                     if (!nextPage.serverPaginated || nextPage.items.length === 0) {
                                         break;
@@ -691,26 +729,40 @@ const useStore = create<Store>()(
                                     page += 1;
                                 }
 
+                                if (useLightPrefetch && hasMore && allItems.length >= LIGHT_PREFETCH_LIMIT) {
+                                    partial = true;
+                                }
+
                                 logger.info(`[Store] ${domainName} prefetch paged`, {
                                     pagesFetched: page - 1,
                                     items: allItems.length,
                                     pageSize,
+                                    partial,
+                                    mode: config.cache.prefetchMode,
                                 });
 
-                                return allItems;
+                                return {
+                                    items: useLightPrefetch ? allItems.slice(0, LIGHT_PREFETCH_LIMIT) : allItems,
+                                    partial,
+                                };
                             } catch (error) {
                                 logger.warn(`[Store] ${domainName} paged prefetch failed, falling back to full fetch`, error);
-                                return fetchAll();
+                                const fullItems = await fetchAll();
+                                return {
+                                    items: useLightPrefetch ? fullItems.slice(0, LIGHT_PREFETCH_LIMIT) : fullItems,
+                                    partial: useLightPrefetch && fullItems.length > LIGHT_PREFETCH_LIMIT,
+                                };
                             }
                         };
 
                         // Fetch Live streams - XtreamAPI now normalizes responses using hybrid approach
                         logger.info('[Store] fetchLiveContent: started');
-                        const safeLiveStreams = await fetchDomainContent(
+                        const livePrefetch = await fetchDomainContent(
                             'live',
                             () => api.getLiveStreams(),
                             (page, limit) => api.getLiveStreamsPage({ page, limit })
                         );
+                        const safeLiveStreams = livePrefetch.items;
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchLiveContent: completed, ${safeLiveStreams.length} channels`);
 
@@ -731,16 +783,21 @@ const useStore = create<Store>()(
                                     loaded: true,
                                 },
                             },
+                            contentPartial: {
+                                ...state.contentPartial,
+                                live: livePrefetch.partial,
+                            },
                             prefetchProgress: { current: 4, total: 6, currentTask: 'Loading movies...' },
                         }));
 
                         // Fetch Movies - XtreamAPI now normalizes responses using hybrid approach
                         logger.info('[Store] fetchVodContent: started');
-                        const safeVodStreams = await fetchDomainContent(
+                        const moviesPrefetch = await fetchDomainContent(
                             'movies',
                             () => api.getVodStreams(),
                             (page, limit) => api.getVodStreamsPage({ page, limit })
                         );
+                        const safeVodStreams = moviesPrefetch.items;
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchVodContent: completed, ${safeVodStreams.length} movies`);
 
@@ -761,16 +818,21 @@ const useStore = create<Store>()(
                                     loaded: true,
                                 },
                             },
+                            contentPartial: {
+                                ...state.contentPartial,
+                                movies: moviesPrefetch.partial,
+                            },
                             prefetchProgress: { current: 5, total: 6, currentTask: 'Loading series...' },
                         }));
 
                         // Fetch Series - XtreamAPI now normalizes responses using hybrid approach
                         logger.info('[Store] fetchSeriesContent: started');
-                        const safeSeriesList = await fetchDomainContent(
+                        const seriesPrefetch = await fetchDomainContent(
                             'series',
                             () => api.getSeries(),
                             (page, limit) => api.getSeriesPage({ page, limit })
                         );
+                        const safeSeriesList = seriesPrefetch.items;
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchSeriesContent: completed, ${safeSeriesList.length} series`);
 
@@ -801,6 +863,10 @@ const useStore = create<Store>()(
                                 content: {
                                     ...updatedContent,
                                     lastFetchTime: allLoaded ? Date.now() : state.content.lastFetchTime,
+                                },
+                                contentPartial: {
+                                    ...state.contentPartial,
+                                    series: seriesPrefetch.partial,
                                 },
                                 isPrefetching: false,
                                 prefetchProgress: { current: 6, total: 6, currentTask: 'Complete!' },
@@ -854,6 +920,115 @@ const useStore = create<Store>()(
                             });
                             return false;
                         }
+                    }
+                },
+
+                ensureFullContent: async (domain) => {
+                    const { credentials, getXtreamAPI, contentPartial, fullContentLoading } = get();
+
+                    if (!credentials || !contentPartial[domain] || fullContentLoading[domain]) {
+                        return;
+                    }
+
+                    const api = getXtreamAPI();
+                    if (!api) {
+                        logger.error(`ensureFullContent: Failed to create API instance for ${domain}`);
+                        return;
+                    }
+
+                    set((state) => ({
+                        fullContentLoading: {
+                            ...state.fullContentLoading,
+                            [domain]: true,
+                        },
+                    }));
+
+                    try {
+                        const pageSize = Math.max(100, config.catalog.serverPagination.pageSize || 500);
+                        const fetchers = {
+                            live: {
+                                fetchAll: () => api.getLiveStreams(),
+                                fetchPage: (page: number, limit: number) => api.getLiveStreamsPage({ page, limit }),
+                                normalize: (items: XtreamLiveStream[]) => items.map((item) => ({
+                                    ...item,
+                                    category_id: String(item.category_id),
+                                })),
+                            },
+                            movies: {
+                                fetchAll: () => api.getVodStreams(),
+                                fetchPage: (page: number, limit: number) => api.getVodStreamsPage({ page, limit }),
+                                normalize: (items: XtreamMovie[]) => items.map((item) => ({
+                                    ...item,
+                                    category_id: String(item.category_id),
+                                })),
+                            },
+                            series: {
+                                fetchAll: () => api.getSeries(),
+                                fetchPage: (page: number, limit: number) => api.getSeriesPage({ page, limit }),
+                                normalize: (items: XtreamSeries[]) => items.map((item) => ({
+                                    ...item,
+                                    category_id: String(item.category_id),
+                                })),
+                            },
+                        } as const;
+
+                        const fetcher = fetchers[domain];
+                        let fullItems: any[] = [];
+
+                        if (!config.catalog.serverPagination.enabled) {
+                            fullItems = await fetcher.fetchAll();
+                        } else {
+                            const firstPage = await fetcher.fetchPage(1, pageSize);
+
+                            if (!firstPage.serverPaginated) {
+                                fullItems = firstPage.items;
+                            } else {
+                                fullItems = [...firstPage.items];
+                                let page = 2;
+                                let hasMore = firstPage.hasMore;
+
+                                while (hasMore && page <= MAX_FULL_FETCH_PAGES) {
+                                    const nextPage = await fetcher.fetchPage(page, pageSize);
+                                    if (!nextPage.serverPaginated || nextPage.items.length === 0) {
+                                        break;
+                                    }
+                                    fullItems.push(...nextPage.items);
+                                    hasMore = nextPage.hasMore;
+                                    page += 1;
+                                }
+                            }
+                        }
+
+                        set((state) => ({
+                            content: {
+                                ...state.content,
+                                [domain]: {
+                                    ...state.content[domain],
+                                    items: fetcher.normalize(fullItems as never),
+                                    loaded: true,
+                                },
+                            },
+                            contentPartial: {
+                                ...state.contentPartial,
+                                [domain]: false,
+                            },
+                            fullContentLoading: {
+                                ...state.fullContentLoading,
+                                [domain]: false,
+                            },
+                        }));
+
+                        logger.info(`[Store] ensureFullContent complete for ${domain}`, {
+                            items: fullItems.length,
+                        });
+                    } catch (error) {
+                        logger.error(`[Store] ensureFullContent failed for ${domain}`, error);
+                        set((state) => ({
+                            fullContentLoading: {
+                                ...state.fullContentLoading,
+                                [domain]: false,
+                            },
+                        }));
                     }
                 },
 
@@ -1258,6 +1433,8 @@ const useStore = create<Store>()(
                     state.userInfo = null;
                     state.credentials = null;
                     state.content = initialContent;
+                    state.contentPartial = initialContentPartial;
+                    state.fullContentLoading = initialContentPartial;
                 } else {
                     logger.info('Store: Successfully rehydrated with credentials.');
                 }
@@ -1295,3 +1472,4 @@ export { useStore };
 export { default as useAuthStore } from './authStore';
 export { default as useContentStore } from './contentStore';
 export { default as useAppStatusStore } from './appStatusStore';
+export { default as useFavoritesStore } from './favoritesStore';

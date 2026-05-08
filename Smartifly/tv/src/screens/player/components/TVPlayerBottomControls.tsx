@@ -3,8 +3,7 @@ import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native'
 import { scale, scaleFont } from '../.././../theme';
 import { useTheme } from '../.././../theme/ThemeProvider';
 import { typographyTV } from '../.././../theme/typography';
-
-const SEEK_STEP_SECONDS = 10;
+import { formatTime } from '../playerUtils';
 
 interface TVPlayerBottomControlsProps {
     isLive: boolean;
@@ -20,20 +19,10 @@ interface TVPlayerBottomControlsProps {
     playPauseRef?: any;
     handleSeekBy?: (delta: number) => void;
     handleLiveChannelStep?: (delta: number) => void;
+    leftActionRef?: any;
+    rightActionRef?: any;
+    registerHorizontalActionOrigin: (ref: any) => void;
 }
-
-const formatTime = (value: number) => {
-    const totalSeconds = Math.max(0, Math.floor(value || 0));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    if (hours > 0) {
-        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
-
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-};
 
 const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
     isLive,
@@ -49,6 +38,9 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
     playPauseRef,
     handleSeekBy,
     handleLiveChannelStep,
+    leftActionRef,
+    rightActionRef,
+    registerHorizontalActionOrigin,
 }) => {
     const { colors } = useTheme();
     const progressTime = isScrubbing ? scrubTime : currentTime;
@@ -56,78 +48,47 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
     const bufferPercent = duration > 0 ? Math.min(playableDuration / duration, 1) : 0;
     const isFocused = focusedElement === 'progress';
 
-    /**
-     * Key handler for the progress bar.
-     * Left/Right seeks so the remote D-pad works for scrubbing.
-     */
-    const handleProgressKeyDown = (event: any) => {
-        const nativeEvent = event?.nativeEvent;
-        const key = nativeEvent?.key;
-        const keyCode = nativeEvent?.keyCode;
-
-        const isRight = key === 'ArrowRight' || key === 'Right' || keyCode === 22;
-        const isLeft = key === 'ArrowLeft' || key === 'Left' || keyCode === 21;
-
-        if (isRight && handleSeekBy) {
-            if (isLive && handleLiveChannelStep) {
-                handleLiveChannelStep(1);
-            } else {
-                handleSeekBy(SEEK_STEP_SECONDS);
-            }
-            showHUD();
-            return;
-        }
-
-        if (isLeft && handleSeekBy) {
-            if (isLive && handleLiveChannelStep) {
-                handleLiveChannelStep(-1);
-            } else {
-                handleSeekBy(-SEEK_STEP_SECONDS);
-            }
-            showHUD();
-            return;
-        }
-    };
-
     return (
         <View style={styles.bottomControls}>
-            {/* Progress bar */}
             {!isLive && (
                 <Pressable
                     ref={progressPressableRef}
-                    focusable={true}
+                    focusable
                     onFocus={() => {
+                        registerHorizontalActionOrigin(progressPressableRef);
                         setFocusedElement('progress');
                         showHUD();
                     }}
                     onBlur={() => setFocusedElement(null)}
                     style={styles.progressContainer}
-                    // @ts-ignore – Android TV key events
-                    onKeyDown={handleProgressKeyDown}
                     {...({
                         nextFocusUp: findNodeHandle(playPauseRef.current),
-                        // Keep Left/Right focus on progress bar so onKeyDown fires for seeking
-                        nextFocusLeft: findNodeHandle(progressPressableRef.current),
-                        nextFocusRight: findNodeHandle(progressPressableRef.current),
+                        nextFocusLeft: findNodeHandle(leftActionRef.current),
+                        nextFocusRight: findNodeHandle(rightActionRef.current),
                     } as any)}
                 >
-                    <View style={[
-                        styles.progressTrack,
-                        isFocused && styles.progressTrackFocused,
-                        { backgroundColor: colors.borderMedium },
-                        isFocused && { backgroundColor: colors.borderMedium },
-                    ]}>
+                    <View
+                        style={[
+                            styles.progressTrack,
+                            { backgroundColor: colors.borderMedium },
+                            isFocused && styles.progressTrackFocused,
+                        ]}
+                    >
                         <View style={[styles.progressBuffered, { width: `${bufferPercent * 100}%` }]} />
-                        <View style={[styles.progressPlayed, { width: `${progressPercent * 100}%`, backgroundColor: colors.primary }]} />
+                        <View
+                            style={[
+                                styles.progressPlayed,
+                                { width: `${progressPercent * 100}%`, backgroundColor: colors.primary },
+                            ]}
+                        />
                     </View>
-                    {/* Thumb */}
-                    <View style={[
-                        styles.progressThumb,
-                        { left: `${progressPercent * 100}%`, backgroundColor: colors.accent },
-                        isFocused && styles.progressThumbFocused,
-                        isFocused && { backgroundColor: colors.accent },
-                    ]} />
-                    {/* Scrub time popup */}
+                    <View
+                        style={[
+                            styles.progressThumb,
+                            { left: `${progressPercent * 100}%`, backgroundColor: colors.accent },
+                            isFocused && styles.progressThumbFocused,
+                        ]}
+                    />
                     {isScrubbing && (
                         <View style={[styles.scrubTimeBubble, { left: `${progressPercent * 100}%` }]}>
                             <Text style={styles.scrubTimeText}>{formatTime(scrubTime)}</Text>
@@ -136,7 +97,6 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
                 </Pressable>
             )}
 
-            {/* Time row */}
             <View style={styles.timeRow}>
                 {isLive ? (
                     <View style={styles.liveBadge}>
@@ -147,7 +107,9 @@ const TVPlayerBottomControls: React.FC<TVPlayerBottomControlsProps> = memo(({
                     <Text style={[styles.timeText, { color: colors.textSecondary }]}>{formatTime(progressTime)}</Text>
                 )}
                 {!isLive && (
-                    <Text style={[styles.timeTextRemaining, { color: colors.textSecondary }]}>-{formatTime(Math.max(duration - progressTime, 0))}</Text>
+                    <Text style={[styles.timeTextRemaining, { color: colors.textSecondary }]}>
+                        -{formatTime(Math.max(duration - progressTime, 0))}
+                    </Text>
                 )}
             </View>
         </View>
@@ -165,13 +127,11 @@ const styles = StyleSheet.create({
     },
     progressTrack: {
         height: scale(4),
-        backgroundColor: 'rgba(255,255,255,0.2)', // overridden at render time with theme.colors.borderMedium
         borderRadius: scale(2),
         overflow: 'hidden',
     },
     progressTrackFocused: {
         height: scale(7),
-        backgroundColor: 'rgba(255,255,255,0.25)', // overridden at render time with theme.colors.borderMedium
     },
     progressBuffered: {
         position: 'absolute',
@@ -185,14 +145,12 @@ const styles = StyleSheet.create({
         left: 0,
         top: 0,
         bottom: 0,
-        backgroundColor: '#E50914', // overridden at render time with theme.colors.primary
     },
     progressThumb: {
         position: 'absolute',
         width: scale(14),
         height: scale(14),
         borderRadius: scale(7),
-        backgroundColor: '#E50914', // overridden at render time with theme.colors.accent
         marginLeft: scale(-7),
     },
     progressThumbFocused: {
@@ -200,7 +158,6 @@ const styles = StyleSheet.create({
         height: scale(20),
         borderRadius: scale(10),
         marginLeft: scale(-10),
-        backgroundColor: '#FFFFFF', // overridden at render time with theme.colors.accent (white in default theme)
         elevation: 2,
         shadowColor: '#E50914',
         shadowOffset: { width: 0, height: 0 },
@@ -230,12 +187,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: scale(4),
     },
     timeText: {
-        color: '#999999', // overridden at render time with theme.colors.textSecondary
         fontSize: typographyTV.labelSmall.fontSize,
         fontWeight: typographyTV.labelSmall.fontWeight,
     },
     timeTextRemaining: {
-        color: '#999999', // overridden at render time with theme.colors.textSecondary
         fontSize: typographyTV.labelSmall.fontSize,
         fontWeight: typographyTV.labelSmall.fontWeight,
     },
@@ -258,7 +213,6 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: scaleFont(14),
         fontWeight: '800',
-        letterSpacing: 1.2,
     },
 });
 

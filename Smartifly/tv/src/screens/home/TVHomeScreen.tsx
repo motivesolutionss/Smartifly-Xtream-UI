@@ -9,14 +9,12 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-    Animated,
     Pressable,
     View,
     Text,
     StyleSheet,
     BackHandler,
     StatusBar,
-    Easing,
     findNodeHandle,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -42,6 +40,7 @@ import TVAnnouncementsScreen from '../TVAnnouncementsScreen';
 import TVSettingsScreen from '../TVSettingsScreen';
 import TVFavoritesScreen from './TVFavoritesScreen';
 import TVDownloadsScreen from '../TVDownloadsScreen';
+import TVErrorBoundary from '../../components/TVErrorBoundary';
 
 import TVLoadingState from '../components/TVLoadingState';
 import { prefetchImages } from '@smartifly/shared/src/utils/image';
@@ -168,6 +167,14 @@ const FocusGate: React.FC<{ onFocus: () => void; gateRef: React.Ref<View> }> = R
     />
 ));
 
+type MountedSectionConfig = {
+    route: SectionFocusRoute;
+    withSidebarGap: boolean;
+    gateRef: React.Ref<View>;
+    focusGateRoute: SectionFocusRoute;
+    node: React.ReactNode;
+};
+
 // =============================================================================
 // HOME SECTION (always mounted; visibility handled by parent)
 // =============================================================================
@@ -202,10 +209,11 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
     const perf = usePerfProfile();
     const prefetchRailsLimit = perf.tier === 'low' ? 2 : perf.tier === 'high' ? 5 : 4;
     const prefetchItemsPerRail = perf.tier === 'low' ? 4 : perf.tier === 'high' ? 8 : 6;
+    const initialRailPrefetchCount = perf.tier === 'low' ? 3 : 4;
     const drawDistance = perf.home.drawDistance || HOME_DRAW_DISTANCE;
 
-    const moviesItems = useStore((state) => state.content.movies.items);
-    const seriesItems = useStore((state) => state.content.series.items);
+    const moviesLoaded = useStore((state) => state.content.movies.loaded);
+    const seriesLoaded = useStore((state) => state.content.series.loaded);
     const removeFromHistory = useWatchHistoryStore((state) => state.removeFromHistory);
 
     const [stableHero, setStableHero] = useState<TVHeroItem | null>(null);
@@ -308,8 +316,15 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
     const continueWatchingResolved = useMemo<WatchProgress[]>(() => {
         if (!continueWatching.length) return continueWatching;
 
+        const {
+            content: {
+                movies: { items: moviesItems },
+                series: { items: seriesItems },
+            },
+        } = useStore.getState();
+
         const movieById = new Map<number, any>();
-        for (const movie of moviesItems || []) {
+        if (moviesLoaded) for (const movie of moviesItems || []) {
             const id = Number((movie as any)?.stream_id);
             if (Number.isFinite(id) && id > 0) {
                 movieById.set(id, movie);
@@ -317,7 +332,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         }
 
         const seriesById = new Map<number, any>();
-        for (const series of seriesItems || []) {
+        if (seriesLoaded) for (const series of seriesItems || []) {
             const id = Number((series as any)?.series_id);
             if (Number.isFinite(id) && id > 0) {
                 seriesById.set(id, series);
@@ -353,13 +368,14 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
             if (!resolvedBackdrop || resolvedBackdrop === entry.thumbnail) return entry;
             return { ...entry, thumbnail: resolvedBackdrop };
         });
-    }, [continueWatching, moviesItems, seriesItems]);
+    }, [continueWatching, moviesLoaded, seriesLoaded]);
 
     useEffect(() => {
         if (isLoading) return;
 
         const essential: string[] = [];
-        const secondary: string[] = [];
+        const secondaryImmediate: string[] = [];
+        const secondaryDeferred: string[] = [];
 
         const pushUnique = (bucket: string[], u?: string) => {
             if (!u) return;
@@ -371,17 +387,23 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         pushUnique(essential, stableHero?.backdrop);
         pushUnique(essential, heroItem?.backdrop);
 
-        for (const item of continueWatchingResolved.slice(0, prefetchItemsPerRail)) {
-            pushUnique(secondary, item.thumbnail);
+        for (const item of continueWatchingResolved.slice(0, initialRailPrefetchCount)) {
+            pushUnique(secondaryImmediate, item.thumbnail);
         }
 
         for (const rail of rails.slice(0, prefetchRailsLimit)) {
-            const items = (rail.items as TVContentItem[]).slice(0, prefetchItemsPerRail);
-            for (const item of items) pushUnique(secondary, item.image);
+            const items = rail.items as TVContentItem[];
+            for (const item of items.slice(0, initialRailPrefetchCount)) {
+                pushUnique(secondaryImmediate, item.image);
+            }
+            for (const item of items.slice(initialRailPrefetchCount, prefetchItemsPerRail)) {
+                pushUnique(secondaryDeferred, item.image);
+            }
         }
 
         const essentialDelay = perf.tier === 'low' ? 450 : 220;
-        const secondaryDelay = perf.tier === 'low' ? 0 : 120;
+        const secondaryImmediateDelay = perf.tier === 'low' ? 80 : 60;
+        const secondaryDeferredDelay = perf.tier === 'low' ? 0 : 120;
 
         const essentialTimer = setTimeout(() => {
             if (essential.length > 0) {
@@ -389,16 +411,23 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
             }
         }, essentialDelay);
 
-        let secondaryTimer: ReturnType<typeof setTimeout> | undefined;
-        if (isInteracted && secondary.length > 0) {
-            secondaryTimer = setTimeout(() => {
-                prefetchImages(secondary);
-            }, secondaryDelay);
+        const secondaryImmediateTimer = setTimeout(() => {
+            if (secondaryImmediate.length > 0) {
+                prefetchImages(secondaryImmediate);
+            }
+        }, secondaryImmediateDelay);
+
+        let secondaryDeferredTimer: ReturnType<typeof setTimeout> | undefined;
+        if (isInteracted && secondaryDeferred.length > 0) {
+            secondaryDeferredTimer = setTimeout(() => {
+                prefetchImages(secondaryDeferred);
+            }, secondaryDeferredDelay);
         }
 
         return () => {
             clearTimeout(essentialTimer);
-            if (secondaryTimer) clearTimeout(secondaryTimer);
+            clearTimeout(secondaryImmediateTimer);
+            if (secondaryDeferredTimer) clearTimeout(secondaryDeferredTimer);
         };
     }, [
         isLoading,
@@ -406,6 +435,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
         heroItem?.backdrop,
         continueWatchingResolved,
         rails,
+        initialRailPrefetchCount,
         prefetchItemsPerRail,
         prefetchRailsLimit,
         perf.tier,
@@ -603,7 +633,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
                 overrideItemLayout={overrideItemLayout}
                 drawDistance={drawDistance}
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews
+                removeClippedSubviews={false}
             />
         </View>
     );
@@ -615,6 +645,7 @@ const HomeSection: React.FC<HomeSectionProps> = React.memo(({ navigation, search
 
 const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     const [activeRoute, setActiveRoute] = useState<SidebarRoute>('Home');
+    const [mountedRoutes, setMountedRoutes] = useState<Set<SidebarRoute>>(() => new Set<SidebarRoute>(['Home']));
     const [isInteracted, setIsInteracted] = useState(false);
     const [focusTargets, setFocusTargets] = useState<Record<string, number | undefined>>({});
     const [focusGateTargets, setFocusGateTargets] = useState<Record<string, number | undefined>>({});
@@ -622,8 +653,6 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     const [sidebarSearchNode, setSidebarSearchNode] = useState<number | undefined>(undefined);
     const searchRef = useRef<View | null>(null);
     const focusTargetNodesRef = useRef<Record<string, View | null>>({});
-    const contentFade = useRef(new Animated.Value(1)).current;
-    const contentShift = useRef(new Animated.Value(0)).current;
 
     const updateFocusTarget = useCallback((route: string, node: View | null) => {
         focusTargetNodesRef.current[route] = node;
@@ -717,124 +746,99 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
     );
 
     const handleNavigate = useCallback((route: SidebarRoute) => {
+        setMountedRoutes((prev) => {
+            if (prev.has(route)) return prev;
+            const next = new Set(prev);
+            next.add(route);
+            return next;
+        });
         setActiveRoute(route);
     }, []);
     const requestSidebarFocus = useCallback(() => {
         focusNode(searchRef.current);
     }, [focusNode]);
 
-    useEffect(() => {
-        // Keep transition subtle to avoid a "shock" feel on TV.
-        contentFade.stopAnimation();
-        contentShift.stopAnimation();
-        contentFade.setValue(0.97);
-        contentShift.setValue(0);
-
-        Animated.timing(contentFade, {
-            toValue: 1,
-            duration: 140,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-        }).start();
-    }, [activeRoute, contentFade, contentShift]);
-
-    const contentTransitionStyle = useMemo(
-        () => ({
-            opacity: contentFade,
-            transform: [{ translateX: contentShift }],
-        }),
-        [contentFade, contentShift]
-    );
-
-    const renderActiveSection = useCallback(() => {
-        let node: React.ReactNode = null;
-        let withSidebarGap = true;
-        let sectionRoute: SectionFocusRoute = 'Home';
-        let gateRef: React.Ref<View> = homeGateRef;
-
-        switch (activeRoute) {
-            case 'Home':
-                withSidebarGap = false;
-                sectionRoute = 'Home';
-                gateRef = homeGateRef;
-                node = (
-                    <HomeSection
-                        navigation={navigation}
-                        searchRef={searchRef}
-                        sidebarTargetNode={resolvedSidebarTargetNode}
-                        heroPlayRef={homeFocusRef}
-                        activeRoute={activeRoute}
-                        isInteracted={isInteracted}
-                        onRequestSidebarFocus={requestSidebarFocus}
-                    />
-                );
-                break;
-            case 'Live':
-                sectionRoute = 'Live';
-                gateRef = liveGateRef;
-                node = <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />;
-                break;
-            case 'Movies':
-                sectionRoute = 'Movies';
-                gateRef = moviesGateRef;
-                node = <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />;
-                break;
-            case 'Series':
-                sectionRoute = 'Series';
-                gateRef = seriesGateRef;
-                node = <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />;
-                break;
-            case 'Announcements':
-                sectionRoute = 'Announcements';
-                gateRef = announcementsGateRef;
-                node = <TVAnnouncementsScreen navigation={navigation} focusEntryRef={announcementsFocusRef} />;
-                break;
-            case 'Search':
-                sectionRoute = 'Search';
-                gateRef = searchGateRef;
-                node = <TVSearchScreen navigation={navigation} focusEntryRef={searchFocusRef} />;
-                break;
-            case 'Favorites':
-                sectionRoute = 'Favorites';
-                gateRef = favoritesGateRef;
-                node = <TVFavoritesScreen navigation={navigation} focusEntryRef={favoritesFocusRef} />;
-                break;
-            case 'Downloads':
-                sectionRoute = 'Downloads';
-                gateRef = downloadsGateRef;
-                node = <TVDownloadsScreen navigation={navigation} focusEntryRef={downloadsFocusRef} />;
-                break;
-            case 'Settings':
-                sectionRoute = 'Settings';
-                gateRef = settingsGateRef;
-                node = <TVSettingsScreen navigation={navigation} focusEntryRef={settingsFocusRef} />;
-                break;
-            default:
-                return null;
-        }
-
-        return (
-            <View
-                pointerEvents="auto"
-                style={[
-                    styles.sectionBase,
-                    withSidebarGap && styles.sectionWithSidebar,
-                    styles.sectionVisible,
-                ]}
-            >
-                <FocusGate gateRef={gateRef} onFocus={() => handleFocusGate(sectionRoute)} />
-                {node}
-            </View>
-        );
-    }, [
-        activeRoute,
+    const mountedSections = useMemo<MountedSectionConfig[]>(() => ([
+        {
+            route: 'Home',
+            withSidebarGap: false,
+            gateRef: homeGateRef,
+            focusGateRoute: 'Home',
+            node: (
+                <HomeSection
+                    navigation={navigation}
+                    searchRef={searchRef}
+                    sidebarTargetNode={resolvedSidebarTargetNode}
+                    heroPlayRef={homeFocusRef}
+                    activeRoute={activeRoute}
+                    isInteracted={isInteracted}
+                    onRequestSidebarFocus={requestSidebarFocus}
+                />
+            ),
+        },
+        {
+            route: 'Live',
+            withSidebarGap: true,
+            gateRef: liveGateRef,
+            focusGateRoute: 'Live',
+            node: <TVLiveScreen navigation={navigation} focusEntryRef={liveFocusRef} />,
+        },
+        {
+            route: 'Movies',
+            withSidebarGap: true,
+            gateRef: moviesGateRef,
+            focusGateRoute: 'Movies',
+            node: <TVMoviesScreen navigation={navigation} focusEntryRef={moviesFocusRef} />,
+        },
+        {
+            route: 'Series',
+            withSidebarGap: true,
+            gateRef: seriesGateRef,
+            focusGateRoute: 'Series',
+            node: <TVSeriesScreen navigation={navigation} focusEntryRef={seriesFocusRef} />,
+        },
+        {
+            route: 'Announcements',
+            withSidebarGap: true,
+            gateRef: announcementsGateRef,
+            focusGateRoute: 'Announcements',
+            node: <TVAnnouncementsScreen navigation={navigation} focusEntryRef={announcementsFocusRef} />,
+        },
+        {
+            route: 'Search',
+            withSidebarGap: true,
+            gateRef: searchGateRef,
+            focusGateRoute: 'Search',
+            node: <TVSearchScreen navigation={navigation} focusEntryRef={searchFocusRef} />,
+        },
+        {
+            route: 'Favorites',
+            withSidebarGap: true,
+            gateRef: favoritesGateRef,
+            focusGateRoute: 'Favorites',
+            node: <TVFavoritesScreen navigation={navigation} focusEntryRef={favoritesFocusRef} />,
+        },
+        {
+            route: 'Downloads',
+            withSidebarGap: true,
+            gateRef: downloadsGateRef,
+            focusGateRoute: 'Downloads',
+            node: <TVDownloadsScreen navigation={navigation} focusEntryRef={downloadsFocusRef} />,
+        },
+        {
+            route: 'Settings',
+            withSidebarGap: true,
+            gateRef: settingsGateRef,
+            focusGateRoute: 'Settings',
+            node: <TVSettingsScreen navigation={navigation} focusEntryRef={settingsFocusRef} />,
+        },
+    ]), [
         announcementsFocusRef,
         announcementsGateRef,
         downloadsFocusRef,
         downloadsGateRef,
         favoritesFocusRef,
         favoritesGateRef,
-        handleFocusGate,
         homeFocusRef,
         homeGateRef,
         isInteracted,
@@ -845,6 +849,7 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
         navigation,
         requestSidebarFocus,
         resolvedSidebarTargetNode,
+        activeRoute,
         searchFocusRef,
         searchGateRef,
         searchRef,
@@ -876,9 +881,29 @@ const TVHomeScreen: React.FC<TVHomeScreenProps> = ({ navigation }) => {
             </View>
 
             {/* Main Content Area */}
-            <Animated.View style={[styles.contentContainer, contentTransitionStyle]}>
-                {renderActiveSection()}
-            </Animated.View>
+            <View style={styles.contentContainer}>
+                {mountedSections.map((section) => {
+                    if (!mountedRoutes.has(section.route)) return null;
+                    const isActive = activeRoute === section.route;
+
+                    return (
+                        <View
+                            key={section.route}
+                            pointerEvents={isActive ? 'auto' : 'none'}
+                            style={[
+                                styles.sectionBase,
+                                section.withSidebarGap && styles.sectionWithSidebar,
+                                isActive ? styles.sectionVisible : styles.sectionHidden,
+                            ]}
+                        >
+                            <FocusGate gateRef={section.gateRef} onFocus={() => handleFocusGate(section.focusGateRoute)} />
+                            <TVErrorBoundary screenName={`TVShell:${section.route}`}>
+                                {section.node}
+                            </TVErrorBoundary>
+                        </View>
+                    );
+                })}
+            </View>
         </View>
     );
 };

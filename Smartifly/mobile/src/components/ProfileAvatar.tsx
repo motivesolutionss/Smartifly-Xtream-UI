@@ -2,7 +2,7 @@
  * Profile Avatar Component
  *
  * Reusable avatar display for profile selection and editing.
- * Supports TV focus states and kids badge overlay.
+ * Supports animated focus states and kids badge overlay.
  *
  * @enterprise-grade
  */
@@ -39,7 +39,7 @@ interface ProfileAvatarProps {
     showEdit?: boolean;
     /** Show add icon (for "Add Profile" card) */
     isAddNew?: boolean;
-    /** Is focused (TV navigation) */
+    /** Is focused */
     isFocused?: boolean;
     /** Is selected (for avatar picker) */
     isSelected?: boolean;
@@ -47,10 +47,6 @@ interface ProfileAvatarProps {
     onPress?: () => void;
     /** Custom container style */
     style?: ViewStyle;
-    /** Enable focusable for TV */
-    focusable?: boolean;
-    /** Has TV preferred focus */
-    hasTVPreferredFocus?: boolean;
 }
 
 // =============================================================================
@@ -89,8 +85,6 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
     isSelected = false,
     onPress,
     style,
-    focusable = true,
-    hasTVPreferredFocus = false,
 }) => {
     const focusState = useSharedValue(0);
     const pulseValue = useSharedValue(1);
@@ -268,8 +262,6 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
         return (
             <Pressable
                 onPress={onPress}
-                focusable={focusable}
-                hasTVPreferredFocus={hasTVPreferredFocus}
                 style={styles.pressable}
             >
                 {content}

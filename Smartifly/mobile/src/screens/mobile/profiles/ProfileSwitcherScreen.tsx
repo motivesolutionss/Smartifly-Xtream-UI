@@ -189,7 +189,7 @@ const ProfileSwitcherScreen: React.FC<ProfileSwitcherScreenProps> = ({ navigatio
                     contentContainerStyle={styles.profileList}
                     columnWrapperStyle={styles.profileRow}
                     showsVerticalScrollIndicator={false}
-                    removeClippedSubviews
+                    removeClippedSubviews={false}
                     initialNumToRender={4}
                     maxToRenderPerBatch={4}
                     windowSize={5}

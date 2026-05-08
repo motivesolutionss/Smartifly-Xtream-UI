@@ -42,6 +42,9 @@ let lastDeviceCheckAt = 0;
 let lastDeviceCheckResult: boolean | null = null;
 let fatherVerifyInFlight: Promise<boolean> | null = null;
 const DEVICE_CHECK_TTL_MS = 120000;
+const FATHER_VERIFY_TTL_MS = 120000;
+let lastFatherVerifyAt = 0;
+let lastFatherVerifyResult: boolean | null = null;
 
 const useAppStatusStore = create<AppStatusState & AppStatusActions>((set, get) => ({
     announcements: [],
@@ -165,6 +168,15 @@ const useAppStatusStore = create<AppStatusState & AppStatusActions>((set, get) =
     },
 
     verifyFatherControl: async () => {
+        const now = Date.now();
+        if (
+            lastFatherVerifyResult !== null &&
+            now - lastFatherVerifyAt < FATHER_VERIFY_TTL_MS
+        ) {
+            logger.info('Father: Using recent boot check result from cache');
+            return lastFatherVerifyResult;
+        }
+
         if (fatherVerifyInFlight) {
             return fatherVerifyInFlight;
         }
@@ -173,28 +185,43 @@ const useAppStatusStore = create<AppStatusState & AppStatusActions>((set, get) =
 
         fatherVerifyInFlight = (async () => {
             try {
-            logger.info('Father: Starting boot check-in...');
-            const response = await MasterService.bootCheck();
+                logger.info('Father: Starting boot check-in...');
+                const timeoutPromise = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Boot check timed out')), 4500)
+                );
+                const response = await Promise.race([MasterService.bootCheck(), timeoutPromise]);
 
-            logger.info('Father: Check-in result', response);
+                logger.info('Father: Check-in result', response);
 
-            const isVerified = response.status === 'OK';
+                const isVerified = response.status === 'OK';
 
-            set({
-                fatherControl: {
-                    isVerified,
-                    status: response.status,
-                    config: response.config || {},
-                    broadcasts: response.broadcasts || [],
-                    client: response.client || 'Unknown',
-                    message: response.message || null,
-                },
-            });
+                set({
+                    fatherControl: {
+                        isVerified,
+                        status: response.status,
+                        config: response.config || {},
+                        broadcasts: response.broadcasts || [],
+                        client: response.client || 'Unknown',
+                        message: response.message || null,
+                    },
+                });
 
-            return isVerified;
+                lastFatherVerifyAt = Date.now();
+                lastFatherVerifyResult = isVerified;
+                return isVerified;
             } catch (error) {
-                logger.error('Father Control Sync Failed', error);
-                return false;
+                logger.warn('Father Control Sync Failed, proceeding fail-safe', error);
+                set((state) => ({
+                    fatherControl: {
+                        ...state.fatherControl,
+                        isVerified: true,
+                        status: state.fatherControl.status === 'BANNED' ? 'BANNED' : 'OK',
+                        message: state.fatherControl.status === 'BANNED' ? state.fatherControl.message : null,
+                    },
+                }));
+                lastFatherVerifyAt = Date.now();
+                lastFatherVerifyResult = true;
+                return true;
             } finally {
                 fatherVerifyInFlight = null;
             }

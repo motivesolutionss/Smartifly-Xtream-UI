@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useRef } from 'react';
 import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { scale, scaleFont, Icon } from '../.././../theme';
 import { useTheme } from '../.././../theme/ThemeProvider';
@@ -17,7 +17,10 @@ interface TVPlayerTopBarProps {
     isHudVisible: boolean;
     backButtonRef: any;
     lockButtonRef: any;
+    favoriteButtonRef: any;
     playPauseRef: any;
+    isFavorite: boolean;
+    onToggleFavorite: () => void;
 }
 
 const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
@@ -33,9 +36,14 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
     isHudVisible,
     backButtonRef,
     lockButtonRef,
+    favoriteButtonRef,
     playPauseRef,
+    isFavorite,
+    onToggleFavorite,
 }) => {
     const { colors } = useTheme();
+    const infoButtonRef = useRef<any>(null);
+    const settingsButtonRef = useRef<any>(null);
     // If the HUD isn't visible, we don't want this layer capturing focus at all
     if (!isHudVisible) return null;
 
@@ -83,13 +91,38 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                     onBlur={() => setFocusedElement(null)}
                     {...({
                         nextFocusLeft: findNodeHandle(backButtonRef.current),
-                        nextFocusRight: findNodeHandle(playPauseRef.current),
+                        nextFocusRight: findNodeHandle(favoriteButtonRef.current),
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
                     <Icon name="lock" size={scale(24)} color={focusedElement === 'lock' ? colors.iconActive : '#FFFFFF'} />
                 </Pressable>
                 <Pressable
+                    ref={favoriteButtonRef}
+                    style={[
+                        styles.topButton,
+                        focusedElement === 'favorite' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
+                    ]}
+                    onPress={onToggleFavorite}
+                    onFocus={() => {
+                        setFocusedElement('favorite');
+                        showHUD();
+                    }}
+                    onBlur={() => setFocusedElement(null)}
+                    {...({
+                        nextFocusLeft: findNodeHandle(lockButtonRef.current),
+                        nextFocusRight: findNodeHandle(playPauseRef.current),
+                        nextFocusDown: findNodeHandle(playPauseRef.current)
+                    } as any)}
+                >
+                    <Icon
+                        name="heart"
+                        size={scale(24)}
+                        color={focusedElement === 'favorite' ? colors.iconActive : isFavorite ? colors.primary : '#FFFFFF'}
+                    />
+                </Pressable>
+                <Pressable
+                    ref={infoButtonRef}
                     style={[
                         styles.topButton,
                         focusedElement === 'info' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
@@ -101,12 +134,15 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                     }}
                     onBlur={() => setFocusedElement(null)}
                     {...({
+                        nextFocusLeft: findNodeHandle(favoriteButtonRef.current),
+                        nextFocusRight: findNodeHandle(settingsButtonRef.current),
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >
                     <Icon name="info" size={scale(24)} color={focusedElement === 'info' ? colors.iconActive : '#FFFFFF'} />
                 </Pressable>
                 <Pressable
+                    ref={settingsButtonRef}
                     style={[
                         styles.topButton,
                         focusedElement === 'settings' && [styles.topButtonFocused, { backgroundColor: colors.glass }]
@@ -118,6 +154,7 @@ const TVPlayerTopBar: React.FC<TVPlayerTopBarProps> = memo(({
                     }}
                     onBlur={() => setFocusedElement(null)}
                     {...({
+                        nextFocusLeft: findNodeHandle(infoButtonRef.current),
                         nextFocusDown: findNodeHandle(playPauseRef.current)
                     } as any)}
                 >

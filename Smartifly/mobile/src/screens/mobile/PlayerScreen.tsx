@@ -3,7 +3,6 @@ import {
     ActivityIndicator,
     Modal,
     PanResponder,
-    Platform,
     Pressable,
     StatusBar,
     StyleSheet,
@@ -26,14 +25,18 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { borderRadius, colors, Icon, spacing } from '../../theme';
 import useContentStore from '../../store/contentStore';
+import useAuthStore from '../../store/authStore';
 import { logger } from '../../config';
 import { useTrackProgress } from '../../store/watchHistoryStore';
 import useDownloadStore from '../../store/downloadStore';
+import useFavoritesStore, { buildFavoriteKey, buildFavoritesScope, FavoriteKind } from '../../store/favoritesStore';
 
 const SEEK_STEP_SECONDS = 10;
+const CHANNEL_STEP = 1;
 const AUTO_HIDE_DELAY_MS = 3500;
 const UI_UPDATE_THROTTLE_MS = 500;
 const UI_UPDATE_THROTTLE_HIDDEN_MS = 2000;
+const EMPTY_LIVE_CHANNELS: any[] = [];
 
 const formatTime = (value: number) => {
     const totalSeconds = Math.max(0, Math.floor(value || 0));
@@ -67,16 +70,38 @@ type TrackOption = {
 
 const PlayerScreen: React.FC = () => {
     const insets = useSafeAreaInsets();
-    const navigation = useNavigation();
+    const navigation = useNavigation<any>();
     const route = useRoute<RouteProp<ParamList, 'FullscreenPlayer'>>();
     const { type, item, episodeUrl } = route.params;
     const resumePosition = route.params.resumePosition ?? 0;
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
+    const liveItemsCount = useContentStore((state) => (type === 'live' ? state.content.live.items.length : 0));
+    const portalId = useAuthStore((state) => state.selectedPortal?.id ?? null);
+    const username = useAuthStore((state) => state.userInfo?.username ?? null);
     const { trackMovie, trackEpisode, trackLive } = useTrackProgress();
     const downloads = useDownloadStore((state) => state.downloads);
+    const toggleFavorite = useFavoritesStore((state) => state.toggleFavorite);
     const api = getXtreamAPI();
 
     const isLive = type === 'live';
+    const favoritesScope = useMemo(() => buildFavoritesScope(portalId, username), [portalId, username]);
+    const favoriteDescriptor = useMemo(() => {
+        const kind: FavoriteKind = type === 'live'
+            ? 'live'
+            : type === 'movie'
+                ? 'movie'
+                : episodeUrl
+                    ? 'episode'
+                    : 'series';
+        const entityId = kind === 'episode'
+            ? String(item?.id ?? item?.stream_id ?? `${item?.series_id ?? item?.seriesId ?? 'series'}-${item?.episode_num ?? item?.episodeNumber ?? item?.name ?? 'episode'}`)
+            : String(item?.stream_id ?? item?.series_id ?? item?.id ?? item?.name ?? 'unknown');
+        const key = buildFavoriteKey(favoritesScope, kind, entityId);
+        return { kind, entityId, key };
+    }, [episodeUrl, favoritesScope, item, type]);
+    const isFavorite = useFavoritesStore(
+        useCallback((state) => state.isFavorite(favoriteDescriptor.key), [favoriteDescriptor.key])
+    );
 
     // Refs and state
     const videoRef = useRef<VideoRef>(null);
@@ -106,6 +131,7 @@ const PlayerScreen: React.FC = () => {
     const [repeatEnabled, setRepeatEnabled] = useState(false);
     const [showStats, setShowStats] = useState(false);
     const [controlsLocked, setControlsLocked] = useState(false);
+    const [playerInstanceKey, setPlayerInstanceKey] = useState(0);
 
     const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
     const [textTracks, setTextTracks] = useState<TextTrack[]>([]);
@@ -167,6 +193,22 @@ const PlayerScreen: React.FC = () => {
     }, [item, resumePosition]);
 
     useEffect(() => {
+        setHasError(false);
+        setErrorMessage('Playback failed');
+        setIsBuffering(Boolean(streamUrl));
+        setCurrentTime(0);
+        setPlayableDuration(0);
+        durationRef.current = 0;
+    }, [streamUrl, type, item?.id, item?.stream_id]);
+
+    useEffect(() => {
+        if (streamUrl) return;
+        setHasError(true);
+        setIsBuffering(false);
+        setErrorMessage('Stream unavailable');
+    }, [streamUrl]);
+
+    useEffect(() => {
         if (!api) {
             navigation.goBack();
         }
@@ -193,7 +235,7 @@ const PlayerScreen: React.FC = () => {
     }, []);
 
     const scheduleHideControls = useCallback(() => {
-        if (Platform.isTV || controlsLocked || showSettings || paused) return;
+        if (controlsLocked || showSettings || paused) return;
         clearHideTimeout();
         hideTimeoutRef.current = setTimeout(() => {
             setShowControls(false);
@@ -368,11 +410,78 @@ const PlayerScreen: React.FC = () => {
         return 'Custom';
     }, [selectedTextTrack, textTracks]);
 
+    const liveChannelList = useMemo(() => {
+        if (!isLive) return [];
+        if (liveItemsCount === 0) return [];
+
+        const liveItems = useContentStore.getState().content.live.items || EMPTY_LIVE_CHANNELS;
+        const currentCategoryId = item?.category_id != null ? String(item.category_id) : null;
+        const pool = currentCategoryId
+            ? liveItems.filter((channel) => String(channel?.category_id ?? '') === currentCategoryId)
+            : liveItems;
+
+        return pool.filter((channel) => channel?.stream_id && channel?.name);
+    }, [isLive, item?.category_id, liveItemsCount]);
+
+    const currentLiveIndex = useMemo(() => {
+        if (!isLive) return -1;
+        const currentStreamId = Number(item?.stream_id ?? item?.id ?? 0);
+        return liveChannelList.findIndex((channel) => Number(channel.stream_id) === currentStreamId);
+    }, [isLive, item?.id, item?.stream_id, liveChannelList]);
+
+    const changeChannel = useCallback((direction: -1 | 1) => {
+        if (!isLive || liveChannelList.length === 0) return;
+
+        const baseIndex = currentLiveIndex >= 0 ? currentLiveIndex : 0;
+        const nextIndex = (baseIndex + (direction * CHANNEL_STEP) + liveChannelList.length) % liveChannelList.length;
+        const nextChannel = liveChannelList[nextIndex];
+
+        if (!nextChannel) return;
+
+        navigation.replace('FullscreenPlayer', {
+            type: 'live',
+            item: nextChannel,
+        });
+    }, [currentLiveIndex, isLive, liveChannelList, navigation]);
+
+    const handleTapSeek = useCallback((delta: number) => {
+        if (isLive) {
+            showControlsNow();
+            return;
+        }
+
+        handleSeekBy(delta);
+        setShowControls(false);
+    }, [handleSeekBy, isLive, showControlsNow]);
+
     const handleSettingsClose = () => {
         setSettingsView('root');
         setShowSettings(false);
         showControlsNow();
     };
+
+    const handleToggleFavorite = useCallback(() => {
+        const image = item?.info?.movie_image || item?.stream_icon || item?.cover;
+        const subtitle = favoriteDescriptor.kind === 'episode'
+            ? (item?.series_name || item?.seriesTitle || item?.name)
+            : undefined;
+        toggleFavorite({
+            key: favoriteDescriptor.key,
+            scope: favoritesScope,
+            kind: favoriteDescriptor.kind,
+            entityId: favoriteDescriptor.entityId,
+            title: favoriteDescriptor.kind === 'episode'
+                ? (item?.title || item?.episodeTitle || item?.name || 'Episode')
+                : (item?.name || item?.title || 'Unknown'),
+            subtitle,
+            image,
+            rating: item?.rating_5based || item?.rating,
+            year: item?.year || item?.releaseDate,
+            episodeUrl,
+            data: item,
+        });
+        showControlsNow();
+    }, [episodeUrl, favoriteDescriptor.entityId, favoriteDescriptor.key, favoriteDescriptor.kind, favoritesScope, item, showControlsNow, toggleFavorite]);
 
     const renderSettingsHeader = (title: string) => (
         <View style={styles.settingsHeader}>
@@ -408,6 +517,7 @@ const PlayerScreen: React.FC = () => {
         <View style={styles.container}>
             {/* Video Player */}
             <Video
+                key={`${type}-${String(item?.stream_id ?? item?.id ?? 'unknown')}-${playerInstanceKey}`}
                 ref={videoRef}
                 source={{ uri: streamUrl }}
                 style={styles.video}
@@ -496,9 +606,17 @@ const PlayerScreen: React.FC = () => {
                 onAudioFocusChanged={(e) => logger.debug('Audio focus changed', e)}
             />
 
-            {/* Tap to show controls */}
+            {/* Hidden-state tap zones */}
             {!showControls && !controlsLocked && (
-                <Pressable style={StyleSheet.absoluteFillObject} onPress={showControlsNow} />
+                isLive ? (
+                    <Pressable style={StyleSheet.absoluteFillObject} onPress={showControlsNow} />
+                ) : (
+                    <View style={styles.tapZones} pointerEvents="box-none">
+                        <Pressable style={styles.tapZoneSide} onPress={() => handleTapSeek(-SEEK_STEP_SECONDS)} />
+                        <Pressable style={styles.tapZoneCenter} onPress={showControlsNow} />
+                        <Pressable style={styles.tapZoneSide} onPress={() => handleTapSeek(SEEK_STEP_SECONDS)} />
+                    </View>
+                )
             )}
 
             {/* Controls Overlay */}
@@ -531,6 +649,17 @@ const PlayerScreen: React.FC = () => {
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={styles.topButton}
+                                onPress={handleToggleFavorite}
+                            >
+                                <Icon
+                                    name="heart"
+                                    size={20}
+                                    color={isFavorite ? colors.primary : colors.textPrimary}
+                                    weight={isFavorite ? 'fill' : 'regular'}
+                                />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.topButton}
                                 onPress={() => setShowStats(prev => !prev)}
                             >
                                 <Icon name="info" size={20} color={colors.textPrimary} />
@@ -548,11 +677,16 @@ const PlayerScreen: React.FC = () => {
                     <View style={styles.centerControls}>
                         <TouchableOpacity
                             style={styles.seekButton}
-                            onPress={() => handleSeekBy(-SEEK_STEP_SECONDS)}
-                            disabled={isLive}
+                            onPress={() => {
+                                if (isLive) {
+                                    changeChannel(-1);
+                                    return;
+                                }
+                                handleSeekBy(-SEEK_STEP_SECONDS);
+                            }}
                         >
-                            <Icon name="arrowLeft" size={24} color={isLive ? colors.textMuted : colors.textPrimary} />
-                            <Text style={styles.seekLabel}>10</Text>
+                            <Icon name="arrowLeft" size={24} color={colors.textPrimary} />
+                            <Text style={styles.seekLabel}>{isLive ? 'CH-' : '10s'}</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -567,11 +701,16 @@ const PlayerScreen: React.FC = () => {
 
                         <TouchableOpacity
                             style={styles.seekButton}
-                            onPress={() => handleSeekBy(SEEK_STEP_SECONDS)}
-                            disabled={isLive}
+                            onPress={() => {
+                                if (isLive) {
+                                    changeChannel(1);
+                                    return;
+                                }
+                                handleSeekBy(SEEK_STEP_SECONDS);
+                            }}
                         >
-                            <Icon name="arrowRight" size={24} color={isLive ? colors.textMuted : colors.textPrimary} />
-                            <Text style={styles.seekLabel}>15s</Text>
+                            <Icon name="arrowRight" size={24} color={colors.textPrimary} />
+                            <Text style={styles.seekLabel}>{isLive ? 'CH+' : '10s'}</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -638,8 +777,9 @@ const PlayerScreen: React.FC = () => {
                         style={styles.retryButton}
                         onPress={() => {
                             setHasError(false);
-                            setIsBuffering(true);
                             setErrorMessage('Playback failed');
+                            setIsBuffering(Boolean(streamUrl));
+                            setPlayerInstanceKey((prev) => prev + 1);
                         }}
                     >
                         <Text style={styles.retryButtonText}>Retry</Text>
@@ -818,6 +958,16 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         backgroundColor: 'rgba(0,0,0,0.2)',
         paddingHorizontal: spacing.base,
+    },
+    tapZones: {
+        ...StyleSheet.absoluteFillObject,
+        flexDirection: 'row',
+    },
+    tapZoneSide: {
+        flex: 1,
+    },
+    tapZoneCenter: {
+        flex: 1.2,
     },
     topBar: {
         flexDirection: 'row',

@@ -7,7 +7,6 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { View } from 'react-native';
 
 // =============================================================================
 // CONTENT TYPES (for passing data between screens)
@@ -178,13 +177,6 @@ export type BottomTabParamList = {
 export type RootStackParamList = {
     Login: undefined;
     Loading: undefined;
-    TVHome: undefined;
-    TVAccountSwitcher: undefined;
-    TVLive: undefined;
-    TVMovies: undefined;
-    TVSeries: undefined;
-    TVMovieDetail: { movie: MovieItem };
-    TVSeriesDetail: { series: SeriesItem };
     MainTabs: NavigatorScreenParams<BottomTabParamList>;
     FullscreenPlayer: {
         type: 'live' | 'movie' | 'series';
@@ -199,29 +191,6 @@ export type RootStackParamList = {
     Downloads: undefined;
     Blocked: { message?: string; status?: string } | undefined;
 };
-
-// TV Screen Props - for standalone screens
-export type TVHomeScreenProps = NativeStackScreenProps<RootStackParamList, 'TVHome'>;
-export type TVLoadingScreenProps = NativeStackScreenProps<RootStackParamList, 'Loading'>;
-export type TVMovieDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVMovieDetail'>;
-export type TVSeriesDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'TVSeriesDetail'>;
-
-// Props for embedded TV section screens (used within TVHomeScreen)
-// These screens receive navigation from TVHomeScreen and need to navigate to other routes
-export interface TVEmbeddedScreenProps {
-    navigation: TVHomeScreenProps['navigation'];
-    focusEntryRef?: (node: View | null) => void;
-}
-
-// Types for embedded screens
-export type TVLiveScreenProps = TVEmbeddedScreenProps;
-export type TVMoviesScreenProps = TVEmbeddedScreenProps;
-export type TVSeriesScreenProps = TVEmbeddedScreenProps;
-export type TVSettingsScreenProps = TVEmbeddedScreenProps;
-export type TVFavoritesScreenProps = TVEmbeddedScreenProps;
-export type TVSearchScreenProps = TVEmbeddedScreenProps;
-export type TVAnnouncementsScreenProps = TVEmbeddedScreenProps;
-export type TVDownloadsScreenProps = TVEmbeddedScreenProps;
 
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export type FullscreenPlayerScreenProps = NativeStackScreenProps<RootStackParamList, 'FullscreenPlayer'>;

@@ -15,7 +15,7 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    ImageBackground,
+    Image,
     ViewStyle,
     Animated,
 } from 'react-native';
@@ -23,12 +23,19 @@ import {
 // Using fallback gradient view for now
 
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
+import FastImageComponent from '../../../../components/FastImageComponent';
+import { normalizeImageUri } from '../../../../utils/image';
 
 
 const HERO_HEIGHT = 480;
 const HERO_FADE_DURATION = 360;
 const HERO_CONTENT_FADE = 180;
-const HERO_PLACEHOLDER = 'https://via.placeholder.com/400x225/0B1220/333333?text=No+Image';
+const HERO_FALLBACK_IMAGE = require('../../../../assets/fallback image.jpeg');
+
+const toDisplayRating = (value: number | string | undefined): number | null => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+};
 
 // =============================================================================
 // TYPES
@@ -101,6 +108,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     const incomingKeyRef = useRef('');
     const incomingItemRef = useRef<HeroBannerItem | null>(null);
     const isTransitioningRef = useRef(false);
+    const [baseImageLoaded, setBaseImageLoaded] = useState(false);
+    const [incomingImageLoaded, setIncomingImageLoaded] = useState(false);
 
     const baseOpacity = useRef(new Animated.Value(1)).current;
     const incomingOpacity = useRef(new Animated.Value(0)).current;
@@ -108,6 +117,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     const isReady = Boolean(item) && !isLoading;
     const itemKey = item ? `${item.id}-${item.image ?? ''}` : '';
     const baseItem = displayItem ?? item ?? null;
+    const displayRating = toDisplayRating(baseItem?.rating as number | string | undefined);
 
     useEffect(() => {
         if (!item) return;
@@ -129,9 +139,20 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     }, [item, itemKey]);
 
     const getImageUri = useCallback((hero: HeroBannerItem | null) => {
-        if (!hero) return HERO_PLACEHOLDER;
-        return hero.image || HERO_PLACEHOLDER;
+        if (!hero) return '';
+        return normalizeImageUri(hero.image);
     }, []);
+
+    const baseImageUri = getImageUri(baseItem);
+    const incomingImageUri = getImageUri(incomingItem);
+
+    useEffect(() => {
+        setBaseImageLoaded(false);
+    }, [baseImageUri]);
+
+    useEffect(() => {
+        setIncomingImageLoaded(false);
+    }, [incomingImageUri]);
 
     const handleIncomingResolve = useCallback(() => {
         const nextItem = incomingItemRef.current;
@@ -180,6 +201,12 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
         handleIncomingResolve();
     }, [handleIncomingResolve]);
 
+    useEffect(() => {
+        if (!incomingItem) return;
+        if (incomingImageUri) return;
+        handleIncomingResolve();
+    }, [handleIncomingResolve, incomingImageUri, incomingItem]);
+
     // Get type-specific color
     const getTypeColor = (type: HeroBannerItem['type']) => {
         switch (type) {
@@ -221,23 +248,41 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             activeOpacity={0.95}
         >
             <View style={styles.backgroundContainer}>
+                <Image
+                    source={HERO_FALLBACK_IMAGE}
+                    style={styles.fallbackBackground}
+                    resizeMode="stretch"
+                />
                 <Animated.View style={[styles.backgroundLayer, { opacity: baseOpacity }]}>
-                    <ImageBackground
-                        source={{ uri: getImageUri(contentItem) }}
-                        style={styles.background}
-                        resizeMode="cover"
-                    />
+                    {baseImageUri ? (
+                        <FastImageComponent
+                            source={{ uri: baseImageUri }}
+                            style={[styles.background, baseImageLoaded ? styles.imageVisible : styles.imageHidden]}
+                            resizeMode="cover"
+                            showLoader={true}
+                            suppressStateOverlays={true}
+                            onLoad={() => setBaseImageLoaded(true)}
+                            onError={() => setBaseImageLoaded(false)}
+                        />
+                    ) : null}
                 </Animated.View>
 
                 {incomingItem ? (
                     <Animated.View style={[styles.backgroundLayer, { opacity: incomingOpacity }]}>
-                        <ImageBackground
-                            source={{ uri: getImageUri(incomingItem) }}
-                            style={styles.background}
-                            resizeMode="cover"
-                            onLoad={handleIncomingResolve}
-                            onError={handleIncomingError}
-                        />
+                        {incomingImageUri ? (
+                            <FastImageComponent
+                                source={{ uri: incomingImageUri }}
+                                style={[styles.background, incomingImageLoaded ? styles.imageVisible : styles.imageHidden]}
+                                resizeMode="cover"
+                                showLoader={true}
+                                suppressStateOverlays={true}
+                                onLoad={() => {
+                                    setIncomingImageLoaded(true);
+                                    handleIncomingResolve();
+                                }}
+                                onError={handleIncomingError}
+                            />
+                        ) : null}
                     </Animated.View>
                 ) : null}
             </View>
@@ -275,10 +320,10 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
                         {/* Metadata Row */}
                         <View style={styles.metaRow}>
-                            {typeof contentItem.rating === 'number' && contentItem.rating > 0 && (
+                            {displayRating !== null && (
                                 <View style={styles.ratingContainer}>
                                     <Icon name="star" size={13} color={colors.qualityUHD} />
-                                    <Text style={styles.ratingText}>{contentItem.rating.toFixed(1)}</Text>
+                                    <Text style={styles.ratingText}>{displayRating.toFixed(1)}</Text>
                                 </View>
                             )}
                             {contentItem.year ? (
@@ -333,13 +378,20 @@ const styles = StyleSheet.create({
     backgroundContainer: {
         ...StyleSheet.absoluteFillObject,
     },
+    fallbackBackground: {
+        ...StyleSheet.absoluteFillObject,
+    },
     backgroundLayer: {
         ...StyleSheet.absoluteFillObject,
     },
     background: {
-        flex: 1,
-        width: '100%',
-        height: '100%',
+        ...StyleSheet.absoluteFillObject,
+    },
+    imageVisible: {
+        opacity: 1,
+    },
+    imageHidden: {
+        opacity: 0,
     },
     overlayContainer: {
         ...StyleSheet.absoluteFillObject,

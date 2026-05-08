@@ -6,61 +6,92 @@ import {
     FlatList,
     Pressable,
 } from 'react-native';
+import useStore from '@smartifly/shared/src/store';
+import useFavoritesStore, {
+    FavoriteEntry,
+    buildFavoritesScope,
+} from '@smartifly/shared/src/store/favoritesStore';
 import { colors, scale, scaleFont } from '../../theme';
-import { WatchProgress, useWatchHistoryStore } from '@smartifly/shared/src/store/watchHistoryStore';
 import { TVFavoritesScreenProps, LiveStreamItem, MovieItem, SeriesItem } from '../../navigation/types';
 
 const instructionalSteps = [
     'Browse the Home, Live, Movies, or Series sections',
-    'Highlight any item and press the heart icon to bookmark it',
+    'Open the player and press the heart icon to bookmark it',
     'Return once you have at least one favorite saved',
 ];
 
-
 const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation, focusEntryRef }) => {
-    // FIX: Optimized selector to prevent infinite re-renders
-    // Using simple selector to get history object, which is referentially stable unless updated
-    const history = useWatchHistoryStore((state) => state.history);
+    const selectedPortalId = useStore((state) => state.selectedPortal?.id ?? null);
+    const username = useStore((state) => state.userInfo?.username ?? state.credentials?.username ?? null);
+    const favoriteEntries = useFavoritesStore((state) => state.entries);
 
-    // Compute favorites derived state inside component
-    const favorites = React.useMemo(() => {
-        return Object.values(history)
-            .filter((item) => !item.completed && item.progress > 0)
-            .sort((a, b) => b.lastWatched - a.lastWatched)
-            .slice(0, 12);
-    }, [history]);
+    const favoritesScope = React.useMemo(
+        () => buildFavoritesScope(selectedPortalId, username),
+        [selectedPortalId, username]
+    );
 
-    const handlePress = (item: WatchProgress) => {
-        // Build payload from watch history data
-        // If item.data exists (cached original content), use it
-        // Otherwise construct a LiveStreamItem-compatible object from the WatchProgress fields
-        const payload: LiveStreamItem | MovieItem | SeriesItem = (item.data as LiveStreamItem | MovieItem | SeriesItem) ?? ({
-            stream_id: item.streamId,
-            name: item.episodeTitle || item.title,
-            stream_icon: item.thumbnail,
+    const favorites = React.useMemo(
+        () => favoriteEntries
+            .filter((item) => item.scope === favoritesScope)
+            .sort((a, b) => b.addedAt - a.addedAt)
+            .slice(0, 40),
+        [favoriteEntries, favoritesScope]
+    );
+
+    const handlePress = React.useCallback((item: FavoriteEntry) => {
+        const payload = (item.data as LiveStreamItem | MovieItem | SeriesItem) ?? ({
+            stream_id: Number(item.entityId) || 0,
+            name: item.title,
+            stream_icon: item.image,
         } as LiveStreamItem);
 
-        navigation.navigate('FullscreenPlayer', {
-            type: item.type,
-            item: payload,
-        });
-    };
+        if (item.kind === 'live') {
+            navigation.navigate('FullscreenPlayer', {
+                type: 'live',
+                item: payload as LiveStreamItem,
+            });
+            return;
+        }
 
-    const renderItem = ({ item, index }: { item: WatchProgress; index: number }) => (
+        if (item.kind === 'movie') {
+            navigation.navigate('TVMovieDetail', {
+                movie: payload as MovieItem,
+            });
+            return;
+        }
+
+        if (item.kind === 'series') {
+            navigation.navigate('TVSeriesDetail', {
+                series: payload as SeriesItem,
+            });
+            return;
+        }
+
+        navigation.navigate('FullscreenPlayer', {
+            type: 'series',
+            item: payload as SeriesItem,
+            episodeUrl: item.episodeUrl,
+        });
+    }, [navigation]);
+
+    const renderItem = ({ item, index }: { item: FavoriteEntry; index: number }) => (
         <Pressable
             ref={index === 0 ? focusEntryRef : undefined}
             style={styles.card}
             onPress={() => handlePress(item)}
         >
             <Text style={styles.title}>{item.title}</Text>
-            <Text style={styles.meta}>{item.type.toUpperCase()} · {Math.round(item.progress)}% watched</Text>
+            <Text style={styles.meta}>
+                {item.kind.toUpperCase()}
+                {item.subtitle ? ` · ${item.subtitle}` : ''}
+            </Text>
         </Pressable>
     );
 
     const renderEmptyState = () => (
         <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Favorites Empty</Text>
-            <Text style={styles.emptyText}>Save movies, shows, or channels you love so they appear here instantly.</Text>
+            <Text style={styles.emptyText}>Save movies, shows, channels, or episodes so they appear here instantly.</Text>
             {instructionalSteps.map((step, index) => (
                 <Text key={step} style={styles.instructionText}>{`${index + 1}. ${step}`}</Text>
             ))}
@@ -82,7 +113,7 @@ const TVFavoritesScreen: React.FC<TVFavoritesScreenProps> = ({ navigation, focus
             ) : (
                 <FlatList
                     data={favorites}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={(item) => item.key}
                     renderItem={renderItem}
                     ItemSeparatorComponent={Separator}
                     contentContainerStyle={styles.listContent}

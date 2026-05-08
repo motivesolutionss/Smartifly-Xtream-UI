@@ -379,7 +379,7 @@ const ServerSelector: React.FC<ServerSelectorProps> = ({
                             style={styles.serverList}
                             showsVerticalScrollIndicator={false}
                             ItemSeparatorComponent={Separator}
-                            removeClippedSubviews
+                            removeClippedSubviews={false}
                             initialNumToRender={10}
                             maxToRenderPerBatch={10}
                             windowSize={5}

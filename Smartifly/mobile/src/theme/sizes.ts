@@ -558,23 +558,17 @@ export const playerSize = {
 /**
  * Get border radius based on platform
  */
-export const getBorderRadius = (isTV: boolean) => {
-    return isTV ? borderRadiusTV : borderRadius;
-};
+export const getBorderRadius = () => borderRadius;
 
 /**
  * Get icon size based on platform
  */
-export const getIconSize = (isTV: boolean) => {
-    return isTV ? iconSizeTV : iconSize;
-};
+export const getIconSize = () => iconSize;
 
 /**
  * Get card size based on platform
  */
-export const getCardSize = (isTV: boolean) => {
-    return isTV ? cardSize.tv : cardSize.mobile;
-};
+export const getCardSize = () => cardSize.mobile;
 
 /**
  * Calculate responsive width based on screen size

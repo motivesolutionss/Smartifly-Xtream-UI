@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import NavBar from '../../../components/NavBar';
 import ContentCard, { ContentItem } from '../home/components/ContentCard';
@@ -40,12 +39,36 @@ const SERVER_PAGING_ENABLED = config.catalog.serverPagination.enabled;
 const SERVER_PAGE_SIZE = config.catalog.serverPagination.pageSize;
 const MAIN_TAB_BOTTOM_SPACER = 112;
 
+const resolveMovieImage = (movie: any): string => String(
+    movie?.stream_icon ||
+    movie?.movie_image ||
+    movie?.cover_big ||
+    movie?.cover ||
+    movie?.backdrop_path?.[0] ||
+    ''
+);
+
+const resolveSeriesImage = (series: any): string => String(
+    series?.cover ||
+    series?.cover_big ||
+    series?.backdrop_path?.[0] ||
+    ''
+);
+
+const hasDisplayName = (item: any): boolean => String(item?.name || '').trim().length > 0;
+
+const sanitizeNamedItems = <T extends { name?: string }>(items: T[]): T[] => (
+    Array.isArray(items) ? items.filter((item) => item && hasDisplayName(item)) : []
+);
+
 type CategoryItem = {
     id: string;
     name: string;
-    count: number;
+    count?: number;
     color?: string;
 };
+
+const paginationSupportCache: Partial<Record<'live' | 'movies' | 'series', boolean>> = {};
 
 const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
     const { type } = route.params;
@@ -67,41 +90,46 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
     const [remotePage, setRemotePage] = useState(0);
     const [remoteHasMore, setRemoteHasMore] = useState(false);
     const [remoteLoading, setRemoteLoading] = useState(false);
-    const [remotePaginationSupported, setRemotePaginationSupported] = useState<boolean | null>(null);
+    const [remotePaginationSupported, setRemotePaginationSupported] = useState<boolean | null>(
+        paginationSupportCache[type] ?? null
+    );
     const remoteLoadingRef = useRef(false);
-
-    const liveLoaded = useContentStore((state) => state.content.live.loaded);
-    const liveItems = useContentStore((state) => state.content.live.items);
-    const liveCategories = useContentStore((state) => state.content.live.categories);
-
-    const moviesLoaded = useContentStore((state) => state.content.movies.loaded);
-    const moviesItems = useContentStore((state) => state.content.movies.items);
-    const movieCategories = useContentStore((state) => state.content.movies.categories);
-
-    const seriesLoaded = useContentStore((state) => state.content.series.loaded);
-    const seriesItems = useContentStore((state) => state.content.series.items);
-    const seriesCategories = useContentStore((state) => state.content.series.categories);
-    const contentPartial = useContentStore((state) => state.contentPartial);
+    const activeDomain = useContentStore((state) => (
+        type === 'live'
+            ? state.content.live
+            : type === 'movies'
+                ? state.content.movies
+                : state.content.series
+    ));
+    const partialForType = useContentStore((state) => (
+        type === 'live'
+            ? state.contentPartial.live
+            : type === 'movies'
+                ? state.contentPartial.movies
+                : state.contentPartial.series
+    ));
     const ensureFullContent = useContentStore((state) => state.ensureFullContent);
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
-
-    const isLoaded = useMemo(() => {
-        if (type === 'live') return liveLoaded;
-        if (type === 'movies') return moviesLoaded;
-        return seriesLoaded;
-    }, [liveLoaded, moviesLoaded, seriesLoaded, type]);
+    const activeItems = activeDomain.items as Array<XtreamLiveStream | XtreamMovie | XtreamSeries>;
+    const activeCategories = activeDomain.categories;
+    const needsLocalFullDataset = deferredSearchQuery.trim().length > 0 || sortMode !== 'default';
+    const rawItemCount = activeItems.length;
+    const isLoaded = activeDomain.loaded;
 
     useEffect(() => {
-        const needsFull =
-            type === 'live'
-                ? contentPartial.live
-                : type === 'movies'
-                    ? contentPartial.movies
-                    : contentPartial.series;
-        if (needsFull) {
+        if (partialForType && needsLocalFullDataset) {
             ensureFullContent(type);
         }
-    }, [contentPartial.live, contentPartial.movies, contentPartial.series, ensureFullContent, type]);
+    }, [
+        ensureFullContent,
+        needsLocalFullDataset,
+        partialForType,
+        type,
+    ]);
+
+    useEffect(() => {
+        setRemotePaginationSupported(paginationSupportCache[type] ?? null);
+    }, [type]);
 
     const headerTitle = useMemo(() => {
         if (type === 'live') return 'Live TV';
@@ -158,18 +186,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         return rows * gridColumns;
     }, [gridColumns, perf.tier]);
 
-    const rawItems = useMemo(() => {
-        if (!isLoaded) return [];
-        if (type === 'live') return liveItems;
-        if (type === 'movies') return filterContent(moviesItems);
-        return filterContent(seriesItems);
-    }, [filterContent, isLoaded, liveItems, moviesItems, seriesItems, type]);
-
-    const rawCategories = useMemo(() => {
-        if (type === 'live') return liveCategories || [];
-        if (type === 'movies') return movieCategories || [];
-        return seriesCategories || [];
-    }, [liveCategories, movieCategories, seriesCategories, type]);
+    const rawCategories = useMemo(() => activeCategories || [], [activeCategories]);
 
     const mapToContentItem = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): ContentItem => {
         if (type === 'live') {
@@ -188,7 +205,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
             return {
                 id: String(movie.stream_id),
                 name: movie.name,
-                image: movie.stream_icon,
+                image: resolveMovieImage(movie),
                 type: 'movie',
                 rating: movie.rating_5based,
                 data: movie,
@@ -199,18 +216,66 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         return {
             id: String(series.series_id),
             name: series.name,
-            image: series.cover,
+            image: resolveSeriesImage(series),
             type: 'series',
             rating: series.rating_5based,
             data: series,
         };
     }, [type]);
 
+    const preferRemoteCatalog = useMemo(() => (
+        SERVER_PAGING_ENABLED &&
+        !needsLocalFullDataset &&
+        (
+            partialForType ||
+            rawItemCount >= LARGE_CATALOG_THRESHOLD
+        )
+    ), [needsLocalFullDataset, partialForType, rawItemCount]);
+    const shouldProbeRemoteCatalog = preferRemoteCatalog && remotePaginationSupported !== false;
+    const shouldPrepareLocalCatalog = !shouldProbeRemoteCatalog || needsLocalFullDataset;
+
+    const rawItems = useMemo(() => {
+        if (!isLoaded || !shouldPrepareLocalCatalog) return [];
+        if (type === 'live') return sanitizeNamedItems(activeItems as XtreamLiveStream[]);
+        return sanitizeNamedItems(filterContent(activeItems as Array<XtreamMovie | XtreamSeries>));
+    }, [
+        activeItems,
+        filterContent,
+        isLoaded,
+        shouldPrepareLocalCatalog,
+        type,
+    ]);
+
     useEffect(() => {
         if (!isLoaded) {
             setCategoryItems([]);
             setCategoryMap({});
             setIsPrepared(false);
+            return;
+        }
+
+        if (!shouldPrepareLocalCatalog) {
+            const nextCategories: CategoryItem[] = [
+                {
+                    id: 'all',
+                    name: type === 'live' ? 'All Channels' : 'All',
+                    count: rawItemCount,
+                    color: accentColor,
+                },
+                ...rawCategories.map((category) => ({
+                    id: String(category.category_id),
+                    name: category.category_name,
+                })),
+            ];
+
+            setCategoryItems(nextCategories);
+            setCategoryMap({ all: [] });
+            setIsPrepared(true);
+            setSelectedCategoryId((prev) => (
+                prev === 'all' || nextCategories.some((entry) => entry.id === prev)
+                    ? prev
+                    : 'all'
+            ));
             return;
         }
 
@@ -257,7 +322,16 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         });
 
         return () => task.cancel();
-    }, [accentColor, isLoaded, mapToContentItem, rawCategories, rawItems, type]);
+    }, [
+        accentColor,
+        isLoaded,
+        mapToContentItem,
+        rawCategories,
+        rawItemCount,
+        rawItems,
+        shouldPrepareLocalCatalog,
+        type,
+    ]);
 
     const displayItems = useMemo(() => {
         if (!isPrepared) return [];
@@ -290,8 +364,6 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         return next;
     }, [categoryMap, deferredSearchQuery, isPrepared, selectedCategoryId, sortMode]);
 
-    const isLargeCatalog = displayItems.length >= LARGE_CATALOG_THRESHOLD;
-
     useEffect(() => {
         if (!isPrepared) {
             setVisibleCount(0);
@@ -314,12 +386,8 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
 
     const hasMoreItems = visibleCount < displayItems.length;
     const serverPagingEligible = useMemo(() => (
-        SERVER_PAGING_ENABLED &&
-        isPrepared &&
-        rawItems.length >= LARGE_CATALOG_THRESHOLD &&
-        searchQuery.trim().length === 0 &&
-        sortMode === 'default'
-    ), [isPrepared, rawItems.length, searchQuery, sortMode]);
+        shouldProbeRemoteCatalog && isPrepared
+    ), [isPrepared, shouldProbeRemoteCatalog]);
 
     const fetchRemotePage = useCallback(async (page: number, replace: boolean) => {
         if (remoteLoadingRef.current) return;
@@ -338,11 +406,19 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                     : await api.getSeriesPage({ page, limit: SERVER_PAGE_SIZE, categoryId });
 
             if (!paged.serverPaginated) {
+                paginationSupportCache[type] = false;
                 setRemotePaginationSupported(false);
+                if (partialForType && !needsLocalFullDataset) {
+                    ensureFullContent(type);
+                }
                 return;
             }
 
-            const mappedItems = paged.items.map((entry) => mapToContentItem(entry));
+            const filteredPagedItems = type === 'live'
+                ? sanitizeNamedItems(paged.items as XtreamLiveStream[])
+                : sanitizeNamedItems(filterContent(paged.items as any[]));
+            const mappedItems = filteredPagedItems.map((entry) => mapToContentItem(entry as any));
+            paginationSupportCache[type] = true;
             setRemotePaginationSupported(true);
             setRemotePage(page);
             setRemoteHasMore(paged.hasMore);
@@ -365,22 +441,34 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
 
             // If next page added nothing, treat as non-paginated/stuck backend and stop requesting more.
             if (!replace && mappedItems.length > 0 && appendedCount === 0) {
-                setRemoteHasMore(false);
+                paginationSupportCache[type] = false;
                 setRemotePaginationSupported(false);
+                setRemoteHasMore(false);
+                if (partialForType && !needsLocalFullDataset) {
+                    ensureFullContent(type);
+                }
             }
         } catch {
-            setRemotePaginationSupported(false);
+            if (replace) {
+                paginationSupportCache[type] = false;
+                setRemotePaginationSupported(false);
+                if (partialForType && !needsLocalFullDataset) {
+                    ensureFullContent(type);
+                }
+            } else {
+                setRemoteHasMore(false);
+            }
         } finally {
             remoteLoadingRef.current = false;
             setRemoteLoading(false);
         }
-    }, [getXtreamAPI, mapToContentItem, selectedCategoryId, type]);
+    }, [ensureFullContent, filterContent, getXtreamAPI, mapToContentItem, needsLocalFullDataset, partialForType, selectedCategoryId, type]);
 
     useEffect(() => {
         setRemoteItems([]);
         setRemotePage(0);
         setRemoteHasMore(false);
-        setRemotePaginationSupported(null);
+        setRemotePaginationSupported(paginationSupportCache[type] ?? null);
         remoteLoadingRef.current = false;
     }, [selectedCategoryId, serverPagingEligible, type]);
 
@@ -389,8 +477,15 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         fetchRemotePage(1, true);
     }, [fetchRemotePage, serverPagingEligible]);
 
-    const useRemoteData = serverPagingEligible && remotePaginationSupported === true;
-    const listItems = useRemoteData ? remoteItems : visibleItems;
+    const useRemoteData = serverPagingEligible && remotePaginationSupported === true && remotePage > 0;
+    const listItems = useRemoteData
+        ? remoteItems
+        : visibleItems;
+    const isInitialCatalogLoading = (
+        (serverPagingEligible && remoteLoading && remotePage === 0)
+        || !isLoaded
+        || !isPrepared
+    );
 
     const sortLabel = useMemo(() => {
         if (sortMode === 'az') return 'A-Z';
@@ -501,6 +596,11 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
     }, []);
 
     const handleLoadMore = useCallback(() => {
+        if (shouldProbeRemoteCatalog && remotePaginationSupported === null) {
+            if (remoteLoadingRef.current) return;
+            return;
+        }
+
         if (useRemoteData) {
             if (remoteLoadingRef.current || !remoteHasMore) return;
             fetchRemotePage(remotePage + 1, false);
@@ -515,16 +615,13 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
         isPrepared,
         remoteHasMore,
         remotePage,
+        remotePaginationSupported,
+        shouldProbeRemoteCatalog,
         useRemoteData,
         visibleStep,
     ]);
 
-    const renderItem = useCallback(({ item, index }: { item: ContentItem; index: number }) => {
-        const shouldAnimate =
-            perf.tier !== 'low' &&
-            !isLargeCatalog &&
-            index < gridColumns * perf.grid.initialRows;
-
+    const renderItem = useCallback(({ item }: { item: ContentItem; index: number }) => {
         const card = (
             <ContentCard
                 item={item}
@@ -536,30 +633,27 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
             />
         );
 
-        if (!shouldAnimate) {
-            return <View>{card}</View>;
-        }
-
-        return (
-            <Animated.View entering={FadeInDown.delay(index % 12 * 45).duration(320)}>
-                {card}
-            </Animated.View>
-        );
+        return <View>{card}</View>;
     }, [
         cardVariant,
         gridCardHeight,
         gridCardWidth,
-        gridColumns,
         handleContentPress,
-        perf.grid.initialRows,
-        perf.tier,
-        isLargeCatalog,
         showRating,
     ]);
 
     const keyExtractor = useCallback((item: ContentItem) => String(item.id), []);
 
     const emptyState = useMemo(() => {
+        if (serverPagingEligible && remoteLoading && remotePage === 0) {
+            return (
+                <View style={styles.emptyState}>
+                    <ActivityIndicator color={colors.primary} size="large" />
+                    <Text style={styles.emptyText}>Loading catalog...</Text>
+                </View>
+            );
+        }
+
         if (!isLoaded || !isPrepared) {
             return (
                 <View style={styles.emptyState}>
@@ -578,9 +672,22 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                 </Text>
             </View>
         );
-    }, [isLoaded, isPrepared, searchQuery]);
+    }, [isLoaded, isPrepared, remoteLoading, remotePage, searchQuery, serverPagingEligible]);
 
     const listFooter = useMemo(() => {
+        if (isInitialCatalogLoading || listItems.length === 0) {
+            return null;
+        }
+
+        if (shouldProbeRemoteCatalog && remotePaginationSupported === null && remoteLoading) {
+            return (
+                <View style={styles.listFooter}>
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                    <Text style={styles.listFooterText}>Preparing paged catalog...</Text>
+                </View>
+            );
+        }
+
         if (useRemoteData) {
             if (!remoteLoading) {
                 return <View style={styles.listFooterSpacer} />;
@@ -603,7 +710,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                 <Text style={styles.listFooterText}>Loading more...</Text>
             </View>
         );
-    }, [hasMoreItems, isPrepared, remoteLoading, useRemoteData]);
+    }, [hasMoreItems, isInitialCatalogLoading, isPrepared, listItems.length, remoteLoading, remotePaginationSupported, shouldProbeRemoteCatalog, useRemoteData]);
 
     return (
         <View style={styles.container}>
@@ -632,7 +739,11 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                         </Text>
                     </View>
                     <View style={styles.resultsMetaWrap}>
-                        <Text style={styles.resultsCountText}>{displayItems.length} items</Text>
+                        <Text style={styles.resultsCountText}>
+                            {useRemoteData
+                                ? `${remoteItems.length}${remoteHasMore ? '+' : ''} items`
+                                : `${displayItems.length} items`}
+                        </Text>
                         {hasActiveFilters && (
                             <View style={styles.activeFilterBadge}>
                                 <Text style={styles.activeFilterBadgeText}>{activeFilterCount} filters</Text>
@@ -706,7 +817,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                 maxToRenderPerBatch={gridColumns * perf.grid.maxRenderBatchRows}
                 updateCellsBatchingPeriod={perf.grid.updateCellsBatchingPeriod}
                 windowSize={perf.grid.windowSize}
-                removeClippedSubviews
+                removeClippedSubviews={false}
                 contentContainerStyle={[
                     styles.gridContent,
                     {
@@ -752,9 +863,11 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
                                             <Text style={[styles.modalItemText, isSelected && styles.modalItemTextSelected]}>
                                                 {item.name}
                                             </Text>
-                                            <View style={styles.countBadge}>
-                                                <Text style={styles.modalItemCount}>{item.count}</Text>
-                                            </View>
+                                            {typeof item.count === 'number' ? (
+                                                <View style={styles.countBadge}>
+                                                    <Text style={styles.modalItemCount}>{item.count}</Text>
+                                                </View>
+                                            ) : null}
                                         </View>
                                         {isSelected && (
                                             <Icon name="check" size={20} color={accentColor} weight="bold" />

@@ -14,43 +14,18 @@
 
 
 import { colors as themeColors } from './colors';
-import { Platform, Dimensions } from 'react-native';
-import { typographyMobile, getTypography } from './typography';
-import { getSpacing } from './spacing';
-import { getBorderRadius } from './sizes';
-import { getElevation } from './shadows';
-import {
-    scale as tvScale,
-    scaleX as tvScaleX,
-    scaleY as tvScaleY,
-    scaleFont as tvScaleFont,
-    scaleMin as tvScaleMin,
-    scaleMax as tvScaleMax,
-    scaleBounded as tvScaleBounded,
-    widthPercent as tvWidthPercent,
-    heightPercent as tvHeightPercent,
-    TV_SAFE_AREA,
-    getSafeAreaPadding,
-    tvDimensions,
-    tvTypography,
-    focusDimensions,
-    calculateGridColumns,
-    calculateItemWidth,
-    getRailLayout,
-    currentResolution,
-    scaleFactor,
-    getResolutionDebugInfo,
-} from './tvScaling';
+import { Dimensions } from 'react-native';
+import { typographyMobile } from './typography';
+import { spacing } from './spacing';
+import { borderRadius } from './sizes';
+import { elevation } from './shadows';
 
-const selectPlatformTokens = (forceTV?: boolean) => {
-    const isTV = forceTV ?? Platform.isTV;
-    return {
-        typography: getTypography(isTV),
-        spacing: getSpacing(isTV),
-        borderRadius: getBorderRadius(isTV),
-        elevation: getElevation(isTV),
-    } as const;
-};
+const selectPlatformTokens = () => ({
+    typography: typographyMobile,
+    spacing,
+    borderRadius,
+    elevation,
+} as const);
 
 // Colors
 export {
@@ -69,11 +44,9 @@ export type { ThemeId, Gradients, Colors } from './colors';
 export {
     typography,
     typographyMobile,
-    typographyTV,
     fontFamily,
     fontWeight,
     fontSizeMobile,
-    fontSizeTV,
     lineHeight,
     letterSpacing,
     getTypography,
@@ -83,11 +56,9 @@ export {
 export type {
     Typography,
     TypographyMobile,
-    TypographyTV,
     FontFamily,
     FontWeight,
     FontSizeMobile,
-    FontSizeTV,
     LineHeight,
     LetterSpacing,
 } from './typography';
@@ -95,7 +66,6 @@ export type {
 // Spacing
 export {
     spacing,
-    spacingTV,
     screenPadding,
     cardSpacing,
     listSpacing,
@@ -114,7 +84,6 @@ export {
 } from './spacing';
 export type {
     Spacing,
-    SpacingTV,
     ScreenPadding,
     CardSpacing,
     ListSpacing,
@@ -132,10 +101,8 @@ export type {
 export {
     shadows,
     elevation,
-    elevationTV,
     componentShadows,
     glowEffects,
-    glowEffectsTV,
     shadowColors,
     getElevation,
     getGlowEffects,
@@ -145,19 +112,15 @@ export {
 export type {
     Shadows,
     Elevation,
-    ElevationTV,
     ComponentShadows,
     GlowEffects,
-    GlowEffectsTV,
     ShadowColors,
 } from './shadows';
 
 // Sizes
 export {
     borderRadius,
-    borderRadiusTV,
     iconSize,
-    iconSizeTV,
     buttonSize,
     inputSize,
     avatarSize,
@@ -180,9 +143,7 @@ export {
 } from './sizes';
 export type {
     BorderRadius,
-    BorderRadiusTV,
     IconSize,
-    IconSizeTV,
     ButtonSize,
     InputSize,
     AvatarSize,
@@ -224,70 +185,47 @@ const getMobileFactors = () => {
 };
 
 export const scaleX = (size: number): number => {
-    if (Platform.isTV) return tvScaleX(size);
     const { x } = getMobileFactors();
     return Math.round(size * x);
 };
 
 export const scaleY = (size: number): number => {
-    if (Platform.isTV) return tvScaleY(size);
     const { y } = getMobileFactors();
     return Math.round(size * y);
 };
 
 export const scale = (size: number): number => {
-    if (Platform.isTV) return tvScale(size);
     const { x, y } = getMobileFactors();
     const factor = Math.min(x, y);
     return Math.round(size * factor);
 };
 
 export const scaleFont = (size: number): number => {
-    if (Platform.isTV) return tvScaleFont(size);
     const { x, y } = getMobileFactors();
     const clamped = Math.max(0.9, Math.min(Math.min(x, y), 1.2));
     return Math.round(size * clamped);
 };
 
 export const scaleMin = (size: number, min: number): number => {
-    if (Platform.isTV) return tvScaleMin(size, min);
     return Math.max(scale(size), min);
 };
 
 export const scaleMax = (size: number, max: number): number => {
-    if (Platform.isTV) return tvScaleMax(size, max);
     return Math.min(scale(size), max);
 };
 
 export const scaleBounded = (size: number, min: number, max: number): number => {
-    if (Platform.isTV) return tvScaleBounded(size, min, max);
     return Math.max(min, Math.min(scale(size), max));
 };
 
 export const widthPercent = (percent: number): number => {
-    if (Platform.isTV) return tvWidthPercent(percent);
     const { width } = Dimensions.get('window');
     return Math.round((width * percent) / 100);
 };
 
 export const heightPercent = (percent: number): number => {
-    if (Platform.isTV) return tvHeightPercent(percent);
     const { height } = Dimensions.get('window');
     return Math.round((height * percent) / 100);
-};
-
-export {
-    TV_SAFE_AREA,
-    getSafeAreaPadding,
-    tvDimensions,
-    tvTypography,
-    focusDimensions,
-    calculateGridColumns,
-    calculateItemWidth,
-    getRailLayout,
-    currentResolution,
-    scaleFactor,
-    getResolutionDebugInfo,
 };
 
 // =============================================================================
@@ -297,7 +235,7 @@ export {
 export { ThemeProvider, useTheme, useThemeId } from './ThemeProvider';
 export type { ThemeContextValue, ThemeProviderProps } from './ThemeProvider';
 
-export { getTheme, isTV, theme, tvTheme } from './platformTheme';
+export { getTheme, theme } from './platformTheme';
 
 // =============================================================================
 // STYLE HELPERS

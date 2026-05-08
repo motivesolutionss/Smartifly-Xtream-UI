@@ -16,6 +16,7 @@ import { useContentFilter, useProfileStore } from '@smartifly/shared/src/store/p
 import { getHeroCandidates, useHeroCarousel } from '@smartifly/shared/src/utils/heroPicker';
 import { getPreparedHomeHeroId } from '@smartifly/shared/src/services/HeroPreparationService';
 import { seededShuffle } from '@smartifly/shared/src/utils/shuffle';
+import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import {
   TV_HOME_RAILS,
   ResolvedRail,
@@ -51,6 +52,12 @@ type CategoryAffinity = {
 
 const CATEGORY_ROTATION_WINDOW = 4;
 const RANKED_WINDOW_MULTIPLIER = 3;
+const HOME_POOL_LIMITS = {
+  low: 240,
+  medium: 420,
+  high: 720,
+} as const;
+const HOME_FILTER_WINDOW_MULTIPLIER = 3;
 
 const toInt = (v: any): number => {
   const n = Number(v);
@@ -134,6 +141,40 @@ const prepareRankedCandidates = <T,>(
   return seededShuffle(rankedWindow, getKey, seed);
 };
 
+const buildHomePool = <T,>(
+  items: T[],
+  maxItems: number,
+  getKey: (item: T) => string,
+  seed: string
+): T[] => {
+  if (items.length <= maxItems) {
+    return seededShuffle(items, getKey, seed);
+  }
+
+  const window = items.slice(0, Math.min(items.length, maxItems * 3));
+  return seededShuffle(window, getKey, seed).slice(0, maxItems);
+};
+
+const resolveMovieImage = (movie: any): string => {
+  return String(
+    movie?.stream_icon ||
+    movie?.movie_image ||
+    movie?.cover_big ||
+    movie?.cover ||
+    movie?.backdrop_path?.[0] ||
+    ''
+  );
+};
+
+const resolveSeriesImage = (series: any): string => {
+  return String(
+    series?.cover ||
+    series?.cover_big ||
+    series?.backdrop_path?.[0] ||
+    ''
+  );
+};
+
 const mapLiveItem = (channel: any): TVContentItem => ({
   id: String(channel.stream_id),
   title: channel.name,
@@ -145,7 +186,7 @@ const mapLiveItem = (channel: any): TVContentItem => ({
 const mapMovieItem = (movie: any): TVContentItem => ({
   id: String(movie.stream_id),
   title: movie.name,
-  image: movie.stream_icon,
+  image: resolveMovieImage(movie),
   rating: movie.rating_5based,
   quality: movie.container_extension === 'mp4' ? 'HD' : undefined,
   type: 'movie' as const,
@@ -155,7 +196,7 @@ const mapMovieItem = (movie: any): TVContentItem => ({
 const mapSeriesItem = (series: any): TVContentItem => ({
   id: String(series.series_id),
   title: series.name,
-  image: series.cover,
+  image: resolveSeriesImage(series),
   rating: series.rating_5based,
   type: 'series' as const,
   data: series,
@@ -212,6 +253,14 @@ const chooseCategoryOrder = (
 };
 
 export const useHomeRails = (): HomeRailsResult => {
+  const perf = usePerfProfile();
+  const homePoolLimit = perf.tier === 'low'
+    ? HOME_POOL_LIMITS.low
+    : perf.tier === 'high'
+    ? HOME_POOL_LIMITS.high
+    : HOME_POOL_LIMITS.medium;
+  const filterWindowLimit = homePoolLimit * HOME_FILTER_WINDOW_MULTIPLIER;
+
   const moviesLoaded = useStore((s: StoreState) => s.content.movies.loaded);
   const moviesItems = useStore((s: StoreState) => s.content.movies.items);
   const moviesCategories = useStore((s: StoreState) => s.content.movies.categories);
@@ -232,18 +281,17 @@ export const useHomeRails = (): HomeRailsResult => {
 
   const filteredMovies = useMemo(() => {
     if (!moviesLoaded || !Array.isArray(moviesItems) || moviesItems.length === 0) return [];
-    return filterContent(moviesItems as any[]);
-  }, [moviesLoaded, moviesItems, filterContent]);
+    return filterContent((moviesItems as any[]).slice(0, filterWindowLimit));
+  }, [moviesLoaded, moviesItems, filterContent, filterWindowLimit]);
 
   const filteredSeries = useMemo(() => {
     if (!seriesLoaded || !Array.isArray(seriesItems) || seriesItems.length === 0) return [];
-    return filterContent(seriesItems as any[]);
-  }, [seriesLoaded, seriesItems, filterContent]);
+    return filterContent((seriesItems as any[]).slice(0, filterWindowLimit));
+  }, [seriesLoaded, seriesItems, filterContent, filterWindowLimit]);
 
   const heroSeed = activeProfileId || userInfo?.username || 'default';
   const daySeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const railSeedBase = `${heroSeed}:${daySeed}`;
-
   const heroCarousel = useHeroCarousel(filteredMovies, filteredSeries, heroSeed, 12, 15000);
   const preparedHeroId = getPreparedHomeHeroId();
   const preparedHero = useMemo(() => {
@@ -287,13 +335,13 @@ export const useHomeRails = (): HomeRailsResult => {
     };
 
     const livePool = liveLoaded
-      ? seededShuffle(content.live.items, (item: any) => String(item.stream_id || ''), `home:live:${railSeedBase}`)
+      ? buildHomePool(content.live.items, homePoolLimit, (item: any) => String(item.stream_id || ''), `home:live:${railSeedBase}`)
       : [];
     const moviePool = moviesLoaded
-      ? seededShuffle(filteredMovies, (item: any) => String(item.stream_id || ''), `home:movies:${railSeedBase}`)
+      ? buildHomePool(filteredMovies, homePoolLimit, (item: any) => String(item.stream_id || ''), `home:movies:${railSeedBase}`)
       : [];
     const seriesPool = seriesLoaded
-      ? seededShuffle(filteredSeries, (item: any) => String(item.series_id || ''), `home:series:${railSeedBase}`)
+      ? buildHomePool(filteredSeries, homePoolLimit, (item: any) => String(item.series_id || ''), `home:series:${railSeedBase}`)
       : [];
 
     for (const config of TV_HOME_RAILS) {
@@ -503,6 +551,7 @@ export const useHomeRails = (): HomeRailsResult => {
     moviesCategories,
     moviesLoaded,
     railSeedBase,
+    homePoolLimit,
     seriesCategories,
     seriesLoaded,
   ]);

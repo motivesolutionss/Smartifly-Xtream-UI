@@ -419,16 +419,12 @@ export const glowEffectsTV = {
 /**
  * Get elevation based on platform
  */
-export const getElevation = (isTV: boolean) => {
-    return isTV ? elevationTV : elevation;
-};
+export const getElevation = () => elevation;
 
 /**
  * Get glow effects based on platform
  */
-export const getGlowEffects = (isTV: boolean) => {
-    return isTV ? glowEffectsTV : glowEffects;
-};
+export const getGlowEffects = () => glowEffects;
 
 /**
  * Create custom shadow

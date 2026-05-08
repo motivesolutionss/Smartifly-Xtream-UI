@@ -558,19 +558,9 @@ export const typographyTV = {
 // PLATFORM-AWARE TYPOGRAPHY HELPER
 // =============================================================================
 
-/**
- * Get typography based on platform (mobile vs TV)
- */
-export const getTypography = (isTV: boolean) => {
-    return isTV ? typographyTV : typographyMobile;
-};
+export const getTypography = () => typographyMobile;
 
-/**
- * Get font size based on platform
- */
-export const getFontSize = (isTV: boolean) => {
-    return isTV ? fontSizeTV : fontSizeMobile;
-};
+export const getFontSize = () => fontSizeMobile;
 
 // =============================================================================
 // LEGACY COMPATIBILITY EXPORT

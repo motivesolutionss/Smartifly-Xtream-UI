@@ -1,16 +1,15 @@
 import React, { memo, useMemo, useCallback, useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, StyleProp, ViewStyle, Image } from 'react-native';
 import FastImageComponent from '../../../.././../components/tv/TVFastImage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
-import { scale, scaleFont, useTheme, Icon } from '../../../.././../theme';
+import { scale, scaleFont, useTheme } from '../../../.././../theme';
 import { ThemeColors } from '../../../.././../theme/themes/types';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
-import { normalizeImageUri } from '@smartifly/shared/src/utils/image';
-import { FALLBACK_POSTER } from '../.././../HomeRailConfig';
+import { optimizeCardImageUri } from '@smartifly/shared/src/utils/image';
 import BaseInteractiveCard from '../base/BaseInteractiveCard';
 import { useCardFocus } from '../base/useCardFocus';
 
@@ -60,12 +59,47 @@ const DEFAULT_MOVIE_CARD_HEIGHT = scale(336);
 const DEFAULT_LIVE_CARD_HEIGHT_RATIO = 0.6;
 
 const normalizeCardImageUri = (value?: string): string => {
-  return normalizeImageUri(value);
+  return optimizeCardImageUri(value || '');
 };
 
 const isUsableCardImageUri = (value?: string): boolean => {
   const normalized = normalizeCardImageUri(value);
   return /^(https?:\/\/|file:\/\/|content:\/\/|data:|asset:)/i.test(normalized);
+};
+
+const getFallbackInitials = (title?: string): string => {
+  const normalized = String(title || '').trim();
+  if (!normalized) return 'TV';
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+};
+
+const collectImageCandidates = (item: TVContentItem): string[] => {
+  const data = item.data as any;
+  const rawCandidates = [
+    item.image,
+    data?.stream_icon,
+    data?.movie_image,
+    data?.cover_big,
+    data?.cover,
+    Array.isArray(data?.backdrop_path) ? data.backdrop_path[0] : data?.backdrop_path,
+    data?.backdrop,
+    data?.poster,
+    data?.thumbnail,
+  ];
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of rawCandidates) {
+    const normalized = normalizeCardImageUri(candidate);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+
+  return deduped;
 };
 
 /**
@@ -141,6 +175,66 @@ const createStyles = (
     },
 
     // Requirements: 2.1 — focus ring uses borderFocus for movie/series, live for live cards
+    fallbackCard: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: scale(16),
+      paddingVertical: scale(16),
+      backgroundColor: 'rgba(12,16,22,0.96)',
+    },
+    fallbackImage: {
+      ...StyleSheet.absoluteFillObject,
+      opacity: 1,
+    },
+    fallbackScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(8,12,18,0.48)',
+    },
+    fallbackCardLive: {
+      backgroundColor: '#FFFFFF',
+    },
+    fallbackInitialWrap: {
+      width: scale(54),
+      height: scale(54),
+      borderRadius: scale(16),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      marginBottom: scale(12),
+    },
+    fallbackInitialWrapLive: {
+      backgroundColor: 'rgba(0,0,0,0.06)',
+    },
+    fallbackInitial: {
+      color: '#FFFFFF',
+      fontSize: scaleFont(20),
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+    fallbackInitialLive: {
+      color: '#111111',
+    },
+    fallbackTitle: {
+      color: '#FFFFFF',
+      fontSize: scaleFont(16),
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+    fallbackTitleLive: {
+      color: '#111111',
+    },
+    fallbackSubtitle: {
+      marginTop: scale(6),
+      color: 'rgba(255,255,255,0.72)',
+      fontSize: scaleFont(11),
+      fontWeight: '700',
+      textAlign: 'center',
+      letterSpacing: 0.6,
+    },
+    fallbackSubtitleLive: {
+      color: 'rgba(17,17,17,0.68)',
+    },
     focusRing: {
       ...StyleSheet.absoluteFillObject,
       borderRadius: scale(10),
@@ -256,7 +350,9 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   const { theme } = useTheme();
   const themeColors = theme.colors;
   const perf = usePerfProfile();
-  const [liveImageFailed, setLiveImageFailed] = useState(false);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const [isCardFocused, setIsCardFocused] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const cardWidth = width ?? DEFAULT_MOVIE_CARD_WIDTH;
   const cardHeight = height ?? DEFAULT_MOVIE_CARD_HEIGHT;
 
@@ -264,20 +360,28 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   const isLive = variant === 'live';
   const enableGlow = perf.enableFocusGlow && perf.tier === 'high' && !isLive;
 
-  const imageUri = useMemo(() => normalizeCardImageUri(item.image), [item.image]);
+  const imageCandidates = useMemo(() => collectImageCandidates(item), [item]);
+  const imageCandidatesKey = useMemo(() => imageCandidates.join('|'), [imageCandidates]);
+  const imageUri = imageCandidates[imageCandidateIndex] || '';
   const hasUsableImage = useMemo(() => isUsableCardImageUri(imageUri), [imageUri]);
   const cardImageSource = useMemo(
-    () => (hasUsableImage ? { uri: imageUri } : FALLBACK_POSTER),
+    () => (hasUsableImage ? { uri: imageUri } : null),
     [hasUsableImage, imageUri]
   );
-  const shouldShowLivePlaceholder = isLive && (!hasUsableImage || liveImageFailed);
+  const fallbackInitials = useMemo(() => getFallbackInitials(item.title), [item.title]);
+  const imageVisibilityStyle = useMemo(
+    () => ({ opacity: imageLoaded ? 1 : 0 }),
+    [imageLoaded]
+  );
+  const imagePriority = isCardFocused ? 'high' : 'low';
   const finalHeight = isLive
     ? (height ?? Math.round(cardWidth * DEFAULT_LIVE_CARD_HEIGHT_RATIO))
     : cardHeight;
 
   useEffect(() => {
-    setLiveImageFailed(false);
-  }, [imageUri, isLive]);
+    setImageCandidateIndex(0);
+    setImageLoaded(false);
+  }, [item.id, imageCandidatesKey, isLive]);
 
   // Extract primitive color tokens — stable useMemo deps (prevents Issue 1 regression)
   // Requirements: 2.1 — borderFocus for movie/series ring, live for live ring
@@ -355,12 +459,14 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
 
   // Requirements: 10.2 — focus ring animation: withTiming(1, 120ms) / withSpring
   const handleCardFocus = useCallback(() => {
+    setIsCardFocused(true);
     handleFocus();
     overlayOpacity.value = withTiming(isLive ? 0.18 : 0, { duration: 90 });
-    metaOpacity.value = withTiming(isLive ? 0 : 1, { duration: 120 });
+    metaOpacity.value = withTiming(1, { duration: 120 });
   }, [handleFocus, isLive, metaOpacity, overlayOpacity]);
 
   const handleCardBlur = useCallback(() => {
+    setIsCardFocused(false);
     handleBlur();
     overlayOpacity.value = withTiming(0, { duration: 90 });
     metaOpacity.value = withTiming(0, { duration: 90 });
@@ -371,10 +477,11 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
   }, [item, onPress]);
 
   const handleImageError = useCallback(() => {
-    if (isLive) {
-      setLiveImageFailed(true);
-    }
-  }, [isLive]);
+    setImageCandidateIndex((prev) => {
+      const next = prev + 1;
+      return next <= imageCandidates.length ? next : prev;
+    });
+  }, [imageCandidates.length]);
   const shouldRouteLeftToSidebar = useCallback((event: any) => {
     const key = String(event?.nativeEvent?.key ?? '').toLowerCase();
     const eventType = String(event?.nativeEvent?.eventType ?? '').toLowerCase();
@@ -439,20 +546,44 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
         cardAnimatedStyle,
       ]}
     >
-        {shouldShowLivePlaceholder ? (
-          <View style={styles.livePlaceholder}>
-            <View style={styles.livePlaceholderIconWrap}>
-              <Icon name="television" size={scale(28)} color="rgba(255,255,255,0.9)" />
-            </View>
-          </View>
-        ) : (
+        <View style={styles.fallbackCard}>
+          <Image
+            source={require('../../../../../assets/fallback image.jpeg')}
+            style={styles.fallbackImage}
+            resizeMode="contain"
+          />
+          <View style={styles.fallbackScrim} />
+          {!imageLoaded ? (
+            <>
+              <View style={styles.fallbackInitialWrap}>
+                <Text style={styles.fallbackInitial}>
+                  {fallbackInitials}
+                </Text>
+              </View>
+              <Text style={styles.fallbackTitle} numberOfLines={3}>
+                {item.title}
+              </Text>
+              <Text
+                style={styles.fallbackSubtitle}
+                numberOfLines={1}
+              >
+                {isLive ? 'LIVE CHANNEL' : item.year ? String(item.year) : String(item.type || 'content').toUpperCase()}
+              </Text>
+            </>
+          ) : null}
+        </View>
+        {hasUsableImage ? (
           isLive ? (
             <View style={styles.liveImageFrame}>
               <View style={styles.liveImageInner}>
                 <FastImageComponent
                   source={cardImageSource}
-                  style={[styles.image, styles.imageLive]}
+                  style={[styles.image, styles.imageLive, imageVisibilityStyle]}
                   resizeMode="contain"
+                  priority={imagePriority}
+                  showLoader={true}
+                  suppressStateOverlays={true}
+                  onLoad={() => setImageLoaded(true)}
                   onError={handleImageError}
                   enableColdFade={false}
                 />
@@ -461,14 +592,17 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           ) : (
             <FastImageComponent
               source={cardImageSource}
-              fallbackSource={FALLBACK_POSTER}
-              style={styles.image}
+              style={[styles.image, imageVisibilityStyle]}
               resizeMode="cover"
+              priority={imagePriority}
+              showLoader={true}
+              suppressStateOverlays={true}
+              onLoad={() => setImageLoaded(true)}
               onError={handleImageError}
               enableColdFade={false}
             />
           )
-        )}
+        ) : null}
 
         {/* Live overlay (cheap) */}
         {isLive && (
@@ -495,13 +629,17 @@ const TVContentCard: React.FC<TVContentCardProps> = ({
           </View>
         ) : null}
 
-        {!isLive ? (
+        {hasUsableImage && imageLoaded ? (
           <Animated.View style={[styles.metaWrap, metaAnimatedStyle]} pointerEvents="none">
             <View style={styles.metaBg} />
             <Text style={styles.metaTitle} numberOfLines={1}>
               {item.title}
             </Text>
-            {item.year ? (
+            {isLive ? (
+              <Text style={styles.metaSubTitle} numberOfLines={1}>
+                LIVE CHANNEL
+              </Text>
+            ) : item.year ? (
               <Text style={styles.metaSubTitle} numberOfLines={1}>
                 {String(item.year)}
               </Text>

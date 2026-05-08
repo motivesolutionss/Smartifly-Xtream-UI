@@ -79,8 +79,8 @@ export const config = {
             maxItemsPerDomain: 1500, // safety cap per domain
         },
         // Optional light prefetch mode: store only a subset initially
-        prefetchMode: 'full' as 'full' | 'light',
-        lightPrefetchLimit: 800, // per domain when light mode is enabled
+        prefetchMode: 'light' as 'full' | 'light',
+        lightPrefetchLimit: 1200, // per domain when light mode is enabled
     },
 
     /**

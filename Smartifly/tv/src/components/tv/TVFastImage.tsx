@@ -5,7 +5,7 @@
  * Focused on instant perceived loading and cache reuse.
  */
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, StyleProp, Animated, Easing } from 'react-native';
+import { View, StyleSheet, StyleProp, Animated, Easing, Image } from 'react-native';
 import FastImage, { ImageStyle, OnLoadEvent } from '@d11/react-native-fast-image';
 import { colors } from '../../theme';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
@@ -20,6 +20,7 @@ interface Props {
     source: any;
     style?: StyleProp<ImageStyle>;
     showLoader?: boolean;
+    suppressStateOverlays?: boolean;
     fallbackSource?: any;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
     priority?: 'low' | 'normal' | 'high';
@@ -31,6 +32,10 @@ interface Props {
 }
 
 const COLD_FADE_DURATION_MS = 80;
+const FAST_IMAGE_RETRY_LIMIT = 2;
+const NATIVE_IMAGE_RETRY_LIMIT = 1;
+const RETRY_DELAYS_MS = [220, 700, 1400];
+const IMAGE_LOAD_TIMEOUT_MS = 3200;
 
 const resolveSource = (input: any) => {
     if (!input) return null;
@@ -59,6 +64,7 @@ const FastImageComponent: React.FC<Props> = ({
     source,
     style,
     showLoader = false,
+    suppressStateOverlays = false,
     fallbackSource,
     resizeMode = 'cover',
     priority = 'normal',
@@ -69,8 +75,15 @@ const FastImageComponent: React.FC<Props> = ({
     enableColdFade = true,
 }) => {
     const [error, setError] = useState(false);
+    const [useNativeFallback, setUseNativeFallback] = useState(false);
+    const [retryToken, setRetryToken] = useState(0);
     const perf = usePerfProfile();
     const effectivePriority = perf.tier === 'low' ? 'low' : priority;
+    const hasLoadedCurrentSourceRef = useRef(false);
+    const fastRetryCountRef = useRef(0);
+    const nativeRetryCountRef = useRef(0);
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const {
         normalizedSource,
@@ -113,15 +126,50 @@ const FastImageComponent: React.FC<Props> = ({
     }, [imageOpacity, shouldAnimateOnLoad, sourceUri]);
 
     useEffect(() => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+        if (loadTimeoutRef.current) {
+            clearTimeout(loadTimeoutRef.current);
+            loadTimeoutRef.current = null;
+        }
         setError(false);
+        setUseNativeFallback(false);
         setIsReady(initialReady);
+        setRetryToken(0);
+        hasLoadedCurrentSourceRef.current = false;
+        fastRetryCountRef.current = 0;
+        nativeRetryCountRef.current = 0;
     }, [initialReady, sourceUri]);
+
+    useEffect(() => {
+        return () => {
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+            }
+            if (loadTimeoutRef.current) {
+                clearTimeout(loadTimeoutRef.current);
+                loadTimeoutRef.current = null;
+            }
+        };
+    }, []);
 
     const shouldUseFallback = error && Boolean(normalizedFallback);
     const renderSource = shouldUseFallback ? normalizedFallback : normalizedSource;
     const renderSourceUri = useMemo(() => extractSourceUri(renderSource), [renderSource]);
 
     const handleLoad = useCallback((event: OnLoadEvent) => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+        if (loadTimeoutRef.current) {
+            clearTimeout(loadTimeoutRef.current);
+            loadTimeoutRef.current = null;
+        }
+        hasLoadedCurrentSourceRef.current = true;
         if (renderSourceUri) {
             markImageWarm(renderSourceUri);
         }
@@ -139,16 +187,110 @@ const FastImageComponent: React.FC<Props> = ({
         onLoad?.(event);
     }, [imageOpacity, onLoad, renderSourceUri, shouldAnimateOnLoad]);
 
+    const scheduleRetry = useCallback((loader: 'fast' | 'native') => {
+        const retryCountRef = loader === 'fast' ? fastRetryCountRef : nativeRetryCountRef;
+        const retryLimit = loader === 'fast' ? FAST_IMAGE_RETRY_LIMIT : NATIVE_IMAGE_RETRY_LIMIT;
+
+        if (retryCountRef.current >= retryLimit) {
+            return false;
+        }
+
+        const delay = RETRY_DELAYS_MS[Math.min(retryCountRef.current, RETRY_DELAYS_MS.length - 1)];
+        retryCountRef.current += 1;
+        setIsReady(false);
+
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+        }
+
+        retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null;
+            setRetryToken((prev) => prev + 1);
+        }, delay);
+
+        return true;
+    }, []);
+
     const handleError = useCallback(() => {
+        if (hasLoadedCurrentSourceRef.current && !normalizedFallback) {
+            setIsReady(true);
+            imageOpacity.setValue(1);
+            return;
+        }
+        if (scheduleRetry('fast')) {
+            return;
+        }
+        if (!useNativeFallback && normalizedSource && !normalizedFallback) {
+            setUseNativeFallback(true);
+            setIsReady(initialReady);
+            nativeRetryCountRef.current = 0;
+            setRetryToken((prev) => prev + 1);
+            return;
+        }
         setError(true);
         setIsReady(true);
         imageOpacity.setValue(1);
         onError?.();
-    }, [imageOpacity, onError]);
+    }, [imageOpacity, initialReady, normalizedFallback, normalizedSource, onError, scheduleRetry, useNativeFallback]);
+
+    const handleNativeLoad = useCallback(() => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+        if (loadTimeoutRef.current) {
+            clearTimeout(loadTimeoutRef.current);
+            loadTimeoutRef.current = null;
+        }
+        if (renderSourceUri) {
+            markImageWarm(renderSourceUri);
+        }
+        hasLoadedCurrentSourceRef.current = true;
+        imageOpacity.setValue(1);
+        setIsReady(true);
+        onLoad?.({} as OnLoadEvent);
+    }, [imageOpacity, onLoad, renderSourceUri]);
+
+    const handleNativeError = useCallback(() => {
+        if (scheduleRetry('native')) {
+            return;
+        }
+        setError(true);
+        setIsReady(true);
+        imageOpacity.setValue(1);
+        onError?.();
+    }, [imageOpacity, onError, scheduleRetry]);
 
     const handleLoadEnd = useCallback(() => {
         onLoadEnd?.();
     }, [onLoadEnd]);
+
+    useEffect(() => {
+        if (!renderSourceUri || !sourceIsRemote || hasLoadedCurrentSourceRef.current || error) {
+            return;
+        }
+
+        if (loadTimeoutRef.current) {
+            clearTimeout(loadTimeoutRef.current);
+        }
+
+        loadTimeoutRef.current = setTimeout(() => {
+            loadTimeoutRef.current = null;
+            if (hasLoadedCurrentSourceRef.current) return;
+            if (useNativeFallback) {
+                handleNativeError();
+                return;
+            }
+            handleError();
+        }, IMAGE_LOAD_TIMEOUT_MS);
+
+        return () => {
+            if (loadTimeoutRef.current) {
+                clearTimeout(loadTimeoutRef.current);
+                loadTimeoutRef.current = null;
+            }
+        };
+    }, [error, handleError, handleNativeError, renderSourceUri, retryToken, sourceIsRemote, useNativeFallback]);
 
     const fastImageSource = useMemo(() => {
         if (!renderSource) return null;
@@ -183,27 +325,40 @@ const FastImageComponent: React.FC<Props> = ({
         [imageOpacity, shouldAnimateOnLoad]
     );
     const shouldShowLoaderOverlay = showLoader && !isReady && !shouldUseFallback;
-
-    if (!renderSource && !error) return <View style={[styles.container, style]} />;
+    const shouldRenderImage = Boolean(renderSource);
 
     return (
         <View style={[styles.container, style]}>
-            <Animated.View style={animatedStyle}>
-                <FastImage
-                    style={StyleSheet.absoluteFill}
-                    source={fastImageSource}
-                    onLoad={handleLoad}
-                    onLoadEnd={handleLoadEnd}
-                    onError={handleError}
-                    resizeMode={fastResizeMode}
-                />
-            </Animated.View>
+            {shouldRenderImage ? (
+                <Animated.View style={animatedStyle}>
+                    {useNativeFallback ? (
+                        <Image
+                            key={`native:${renderSourceUri}:${retryToken}`}
+                            style={StyleSheet.absoluteFill}
+                            source={renderSource as any}
+                            onLoad={handleNativeLoad}
+                            onError={handleNativeError}
+                            resizeMode={resizeMode}
+                        />
+                    ) : (
+                        <FastImage
+                            key={`fast:${renderSourceUri}:${retryToken}`}
+                            style={StyleSheet.absoluteFill}
+                            source={fastImageSource}
+                            onLoad={handleLoad}
+                            onLoadEnd={handleLoadEnd}
+                            onError={handleError}
+                            resizeMode={fastResizeMode}
+                        />
+                    )}
+                </Animated.View>
+            ) : null}
 
-            {shouldShowLoaderOverlay && (
+            {shouldShowLoaderOverlay && !suppressStateOverlays && (
                 <View style={styles.loadingOverlay} />
             )}
 
-            {error && !normalizedFallback && (
+            {error && !normalizedFallback && !suppressStateOverlays && (
                 <View style={styles.errorContainer} />
             )}
         </View>

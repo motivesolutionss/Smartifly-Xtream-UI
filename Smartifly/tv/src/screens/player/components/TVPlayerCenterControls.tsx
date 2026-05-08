@@ -3,8 +3,6 @@ import { findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native'
 import { scale, scaleFont, Icon } from '../.././../theme';
 import { useTheme } from '../.././../theme/ThemeProvider';
 
-const SEEK_STEP_SECONDS = 10;
-
 interface TVPlayerCenterControlsProps {
     isLive: boolean;
     paused: boolean;
@@ -18,6 +16,9 @@ interface TVPlayerCenterControlsProps {
     playPauseRef?: any;
     progressPressableRef?: any;
     lockButtonRef?: any;
+    leftActionRef?: any;
+    rightActionRef?: any;
+    registerHorizontalActionOrigin: (ref: any) => void;
 }
 
 const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
@@ -33,57 +34,24 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
     playPauseRef,
     progressPressableRef,
     lockButtonRef,
+    leftActionRef,
+    rightActionRef,
+    registerHorizontalActionOrigin,
 }) => {
     const { colors } = useTheme();
 
-    /**
-     * Key handler for the play/pause button.
-     * Intercepts Left/Right D-pad to seek instead of moving focus to
-     * the rewind/forward buttons.  This lets the user continuously
-     * press Left/Right on the remote to skip without needing to press OK.
-     */
-    const handlePlayPauseKeyDown = (event: any) => {
-        const nativeEvent = event?.nativeEvent;
-        const key = nativeEvent?.key;
-        const keyCode = nativeEvent?.keyCode;
-
-        const isRight = key === 'ArrowRight' || key === 'Right' || keyCode === 22;
-        const isLeft = key === 'ArrowLeft' || key === 'Left' || keyCode === 21;
-
-        if (isRight) {
-            if (isLive) {
-                handleLiveChannelStep(1);
-            } else {
-                handleSeekBy(SEEK_STEP_SECONDS);
-            }
-            showHUD();
-            return;
-        }
-
-        if (isLeft) {
-            if (isLive) {
-                handleLiveChannelStep(-1);
-            } else {
-                handleSeekBy(-SEEK_STEP_SECONDS);
-            }
-            showHUD();
-            return;
-        }
-    };
-
     return (
         <View style={styles.centerControls}>
-            {/* Rewind */}
             <Pressable
                 style={[
                     styles.seekButton,
-                    focusedElement === 'seek-rewind' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
+                    focusedElement === 'seek-rewind' && [styles.seekButtonFocused, { backgroundColor: colors.glass }],
                 ]}
                 onPress={() => {
                     if (isLive) {
                         handleLiveChannelStep(-1);
                     } else {
-                        handleSeekBy(-SEEK_STEP_SECONDS);
+                        handleSeekBy(-10);
                     }
                 }}
                 onFocus={() => {
@@ -93,51 +61,48 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                 onBlur={() => setFocusedElement(null)}
                 {...({
                     nextFocusRight: findNodeHandle(playPauseRef.current),
-                    nextFocusUp: findNodeHandle(lockButtonRef.current)
+                    nextFocusLeft: findNodeHandle(leftActionRef.current),
+                    nextFocusUp: findNodeHandle(lockButtonRef.current),
                 } as any)}
             >
                 <Icon name={isLive ? 'arrowLeft' : 'arrowCounterClockwise'} size={scale(40)} color="#FFFFFF" />
                 <Text style={styles.seekLabel}>{isLive ? 'CH-' : '10'}</Text>
             </Pressable>
 
-            {/* Play / Pause */}
             <Pressable
                 ref={playPauseRef}
                 style={[
                     styles.playPauseButton,
-                    focusedElement === 'playPause' && [styles.playPauseButtonFocused, { backgroundColor: colors.glass }]
+                    focusedElement === 'playPause' && [styles.playPauseButtonFocused, { backgroundColor: colors.glass }],
                 ]}
-                onPress={() => setPaused(prev => !prev)}
+                onPress={() => setPaused((prev) => !prev)}
                 onFocus={() => {
+                    registerHorizontalActionOrigin(playPauseRef);
                     setFocusedElement('playPause');
                     showHUD();
                 }}
                 onBlur={() => setFocusedElement(null)}
-                // @ts-ignore – Android TV key events
-                onKeyDown={handlePlayPauseKeyDown}
                 {...({
                     hasTVPreferredFocus: isHudVisible,
                     nextFocusDown: findNodeHandle(progressPressableRef.current),
                     nextFocusUp: findNodeHandle(lockButtonRef.current),
-                    // Keep Left/Right focus on play/pause so onKeyDown fires
-                    nextFocusLeft: findNodeHandle(playPauseRef.current),
-                    nextFocusRight: findNodeHandle(playPauseRef.current),
+                    nextFocusLeft: findNodeHandle(leftActionRef.current),
+                    nextFocusRight: findNodeHandle(rightActionRef.current),
                 } as any)}
             >
                 <Icon name={paused ? 'play' : 'pause'} size={scale(48)} color="#FFFFFF" />
             </Pressable>
 
-            {/* Forward */}
             <Pressable
                 style={[
                     styles.seekButton,
-                    focusedElement === 'seek-forward' && [styles.seekButtonFocused, { backgroundColor: colors.glass }]
+                    focusedElement === 'seek-forward' && [styles.seekButtonFocused, { backgroundColor: colors.glass }],
                 ]}
                 onPress={() => {
                     if (isLive) {
                         handleLiveChannelStep(1);
                     } else {
-                        handleSeekBy(SEEK_STEP_SECONDS);
+                        handleSeekBy(10);
                     }
                 }}
                 onFocus={() => {
@@ -147,7 +112,8 @@ const TVPlayerCenterControls: React.FC<TVPlayerCenterControlsProps> = memo(({
                 onBlur={() => setFocusedElement(null)}
                 {...({
                     nextFocusLeft: findNodeHandle(playPauseRef.current),
-                    nextFocusUp: findNodeHandle(lockButtonRef.current)
+                    nextFocusRight: findNodeHandle(rightActionRef.current),
+                    nextFocusUp: findNodeHandle(lockButtonRef.current),
                 } as any)}
             >
                 <Icon name="arrowRight" size={scale(40)} color="#FFFFFF" />
@@ -174,7 +140,7 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     seekButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.15)', // overridden at render time with theme.colors.glass
+        backgroundColor: 'rgba(255,255,255,0.15)',
         borderColor: 'rgba(255,255,255,0.5)',
         transform: [{ scale: 1.08 }],
     },
@@ -195,7 +161,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.2)',
     },
     playPauseButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.25)', // overridden at render time with theme.colors.glass
+        backgroundColor: 'rgba(255,255,255,0.25)',
         borderColor: '#FFFFFF',
         transform: [{ scale: 1.12 }],
     },

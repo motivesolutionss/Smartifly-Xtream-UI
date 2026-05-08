@@ -6,7 +6,7 @@
  * - Right panel: Channels grid
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -27,10 +27,9 @@ import { scale, typographyTV, useTheme } from '../theme';
 import TVContentCard, { TVContentItem } from './home/components/TVContentCard';
 import { XtreamLiveStream } from '@smartifly/shared/src/api/xtream';
 import { TVLiveScreenProps } from '../navigation/types';
-import { scheduleIdleWork } from '@smartifly/shared/src/utils/idle';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
-import { seededShuffle } from '@smartifly/shared/src/utils/shuffle';
+import usePagedCatalog from './hooks/usePagedCatalog';
 
 // =============================================================================
 // TYPES
@@ -39,7 +38,7 @@ import { seededShuffle } from '@smartifly/shared/src/utils/shuffle';
 interface Category {
     id: string;
     name: string;
-    count: number;
+    countLabel?: string;
 }
 
 type CategoryListProps = {
@@ -177,9 +176,11 @@ const CategoryItem: React.FC<CategoryItemProps> = React.memo(
                         >
                             {item.name}
                         </Animated.Text>
-                        <Animated.Text style={[styles.categoryCount, countStyle]}>
-                            {item.count}
-                        </Animated.Text>
+                        {item.countLabel ? (
+                            <Animated.Text style={[styles.categoryCount, countStyle]}>
+                                {item.countLabel}
+                            </Animated.Text>
+                        ) : null}
                     </View>
                 </Pressable>
             </Animated.View>
@@ -216,7 +217,7 @@ const CategoryList: React.FC<CategoryListProps> = React.memo(
             <FlatList
                 data={categories} renderItem={renderCategory} keyExtractor={(item) => item.id}
                 extraData={selectedCategoryId} showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.categoryList} removeClippedSubviews={true}
+                contentContainerStyle={styles.categoryList} removeClippedSubviews={false}
                 getItemLayout={(_, index) => ({ length: CATEGORY_ROW_SIZE, offset: CATEGORY_ROW_SIZE * index, index })}
                 initialNumToRender={listPerf.initialNumToRender} maxToRenderPerBatch={listPerf.maxToRenderPerBatch} windowSize={listPerf.windowSize}
             />
@@ -245,72 +246,38 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
         [primaryColor, textPrimary, textMuted, textDisabled, textOnPrimary, glassColor, glassMedium, borderMedium, background]
     );
 
-    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [categoryMap, setCategoryMap] = useState<Record<string, XtreamLiveStream[]>>({});
-    const [isPrepared, setIsPrepared] = useState(false);
-    const dayShuffleSeed = useMemo(() => new Date().toISOString().slice(0, 10), []);
     const perf = usePerfProfile();
     const gridPerf = perf.grid;
     const gridInitialRender = GRID_COLUMNS * gridPerf.initialRows;
     const gridMaxRenderBatch = GRID_COLUMNS * gridPerf.maxRenderBatchRows;
 
     const liveLoaded = useStore((state) => state.content.live.loaded);
-    const liveItems = useStore((state) => state.content.live.items);
     const liveCategories = useStore((state) => state.content.live.categories);
-
-    useEffect(() => {
-        if (!liveLoaded || !liveCategories) { setCategories([]); setCategoryMap({}); setIsPrepared(false); return; }
-        setIsPrepared(false);
-        const task = scheduleIdleWork(() => {
-            const items = seededShuffle(
-                liveItems,
-                (channel) => String(channel.stream_id || ''),
-                `live:all:${dayShuffleSeed}`
-            );
-            const nextMap: Record<string, XtreamLiveStream[]> = { all: items };
-            const countMap: Record<string, number> = {};
-            for (const ch of items) {
-                const catId = String(ch.category_id);
-                countMap[catId] = (countMap[catId] || 0) + 1;
-                if (!nextMap[catId]) nextMap[catId] = [];
-                nextMap[catId].push(ch);
-            }
-            for (const [catId, catChannels] of Object.entries(nextMap)) {
-                if (catId === 'all') continue;
-                nextMap[catId] = seededShuffle(
-                    catChannels,
-                    (channel) => String(channel.stream_id || ''),
-                    `live:${catId}:${dayShuffleSeed}`
-                );
-            }
-            const nextCategories: Category[] = [{ id: 'all', name: 'All Channels', count: items.length }];
-            for (const cat of liveCategories) {
-                const catId = String(cat.category_id);
-                const count = countMap[catId] || 0;
-                if (count > 0) nextCategories.push({ id: catId, name: cat.category_name, count });
-            }
-            setCategoryMap(nextMap); setCategories(nextCategories); setIsPrepared(true);
-        });
-        return () => { task.cancel(); };
-    }, [liveLoaded, liveCategories, liveItems, dayShuffleSeed]);
-
-    const channels = useMemo((): XtreamLiveStream[] => {
-        if (!liveLoaded || !isPrepared) return [];
-        if (selectedCategoryId && selectedCategoryId !== 'all') return categoryMap[selectedCategoryId] || [];
-        return categoryMap.all || [];
-    }, [liveLoaded, isPrepared, selectedCategoryId, categoryMap]);
-
-    const selectedCategoryName = useMemo(
-        () => categories.find((c) => c.id === (selectedCategoryId || 'all'))?.name,
-        [categories, selectedCategoryId]
-    );
+    const {
+        selectedCategoryId,
+        setSelectedCategoryId,
+        categories,
+        items: channels,
+        selectedCategoryName,
+        countLabel,
+        isInitialLoading,
+        isLoadingMore,
+        hasMore,
+        loadMore,
+    } = usePagedCatalog<XtreamLiveStream>({
+        categories: liveCategories,
+        fetchPage: (api, page, limit, categoryId) => api.getLiveStreamsPage({ page, limit, categoryId }),
+        getItemId: (item) => String(item.stream_id),
+        countNoun: 'channels',
+        allCategoryName: 'All Channels',
+        resetKey: liveLoaded ? 'ready' : 'pending',
+    });
 
     const handleChannelPress = useCallback((item: TVContentItem) => {
         if (item.data) navigation.navigate('FullscreenPlayer', { type: 'live', item: item.data });
     }, [navigation]);
 
-    const handleCategorySelect = useCallback((categoryId: string) => { setSelectedCategoryId(categoryId); }, []);
+    const handleCategorySelect = useCallback((categoryId: string) => { setSelectedCategoryId(categoryId); }, [setSelectedCategoryId]);
 
     const renderChannel = useCallback(({ item }: { item: XtreamLiveStream }) => (
         <TVContentCard
@@ -336,7 +303,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
             <View style={styles.channelsPanel}>
                 <View style={styles.gridHeader}>
                     <Text style={styles.selectedCategoryName}>{selectedCategoryName}</Text>
-                    <Text style={styles.channelCount}>{channels.length} channels</Text>
+                    <Text style={styles.channelCount}>{countLabel}</Text>
                 </View>
                 <FlashList
                     data={channels} renderItem={renderChannel} keyExtractor={(item) => String(item.stream_id)}
@@ -344,10 +311,13 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
                     // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
                     estimatedItemSize={scale(205)}
                     showsVerticalScrollIndicator={false} contentContainerStyle={styles.channelsGrid}
-                    columnWrapperStyle={styles.channelsRow} removeClippedSubviews={true}
+                    columnWrapperStyle={styles.channelsRow} removeClippedSubviews={false}
                     maxToRenderPerBatch={gridMaxRenderBatch} initialNumToRender={gridInitialRender}
                     windowSize={gridPerf.windowSize} updateCellsBatchingPeriod={gridPerf.updateCellsBatchingPeriod}
-                    ListEmptyComponent={!isPrepared ? <TVLoadingState style={styles.loadingState} /> : null}
+                    onEndReached={hasMore ? loadMore : undefined}
+                    onEndReachedThreshold={0.7}
+                    ListEmptyComponent={isInitialLoading ? <TVLoadingState style={styles.loadingState} /> : null}
+                    ListFooterComponent={isLoadingMore ? <TVLoadingState style={styles.loadingState} size="small" /> : null}
                 />
             </View>
         </View>

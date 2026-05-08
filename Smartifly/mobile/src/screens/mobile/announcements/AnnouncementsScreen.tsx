@@ -149,7 +149,7 @@ const AnnouncementsScreen: React.FC<any> = ({ navigation }) => {
                 // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
                 estimatedItemSize={140}
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews
+                removeClippedSubviews={false}
             />
         </View>
     );

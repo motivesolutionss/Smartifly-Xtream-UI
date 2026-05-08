@@ -183,7 +183,7 @@ const DownloadsScreen: React.FC = () => {
                 // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
                 estimatedItemSize={108}
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews
+                removeClippedSubviews={false}
                 initialNumToRender={8}
                 maxToRenderPerBatch={8}
                 windowSize={5}

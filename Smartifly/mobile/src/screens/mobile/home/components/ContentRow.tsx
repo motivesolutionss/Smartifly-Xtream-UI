@@ -198,6 +198,9 @@ const ContentRow: React.FC<ContentRowProps> = ({
     // Limit items displayed
     const displayData = useMemo(() => (items ? items.slice(0, maxItems) : []), [items, maxItems]);
     const cardVariant = type === 'live' ? 'channel' : 'poster';
+    const horizontalItemLength = useMemo(() => (
+        type === 'live' ? 100 + spacing.sm : 110 + spacing.sm
+    ), [type]);
 
     const handleItemPress = useCallback((item: ContentItem) => {
         onItemPress?.(item);
@@ -252,14 +255,14 @@ const ContentRow: React.FC<ContentRowProps> = ({
                     contentContainerStyle={styles.listContent}
                     ItemSeparatorComponent={Separator}
                     // Performance optimizations
-                    removeClippedSubviews={true}
+                    removeClippedSubviews={false}
                     maxToRenderPerBatch={railPerf.maxToRenderPerBatch}
                     windowSize={railPerf.windowSize}
                     initialNumToRender={railPerf.initialNumToRender}
                     updateCellsBatchingPeriod={railPerf.updateCellsBatchingPeriod}
                     getItemLayout={(_, index) => ({
-                        length: type === 'live' ? 108 : 128,
-                        offset: (type === 'live' ? 108 : 128) * index,
+                        length: horizontalItemLength,
+                        offset: horizontalItemLength * index,
                         index,
                     })}
                 />

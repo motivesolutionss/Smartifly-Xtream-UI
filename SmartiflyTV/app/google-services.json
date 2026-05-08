@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "855693041273",
+    "project_id": "smartifly-xtream-ui-b366f",
+    "storage_bucket": "smartifly-xtream-ui-b366f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:855693041273:android:4a16adb54e1438df0dfea8",
+        "android_client_info": {
+          "package_name": "com.smartifly.tv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUEfrmVa3j_7WleEXGsL4Boxw05RlQ_MI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

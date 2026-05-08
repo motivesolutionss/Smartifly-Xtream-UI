@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useMemo, useState, useContext } from 'react';
-import { Platform } from 'react-native';
 import {
     colors,
     gradients,
@@ -19,7 +18,6 @@ export interface ThemeContextValue {
     gradients: Gradients;
     theme: ReturnType<typeof getTheme>;
     effects: Theme['effects'];
-    isTV: boolean;
     setActiveTheme: (themeId: ThemeId) => Theme;
 }
 
@@ -28,16 +26,13 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export interface ThemeProviderProps {
     children: React.ReactNode;
     defaultThemeId?: ThemeId;
-    forceTV?: boolean;
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     children,
     defaultThemeId: initialThemeId = colorsDefaultThemeId,
-    forceTV,
 }) => {
     const [themeId, setThemeId] = useState<ThemeId>(initialThemeId);
-    const isTV = forceTV ?? Platform.isTV;
 
     const switchTheme = useCallback(
         (nextThemeId: ThemeId) => {
@@ -53,12 +48,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
             themeId,
             colors,
             gradients,
-            theme: getTheme(isTV),
+            theme: getTheme(),
             effects: activeTheme.effects,
-            isTV,
             setActiveTheme: switchTheme,
         }),
-        [themeId, isTV, switchTheme]
+        [themeId, switchTheme]
     );
 
     return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

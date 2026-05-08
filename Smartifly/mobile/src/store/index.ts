@@ -1299,3 +1299,4 @@ export { useStore };
 export { default as useAuthStore } from './authStore';
 export { default as useContentStore } from './contentStore';
 export { default as useAppStatusStore } from './appStatusStore';
+export { default as useFavoritesStore } from './favoritesStore';

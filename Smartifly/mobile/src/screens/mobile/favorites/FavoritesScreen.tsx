@@ -12,10 +12,11 @@ import { FlashList } from '@shopify/flash-list';
 import NavBar from '../../../components/NavBar';
 import ContentCard, { ContentItem } from '../home/components/ContentCard';
 import { colors, spacing, borderRadius, Icon } from '../../../theme';
-import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
 import type { FavoritesStackParamList } from '../../../navigation/types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { LiveStreamItem, MovieItem, SeriesItem } from '../../../navigation/types';
+import useFavoritesStore, { buildFavoritesScope, FavoriteEntry } from '../../../store/favoritesStore';
+import useAuthStore from '../../../store/authStore';
 
 // =============================================================================
 // TYPES
@@ -27,29 +28,29 @@ const MAIN_TAB_BOTTOM_SPACER = 112;
 const FavoritesScreen: React.FC<FavoritesScreenProps> = ({ navigation }) => {
     const insets = useSafeAreaInsets();
     const { width: viewportWidth } = useWindowDimensions();
-    const history = useWatchHistoryStore((state) => state.history);
+    const portalId = useAuthStore((state) => state.selectedPortal?.id ?? null);
+    const username = useAuthStore((state) => state.userInfo?.username ?? null);
+    const entries = useFavoritesStore((state) => state.entries);
     const GRID_GAP = spacing.sm;
-
+    const scope = useMemo(() => buildFavoritesScope(portalId, username), [portalId, username]);
     const favorites = useMemo(() => (
-        Object.values(history)
-            .filter((item) => !item.completed && item.progress > 0)
-            .sort((a, b) => b.lastWatched - a.lastWatched)
-    ), [history]);
+        entries
+            .filter((item) => item.scope === scope)
+            .sort((a, b) => b.addedAt - a.addedAt)
+    ), [entries, scope]);
 
     const favoriteItems = useMemo<ContentItem[]>(() => (
         favorites.map((item) => {
-            const isLive = item.type === 'live';
+            const isLive = item.kind === 'live';
+            const isEpisode = item.kind === 'episode';
             return {
-                id: item.id,
+                id: item.key,
                 name: item.title,
-                image: item.thumbnail,
-                type: item.type === 'movie' ? 'movie' : item.type === 'series' ? 'series' : 'live',
-                progress: isLive ? undefined : item.progress,
-                data: item.data || {
-                    stream_id: item.streamId,
-                    name: item.episodeTitle || item.title,
-                    stream_icon: item.thumbnail,
-                },
+                image: item.image,
+                type: isLive ? 'live' : isEpisode ? 'series' : item.kind,
+                rating: typeof item.rating === 'number' ? item.rating : Number(item.rating),
+                year: item.year,
+                data: item,
             } as ContentItem;
         })
     ), [favorites]);
@@ -61,8 +62,10 @@ const FavoritesScreen: React.FC<FavoritesScreenProps> = ({ navigation }) => {
     }, [viewportWidth, GRID_GAP]);
 
     const handlePress = useCallback((item: ContentItem) => {
-        if (item.type === 'live') {
-            const live = item.data as LiveStreamItem;
+        const favorite = item.data as FavoriteEntry;
+
+        if (favorite.kind === 'live') {
+            const live = favorite.data as LiveStreamItem;
             (navigation as any).navigate('FullscreenPlayer', {
                 type: 'live',
                 item: live,
@@ -70,14 +73,23 @@ const FavoritesScreen: React.FC<FavoritesScreenProps> = ({ navigation }) => {
             return;
         }
 
-        if (item.type === 'movie') {
-            const movie = item.data as MovieItem;
+        if (favorite.kind === 'movie') {
+            const movie = favorite.data as MovieItem;
             navigation.navigate('MovieDetail', { movie });
             return;
         }
 
-        if (item.type === 'series') {
-            const series = item.data as SeriesItem;
+        if (favorite.kind === 'episode') {
+            (navigation as any).navigate('FullscreenPlayer', {
+                type: 'series',
+                item: favorite.data,
+                episodeUrl: favorite.episodeUrl,
+            });
+            return;
+        }
+
+        if (favorite.kind === 'series') {
+            const series = favorite.data as SeriesItem;
             navigation.navigate('SeriesDetail', { series });
         }
     }, [navigation]);
@@ -155,7 +167,7 @@ const FavoritesScreen: React.FC<FavoritesScreenProps> = ({ navigation }) => {
                 contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER }]}
                 columnWrapperStyle={styles.row}
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews
+                removeClippedSubviews={false}
                 ListHeaderComponent={listHeader}
                 ListEmptyComponent={emptyState}
             />

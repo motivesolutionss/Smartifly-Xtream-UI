@@ -31,6 +31,7 @@ type ParamList = {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const DETAIL_FALLBACK_IMAGE = require('../../assets/fallback image.jpeg');
 
 const MovieDetailScreen: React.FC = () => {
     const insets = useSafeAreaInsets();
@@ -134,9 +135,8 @@ const MovieDetailScreen: React.FC = () => {
             {/* Header with backdrop */}
             <View style={styles.header}>
                 <FastImageComponent
-                    source={{
-                        uri: info.backdrop || info.cover || 'https://via.placeholder.com/400x200?text=No+Image'
-                    }}
+                    source={info.backdrop || info.cover ? { uri: info.backdrop || info.cover } : DETAIL_FALLBACK_IMAGE}
+                    fallbackSource={DETAIL_FALLBACK_IMAGE}
                     style={styles.backdrop}
                 />
                 <View style={[styles.headerOverlay, headerOverlayStyle]}>
@@ -150,7 +150,8 @@ const MovieDetailScreen: React.FC = () => {
             <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                 <View style={styles.infoRow}>
                     <FastImageComponent
-                        source={{ uri: info.cover }}
+                        source={info.cover ? { uri: info.cover } : DETAIL_FALLBACK_IMAGE}
+                        fallbackSource={DETAIL_FALLBACK_IMAGE}
                         style={styles.poster}
                     />
                     <View style={styles.infoText}>

@@ -281,10 +281,10 @@ const getRatingLevel = (rating: ContentRating): number => {
 /**
  * Parse content rating from various formats
  */
-export const parseContentRating = (rating: string | undefined): ContentRating => {
-    if (!rating) return 'UNRATED';
+export const parseContentRating = (rating: string | number | boolean | null | undefined): ContentRating => {
+    if (rating == null || rating === '') return 'UNRATED';
 
-    const normalized = rating.toUpperCase().trim();
+    const normalized = String(rating).toUpperCase().trim();
 
     // Direct matches
     if (CONTENT_RATINGS.includes(normalized as ContentRating)) {

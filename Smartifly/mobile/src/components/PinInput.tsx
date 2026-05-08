@@ -1,7 +1,7 @@
 /**
  * PIN Input Component
  *
- * 4-digit PIN entry with TV-optimized virtual numpad.
+ * 4-digit PIN entry with optional virtual numpad.
  * Features shake animation on incorrect PIN.
  *
  * @enterprise-grade
@@ -14,7 +14,6 @@ import {
     StyleSheet,
     Pressable,
     Animated,
-    Platform,
     TextInput,
 } from 'react-native';
 import { PIN_LENGTH } from '../store/profileStore';
@@ -37,7 +36,7 @@ interface PinInputProps {
     title?: string;
     /** Subtitle text */
     subtitle?: string;
-    /** Show virtual numpad (TV mode) */
+    /** Show virtual numpad */
     showNumpad?: boolean;
     /** Auto focus numpad on mount */
     autoFocus?: boolean;
@@ -58,7 +57,7 @@ const PinInput: React.FC<PinInputProps> = ({
     errorMessage,
     title = 'Enter PIN',
     subtitle,
-    showNumpad = Platform.isTV,
+    showNumpad = false,
     autoFocus = true,
     profileName,
     onCancel,
@@ -134,8 +133,6 @@ const PinInput: React.FC<PinInputProps> = ({
                 onPress={() => handleKeyPress(key)}
                 onFocus={() => setFocusedKey(key)}
                 onBlur={() => setFocusedKey(null)}
-                focusable
-                hasTVPreferredFocus={key === '1'}
                 style={[
                     styles.key,
                     isWide && styles.keyWide,
@@ -202,7 +199,7 @@ const PinInput: React.FC<PinInputProps> = ({
                 <Text style={styles.errorText}>{errorMessage}</Text>
             )}
 
-            {/* Numpad (TV) or Hidden Input (Mobile) */}
+            {/* Numpad or Hidden Input */}
             {showNumpad ? (
                 renderNumpad()
             ) : (

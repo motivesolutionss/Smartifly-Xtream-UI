@@ -38,11 +38,39 @@ interface SearchResults {
     series: XtreamSeries[];
 }
 
+const SEARCH_RESULT_LIMIT = 12;
+
 const SEARCH_WINDOW_SHORT_QUERY = 160;
 const SEARCH_WINDOW_LONG_QUERY = 320;
 const SEARCH_GRID_GAP = 16;
 const MOVIE_SERIES_COLUMNS = 4;
 const LIVE_COLUMNS = 3;
+
+const resolveMovieImage = (movie: any): string => {
+    return String(
+        movie?.stream_icon ||
+        movie?.movie_image ||
+        movie?.cover_big ||
+        movie?.cover ||
+        movie?.backdrop_path?.[0] ||
+        ''
+    );
+};
+
+const resolveSeriesImage = (series: any): string => {
+    return String(
+        series?.cover ||
+        series?.cover_big ||
+        series?.backdrop_path?.[0] ||
+        ''
+    );
+};
+
+const hasDisplayName = (item: any): boolean => String(item?.name || '').trim().length > 0;
+
+const sanitizeNamedItems = <T extends { name?: string }>(items: T[]): T[] => (
+    Array.isArray(items) ? items.filter((item) => item && hasDisplayName(item)) : []
+);
 
 // =============================================================================
 // TV SEARCH SCREEN
@@ -67,6 +95,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
 
     const [isSearching, setIsSearching] = useState(false);
     const [isPrepared, setIsPrepared] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
     const perf = usePerfProfile();
     const enableGlow = perf.enableFocusGlow;
 
@@ -81,11 +110,11 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     // Store access (narrow selectors to avoid re-render on other domains)
     const searchContentLimited = useStore((state) => state.searchContentLimited);
     const moviesLoaded = useStore((state) => state.content.movies.loaded);
-    const moviesItems = useStore((state) => state.content.movies.items);
+    const moviesCount = useStore((state) => state.content.movies.items.length);
     const seriesLoaded = useStore((state) => state.content.series.loaded);
-    const seriesItems = useStore((state) => state.content.series.items);
+    const seriesCount = useStore((state) => state.content.series.items.length);
     const liveLoaded = useStore((state) => state.content.live.loaded);
-    const liveItems = useStore((state) => state.content.live.items);
+    const liveCount = useStore((state) => state.content.live.items.length);
     const { filterContent } = useContentFilter();
 
     // =========================================================================
@@ -94,6 +123,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
 
     const performSearch = useCallback((searchText: string) => {
         setIsSearching(true);
+        setSearchError(null);
         try {
             const trimmed = searchText.trim();
             const domainWindow = trimmed.length >= 5
@@ -105,12 +135,14 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                 series: domainWindow,
             });
             setResults({
-                live: result.live,
-                movies: filterContent(result.movies),
-                series: filterContent(result.series),
+                live: sanitizeNamedItems(result.live),
+                movies: sanitizeNamedItems(filterContent(result.movies)),
+                series: sanitizeNamedItems(filterContent(result.series)),
             });
         } catch (e) {
             logger.error('TVSearch: search failed', e);
+            setResults({ live: [], movies: [], series: [] });
+            setSearchError(e instanceof Error ? e.message : 'Search failed');
         } finally {
             setIsSearching(false);
         }
@@ -130,44 +162,60 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
 
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
-            const getRandomItems = <T,>(items: T[], count: number): T[] => {
-                if (!items || items.length === 0) return [];
-                const max = Math.min(items.length, count);
-                const result: T[] = [];
-                const used = new Set<number>();
-                while (result.length < max) {
-                    const idx = Math.floor(Math.random() * items.length);
-                    if (!used.has(idx)) {
-                        used.add(idx);
-                        result.push(items[idx]);
+            try {
+                const {
+                    content: {
+                        movies: { items: moviesItems },
+                        series: { items: seriesItems },
+                        live: { items: liveItems },
+                    },
+                } = useStore.getState();
+
+                const getRandomItems = <T,>(items: T[], count: number): T[] => {
+                    if (!items || items.length === 0) return [];
+                    const max = Math.min(items.length, count);
+                    const result: T[] = [];
+                    const used = new Set<number>();
+                    while (result.length < max) {
+                        const idx = Math.floor(Math.random() * items.length);
+                        if (!used.has(idx)) {
+                            used.add(idx);
+                            result.push(items[idx]);
+                        }
                     }
-                }
-                return result;
-            };
+                    return result;
+                };
 
-            const movieLimit = perf.tier === 'low' ? 120 : 200;
-            const seriesLimit = perf.tier === 'low' ? 120 : 200;
-            const liveLimit = perf.tier === 'low' ? 80 : 120;
-            const moviePool = filterContent(moviesItems.slice(0, movieLimit));
-            const seriesPool = filterContent(seriesItems.slice(0, seriesLimit));
-            const livePool = liveItems.slice(0, liveLimit);
+                const movieLimit = perf.tier === 'low' ? 120 : 200;
+                const seriesLimit = perf.tier === 'low' ? 120 : 200;
+                const liveLimit = perf.tier === 'low' ? 80 : 120;
+                const moviePool = filterContent(moviesItems.slice(0, movieLimit));
+                const seriesPool = filterContent(seriesItems.slice(0, seriesLimit));
+                const livePool = sanitizeNamedItems(liveItems.slice(0, liveLimit));
 
-            setSuggestedContent({
-                movies: getRandomItems(moviePool, 10),
-                series: getRandomItems(seriesPool, 10),
-                live: getRandomItems(livePool, 10),
-            });
-            setIsPrepared(true);
+                setSuggestedContent({
+                    movies: getRandomItems(sanitizeNamedItems(moviePool), 10),
+                    series: getRandomItems(sanitizeNamedItems(seriesPool), 10),
+                    live: getRandomItems(livePool, 10),
+                });
+                setSearchError(null);
+            } catch (error) {
+                logger.error('TVSearch: suggestion prep failed', error);
+                setSuggestedContent({ movies: [], series: [], live: [] });
+                setSearchError('Failed to prepare search suggestions');
+            } finally {
+                setIsPrepared(true);
+            }
         });
 
         return () => task.cancel();
     }, [
         filterContent,
-        moviesItems,
+        moviesCount,
         moviesLoaded,
-        seriesItems,
+        seriesCount,
         seriesLoaded,
-        liveItems,
+        liveCount,
         liveLoaded,
         perf.tier
     ]);
@@ -247,25 +295,26 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
 
     // Helper function to safely extract IDs and properties from different content types
     const getItemId = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string | number => {
-        if ('stream_id' in item) return item.stream_id;
-        if ('series_id' in item) return item.series_id;
+        if ('stream_id' in item) return String(item.stream_id || (item as any)?.id || '');
+        if ('series_id' in item) return String(item.series_id || (item as any)?.id || '');
         return 0;
     }, []);
 
     const getItemName = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
-        return item.name;
+        return String(item?.name || 'Untitled');
     }, []);
 
     const getItemImage = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
+        if ('series_id' in item) return resolveSeriesImage(item);
+        if ('container_extension' in item || 'rating_5based' in item) return resolveMovieImage(item);
         if ('stream_icon' in item && item.stream_icon) return item.stream_icon;
-        if ('cover' in item && item.cover) return item.cover;
         return '';
     }, []);
 
     const limitedResults = useMemo(() => ({
-        movies: results.movies.slice(0, 12),
-        series: results.series.slice(0, 12),
-        live: results.live.slice(0, 12),
+        movies: sanitizeNamedItems(results.movies).slice(0, SEARCH_RESULT_LIMIT),
+        series: sanitizeNamedItems(results.series).slice(0, SEARCH_RESULT_LIMIT),
+        live: sanitizeNamedItems(results.live).slice(0, SEARCH_RESULT_LIMIT),
     }), [results]);
 
     const cardLayout = useMemo(() => {
@@ -294,7 +343,8 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     }, []);
 
     const renderResultSection = (title: string, data: (XtreamLiveStream | XtreamMovie | XtreamSeries)[], type: 'live' | 'movie' | 'series') => {
-        if (!data || data.length === 0) return null;
+        const safeData = sanitizeNamedItems(data);
+        if (!safeData.length) return null;
         const isLiveSection = type === 'live';
         const columns = isLiveSection ? LIVE_COLUMNS : MOVIE_SERIES_COLUMNS;
         const sectionCardWidth = isLiveSection ? cardLayout.liveWidth : cardLayout.movieSeriesWidth;
@@ -302,9 +352,9 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
 
         return (
             <View style={styles.resultSection}>
-                <Text style={styles.sectionTitle}>{title} ({data.length})</Text>
+                <Text style={styles.sectionTitle}>{title} ({safeData.length})</Text>
                 <View style={styles.cardsGrid}>
-                    {data.map((item, index) => (
+                    {safeData.map((item, index) => (
                         <View
                             key={getItemId(item)}
                             style={[
@@ -401,16 +451,23 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                                     const domainWindow = suggestion.length >= 5
                                         ? SEARCH_WINDOW_LONG_QUERY
                                         : SEARCH_WINDOW_SHORT_QUERY;
-                                    const next = useStore.getState().searchContentLimited(suggestion, {
-                                        live: domainWindow,
-                                        movies: domainWindow,
-                                        series: domainWindow,
-                                    });
-                                    setResults({
-                                        live: next.live,
-                                        movies: filterContent(next.movies),
-                                        series: filterContent(next.series),
-                                    });
+                                    try {
+                                        const next = useStore.getState().searchContentLimited(suggestion, {
+                                            live: domainWindow,
+                                            movies: domainWindow,
+                                            series: domainWindow,
+                                        });
+                                        setResults({
+                                            live: sanitizeNamedItems(next.live),
+                                            movies: sanitizeNamedItems(filterContent(next.movies)),
+                                            series: sanitizeNamedItems(filterContent(next.series)),
+                                        });
+                                        setSearchError(null);
+                                    } catch (error) {
+                                        logger.error('TVSearch: suggestion search failed', error);
+                                        setResults({ live: [], movies: [], series: [] });
+                                        setSearchError(error instanceof Error ? error.message : 'Search failed');
+                                    }
                                 }}
                             >
                                 <Text style={styles.suggestionText} numberOfLines={1}>
@@ -462,7 +519,11 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
                         ) : (
                             // SEARCH RESULTS
                             <>
-                                {results.movies.length === 0 && results.series.length === 0 && results.live.length === 0 ? (
+                                {searchError ? (
+                                    <View style={styles.centerContainer}>
+                                        <Text style={styles.emptyText}>Search unavailable right now.</Text>
+                                    </View>
+                                ) : results.movies.length === 0 && results.series.length === 0 && results.live.length === 0 ? (
                                     <View style={styles.centerContainer}>
                                         <Text style={styles.emptyText}>No results found for "{query}"</Text>
                                     </View>

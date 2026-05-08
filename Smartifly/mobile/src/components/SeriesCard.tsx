@@ -10,6 +10,8 @@ interface SeriesCardProps {
 
 const SeriesCard = ({ item, onPress }: SeriesCardProps) => {
     const seasonCount = item.num_seasons || item.episode_run_time || null;
+    const rating = Number(item.rating_5based);
+    const hasRating = Number.isFinite(rating) && rating > 0;
 
     return (
         <TouchableOpacity style={styles.card} onPress={() => onPress(item)}>
@@ -19,10 +21,10 @@ const SeriesCard = ({ item, onPress }: SeriesCardProps) => {
                 showLoader={false}
             />
 
-            {item.rating_5based > 0 && (
+            {hasRating && (
                 <View style={styles.ratingBadge}>
                     <Icon name="star" size={10} color={colors.warning} />
-                    <Text style={styles.ratingText}>{item.rating_5based?.toFixed(1)}</Text>
+                    <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
                 </View>
             )}
 

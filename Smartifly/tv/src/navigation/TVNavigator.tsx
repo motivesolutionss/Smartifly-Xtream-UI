@@ -14,6 +14,7 @@ import { colors, scale } from '../theme';
 import useStore from '@smartifly/shared/src/store';
 import { logger } from '../config';
 import BlockedScreen from '../screens/TVBlockedScreen';
+import TVErrorBoundary from '../components/TVErrorBoundary';
 
 // TV Screens
 import TVLoginScreen from '../screens/login/TVLoginScreen';
@@ -28,6 +29,28 @@ import TVAccountSwitcherScreen from '../screens/account/TVAccountSwitcherScreen'
 import { TVProfileSwitcher, TVProfileEditor, TVPinEntry } from '../screens/profiles';
 import { useProfileStore } from '@smartifly/shared/src/store/profileStore';
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const withTVBoundary = <P extends object>(Component: React.ComponentType<P>, screenName: string) => {
+  const Wrapped: React.FC<P> = (props) => (
+    <TVErrorBoundary screenName={screenName}>
+      <Component {...props} />
+    </TVErrorBoundary>
+  );
+  Wrapped.displayName = `${screenName}WithBoundary`;
+  return Wrapped;
+};
+
+const BoundedBlockedScreen = withTVBoundary(BlockedScreen, 'Blocked');
+const BoundedTVLoginScreen = withTVBoundary(TVLoginScreen, 'Login');
+const BoundedTVAccountSwitcherScreen = withTVBoundary(TVAccountSwitcherScreen, 'TVAccountSwitcher');
+const BoundedTVLoadingScreen = withTVBoundary(TVLoadingScreen, 'Loading');
+const BoundedTVHomeScreen = withTVBoundary(TVHomeScreen, 'TVShell');
+const BoundedTVPlayerScreen = withTVBoundary(TVPlayerScreen, 'FullscreenPlayer');
+const BoundedTVMovieDetailScreen = withTVBoundary(TVMovieDetailScreen, 'TVMovieDetail');
+const BoundedTVSeriesDetailScreen = withTVBoundary(TVSeriesDetailScreen, 'TVSeriesDetail');
+const BoundedTVProfileSwitcher = withTVBoundary(TVProfileSwitcher, 'ProfileSwitcher');
+const BoundedTVProfileEditor = withTVBoundary(TVProfileEditor, 'ProfileEditor');
+const BoundedTVPinEntry = withTVBoundary(TVPinEntry, 'PinEntry');
 
 const StartupGateScreen: React.FC = () => {
   const logoPulse = React.useRef(new Animated.Value(0)).current;
@@ -181,21 +204,21 @@ const TVNavigator: React.FC = () => {
         gestureEnabled: false,
       }}
     >
-      <Stack.Screen name="Blocked" component={BlockedScreen} initialParams={{
+      <Stack.Screen name="Blocked" component={BoundedBlockedScreen} initialParams={{
         status: fatherControl.status,
         message: fatherControl.message ?? undefined,
       }} />
-      <Stack.Screen name="Login" component={TVLoginScreen} />
-      <Stack.Screen name="TVAccountSwitcher" component={TVAccountSwitcherScreen} />
-      <Stack.Screen name="Loading" component={TVLoadingScreen} />
-      <Stack.Screen name="TVShell" component={TVHomeScreen} />
-      <Stack.Screen name="FullscreenPlayer" component={TVPlayerScreen} />
-      <Stack.Screen name="TVMovieDetail" component={TVMovieDetailScreen} />
-      <Stack.Screen name="TVSeriesDetail" component={TVSeriesDetailScreen} />
+      <Stack.Screen name="Login" component={BoundedTVLoginScreen} />
+      <Stack.Screen name="TVAccountSwitcher" component={BoundedTVAccountSwitcherScreen} />
+      <Stack.Screen name="Loading" component={BoundedTVLoadingScreen} />
+      <Stack.Screen name="TVShell" component={BoundedTVHomeScreen} />
+      <Stack.Screen name="FullscreenPlayer" component={BoundedTVPlayerScreen} />
+      <Stack.Screen name="TVMovieDetail" component={BoundedTVMovieDetailScreen} />
+      <Stack.Screen name="TVSeriesDetail" component={BoundedTVSeriesDetailScreen} />
       {/* Profile Screens (Parental Controls) */}
-      <Stack.Screen name="ProfileSwitcher" component={TVProfileSwitcher} />
-      <Stack.Screen name="ProfileEditor" component={TVProfileEditor} />
-      <Stack.Screen name="PinEntry" component={TVPinEntry} />
+      <Stack.Screen name="ProfileSwitcher" component={BoundedTVProfileSwitcher} />
+      <Stack.Screen name="ProfileEditor" component={BoundedTVProfileEditor} />
+      <Stack.Screen name="PinEntry" component={BoundedTVPinEntry} />
     </Stack.Navigator>
   );
 };

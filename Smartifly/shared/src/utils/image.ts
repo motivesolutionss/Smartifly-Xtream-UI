@@ -36,6 +36,51 @@ export const normalizeImageUri = (uri?: string | null) => {
     return trimmed;
 };
 
+export const optimizeCardImageUri = (uri?: string | null) => {
+    const normalized = normalizeImageUri(uri);
+    if (!normalized) return '';
+
+    try {
+        let optimized = encodeURI(normalized);
+
+        // Many portals proxy TMDB originals, which are often much heavier than needed for rail cards.
+        // Downshift to a card-friendly size to improve decode/render stability on TV hardware.
+        optimized = optimized.replace(
+            /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
+            '$1w500/'
+        );
+
+        return optimized;
+    } catch {
+        return encodeURI(normalized);
+    }
+};
+
+export const optimizeCardImageUriForVariant = (
+    uri?: string | null,
+    variant: 'poster' | 'thumbnail' | 'channel' = 'poster'
+) => {
+    const normalized = normalizeImageUri(uri);
+    if (!normalized) return '';
+
+    const tmdbSize = variant === 'thumbnail'
+        ? 'w500'
+        : variant === 'channel'
+            ? 'w300'
+            : 'w342';
+
+    try {
+        let optimized = encodeURI(normalized);
+        optimized = optimized.replace(
+            /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
+            `$1${tmdbSize}/`
+        );
+        return optimized;
+    } catch {
+        return encodeURI(normalized);
+    }
+};
+
 export const isRemoteImageUri = (uri?: string | null) => {
     const normalized = normalizeImageUri(uri);
     return normalized.startsWith('http://') || normalized.startsWith('https://');

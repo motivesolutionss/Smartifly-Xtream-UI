@@ -66,6 +66,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
 
     const startPrefetch = useCallback(async () => {
         logger.info('Starting content prefetch...');
+        const prefetchPromise = prefetchAllContent();
         const isLicenseOK = await verifyFatherControl();
         if (!isLicenseOK) {
             const { fatherControl } = useAppStatusStore.getState();
@@ -81,7 +82,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
             });
             return;
         }
-        const success = await prefetchAllContent();
+        const success = await prefetchPromise;
 
         if (!success && error) {
             logger.error('Prefetch failed', error);

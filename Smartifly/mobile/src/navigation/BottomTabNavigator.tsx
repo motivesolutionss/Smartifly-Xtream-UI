@@ -27,7 +27,7 @@ const BottomTabNavigator: React.FC = () => {
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        freezeOnBlur: false,
+        freezeOnBlur: true,
         lazy: false,
       }}
       initialRouteName="HomeTab"

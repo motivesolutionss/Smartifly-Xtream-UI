@@ -5,11 +5,11 @@ import {
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    ScrollView,
     ActivityIndicator,
     Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
 import { colors, spacing, borderRadius, Icon } from '../../../theme';
 import NavBar from '../../../components/NavBar';
 import ContentRow, { RowType } from '../home/components/ContentRow';
@@ -35,6 +35,56 @@ interface SuggestedContent {
     series: XtreamSeries[];
     live: XtreamLiveStream[];
 }
+
+type SearchListItem =
+    | { key: string; kind: 'heading'; title: string }
+    | { key: string; kind: 'status'; title: string; message?: string; loading?: boolean }
+    | {
+        key: string;
+        kind: 'row';
+        title: string;
+        rowType: RowType;
+        items: ContentItem[];
+        accentColor?: string;
+    };
+
+const resolveMovieImage = (movie: any): string => String(
+    movie?.stream_icon ||
+    movie?.movie_image ||
+    movie?.cover_big ||
+    movie?.cover ||
+    movie?.backdrop_path?.[0] ||
+    ''
+);
+
+const resolveSeriesImage = (series: any): string => String(
+    series?.cover ||
+    series?.cover_big ||
+    series?.backdrop_path?.[0] ||
+    ''
+);
+
+const hasDisplayName = (item: any): boolean => String(item?.name || '').trim().length > 0;
+
+const sanitizeNamedItems = <T extends { name?: string }>(items: T[]): T[] => (
+    Array.isArray(items) ? items.filter((item) => item && hasDisplayName(item)) : []
+);
+
+const selectSpreadItems = <T,>(items: T[], count: number): T[] => {
+    if (!items || items.length === 0 || count <= 0) return [];
+    if (items.length <= count) return items.slice(0, count);
+
+    const result: T[] = [];
+    const max = Math.min(items.length, count);
+    const stride = items.length / max;
+
+    for (let index = 0; index < max; index += 1) {
+        const itemIndex = Math.min(items.length - 1, Math.floor(index * stride));
+        result.push(items[itemIndex]);
+    }
+
+    return result;
+};
 
 // =============================================================================
 // CONFIG
@@ -63,16 +113,15 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     });
     const [isSearching, setIsSearching] = useState(false);
     const [isPrepared, setIsPrepared] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
 
     const searchContentLimited = useContentStore((state) => state.searchContentLimited);
     const moviesLoaded = useContentStore((state) => state.content.movies.loaded);
-    const moviesItems = useContentStore((state) => state.content.movies.items);
+    const moviesCount = useContentStore((state) => state.content.movies.items.length);
     const seriesLoaded = useContentStore((state) => state.content.series.loaded);
-    const seriesItems = useContentStore((state) => state.content.series.items);
+    const seriesCount = useContentStore((state) => state.content.series.items.length);
     const liveLoaded = useContentStore((state) => state.content.live.loaded);
-    const liveItems = useContentStore((state) => state.content.live.items);
-    const contentPartial = useContentStore((state) => state.contentPartial);
-    const ensureFullContent = useContentStore((state) => state.ensureFullContent);
+    const liveCount = useContentStore((state) => state.content.live.items.length);
     const { filterContent } = useContentFilter();
 
     const performSearch = useCallback((searchText: string) => {
@@ -83,6 +132,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         }
 
         setIsSearching(true);
+        setSearchError(null);
         try {
             const domainWindow = trimmed.length >= 5
                 ? SEARCH_WINDOW_LONG_QUERY
@@ -93,28 +143,18 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
                 series: domainWindow,
             });
             setResults({
-                live: result.live,
-                movies: filterContent(result.movies),
-                series: filterContent(result.series),
+                live: sanitizeNamedItems(result.live),
+                movies: sanitizeNamedItems(filterContent(result.movies)),
+                series: sanitizeNamedItems(filterContent(result.series)),
             });
         } catch (error) {
             console.warn('[Search] Search failed', error);
+            setResults({ live: [], movies: [], series: [] });
+            setSearchError(error instanceof Error ? error.message : 'Search failed');
         } finally {
             setIsSearching(false);
         }
     }, [filterContent, searchContentLimited]);
-
-    useEffect(() => {
-        if (contentPartial.live) {
-            ensureFullContent('live');
-        }
-        if (contentPartial.movies) {
-            ensureFullContent('movies');
-        }
-        if (contentPartial.series) {
-            ensureFullContent('series');
-        }
-    }, [contentPartial.live, contentPartial.movies, contentPartial.series, ensureFullContent]);
 
     // Load suggested content (profile-aware)
     useEffect(() => {
@@ -126,35 +166,36 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
 
         setIsPrepared(false);
         const task = scheduleIdleWork(() => {
-            const getRandomItems = <T,>(items: T[], count: number): T[] => {
-                if (!items || items.length === 0) return [];
-                const max = Math.min(items.length, count);
-                const result: T[] = [];
-                const used = new Set<number>();
-                while (result.length < max) {
-                    const idx = Math.floor(Math.random() * items.length);
-                    if (!used.has(idx)) {
-                        used.add(idx);
-                        result.push(items[idx]);
-                    }
-                }
-                return result;
-            };
+            try {
+                const {
+                    content: {
+                        movies: { items: moviesItems },
+                        series: { items: seriesItems },
+                        live: { items: liveItems },
+                    },
+                } = useContentStore.getState();
 
-            const moviePool = filterContent(moviesItems.slice(0, MOVIE_POOL_LIMIT));
-            const seriesPool = filterContent(seriesItems.slice(0, SERIES_POOL_LIMIT));
-            const livePool = liveItems.slice(0, LIVE_POOL_LIMIT);
+                const moviePool = sanitizeNamedItems(filterContent(moviesItems.slice(0, MOVIE_POOL_LIMIT)));
+                const seriesPool = sanitizeNamedItems(filterContent(seriesItems.slice(0, SERIES_POOL_LIMIT)));
+                const livePool = sanitizeNamedItems(liveItems.slice(0, LIVE_POOL_LIMIT));
 
-            setSuggestedContent({
-                movies: getRandomItems(moviePool, SUGGESTION_LIMIT),
-                series: getRandomItems(seriesPool, SUGGESTION_LIMIT),
-                live: getRandomItems(livePool, SUGGESTION_LIMIT),
-            });
-            setIsPrepared(true);
+                setSuggestedContent({
+                    movies: selectSpreadItems(moviePool, SUGGESTION_LIMIT),
+                    series: selectSpreadItems(seriesPool, SUGGESTION_LIMIT),
+                    live: selectSpreadItems(livePool, SUGGESTION_LIMIT),
+                });
+                setSearchError(null);
+            } catch (error) {
+                console.warn('[Search] Suggestion preparation failed', error);
+                setSuggestedContent({ movies: [], series: [], live: [] });
+                setSearchError('Failed to prepare search suggestions');
+            } finally {
+                setIsPrepared(true);
+            }
         });
 
         return () => task.cancel();
-    }, [filterContent, liveItems, liveLoaded, moviesItems, moviesLoaded, seriesItems, seriesLoaded]);
+    }, [filterContent, liveCount, liveLoaded, moviesCount, moviesLoaded, seriesCount, seriesLoaded]);
 
     // Debounced search
     useEffect(() => {
@@ -226,7 +267,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         limitedResults.movies.map((movie) => ({
             id: String(movie.stream_id),
             name: movie.name,
-            image: movie.stream_icon,
+            image: resolveMovieImage(movie),
             type: 'movie',
             rating: movie.rating_5based,
             data: movie,
@@ -237,7 +278,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         limitedResults.series.map((series) => ({
             id: String(series.series_id),
             name: series.name,
-            image: series.cover,
+            image: resolveSeriesImage(series),
             type: 'series',
             rating: series.rating_5based,
             data: series,
@@ -258,7 +299,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         suggestedContent.movies.map((movie) => ({
             id: String(movie.stream_id),
             name: movie.name,
-            image: movie.stream_icon,
+            image: resolveMovieImage(movie),
             type: 'movie',
             rating: movie.rating_5based,
             data: movie,
@@ -269,7 +310,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         suggestedContent.series.map((series) => ({
             id: String(series.series_id),
             name: series.name,
-            image: series.cover,
+            image: resolveSeriesImage(series),
             type: 'series',
             rating: series.rating_5based,
             data: series,
@@ -297,15 +338,129 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
 
     const renderSection = useCallback((title: string, type: RowType, items: ContentItem[], accentColor?: string) => {
         if (!items.length) return null;
+        return {
+            key: `${type}-${title}`,
+            kind: 'row' as const,
+            title,
+            rowType: type,
+            items,
+            accentColor,
+        };
+    }, []);
+
+    const listData = useMemo<SearchListItem[]>(() => {
+        const items: SearchListItem[] = [];
+
+        if (isSearching) {
+            items.push({
+                key: 'status-searching',
+                kind: 'status',
+                title: 'Searching...',
+                loading: true,
+            });
+            return items;
+        }
+
+        if (trimmedQuery.length < SEARCH_MIN_CHARS) {
+            items.push({
+                key: 'heading-suggested',
+                kind: 'heading',
+                title: 'Suggested For You',
+            });
+
+            if (!isPrepared) {
+                items.push({
+                    key: 'status-preparing',
+                    kind: 'status',
+                    title: 'Preparing suggestions...',
+                    loading: true,
+                });
+                return items;
+            }
+
+            if (!suggestedMovies.length && !suggestedSeries.length && !suggestedLive.length) {
+                items.push({
+                    key: 'status-empty-suggestions',
+                    kind: 'status',
+                    title: `Type at least ${SEARCH_MIN_CHARS} characters to search`,
+                });
+                return items;
+            }
+
+            const moviesRow = renderSection('Popular Movies', 'movies', suggestedMovies, colors.movies);
+            const seriesRow = renderSection('Trending Series', 'series', suggestedSeries, colors.series);
+            const liveRow = renderSection('Live Channels', 'live', suggestedLive, colors.live);
+            if (moviesRow) items.push(moviesRow);
+            if (seriesRow) items.push(seriesRow);
+            if (liveRow) items.push(liveRow);
+            return items;
+        }
+
+        if (searchError) {
+            items.push({
+                key: 'status-error',
+                kind: 'status',
+                title: 'Search unavailable right now.',
+                message: searchError,
+            });
+            return items;
+        }
+
+        if (!hasResults) {
+            items.push({
+                key: 'status-no-results',
+                kind: 'status',
+                title: `No results found for "${trimmedQuery}"`,
+            });
+            return items;
+        }
+
+        const moviesRow = renderSection('Movies', 'movies', moviesResultItems, colors.movies);
+        const seriesRow = renderSection('Series', 'series', seriesResultItems, colors.series);
+        const liveRow = renderSection('Live TV', 'live', liveResultItems, colors.live);
+        if (moviesRow) items.push(moviesRow);
+        if (seriesRow) items.push(seriesRow);
+        if (liveRow) items.push(liveRow);
+        return items;
+    }, [
+        hasResults,
+        isPrepared,
+        isSearching,
+        liveResultItems,
+        moviesResultItems,
+        renderSection,
+        searchError,
+        seriesResultItems,
+        suggestedLive,
+        suggestedMovies,
+        suggestedSeries,
+        trimmedQuery,
+    ]);
+
+    const renderListItem = useCallback(({ item }: { item: SearchListItem }) => {
+        if (item.kind === 'heading') {
+            return <Text style={styles.sectionHeading}>{item.title}</Text>;
+        }
+
+        if (item.kind === 'status') {
+            return (
+                <View style={styles.centerContent}>
+                    {item.loading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                    <Text style={styles.helperText}>{item.title}</Text>
+                    {item.message ? <Text style={styles.helperSubtext}>{item.message}</Text> : null}
+                </View>
+            );
+        }
+
         return (
             <ContentRow
-                title={title}
-                type={type}
-                items={items}
+                title={item.title}
+                type={item.rowType}
+                items={item.items}
                 onItemPress={handleContentPress}
                 showSeeAll={false}
                 maxItems={RESULT_LIMIT}
-                accentColor={accentColor}
+                accentColor={item.accentColor}
             />
         );
     }, [handleContentPress]);
@@ -360,48 +515,18 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
                 </View>
             )}
 
-            <ScrollView
-                style={styles.resultsScroll}
-                contentContainerStyle={[styles.resultsContent, { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER }]}
+            <FlashList
+                data={listData}
+                renderItem={renderListItem}
+                keyExtractor={(item) => item.key}
+                // @ts-ignore
+                estimatedItemSize={220}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
-            >
-                {isSearching ? (
-                    <View style={styles.centerContent}>
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={styles.helperText}>Searching...</Text>
-                    </View>
-                ) : trimmedQuery.length < SEARCH_MIN_CHARS ? (
-                    <>
-                        <Text style={styles.sectionHeading}>Suggested For You</Text>
-                        {!isPrepared && (
-                            <View style={styles.centerContent}>
-                                <ActivityIndicator size="small" color={colors.primary} />
-                            </View>
-                        )}
-                        {isPrepared && !suggestedMovies.length && !suggestedSeries.length && !suggestedLive.length && (
-                            <View style={styles.centerContent}>
-                                <Text style={styles.helperText}>
-                                    Type at least {SEARCH_MIN_CHARS} characters to search
-                                </Text>
-                            </View>
-                        )}
-                        {renderSection('Popular Movies', 'movies', suggestedMovies, colors.movies)}
-                        {renderSection('Trending Series', 'series', suggestedSeries, colors.series)}
-                        {renderSection('Live Channels', 'live', suggestedLive, colors.live)}
-                    </>
-                ) : !hasResults ? (
-                    <View style={styles.centerContent}>
-                        <Text style={styles.helperText}>No results found for "{trimmedQuery}"</Text>
-                    </View>
-                ) : (
-                    <>
-                        {renderSection('Movies', 'movies', moviesResultItems, colors.movies)}
-                        {renderSection('Series', 'series', seriesResultItems, colors.series)}
-                        {renderSection('Live TV', 'live', liveResultItems, colors.live)}
-                    </>
-                )}
-            </ScrollView>
+                removeClippedSubviews={false}
+                contentContainerStyle={[styles.resultsContent, { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER }]}
+                getItemType={(item) => item.kind}
+            />
         </View>
     );
 };
@@ -484,9 +609,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    resultsScroll: {
-        flex: 1,
-    },
     resultsContent: {
         paddingTop: spacing.sm,
         paddingBottom: spacing.xl,
@@ -516,6 +638,14 @@ const styles = StyleSheet.create({
         marginTop: spacing.sm,
         textAlign: 'center',
         paddingHorizontal: spacing.md,
+    },
+    helperSubtext: {
+        color: colors.textMuted,
+        fontSize: 12,
+        marginTop: spacing.xs,
+        textAlign: 'center',
+        paddingHorizontal: spacing.md,
+        opacity: 0.8,
     },
 });
 

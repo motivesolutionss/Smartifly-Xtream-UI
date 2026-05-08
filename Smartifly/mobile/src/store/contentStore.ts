@@ -206,6 +206,7 @@ let cachedContentStorage: MMKV | null = null;
 let mmkvUnavailableLogged = false;
 let refreshCheckInFlight: Promise<void> | null = null;
 let lastRefreshCheckAt = 0;
+let latestSearchIndexBuildToken = 0;
 
 // =============================================================================
 // CONTENT CACHE HELPERS
@@ -312,6 +313,51 @@ const buildSearchIndexChunked = <T extends { name?: string }>(
     };
 
     run();
+};
+
+const buildSearchIndexChunkedAsync = <T extends { name?: string }>(
+    items: T[]
+): Promise<SearchIndexEntry<T>[]> => (
+    new Promise((resolve) => {
+        buildSearchIndexChunked(items, resolve);
+    })
+);
+
+const buildSearchIndexBundleAsync = async (
+    liveItems: XtreamLiveStream[],
+    movieItems: XtreamMovie[],
+    seriesItems: XtreamSeries[]
+): Promise<SearchIndex> => {
+    const [live, movies, series] = await Promise.all([
+        buildSearchIndexChunkedAsync(liveItems),
+        buildSearchIndexChunkedAsync(movieItems),
+        buildSearchIndexChunkedAsync(seriesItems),
+    ]);
+
+    return { live, movies, series };
+};
+
+const invalidateSearchIndexBuilds = () => {
+    latestSearchIndexBuildToken += 1;
+};
+
+const scheduleSearchIndexRebuild = (
+    set: (partial: Partial<ContentStore> | ((state: ContentStore) => Partial<ContentStore>)) => void,
+    get: () => ContentStore
+) => {
+    const token = ++latestSearchIndexBuildToken;
+    const {
+        content: {
+            live: { items: liveItems },
+            movies: { items: movieItems },
+            series: { items: seriesItems },
+        },
+    } = get();
+
+    buildSearchIndexBundleAsync(liveItems, movieItems, seriesItems).then((searchIndex) => {
+        if (token !== latestSearchIndexBuildToken) return;
+        set({ searchIndex });
+    });
 };
 
 const buildCategoryIndex = <T extends { category_id?: string | number }>(
@@ -429,11 +475,13 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
     clearCredentials: () => {
         cachedApi = null;
+        invalidateSearchIndexBuilds();
         set({ credentials: null });
     },
 
     resetForLogin: (clearPersisted) => {
         cachedApi = null;
+        invalidateSearchIndexBuilds();
         if (clearPersisted) {
             clearPersistedContentCache();
         }
@@ -676,15 +724,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
             });
 
             logger.info(`Prefetch complete: ${safeLiveStreams.length} channels, ${safeVodStreams.length} movies, ${safeSeriesList.length} series`);
-            buildSearchIndexChunked(normalizedLiveItems, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, live: index } }));
-            });
-            buildSearchIndexChunked(normalizedMovieItems, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, movies: index } }));
-            });
-            buildSearchIndexChunked(normalizedSeriesItems, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, series: index } }));
-            });
+            scheduleSearchIndexRebuild(set, get);
 
             persistContentCacheToDisk(get().content, partialFlags);
             return true;
@@ -812,15 +852,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                 contentCacheLoaded: true,
             });
 
-            buildSearchIndexChunked(normalizedContent.live.items, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, live: index } }));
-            });
-            buildSearchIndexChunked(normalizedContent.movies.items, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, movies: index } }));
-            });
-            buildSearchIndexChunked(normalizedContent.series.items, (index) => {
-                set((state) => ({ searchIndex: { ...state.searchIndex, series: index } }));
-            });
+            scheduleSearchIndexRebuild(set, get);
         } catch (error) {
             logger.error('Content cache: load failed', error);
             set({ contentCacheLoaded: true });
@@ -862,9 +894,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                     },
                     contentPartial: { ...state.contentPartial, live: false },
                 }));
-                buildSearchIndexChunked(normalizedLiveItems, (index) => {
-                    set((state) => ({ searchIndex: { ...state.searchIndex, live: index } }));
-                });
+                scheduleSearchIndexRebuild(set, get);
             }
 
             if (domain === 'movies') {
@@ -889,9 +919,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                     },
                     contentPartial: { ...state.contentPartial, movies: false },
                 }));
-                buildSearchIndexChunked(normalizedMovieItems, (index) => {
-                    set((state) => ({ searchIndex: { ...state.searchIndex, movies: index } }));
-                });
+                scheduleSearchIndexRebuild(set, get);
             }
 
             if (domain === 'series') {
@@ -916,9 +944,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                     },
                     contentPartial: { ...state.contentPartial, series: false },
                 }));
-                buildSearchIndexChunked(normalizedSeriesItems, (index) => {
-                    set((state) => ({ searchIndex: { ...state.searchIndex, series: index } }));
-                });
+                scheduleSearchIndexRebuild(set, get);
             }
 
             persistContentCacheToDisk(get().content, get().contentPartial);
@@ -933,6 +959,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
     clearContentCache: () => {
         clearPersistedContentCache();
+        invalidateSearchIndexBuilds();
         set({
             content: initialContent,
             searchIndex: initialSearchIndex,
@@ -1198,6 +1225,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
     resetContentState: (options) => {
         cachedApi = null;
+        invalidateSearchIndexBuilds();
         set({
             content: initialContent,
             searchIndex: initialSearchIndex,

@@ -295,13 +295,13 @@ const TVSidebar = ({
     if (!onHomeNodeReady || !homeRef.current) return;
     const node = findNodeHandle(homeRef.current) ?? undefined;
     if (node) onHomeNodeReady(node);
-  }, [activeRoute, onHomeNodeReady]);
+  }, [onHomeNodeReady]);
 
   useEffect(() => {
     if (!onSearchNodeReady || !searchRef.current) return;
     const node = findNodeHandle(searchRef.current) ?? undefined;
     if (node) onSearchNodeReady(node);
-  }, [activeRoute, onSearchNodeReady, searchRef]);
+  }, [onSearchNodeReady, searchRef]);
 
   const setSidebarExpanded = useCallback((expanded: boolean) => {
     if (isExpandedRef.current === expanded) return;

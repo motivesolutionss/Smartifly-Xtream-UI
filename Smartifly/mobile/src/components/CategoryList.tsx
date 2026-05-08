@@ -86,7 +86,7 @@ const CategoryList: React.FC<CategoryListProps> = ({
             contentContainerStyle={styles.categoryListContent}
             renderItem={renderItem}
             // Performance optimizations
-            removeClippedSubviews={true}
+            removeClippedSubviews={false}
             initialNumToRender={10}
             maxToRenderPerBatch={10}
         />

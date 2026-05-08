@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { View, StyleSheet, StyleProp, Animated, Easing } from 'react-native';
 import FastImage, { ImageStyle, OnLoadEvent } from '@d11/react-native-fast-image';
 import { colors } from '../theme';
-import { usePerfProfile } from '../utils/perf';
+import { getCurrentPerfProfile } from '../utils/perf';
 import {
     isImageWarm,
     isRemoteImageUri,
@@ -21,6 +21,7 @@ interface Props {
     source: any;
     style?: StyleProp<ImageStyle>;
     showLoader?: boolean;
+    suppressStateOverlays?: boolean;
     fallbackSource?: any;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
     priority?: 'low' | 'normal' | 'high';
@@ -54,6 +55,7 @@ const FastImageComponent: React.FC<Props> = ({
     source,
     style,
     showLoader = false,
+    suppressStateOverlays = false,
     fallbackSource,
     resizeMode = 'cover',
     priority = 'normal',
@@ -64,7 +66,7 @@ const FastImageComponent: React.FC<Props> = ({
     enableColdFade = true,
 }) => {
     const [error, setError] = useState(false);
-    const perf = usePerfProfile();
+    const perf = getCurrentPerfProfile();
     const effectivePriority = perf.tier === 'low' ? 'low' : priority;
 
     const normalizedSource = useMemo(() => resolveSource(source), [source]);
@@ -128,8 +130,11 @@ const FastImageComponent: React.FC<Props> = ({
         setError(true);
         setIsReady(true);
         imageOpacity.setValue(1);
+        if (normalizedFallback && !shouldUseFallback) {
+            return;
+        }
         onError?.();
-    }, [imageOpacity, onError]);
+    }, [imageOpacity, normalizedFallback, onError, shouldUseFallback]);
 
     const handleLoadEnd = useCallback(() => {
         onLoadEnd?.();
@@ -178,11 +183,11 @@ const FastImageComponent: React.FC<Props> = ({
                 />
             </Animated.View>
 
-            {showLoader && !isReady && !shouldUseFallback && (
+            {showLoader && !isReady && !shouldUseFallback && !suppressStateOverlays && (
                 <View style={styles.loadingOverlay} />
             )}
 
-            {error && !normalizedFallback && (
+            {error && !normalizedFallback && !suppressStateOverlays && (
                 <View style={styles.errorContainer} />
             )}
         </View>

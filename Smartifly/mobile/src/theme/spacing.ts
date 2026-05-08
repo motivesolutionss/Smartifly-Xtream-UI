@@ -286,9 +286,7 @@ export const defaultInsetsTV = {
     right: 40,
 } as const;
 
-export const getDefaultInsets = (isTV: boolean) => {
-    return isTV ? defaultInsetsTV : defaultInsets;
-};
+export const getDefaultInsets = () => defaultInsets;
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -297,9 +295,7 @@ export const getDefaultInsets = (isTV: boolean) => {
 /**
  * Get spacing value based on platform
  */
-export const getSpacing = (isTV: boolean) => {
-    return isTV ? spacingTV : spacing;
-};
+export const getSpacing = () => spacing;
 
 /**
  * Create consistent padding object

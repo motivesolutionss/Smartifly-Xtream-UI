@@ -25,6 +25,7 @@ type ParamList = {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const DETAIL_FALLBACK_IMAGE = require('../../assets/fallback image.jpeg');
 
 const SeriesDetailScreen: React.FC = () => {
     const insets = useSafeAreaInsets();
@@ -146,7 +147,8 @@ const SeriesDetailScreen: React.FC = () => {
             onPress={() => handlePlayEpisode(episode)}
         >
             <FastImageComponent
-                source={{ uri: episode.info?.movie_image || series.cover }}
+                source={episode.info?.movie_image || series.cover ? { uri: episode.info?.movie_image || series.cover } : DETAIL_FALLBACK_IMAGE}
+                fallbackSource={DETAIL_FALLBACK_IMAGE}
                 style={styles.episodeThumbnail}
             />
             <View style={styles.episodeInfo}>
@@ -175,7 +177,8 @@ const SeriesDetailScreen: React.FC = () => {
         <View>
             <View style={styles.infoRow}>
                 <FastImageComponent
-                    source={{ uri: series.cover }}
+                    source={series.cover ? { uri: series.cover } : DETAIL_FALLBACK_IMAGE}
+                    fallbackSource={DETAIL_FALLBACK_IMAGE}
                     style={styles.poster}
                 />
                 <View style={styles.infoText}>
@@ -322,11 +325,15 @@ const SeriesDetailScreen: React.FC = () => {
             {/* Header with backdrop */}
             <View style={styles.header}>
                 <FastImageComponent
-                    source={{
-                        uri: (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0])
-                            || series?.cover
-                            || 'https://via.placeholder.com/400x200?text=No+Image'
-                    }}
+                    source={
+                        (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0]) || series?.cover
+                            ? {
+                                uri: (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0])
+                                    || series?.cover
+                            }
+                            : DETAIL_FALLBACK_IMAGE
+                    }
+                    fallbackSource={DETAIL_FALLBACK_IMAGE}
                     style={styles.backdrop}
                 />
                 <View style={[styles.headerOverlay, headerOverlayStyle]}>
@@ -349,7 +356,7 @@ const SeriesDetailScreen: React.FC = () => {
                 // @ts-ignore FlashList runtime supports estimatedItemSize in current app version
                 estimatedItemSize={110}
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews
+                removeClippedSubviews={false}
             />
             {/* YouTube Trailer Modal - Plays in-app */}
             <Modal

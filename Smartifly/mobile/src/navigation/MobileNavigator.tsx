@@ -33,26 +33,49 @@ import BlockedScreen from '../screens/mobile/BlockedScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+type BoundStoreApi<T> = {
+  getState: () => T;
+  subscribe: (listener: (state: T, prevState: T) => void) => () => void;
+};
+
+function useStoreSnapshot<T>(store: BoundStoreApi<T>): T {
+  const [state, setState] = useState<T>(() => store.getState());
+
+  useEffect(() => {
+    const unsubscribe = store.subscribe((nextState) => {
+      setState((currentState) => (Object.is(currentState, nextState) ? currentState : nextState));
+    });
+
+    return unsubscribe;
+  }, [store]);
+
+  return state;
+}
+
 const MobileNavigator: React.FC = () => {
+  const authState = useStoreSnapshot(useAuthStore);
+  const contentState = useStoreSnapshot(useContentStore);
+  const appStatusState = useStoreSnapshot(useAppStatusStore);
+  const profileState = useStoreSnapshot(useProfileStore);
+
   // Get authentication and content state from store
-  const hasHydrated = useAuthStore((state) => state.hasHydrated);
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const isCacheValid = useContentStore((state) => state.isCacheValid);
-  const refreshCacheIfNeeded = useContentStore((state) => state.refreshCacheIfNeeded);
-  const setNetworkState = useContentStore((state) => state.setNetworkState);
-  const loadContentCache = useContentStore((state) => state.loadContentCache);
-  const contentCacheLoaded = useContentStore((state) => state.contentCacheLoaded);
-  const checkDeviceBan = useAppStatusStore((state) => state.checkDeviceBan);
-  const fetchAnnouncements = useAppStatusStore((state) => state.fetchAnnouncements);
-  const fatherControl = useAppStatusStore((state) => state.fatherControl);
-  const profiles = useProfileStore((state) => state.profiles);
-  const activeProfileId = useProfileStore((state) => state.activeProfileId);
+  const hasHydrated = authState.hasHydrated;
+  const isAuthenticated = authState.isAuthenticated;
+  const isCacheValid = contentState.isCacheValid;
+  const refreshCacheIfNeeded = contentState.refreshCacheIfNeeded;
+  const setNetworkState = contentState.setNetworkState;
+  const loadContentCache = contentState.loadContentCache;
+  const contentCacheLoaded = contentState.contentCacheLoaded;
+  const checkDeviceBan = appStatusState.checkDeviceBan;
+  const fetchAnnouncements = appStatusState.fetchAnnouncements;
+  const fatherControl = appStatusState.fatherControl;
+  const profiles = profileState.profiles;
+  const activeProfileId = profileState.activeProfileId;
   const [showPreloader, setShowPreloader] = useState(true);
   const [deviceCheckDone, setDeviceCheckDone] = useState(false);
-  const [announcementsPrefetchDone, setAnnouncementsPrefetchDone] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
-  const setHasHydrated = useAuthStore((state) => state.setHasHydrated);
-  const processOfflineQueue = useOfflineQueueStore((state) => state.processQueue);
+  const setHasHydrated = authState.setHasHydrated;
+  const processOfflineQueue = useOfflineQueueStore.getState().processQueue;
 
   useEffect(() => {
     const timer = setTimeout(() => setShowPreloader(false), 1400);
@@ -61,17 +84,16 @@ const MobileNavigator: React.FC = () => {
 
   useEffect(() => {
     const watchdog = setTimeout(() => {
-      const authState = useAuthStore.getState();
+      const currentAuthState = useAuthStore.getState();
       logger.warn('Mobile startup gate timeout, forcing gate release', {
-        hasHydrated: authState.hasHydrated,
-        isAuthenticated: authState.isAuthenticated,
+        hasHydrated: currentAuthState.hasHydrated,
+        isAuthenticated: currentAuthState.isAuthenticated,
       });
-      if (!authState.hasHydrated) {
+      if (!currentAuthState.hasHydrated) {
         setHasHydrated(true);
       }
       setShowPreloader(false);
       setDeviceCheckDone(true);
-      setAnnouncementsPrefetchDone(true);
       setStartupTimedOut(true);
     }, 12000);
 
@@ -83,7 +105,7 @@ const MobileNavigator: React.FC = () => {
   }, [checkDeviceBan]);
 
   useEffect(() => {
-    fetchAnnouncements().finally(() => setAnnouncementsPrefetchDone(true));
+    fetchAnnouncements().catch(() => undefined);
   }, [fetchAnnouncements]);
 
   useEffect(() => {
@@ -157,7 +179,6 @@ const MobileNavigator: React.FC = () => {
     !hasHydrated ||
     showPreloader ||
     !deviceCheckDone ||
-    !announcementsPrefetchDone ||
     waitForContentCache
   );
 
@@ -167,14 +188,12 @@ const MobileNavigator: React.FC = () => {
       hasHydrated,
       showPreloader,
       deviceCheckDone,
-      announcementsPrefetchDone,
       isAuthenticated,
       contentCacheLoaded,
       waitForContentCache,
       startupTimedOut,
     });
   }, [
-    announcementsPrefetchDone,
     contentCacheLoaded,
     deviceCheckDone,
     gateBlocked,

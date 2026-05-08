@@ -12,6 +12,7 @@ import {
     StyleSheet,
     ViewStyle,
     StyleProp,
+    Image,
 } from 'react-native';
 
 import Animated, {
@@ -23,7 +24,8 @@ import Animated, {
 import FastImageComponent from '../../../../components/FastImageComponent';
 import type { ImageStyle as FastImageImageStyle } from '@d11/react-native-fast-image';
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
-import { usePerfProfile } from '../../../../utils/perf';
+import { getCurrentPerfProfile } from '../../../../utils/perf';
+import { optimizeCardImageUriForVariant } from '@smartifly/shared/src/utils/image';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -63,6 +65,19 @@ const cardSizes = {
     channel: { width: 100, height: 100 },
 } as const;
 
+const toDisplayRating = (value: number | string | undefined): number | null => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+};
+
+const getFallbackInitials = (title?: string): string => {
+    const normalized = String(title || '').trim();
+    if (!normalized) return 'NA';
+    const parts = normalized.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+};
+
 const ContentCard: React.FC<ContentCardProps> = ({
     item,
     onPress,
@@ -73,7 +88,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
     imageStyle,
     sizeOverride,
 }) => {
-    const perf = usePerfProfile();
+    const perf = getCurrentPerfProfile();
     const scale = useSharedValue(1);
     const opacity = useSharedValue(1);
 
@@ -85,10 +100,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
     const resolvedWidth = sizeOverride?.width ?? size.width;
     const resolvedHeight = sizeOverride?.height ?? size.height;
 
-    const placeholderText = useMemo(() => {
-        if (!item.name) return 'NA';
-        return item.name.slice(0, 2).toUpperCase();
-    }, [item.name]);
+    const placeholderText = useMemo(() => getFallbackInitials(item.name), [item.name]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }],
@@ -107,6 +119,20 @@ const ContentCard: React.FC<ContentCardProps> = ({
 
     const shadowStyle = perf.enableFocusGlow ? styles.imageShadow : styles.imageShadowOff;
     const imageResizeMode = variant === 'channel' ? 'contain' : 'cover';
+    const displayRating = useMemo(() => toDisplayRating(item.rating as number | string | undefined), [item.rating]);
+    const [imageLoaded, setImageLoaded] = React.useState(false);
+    const optimizedImageUri = useMemo(
+        () => optimizeCardImageUriForVariant(item.image, variant),
+        [item.image, variant]
+    );
+    const imageVisibilityStyle = useMemo(
+        () => ({ opacity: imageLoaded ? 1 : 0 }),
+        [imageLoaded]
+    );
+
+    React.useEffect(() => {
+        setImageLoaded(false);
+    }, [item.id, optimizedImageUri]);
 
     return (
         <AnimatedTouchableOpacity
@@ -124,17 +150,57 @@ const ContentCard: React.FC<ContentCardProps> = ({
                     variant === 'channel' && styles.channelContainer,
                 ]}
             >
-                {item.image ? (
-                    <FastImageComponent
-                        source={{ uri: item.image }}
-                        style={[styles.fastImage, { width: resolvedWidth, height: resolvedHeight }, imageStyle]}
-                        resizeMode={imageResizeMode}
+                <View style={[styles.placeholder, { width: resolvedWidth, height: resolvedHeight }, variant === 'channel' && styles.placeholderChannel]}>
+                    <Image
+                        source={require('../../../../assets/fallback image.jpeg')}
+                        style={styles.placeholderImage}
+                        resizeMode="contain"
                     />
-                ) : (
-                    <View style={[styles.placeholder, { width: resolvedWidth, height: resolvedHeight }]}>
-                        <Text style={styles.placeholderText}>{placeholderText}</Text>
-                    </View>
-                )}
+                    <View style={styles.placeholderScrim} />
+                    <View style={styles.placeholderBottomShade} />
+                    {!imageLoaded ? (
+                        <View style={styles.placeholderContent}>
+                            <View style={[styles.placeholderInitialWrap, variant === 'channel' && styles.placeholderInitialWrapChannel]}>
+                                <Text style={[styles.placeholderText, variant === 'channel' && styles.placeholderTextChannel]}>
+                                    {placeholderText}
+                                </Text>
+                            </View>
+                            <Text
+                                style={[styles.placeholderTitle, variant === 'channel' && styles.placeholderTitleChannel]}
+                                numberOfLines={variant === 'channel' ? 3 : 2}
+                            >
+                                {item.name || 'Unknown'}
+                            </Text>
+                            <Text
+                                style={[styles.placeholderSubtitle, variant === 'channel' && styles.placeholderSubtitleChannel]}
+                                numberOfLines={1}
+                            >
+                                {item.type === 'live'
+                                    ? 'LIVE CHANNEL'
+                                    : item.year
+                                        ? item.year
+                                        : String(item.type || 'content').toUpperCase()}
+                            </Text>
+                        </View>
+                    ) : null}
+                </View>
+
+                {optimizedImageUri ? (
+                    <FastImageComponent
+                        source={{ uri: optimizedImageUri }}
+                        style={[
+                            styles.fastImage,
+                            { width: resolvedWidth, height: resolvedHeight },
+                            imageVisibilityStyle,
+                            imageStyle,
+                        ]}
+                        resizeMode={imageResizeMode}
+                        showLoader={true}
+                        suppressStateOverlays={true}
+                        onLoad={() => setImageLoaded(true)}
+                        onError={() => setImageLoaded(false)}
+                    />
+                ) : null}
 
                 {/* Better Gradient Overlay */}
                 <View style={[styles.gradientOverlay, variant === 'channel' && styles.gradientOverlayChannel]} />
@@ -158,10 +224,10 @@ const ContentCard: React.FC<ContentCardProps> = ({
                     </View>
                 )}
 
-                {showRating && (item.rating ?? 0) > 0 && (
+                {showRating && displayRating !== null && (
                     <View style={styles.ratingBadge}>
                         <Icon name="star" size={10} color={colors.qualityUHD} />
-                        <Text style={styles.ratingText}>{item.rating!.toFixed(1)}</Text>
+                        <Text style={styles.ratingText}>{displayRating.toFixed(1)}</Text>
                     </View>
                 )}
 
@@ -281,10 +347,73 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: colors.backgroundTertiary,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+    },
+    placeholderImage: {
+        ...StyleSheet.absoluteFillObject,
+        opacity: 1,
+    },
+    placeholderScrim: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(8, 12, 18, 0.08)',
+    },
+    placeholderBottomShade: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: '54%',
+        backgroundColor: 'rgba(8, 12, 18, 0.28)',
+    },
+    placeholderContent: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+    },
+    placeholderChannel: {
+        backgroundColor: colors.backgroundSecondary,
+    },
+    placeholderInitialWrap: {
+        width: 42,
+        height: 42,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        marginBottom: spacing.sm,
+    },
+    placeholderInitialWrapChannel: {
+        backgroundColor: 'rgba(255,255,255,0.9)',
     },
     placeholderText: {
-        fontSize: 24,
+        fontSize: 18,
         fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    placeholderTextChannel: {
+        color: colors.background,
+    },
+    placeholderTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textPrimary,
+        textAlign: 'center',
+    },
+    placeholderTitleChannel: {
+        color: colors.textSecondary,
+    },
+    placeholderSubtitle: {
+        marginTop: spacing.xs,
+        fontSize: 10,
+        fontWeight: '700',
+        color: colors.textMuted,
+        textAlign: 'center',
+        letterSpacing: 0.4,
+    },
+    placeholderSubtitleChannel: {
         color: colors.textMuted,
     },
     gradientOverlay: {

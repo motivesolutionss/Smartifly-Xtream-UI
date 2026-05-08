@@ -15,7 +15,6 @@ import {
     StyleSheet,
     StatusBar,
     Text,
-    Image,
     TouchableOpacity,
     useWindowDimensions,
 } from 'react-native';
@@ -103,11 +102,38 @@ type QuickAction = {
 };
 
 const RAIL_ITEM_LIMIT = 15;
-const MAX_CATEGORY_RAILS_PER_DOMAIN = 8;
 const PREFETCH_ITEMS_PER_ROW = 6;
 const MAIN_TAB_BOTTOM_SPACER = 112;
 const QUICK_ACTION_COLUMNS = 3;
 const QUICK_ACTION_GRID_GAP = spacing.sm;
+const HOME_INITIAL_SECTION_COUNT = 6;
+const HOME_SECTION_BATCH = 4;
+const HOME_POOL_LIMITS = {
+    low: { media: 220, live: 180 },
+    medium: { media: 360, live: 260 },
+    high: { media: 520, live: 360 },
+} as const;
+const HOME_CATEGORY_RAIL_LIMITS = {
+    low: 2,
+    normal: 3,
+    high: 4,
+} as const;
+
+const resolveMovieImage = (movie: any): string => String(
+    movie?.stream_icon ||
+    movie?.movie_image ||
+    movie?.cover_big ||
+    movie?.cover ||
+    movie?.backdrop_path?.[0] ||
+    ''
+);
+
+const resolveSeriesImage = (series: any): string => String(
+    series?.cover ||
+    series?.cover_big ||
+    series?.backdrop_path?.[0] ||
+    ''
+);
 
 const takeTopN = <T,>(
     source: T[],
@@ -152,7 +178,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const { width: viewportWidth } = useWindowDimensions();
 
     // Get PREFETCHED content from store - uses new domain structure
-    const content = useContentStore((state) => state.content);
+    const liveLoaded = useContentStore((state) => state.content.live.loaded);
+    const liveItems = useContentStore((state) => state.content.live.items);
+    const liveCategories = useContentStore((state) => state.content.live.categories);
+    const moviesLoaded = useContentStore((state) => state.content.movies.loaded);
+    const moviesItems = useContentStore((state) => state.content.movies.items);
+    const movieCategories = useContentStore((state) => state.content.movies.categories);
+    const seriesLoaded = useContentStore((state) => state.content.series.loaded);
+    const seriesItems = useContentStore((state) => state.content.series.items);
+    const seriesCategories = useContentStore((state) => state.content.series.categories);
+    const lastFetchTime = useContentStore((state) => state.content.lastFetchTime);
     const userInfo = useAuthStore((state) => state.userInfo);
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
     const forceRefresh = useContentStore((state) => state.forceRefresh);
@@ -174,6 +209,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const perf = usePerfProfile();
     const enqueueOfflineAction = useOfflineQueueStore((state) => state.enqueueAction);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [visibleSectionCount, setVisibleSectionCount] = useState(HOME_INITIAL_SECTION_COUNT);
+    const homePoolLimits = perf.tier === 'low'
+        ? HOME_POOL_LIMITS.low
+        : perf.tier === 'high'
+            ? HOME_POOL_LIMITS.high
+            : HOME_POOL_LIMITS.medium;
+    const maxCategoryRailsPerDomain = perf.tier === 'low'
+        ? HOME_CATEGORY_RAIL_LIMITS.low
+        : perf.tier === 'high'
+            ? HOME_CATEGORY_RAIL_LIMITS.high
+            : HOME_CATEGORY_RAIL_LIMITS.normal;
 
     const filterContent = useCallback(<T extends { rating?: string; rating_5based?: number }>(
         items: T[]
@@ -193,10 +239,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     // Local state
     const stats = useMemo(() => ({
-        live: content.live.items.length,
-        movies: content.movies.items.length,
-        series: content.series.items.length,
-    }), [content.live.items.length, content.movies.items.length, content.series.items.length]);
+        live: liveItems.length,
+        movies: moviesItems.length,
+        series: seriesItems.length,
+    }), [liveItems.length, moviesItems.length, seriesItems.length]);
 
     const continueWatching = useMemo<WatchProgress[]>(() => {
         const profileId = activeProfileId || 'default';
@@ -266,14 +312,19 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const selectedSeriesCategoryId = selectedCategory.series;
 
     const filteredMovies = useMemo(() => {
-        if (!content.movies.loaded) return [];
-        return filterContent(content.movies.items);
-    }, [content.movies.items, content.movies.loaded, filterContent]);
+        if (!moviesLoaded) return [];
+        return filterContent(moviesItems.slice(0, homePoolLimits.media));
+    }, [moviesItems, moviesLoaded, filterContent, homePoolLimits.media]);
 
     const filteredSeries = useMemo(() => {
-        if (!content.series.loaded) return [];
-        return filterContent(content.series.items);
-    }, [content.series.items, content.series.loaded, filterContent]);
+        if (!seriesLoaded) return [];
+        return filterContent(seriesItems.slice(0, homePoolLimits.media));
+    }, [seriesItems, seriesLoaded, filterContent, homePoolLimits.media]);
+
+    const livePool = useMemo(() => {
+        if (!liveLoaded) return [];
+        return liveItems.slice(0, homePoolLimits.live);
+    }, [liveItems, liveLoaded, homePoolLimits.live]);
 
     const forYouItems = useMemo<ContentItem[]>(() => {
         const moviePicks = filteredMovies
@@ -283,7 +334,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map((movie) => ({
                 id: String(movie.stream_id),
                 name: movie.name,
-                image: movie.stream_icon,
+                image: resolveMovieImage(movie),
                 type: 'movie' as const,
                 rating: movie.rating_5based,
                 data: movie,
@@ -296,7 +347,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map((series) => ({
                 id: String(series.series_id),
                 name: series.name,
-                image: series.cover,
+                image: resolveSeriesImage(series),
                 type: 'series' as const,
                 rating: series.rating_5based,
                 data: series,
@@ -322,18 +373,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         // Determine validity based on domain
         if (selectedType === 'live') {
             currentCatId = selectedCategory.live;
-            if (currentCatId && content.live.loaded) {
-                isValid = content.live.categories.some(c => String(c.category_id) === currentCatId);
+            if (currentCatId && liveLoaded) {
+                isValid = liveCategories.some(c => String(c.category_id) === currentCatId);
             }
         } else if (selectedType === 'movies') {
             currentCatId = selectedCategory.movies;
-            if (currentCatId && content.movies.loaded) {
-                isValid = content.movies.categories.some(c => String(c.category_id) === currentCatId);
+            if (currentCatId && moviesLoaded) {
+                isValid = movieCategories.some(c => String(c.category_id) === currentCatId);
             }
         } else if (selectedType === 'series') {
             currentCatId = selectedCategory.series;
-            if (currentCatId && content.series.loaded) {
-                isValid = content.series.categories.some(c => String(c.category_id) === currentCatId);
+            if (currentCatId && seriesLoaded) {
+                isValid = seriesCategories.some(c => String(c.category_id) === currentCatId);
             }
         }
 
@@ -345,12 +396,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }, [
         selectedType,
         selectedCategory,
-        content.live.loaded,
-        content.movies.loaded,
-        content.series.loaded,
-        content.live.categories,
-        content.movies.categories,
-        content.series.categories,
+        liveLoaded,
+        moviesLoaded,
+        seriesLoaded,
+        liveCategories,
+        movieCategories,
+        seriesCategories,
         setCategory
     ]);
 
@@ -392,28 +443,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }, [heroNext]);
 
     const moviesForRows = useMemo(() => {
-        if (!content.movies.loaded) return [];
+        if (!moviesLoaded) return [];
         if (selectedType === 'movies' && selectedMovieCategoryId) {
             return filteredMovies.filter((m) => String(m.category_id) === String(selectedMovieCategoryId));
         }
         return filteredMovies;
-    }, [content.movies.loaded, filteredMovies, selectedMovieCategoryId, selectedType]);
+    }, [moviesLoaded, filteredMovies, selectedMovieCategoryId, selectedType]);
 
     const seriesForRows = useMemo(() => {
-        if (!content.series.loaded) return [];
+        if (!seriesLoaded) return [];
         if (selectedType === 'series' && selectedSeriesCategoryId) {
             return filteredSeries.filter((s) => String(s.category_id) === String(selectedSeriesCategoryId));
         }
         return filteredSeries;
-    }, [content.series.loaded, filteredSeries, selectedSeriesCategoryId, selectedType]);
+    }, [seriesLoaded, filteredSeries, selectedSeriesCategoryId, selectedType]);
 
     const liveForRows = useMemo(() => {
-        if (!content.live.loaded) return [];
+        if (!liveLoaded) return [];
         if (selectedType === 'live' && selectedLiveCategoryId) {
-            return content.live.items.filter((channel) => String(channel.category_id) === String(selectedLiveCategoryId));
+            return livePool.filter((channel) => String(channel.category_id) === String(selectedLiveCategoryId));
         }
-        return content.live.items;
-    }, [content.live.items, content.live.loaded, selectedLiveCategoryId, selectedType]);
+        return livePool;
+    }, [liveLoaded, livePool, selectedLiveCategoryId, selectedType]);
 
     // Recently added movies
     const recentMovies = useMemo(() => {
@@ -427,7 +478,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(m => ({
                 id: String(m.stream_id),
                 name: m.name,
-                image: m.stream_icon,
+                image: resolveMovieImage(m),
                 type: 'movie' as const,
                 rating: m.rating_5based,
                 data: m,
@@ -446,7 +497,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(s => ({
                 id: String(s.series_id),
                 name: s.name,
-                image: s.cover,
+                image: resolveSeriesImage(s),
                 type: 'series' as const,
                 rating: s.rating_5based,
                 data: s,
@@ -465,7 +516,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(m => ({
                 id: String(m.stream_id),
                 name: m.name,
-                image: m.stream_icon,
+                image: resolveMovieImage(m),
                 type: 'movie' as const,
                 rating: m.rating_5based,
                 data: m,
@@ -488,7 +539,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     // Category rails logic
     const movieCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
-        if (!content.movies.loaded) return map;
+        if (!moviesLoaded) return map;
 
         for (const movie of filteredMovies) {
             const catId = String(movie.category_id);
@@ -504,7 +555,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(movie.stream_id),
                     name: movie.name,
-                    image: movie.stream_icon,
+                    image: resolveMovieImage(movie),
                     type: 'movie' as const,
                     rating: movie.rating_5based,
                     data: movie,
@@ -512,12 +563,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             }
         }
         return map;
-    }, [content.movies.loaded, filteredMovies]);
+    }, [moviesLoaded, filteredMovies]);
 
     const movieCategoryRails = useMemo(() => {
-        if (!content.movies.loaded || !content.movies.categories) return [];
+        if (!moviesLoaded || !movieCategories) return [];
         const rails: CategoryRail[] = [];
-        for (const category of content.movies.categories) {
+        for (const category of movieCategories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
@@ -526,12 +577,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
-    }, [content.movies.categories, content.movies.loaded, movieCategoryMap]);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, maxCategoryRailsPerDomain);
+    }, [movieCategories, moviesLoaded, maxCategoryRailsPerDomain, movieCategoryMap]);
 
     const seriesCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
-        if (!content.series.loaded) return map;
+        if (!seriesLoaded) return map;
         for (const series of filteredSeries) {
             const catId = String(series.category_id);
             if (!catId) continue;
@@ -544,7 +595,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(series.series_id),
                     name: series.name,
-                    image: series.cover,
+                    image: resolveSeriesImage(series),
                     type: 'series' as const,
                     rating: series.rating_5based,
                     data: series,
@@ -552,12 +603,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             }
         }
         return map;
-    }, [content.series.loaded, filteredSeries]);
+    }, [seriesLoaded, filteredSeries]);
 
     const seriesCategoryRails = useMemo(() => {
-        if (!content.series.loaded || !content.series.categories) return [];
+        if (!seriesLoaded || !seriesCategories) return [];
         const rails: CategoryRail[] = [];
-        for (const category of content.series.categories) {
+        for (const category of seriesCategories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
@@ -566,13 +617,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
-    }, [content.series.categories, content.series.loaded, seriesCategoryMap]);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, maxCategoryRailsPerDomain);
+    }, [seriesCategories, seriesLoaded, maxCategoryRailsPerDomain, seriesCategoryMap]);
 
     const liveCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
-        if (!content.live.loaded) return map;
-        for (const channel of content.live.items) {
+        if (!liveLoaded) return map;
+        for (const channel of livePool) {
             const catId = String(channel.category_id);
             if (!catId) continue;
             let items = map.get(catId);
@@ -591,12 +642,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             }
         }
         return map;
-    }, [content.live.items, content.live.loaded]);
+    }, [liveLoaded, livePool]);
 
     const liveCategoryRails = useMemo(() => {
-        if (!content.live.loaded || !content.live.categories) return [];
+        if (!liveLoaded || !liveCategories) return [];
         const rails: CategoryRail[] = [];
-        for (const category of content.live.categories) {
+        for (const category of liveCategories) {
             const catId = String(category.category_id);
             const catName = category.category_name;
             if (!catName) continue;
@@ -605,8 +656,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 rails.push({ id: catId, name: catName, items });
             }
         }
-        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, MAX_CATEGORY_RAILS_PER_DOMAIN);
-    }, [content.live.categories, content.live.loaded, liveCategoryMap]);
+        return rails.sort((a, b) => b.items.length - a.items.length).slice(0, maxCategoryRailsPerDomain);
+    }, [liveCategories, liveLoaded, liveCategoryMap, maxCategoryRailsPerDomain]);
 
     // =============================================================================
     // HANDLERS
@@ -781,15 +832,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }, [navigation]);
 
     const lastUpdatedLabel = useMemo(() => {
-        if (!content.lastFetchTime) return 'Not synced yet';
+        if (!lastFetchTime) return 'Not synced yet';
         const now = Date.now();
-        const diffMs = Math.max(0, now - content.lastFetchTime);
+        const diffMs = Math.max(0, now - lastFetchTime);
         const diffMins = Math.floor(diffMs / 60000);
         if (diffMins < 1) return 'Synced just now';
         if (diffMins < 60) return `Synced ${diffMins}m ago`;
         const diffHours = Math.floor(diffMins / 60);
         return `Synced ${diffHours}h ago`;
-    }, [content.lastFetchTime]);
+    }, [lastFetchTime]);
 
     const quickActions = useMemo<QuickAction[]>(() => ([
         { id: 'refresh', label: isRefreshing ? 'Syncing...' : 'Refresh', icon: 'arrowCounterClockwise', color: colors.info, onPress: handleRefresh },
@@ -986,27 +1037,55 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     ]);
 
     useEffect(() => {
-        const preload: Array<string | undefined> = [featuredContent?.image];
+        setVisibleSectionCount((prev) => {
+            const nextBase = Math.min(HOME_INITIAL_SECTION_COUNT, sections.length);
+            if (prev <= nextBase) return nextBase;
+            return Math.min(prev, sections.length);
+        });
+    }, [sections.length]);
+
+    const renderedSections = useMemo(() => (
+        sections.slice(0, visibleSectionCount)
+    ), [sections, visibleSectionCount]);
+
+    const handleLoadMoreSections = useCallback(() => {
+        setVisibleSectionCount((prev) => {
+            if (prev >= sections.length) return prev;
+            return Math.min(prev + HOME_SECTION_BATCH, sections.length);
+        });
+    }, [sections.length]);
+
+    const homePrefetchUris = useMemo(() => {
+        const preloadSet = new Set<string>();
         const prefetchCount = perf.tier === 'low' ? 4 : perf.tier === 'high' ? 8 : PREFETCH_ITEMS_PER_ROW;
+        const addUri = (uri?: string) => {
+            if (!uri || !uri.startsWith('http')) return;
+            preloadSet.add(uri);
+        };
         const addRowImages = (items: ContentItem[]) => {
             for (const item of items.slice(0, prefetchCount)) {
-                preload.push(item.image);
+                addUri(item.image);
             }
         };
-        addRowImages(continueRowItems);
-        addRowImages(popularChannels);
-        addRowImages(recentMovies);
-        addRowImages(recentSeries);
-        prefetchImages(preload);
-    }, [continueRowItems, featuredContent?.image, popularChannels, recentMovies, recentSeries, perf.tier]);
+
+        addUri(featuredContent?.image);
+        addUri(nextFeatured?.image);
+        for (const section of renderedSections) {
+            if (section.type !== 'row') continue;
+            addRowImages(section.items);
+            if (preloadSet.size >= prefetchCount * 5) break;
+        }
+        return Array.from(preloadSet);
+    }, [
+        featuredContent?.image,
+        nextFeatured?.image,
+        perf.tier,
+        renderedSections,
+    ]);
 
     useEffect(() => {
-        const uris = [featuredContent?.image, nextFeatured?.image].filter(Boolean) as string[];
-        for (const uri of uris) {
-            if (!uri.startsWith('http')) continue;
-            Image.prefetch(uri).catch(() => { });
-        }
-    }, [featuredContent?.image, nextFeatured?.image]);
+        prefetchImages(homePrefetchUris);
+    }, [homePrefetchUris]);
 
     const renderSection = useCallback(({ item }: { item: HomeSection }) => {
         switch (item.type) {
@@ -1093,20 +1172,25 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 onLogoPress={handleProfile}
                 onCategoryTypePress={handleCategoryTypePress}
             />
-            <FlashList
-                style={styles.scrollView}
-                data={sections}
+                <FlashList
+                    style={styles.scrollView}
+                data={renderedSections}
                 renderItem={renderSection}
                 keyExtractor={(item) => item.key}
                 // @ts-ignore
-                estimatedItemSize={320}
+                estimatedItemSize={280}
                 getItemType={getItemType}
                 drawDistance={perf.home.drawDistance}
+                initialNumToRender={Math.min(visibleSectionCount, 6)}
+                maxToRenderPerBatch={4}
+                windowSize={7}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[
                     styles.scrollContent,
                     { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER }
                 ]}
+                onEndReached={handleLoadMoreSections}
+                onEndReachedThreshold={0.35}
             />
         </View>
     );

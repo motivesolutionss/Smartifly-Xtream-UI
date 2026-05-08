@@ -48,10 +48,10 @@ export type PerfProfile = {
 const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
   low: {
     tier: 'low',
-    home: { drawDistance: 600 },
-    rails: { windowSize: 4, initialNumToRender: 5, maxToRenderPerBatch: 4, updateCellsBatchingPeriod: 24 },
-    continueRails: { windowSize: 4, initialNumToRender: 5, maxToRenderPerBatch: 4, updateCellsBatchingPeriod: 24 },
-    grid: { initialRows: 2, maxRenderBatchRows: 1, windowSize: 3, updateCellsBatchingPeriod: 32 },
+    home: { drawDistance: 900 },
+    rails: { windowSize: 6, initialNumToRender: 6, maxToRenderPerBatch: 5, updateCellsBatchingPeriod: 16 },
+    continueRails: { windowSize: 6, initialNumToRender: 6, maxToRenderPerBatch: 5, updateCellsBatchingPeriod: 16 },
+    grid: { initialRows: 3, maxRenderBatchRows: 2, windowSize: 5, updateCellsBatchingPeriod: 20 },
     categoryList: { initialNumToRender: 8, maxToRenderPerBatch: 8, windowSize: 4 },
     enableSvgGradients: false,
     enableFocusGlow: false,
@@ -61,10 +61,10 @@ const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
   },
   normal: {
     tier: 'normal',
-    home: { drawDistance: 900 },
-    rails: { windowSize: 5, initialNumToRender: 7, maxToRenderPerBatch: 5, updateCellsBatchingPeriod: 16 },
-    continueRails: { windowSize: 5, initialNumToRender: 6, maxToRenderPerBatch: 5, updateCellsBatchingPeriod: 16 },
-    grid: { initialRows: 3, maxRenderBatchRows: 2, windowSize: 5, updateCellsBatchingPeriod: 16 },
+    home: { drawDistance: 1400 },
+    rails: { windowSize: 7, initialNumToRender: 8, maxToRenderPerBatch: 6, updateCellsBatchingPeriod: 12 },
+    continueRails: { windowSize: 7, initialNumToRender: 7, maxToRenderPerBatch: 6, updateCellsBatchingPeriod: 12 },
+    grid: { initialRows: 4, maxRenderBatchRows: 3, windowSize: 7, updateCellsBatchingPeriod: 12 },
     categoryList: { initialNumToRender: 12, maxToRenderPerBatch: 12, windowSize: 5 },
     enableSvgGradients: true,
     enableFocusGlow: true,
@@ -74,10 +74,10 @@ const PERF_PROFILES: Record<PerfTier, PerfProfile> = {
   },
   high: {
     tier: 'high',
-    home: { drawDistance: 1200 },
-    rails: { windowSize: 7, initialNumToRender: 9, maxToRenderPerBatch: 7, updateCellsBatchingPeriod: 12 },
-    continueRails: { windowSize: 7, initialNumToRender: 8, maxToRenderPerBatch: 6, updateCellsBatchingPeriod: 12 },
-    grid: { initialRows: 4, maxRenderBatchRows: 3, windowSize: 7, updateCellsBatchingPeriod: 12 },
+    home: { drawDistance: 1800 },
+    rails: { windowSize: 9, initialNumToRender: 10, maxToRenderPerBatch: 8, updateCellsBatchingPeriod: 8 },
+    continueRails: { windowSize: 8, initialNumToRender: 8, maxToRenderPerBatch: 7, updateCellsBatchingPeriod: 8 },
+    grid: { initialRows: 5, maxRenderBatchRows: 4, windowSize: 9, updateCellsBatchingPeriod: 8 },
     categoryList: { initialNumToRender: 16, maxToRenderPerBatch: 16, windowSize: 7 },
     enableSvgGradients: true,
     enableFocusGlow: true,
@@ -97,24 +97,13 @@ const chooseTier = async (): Promise<PerfTier> => {
 
     const totalMemory = await DeviceInfo.getTotalMemory();
 
-    if (!Platform.isTV) {
-      if (Platform.OS === 'android') {
-        if (totalMemory && totalMemory < 3e9) return 'low';
-        if (totalMemory && totalMemory < 6e9) return 'normal';
-        return 'high';
-      }
-
-      if (totalMemory && totalMemory < 4e9) return 'low';
-      return totalMemory && totalMemory > 6e9 ? 'high' : 'normal';
-    }
-
     if (Platform.OS === 'android') {
-      if (totalMemory && totalMemory < 2.5e9) return 'low';
+      if (totalMemory && totalMemory < 3e9) return 'low';
       if (totalMemory && totalMemory < 4e9) return 'normal';
       return 'high';
     }
 
-    if (totalMemory && totalMemory < 3e9) return 'low';
+    if (totalMemory && totalMemory < 4e9) return 'low';
     return totalMemory && totalMemory > 6e9 ? 'high' : 'normal';
   } catch {
     return 'normal';
@@ -135,6 +124,10 @@ export const getPerfProfile = async (): Promise<PerfProfile> => {
     });
   }
   return pendingProfile;
+};
+
+export const getCurrentPerfProfile = (): PerfProfile => {
+  return cachedProfile || PERF_PROFILES.normal;
 };
 
 export const usePerfProfile = (): PerfProfile => {
