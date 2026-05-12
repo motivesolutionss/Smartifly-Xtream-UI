@@ -1,0 +1,29 @@
+{
+  "settings": {
+    "id": "default",
+    "maintenanceMode": false,
+    "maintenanceMsg": null,
+    "latestVersion": "1.0.0",
+    "minVersion": "1.0.0",
+    "updateUrl": null,
+    "forceUpdate": false,
+    "contactEmail": null,
+    "contactPhone": null,
+    "aboutText": null,
+    "termsUrl": null,
+    "privacyUrl": null,
+    "bankName": null,
+    "accountTitle": null,
+    "accountNumber": null,
+    "iban": null,
+    "paymentInstructions": null,
+    "updatedAt": "2026-05-11T06:01:32.640Z"
+  },
+  "featureFlags": [],
+  "maintenanceWindows": [],
+  "backups": [],
+  "notificationHistory": [],
+  "notificationTemplates": [],
+  "notificationSegments": [],
+  "notificationABTests": []
+}

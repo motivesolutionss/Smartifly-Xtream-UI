@@ -15,8 +15,8 @@ class RemoteDeviceControlManager(
         pollingJob = scope.launch {
             while (isActive) {
                 try {
-                    val remoteStatus = repository.checkActivationStatus(deviceId)
-                    handleRemoteStatus(remoteStatus)
+                    val remoteStatusResult = repository.checkActivationStatusDetailed(deviceId)
+                    handleRemoteStatus(remoteStatusResult.status)
                 } catch (e: Exception) {
                     // Log error but keep polling
                 }
@@ -29,14 +29,17 @@ class RemoteDeviceControlManager(
         when (status) {
             DeviceStatus.BLOCKED -> {
                 stateManager.updateStatus(DeviceStatus.BLOCKED)
-                // App will reactively show Blocked screen
             }
             DeviceStatus.EXPIRED -> {
                 stateManager.clearSession()
-                // App will return to onboarding
+            }
+            DeviceStatus.ACTIVATED -> {
+                stateManager.updateStatus(DeviceStatus.ACTIVATED)
             }
             else -> {
-                stateManager.updateStatus(status)
+                // Enterprise Enhancement: Do NOT downgrade an ACTIVATED device to PENDING 
+                // due to network jitters or transient repository errors.
+                // We only allow downgrades if it's an explicit BLOCKED or EXPIRED state.
             }
         }
     }

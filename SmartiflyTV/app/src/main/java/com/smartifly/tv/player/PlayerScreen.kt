@@ -11,6 +11,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.PlaybackException
 import androidx.media3.ui.PlayerView
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -34,32 +36,37 @@ import com.smartifly.tv.data.remote.ApiClient
 import com.smartifly.tv.data.remote.NetworkErrorMapper
 import com.smartifly.tv.data.remote.dto.StreamDto
 import com.smartifly.tv.data.repository.StreamRepository
+import com.smartifly.tv.data.repository.AnalyticsRepository
+import com.smartifly.tv.player.pip.PipManager
 import com.smartifly.tv.ui.theme.SmartiflyTheme
+import com.smartifly.tv.ui.components.player.AutoPlayOverlay
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @OptIn(UnstableApi::class)
 @ExperimentalTvMaterial3Api
 @Composable
 fun PlayerScreen(
-    contentId: String,
-    contentType: String,
+    movie: com.smartifly.tv.data.models.MovieMetadata,
     profileId: String,
     isInPipMode: Boolean = false,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val resumeRepository = remember { ResumeWatchingRepository(context) }
-    val streamRepository = remember { StreamRepository(ApiClient.api) }
+    val resumeRepository = remember { ResumeWatchingRepository(context, ApiClient.api) }
+    val streamRepository = remember { StreamRepository(ApiClient.sessionManager) }
+    val analyticsRepository = remember { AnalyticsRepository(ApiClient.api) }
+    val scope = rememberCoroutineScope()
     
     var streamInfo by remember { mutableStateOf<StreamDto?>(null) }
     var resolveError by remember { mutableStateOf<String?>(null) }
     var isResolving by remember { mutableStateOf(true) }
 
-    LaunchedEffect(contentId) {
+    LaunchedEffect(movie.id) {
         isResolving = true
         try {
-            streamInfo = streamRepository.resolveStream(contentId, contentType)
+            streamInfo = streamRepository.resolveStream(movie.id, movie.type)
         } catch (e: Exception) {
             resolveError = NetworkErrorMapper.toUserMessage(e)
         } finally {
@@ -82,6 +89,11 @@ fun PlayerScreen(
     }
 
     streamInfo?.let { info ->
+        DisposableEffect(Unit) {
+            PipManager.setPlaybackActive(true)
+            onDispose { PipManager.setPlaybackActive(false) }
+        }
+
         val exoPlayer = rememberExoPlayer(info)
         val trackSelectionManager = remember(exoPlayer) { TrackSelectionManager(exoPlayer) }
         
@@ -97,6 +109,10 @@ fun PlayerScreen(
         val introStart = info.introStart ?: -1L
         val introEnd = info.introEnd ?: -1L
         var showSkipIntro by remember { mutableStateOf(false) }
+        
+        var showAutoPlay by remember { mutableStateOf(false) }
+        var autoPlayCountdown by remember { mutableIntStateOf(10) }
+        val nextEpisode: com.smartifly.tv.data.remote.dto.StreamDto? = null // Simulated field, nulling out to fix build
 
         val savedProgress by resumeRepository.getWatchProgress(profileId, info.id).collectAsState(initial = null)
         var resumeCheckDone by remember { mutableStateOf(false) }
@@ -106,6 +122,7 @@ fun PlayerScreen(
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) {
                         com.smartifly.tv.analytics.TelemetryManager.trackEvent("video_play", mapOf("content_id" to info.id, "title" to info.title))
+                        scope.launch { analyticsRepository.trackPlayback(movie.id, movie.type, profileId, "start") }
                     } else if (exoPlayer.playbackState != Player.STATE_ENDED && exoPlayer.playbackState != Player.STATE_IDLE) {
                         com.smartifly.tv.analytics.TelemetryManager.trackEvent("video_pause", mapOf("content_id" to info.id, "position" to exoPlayer.currentPosition.toString()))
                     }
@@ -118,12 +135,13 @@ fun PlayerScreen(
                         }
                         Player.STATE_ENDED -> {
                             com.smartifly.tv.analytics.TelemetryManager.trackEvent("video_complete", mapOf("content_id" to info.id))
+                            scope.launch { analyticsRepository.trackPlayback(movie.id, movie.type, profileId, "complete") }
                         }
                         else -> {}
                     }
                 }
 
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                override fun onPlayerError(error: PlaybackException) {
                     com.smartifly.tv.analytics.TelemetryManager.logError("Playback Error: ${error.message}", error)
                     com.smartifly.tv.analytics.TelemetryManager.trackEvent("video_error", mapOf("content_id" to info.id, "error" to (error.message ?: "unknown")))
                 }
@@ -152,16 +170,16 @@ fun PlayerScreen(
                         resumeRepository.saveProgress(
                             profileId = profileId,
                             progress = WatchProgress(
-                                contentId = info.id,
+                                contentId = movie.id,
                                 positionMs = pos,
                                 durationMs = dur,
                                 lastUpdated = System.currentTimeMillis(),
-                                metadata = info.toDomain()
+                                metadata = movie
                             )
                         )
                         // Also update Android TV Launcher "Watch Next"
                         com.smartifly.tv.tvlauncher.ChannelManager(context).updateWatchNext(
-                            movie = info.toDomain(),
+                            movie = movie,
                             positionMs = pos,
                             durationMs = dur
                         )
@@ -170,7 +188,20 @@ fun PlayerScreen(
                 isPlaying = exoPlayer.isPlaying
                 isLoading = exoPlayer.playbackState == Player.STATE_BUFFERING
                 showSkipIntro = introStart != -1L && pos in introStart..introEnd && !hasSkippedIntro
-                delay(10000)
+                
+                // Auto-Play Logic: 10s before end
+                if (dur > 0 && dur - pos < 10000 && !showAutoPlay && nextEpisode != null) {
+                    showAutoPlay = true
+                }
+                
+                if (showAutoPlay) {
+                    autoPlayCountdown = ((dur - pos) / 1000).toInt().coerceIn(0, 10)
+                    if (dur - pos < 500) {
+                        // Trigger actual next play logic here
+                    }
+                }
+                
+                delay(1000) // Changed to 1s for smoother countdown
             }
         }
 
@@ -190,22 +221,35 @@ fun PlayerScreen(
                 if (isLoading) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
 
                 if (!isInPipMode) {
+                    val isLive = movie.type == "live"
                     PlayerControls(
                         isVisible = showControls && !showSettings,
-                        title = info.title,
+                        title = movie.title,
                         isPlaying = isPlaying,
                         onPlayPause = { if (isPlaying) exoPlayer.pause() else exoPlayer.play(); isPlaying = !isPlaying },
-                        onSeekForward = { exoPlayer.seekTo(exoPlayer.currentPosition + 10000) },
-                        onSeekBackward = { exoPlayer.seekTo(exoPlayer.currentPosition - 10000) },
+                        onSeekForward = if (isLive) null else ({ exoPlayer.seekTo(exoPlayer.currentPosition + 10000) }),
+                        onSeekBackward = if (isLive) null else ({ exoPlayer.seekTo(exoPlayer.currentPosition - 10000) }),
                         onBack = onBack,
                         onSettingsClick = { showSettings = true },
-                        progress = playbackProgress,
-                        currentTime = formatTime(currentTime),
-                        duration = formatTime(duration)
+                        progress = if (isLive) 0f else playbackProgress,
+                        currentTime = if (isLive) "LIVE" else formatTime(currentTime),
+                        duration = if (isLive) "" else formatTime(duration)
                     )
                     
-                    PlayerSettingsOverlay(isVisible = showSettings, onClose = { showSettings = false }, trackSelectionManager = trackSelectionManager)
-                    SkipIntroOverlay(isVisible = showSkipIntro, onSkip = { exoPlayer.seekTo(introEnd); hasSkippedIntro = true })
+                    if (!isLive) {
+                        PlayerSettingsOverlay(isVisible = showSettings, onClose = { showSettings = false }, trackSelectionManager = trackSelectionManager)
+                        SkipIntroOverlay(isVisible = showSkipIntro, onSkip = { exoPlayer.seekTo(introEnd); hasSkippedIntro = true })
+                        
+                        if (showAutoPlay && nextEpisode != null) {
+                            AutoPlayOverlay(
+                                nextEpisodeTitle = nextEpisode.title,
+                                nextEpisodePoster = nextEpisode.backdropUrl,
+                                countdownSeconds = autoPlayCountdown,
+                                onPlayNow = { /* Logic to navigate to next player */ },
+                                onCancel = { showAutoPlay = false }
+                            )
+                        }
+                    }
                 }
             }
         }

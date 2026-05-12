@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
+import { authApi } from '@/lib/api';
 import Sidebar from './Sidebar';
 import { Toaster } from 'react-hot-toast';
 
@@ -10,7 +11,7 @@ import { useSocket } from '@/hooks/useSocket';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const { isAuthenticated } = useAuthStore();
+    const { isAuthenticated, admin, setAdmin, logout } = useAuthStore();
     const [mounted, setMounted] = useState(false);
 
     // Initialize global socket listener
@@ -25,6 +26,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             router.push('/login');
         }
     }, [mounted, isAuthenticated, router]);
+
+    useEffect(() => {
+        if (!mounted || !isAuthenticated || admin) return;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const response = await authApi.me();
+                const user = response.data?.user;
+                if (!cancelled && user) {
+                    setAdmin({
+                        id: user.id,
+                        name: user.name ?? null,
+                        email: user.email,
+                    });
+                }
+            } catch {
+                if (!cancelled) {
+                    logout();
+                    router.push('/login');
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [mounted, isAuthenticated, admin, setAdmin, logout, router]);
 
     if (!mounted) {
         return (

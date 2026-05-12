@@ -5,21 +5,77 @@ import com.smartifly.tv.data.remote.SmartiflyApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class ProfileRepository(private val api: SmartiflyApi) {
+class ProfileRepository(
+    private val api: com.smartifly.tv.data.remote.SmartiflyApi,
+    private val sessionManager: com.smartifly.tv.data.SessionManager
+) {
+    private fun Any?.asMapList(): List<Map<String, Any>> =
+        (this as? List<*>)?.mapNotNull { it as? Map<*, *> }
+            ?.map { raw ->
+                raw.entries.mapNotNull { (k, v) ->
+                    val key = k as? String ?: return@mapNotNull null
+                    val value = v ?: return@mapNotNull null
+                    key to value
+                }.toMap()
+            }
+            ?: emptyList()
     
     private val _selectedProfile = MutableStateFlow<UserProfile?>(null)
     val selectedProfile: StateFlow<UserProfile?> = _selectedProfile
 
     suspend fun getProfiles(): List<UserProfile> {
-        // Mocking for now, will connect to API later
-        return listOf(
-            UserProfile("1", "Aadi", "https://picsum.photos/seed/p1/200/200"),
-            UserProfile("2", "Kajal", "https://picsum.photos/seed/p2/200/200"),
-            UserProfile("3", "Kids", "https://picsum.photos/seed/p3/200/200", isKids = true)
-        )
+        val userId = sessionManager.getBoundUserId()
+        if (userId.isNullOrBlank()) {
+            // No backend-bound identity yet; keep UI functional with one local profile.
+            return listOf(UserProfile(id = "local-default", name = "Primary", avatarUrl = "", isKids = false))
+        }
+
+        // Manual Xtream identity (non-numeric backend user id) should use local profile mode.
+        if (!userId.all { it.isDigit() }) {
+            val displayName = userId.substringAfter("local:").substringBefore("@").ifBlank { "Primary" }
+            return listOf(
+                UserProfile(
+                    id = userId,
+                    name = displayName,
+                    avatarUrl = "https://api.dicebear.com/7.x/avataaars/png?seed=$displayName",
+                    isKids = false
+                )
+            )
+        }
+        return try {
+            val response = api.fetchProfiles(userId)
+            if (response["success"] == true) {
+                val data = response["data"].asMapList()
+                data.map { map ->
+                    UserProfile(
+                        id = map["id"]?.toString() ?: "",
+                        name = map["name"]?.toString() ?: "Profile",
+                        avatarUrl = map["avatarUrl"] as? String ?: "https://api.dicebear.com/7.x/avataaars/png?seed=${map["name"]}",
+                        isKids = map["isKids"] as? Boolean ?: false,
+                        pin = map["pin"] as? String
+                    )
+                }.filter { it.id.isNotBlank() }
+            } else emptyList()
+        } catch (_: Exception) { emptyList() }
     }
 
-    fun selectProfile(profile: UserProfile) {
+    suspend fun selectProfile(profile: UserProfile) {
         _selectedProfile.value = profile
+        try {
+            api.selectProfile(mapOf("profileId" to profile.id))
+        } catch (_: Exception) {}
+    }
+
+    suspend fun updateProfile(profileId: String, name: String, avatarUrl: String, pin: String?) {
+        try {
+            api.updateProfile(mapOf(
+                "profileId" to profileId,
+                "name" to name,
+                "avatarUrl" to avatarUrl,
+                "pin" to pin
+            ))
+        } catch (e: Exception) {
+            throw e
+        }
     }
 }

@@ -39,7 +39,7 @@ class ChannelManager(private val context: Context) {
             if (newId != -1L) {
                 prefs.edit().putLong(CHANNEL_ID_PREF, newId).apply()
                 // Set logo
-                val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.tv_banner)
+                val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.app_banner)
                 ChannelLogoUtils.storeChannelLogo(context, newId, bitmap)
             }
         } else {

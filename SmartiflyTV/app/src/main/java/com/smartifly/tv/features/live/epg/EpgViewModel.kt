@@ -3,7 +3,6 @@ package com.smartifly.tv.features.live.epg
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartifly.tv.data.remote.NetworkErrorMapper
-import com.smartifly.tv.data.repository.LiveTvRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch

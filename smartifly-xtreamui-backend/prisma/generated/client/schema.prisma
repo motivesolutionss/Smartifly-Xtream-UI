@@ -1,0 +1,355 @@
+// ============================================================
+// SMARTIFLY XTREAM UI — ENTERPRISE ORCHESTRATOR SCHEMA
+// ============================================================
+// Version: 2025.05 — XT Edition
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================================
+// ENUMS
+// ========================================================
+
+enum UserRole {
+  ADMIN
+  RESELLER
+  USER
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  DISABLED
+  BLOCKED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ASSIGN
+  BLOCK
+  RESTORE
+}
+
+enum LicensePlan {
+  TRIAL
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  LIFETIME
+}
+
+enum Platform {
+  ANDROID_TV
+  ANDROID_MOBILE
+  FIRE_TV
+  WEBOS
+  TIZEN
+  IOS
+  BROWSER
+  UNKNOWN
+}
+
+enum BlacklistReason {
+  FRAUD
+  ABUSE
+  TOS_VIOLATION
+  ADMIN_BAN
+}
+
+enum ConfigScope {
+  GLOBAL
+  RESELLER
+  USER
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
+// ========================================================
+// MODELS — USERS
+// ========================================================
+
+model User {
+  id       Int      @id @default(autoincrement())
+  name     String   @db.VarChar(255)
+  email    String   @unique @db.VarChar(255)
+  password String   @db.VarChar(255)
+  role     UserRole @default(USER)
+
+  // Account status
+  isActive     Boolean      @default(true)
+  authProvider AuthProvider @default(LOCAL)
+  lastLoginAt  DateTime?
+  lastLoginIp  String?      @db.VarChar(45)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  devices        DeviceUser[]
+  licenses       License[]
+  auditLogs      AuditLog[]
+  sessions       Session[]
+  profiles       Profile[]
+  parentalConfig ParentalConfig?
+
+  @@index([email])
+  @@map("users")
+}
+
+// ========================================================
+// MODELS — DEVICE USERS (TRACKING)
+// ========================================================
+
+model DeviceUser {
+  id Int @id @default(autoincrement())
+
+  // Primary identifiers
+  deviceId   String  @unique @db.VarChar(255)
+  softwareId String? @unique @db.VarChar(255)
+  mac        String? @db.VarChar(17)
+
+  // Hardware info
+  brand  String? @db.VarChar(100)
+  model  String? @db.VarChar(100)
+  serial String? @db.VarChar(255)
+
+  // Platform & software
+  platform   Platform? @default(UNKNOWN)
+  publicIp   String?   @db.VarChar(45)
+  appVersion String?   @db.VarChar(20)
+  osVersion  String?   @db.VarChar(50)
+  lastSeenAt DateTime?
+
+  // Ownership
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  licenses License[]
+
+  @@index([userId])
+  @@index([mac])
+  @@index([softwareId])
+  @@map("device_users")
+}
+
+// ========================================================
+// MODELS — XTREAM SERVERS (PORTALS)
+// ========================================================
+
+model XtreamServer {
+  id             Int    @id @default(autoincrement())
+  name           String @db.VarChar(255)
+  url            String @db.VarChar(500)
+  serverIdentity String @unique @db.VarChar(100)
+
+  isActive  Boolean @default(true)
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  licenses License[]
+
+  @@map("xtream_servers")
+}
+
+// ========================================================
+// MODELS — SUBSCRIPTIONS (LICENSES)
+// ========================================================
+
+model License {
+  id  Int    @id @default(autoincrement())
+  key String @unique @db.VarChar(50)
+
+  // Bound Info
+  userId       Int?
+  deviceUserId Int?
+  serverId     Int?
+
+  // Xtream Credentials (The Bridge)
+  xtreamUser String? @db.VarChar(255)
+  xtreamPass String? @db.VarChar(255)
+
+  // Status
+  plan   LicensePlan   @default(TRIAL)
+  status LicenseStatus @default(ACTIVE)
+
+  // Expiry
+  expiresAt   DateTime?
+  activatedAt DateTime?
+  lastUsedAt  DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  user       User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deviceUser DeviceUser?   @relation(fields: [deviceUserId], references: [id], onDelete: SetNull)
+  server     XtreamServer? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([deviceUserId])
+  @@map("licenses")
+}
+
+// ========================================================
+// MODELS — SYSTEM
+// ========================================================
+
+model AuditLog {
+  id        Int         @id @default(autoincrement())
+  userId    Int?
+  action    AuditAction
+  entity    String
+  entityId  Int?
+  details   String?     @db.Text
+  ipAddress String?     @db.VarChar(45)
+  createdAt DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Session {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  refreshToken String   @unique @db.VarChar(255)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model DeviceToken {
+  id           Int      @id @default(autoincrement())
+  token        String   @unique @db.VarChar(64)
+  settingsCode String   @unique @db.VarChar(10)
+  deviceId     String
+  mac          String
+  isUsed       Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@map("device_tokens")
+}
+
+model DeviceBlacklist {
+  id        Int             @id @default(autoincrement())
+  deviceId  String?         @db.VarChar(255)
+  mac       String?         @db.VarChar(17)
+  reason    BlacklistReason
+  details   String?         @db.Text
+  createdAt DateTime        @default(now())
+
+  @@map("device_blacklist")
+}
+
+// ========================================================
+// MODELS — ENTERPRISE ANALYTICS & SECURITY
+// ========================================================
+
+model PlaybackActivity {
+  id        Int      @id @default(autoincrement())
+  movieId   String
+  type      String // MOVIE, SERIES, LIVE
+  profileId String?
+  status    String // STARTED, COMPLETED
+  timestamp DateTime @default(now())
+
+  @@index([movieId])
+  @@index([type])
+  @@map("playback_activity")
+}
+
+model ResumeProgress {
+  id          Int      @id @default(autoincrement())
+  profileId   String
+  contentId   String
+  progressMs  Int
+  durationMs  Int
+  lastUpdated DateTime @default(now())
+
+  @@unique([profileId, contentId])
+  @@map("resume_progress")
+}
+
+model ParentalConfig {
+  id               Int     @id @default(autoincrement())
+  userId           Int     @unique
+  pin              String  @default("1234")
+  lockedCategories String  @db.Text // JSON string of locked category names
+  isPinEnabled     Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("parental_configs")
+}
+
+model ThemeConfig {
+  id             Int      @id @default(autoincrement())
+  primaryColor   String   @default("#E50914")
+  secondaryColor String   @default("#0D1117")
+  accentColor    String   @default("#FFFFFF")
+  logoUrl        String?
+  backgroundUrl  String?
+  isLive         Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+
+  @@map("theme_configs")
+}
+
+model Profile {
+  id        String   @id @default(uuid())
+  userId    Int
+  name      String
+  avatarUrl String?
+  isKids    Boolean  @default(false)
+  pin       String? // Optional 4-digit PIN for adult profiles
+  lastUsed  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model TmdbMetadata {
+  id           Int      @id @default(autoincrement())
+  contentId    String   @unique // The Xtream UI Movie/Series ID
+  tmdbId       Int?
+  title        String
+  overview     String?  @db.Text
+  posterPath   String?
+  backdropPath String?
+  rating       Float?
+  ageRating    String? // e.g., PG-13, R, 18+
+  releaseDate  String?
+  genres       String? // Comma-separated
+  cast         String?  @db.Text // JSON string of actors
+  updatedAt    DateTime @updatedAt
+
+  @@index([contentId])
+  @@map("tmdb_metadata")
+}

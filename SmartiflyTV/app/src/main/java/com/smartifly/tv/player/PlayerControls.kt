@@ -46,8 +46,8 @@ fun PlayerControls(
     title: String,
     isPlaying: Boolean,
     onPlayPause: () -> Unit,
-    onSeekForward: () -> Unit,
-    onSeekBackward: () -> Unit,
+    onSeekForward: (() -> Unit)?,
+    onSeekBackward: (() -> Unit)?,
     onBack: () -> Unit,
     onSettingsClick: () -> Unit,
     progress: Float,
@@ -55,6 +55,7 @@ fun PlayerControls(
     duration: String,
     modifier: Modifier = Modifier
 ) {
+    val isLive = duration.isEmpty()
     
     AnimatedVisibility(
         visible = isVisible,
@@ -76,7 +77,18 @@ fun PlayerControls(
                     Icon(SmartiflyIcons.Back, contentDescription = "Back", tint = Color.White)
                 }
                 Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
-                Text(text = title, style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
+                
+                Column {
+                    Text(text = title, style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
+                    if (isLive) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.size(8.dp).background(PrimaryRed, androidx.compose.foundation.shape.CircleShape))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "LIVE", style = MaterialTheme.typography.labelSmall, color = PrimaryRed, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                
                 Spacer(modifier = Modifier.weight(1f))
                 AppIconButton(onClick = onSettingsClick) {
                     Icon(SmartiflyIcons.Settings, contentDescription = "Settings", tint = Color.White)
@@ -90,29 +102,30 @@ fun PlayerControls(
                     .fillMaxWidth()
                     .padding(Dimensions.PaddingExtraLarge)
             ) {
-                // Seek Bar
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = currentTime, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
-                    Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(Dimensions.ProgressBarHeight)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(Color.White.copy(alpha = 0.2f))
-                    ) {
+                // Seek Bar (Only for VOD)
+                if (!isLive) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = currentTime, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(progress)
+                                .weight(1f)
                                 .height(Dimensions.ProgressBarHeight)
-                                .background(PrimaryRed)
-                        )
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color.White.copy(alpha = 0.2f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(progress)
+                                    .height(Dimensions.ProgressBarHeight)
+                                    .background(PrimaryRed)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
+                        Text(text = duration, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
                     }
-                    Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
-                    Text(text = duration, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
                 }
-                
-                Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
                 
                 // Playback Buttons
                 Row(
@@ -120,9 +133,12 @@ fun PlayerControls(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AppIconButton(onClick = onSeekBackward) {
-                        Icon(SmartiflyIcons.FastRewind, contentDescription = "-10s", modifier = Modifier.size(Dimensions.PlayerIconSizeMedium), tint = Color.White)
+                    onSeekBackward?.let { handler ->
+                        AppIconButton(onClick = handler) {
+                            Icon(SmartiflyIcons.FastRewind, contentDescription = "-10s", modifier = Modifier.size(Dimensions.PlayerIconSizeMedium), tint = Color.White)
+                        }
                     }
+                    
                     Spacer(modifier = Modifier.width(Dimensions.PaddingExtraLarge))
                     
                     Button(
@@ -144,8 +160,11 @@ fun PlayerControls(
                     } 
                     
                     Spacer(modifier = Modifier.width(Dimensions.PaddingExtraLarge))
-                    AppIconButton(onClick = onSeekForward) {
-                        Icon(SmartiflyIcons.FastForward, contentDescription = "+10s", modifier = Modifier.size(Dimensions.PlayerIconSizeMedium), tint = Color.White)
+                    
+                    onSeekForward?.let { handler ->
+                        AppIconButton(onClick = handler) {
+                            Icon(SmartiflyIcons.FastForward, contentDescription = "+10s", modifier = Modifier.size(Dimensions.PlayerIconSizeMedium), tint = Color.White)
+                        }
                     }
                 }
             }

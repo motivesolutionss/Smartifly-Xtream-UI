@@ -50,12 +50,6 @@ fun BaseFocusableCard(
         label = "scale"
     )
 
-    // Hardware-accelerated Glow alpha (Much more subtle)
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (isFocused && config.tier != DeviceTier.LOW) 0.3f else 0f,
-        label = "glow"
-    )
-
     // Masterpiece Shine Animation
     val shineProgress by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0f,
@@ -77,16 +71,6 @@ fun BaseFocusableCard(
                 scaleX = scale
                 scaleY = scale
             }
-            .then(
-                if (isFocused && config.tier != DeviceTier.LOW) {
-                    Modifier.shadow(
-                        elevation = Dimensions.GlowRadius,
-                        shape = RoundedCornerShape(Dimensions.FocusCornerRadius),
-                        ambientColor = PrimaryRedGlow.copy(alpha = glowAlpha),
-                        spotColor = PrimaryRedGlow.copy(alpha = glowAlpha)
-                    )
-                } else Modifier
-            )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Main content layer
@@ -135,7 +119,7 @@ fun BaseFocusableCard(
                         .fillMaxSize()
                         .border(
                             width = Dimensions.FocusBorderWidth,
-                            color = if (config.tier == DeviceTier.LOW) Color.White else PrimaryRed,
+                            color = Color.White,
                             shape = RoundedCornerShape(Dimensions.FocusCornerRadius)
                         )
                 )

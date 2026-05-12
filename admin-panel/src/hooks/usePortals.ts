@@ -11,6 +11,49 @@ export const portalKeys = {
     detail: (id: string) => [...portalKeys.details(), id] as const,
 };
 
+type BackendServer = {
+    id: number;
+    order?: number;
+    name: string;
+    url: string;
+    serverIdentity?: string;
+    isActive: boolean;
+    isDefault?: boolean;
+    healthStatus?: 'ONLINE' | 'OFFLINE' | 'UNSTABLE' | 'UNKNOWN';
+    lastCheckAt?: string;
+    latency?: number | null;
+    activeConnections?: number;
+    errorCount?: number;
+    serverIp?: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+function mapServerToPortal(server: BackendServer): Portal {
+    return {
+        id: String(server.id),
+        displayId: server.id,
+        serverIdentity: server.serverIdentity ?? '',
+        name: server.name,
+        url: server.url,
+        username: null,
+        password: null,
+        order: Number(server.order ?? 0),
+        isActive: !!server.isActive,
+        description: server.serverIdentity ?? null,
+        category: 'General',
+        healthStatus: server.healthStatus ?? (server.isActive ? 'ONLINE' : 'OFFLINE'),
+        lastCheckAt: server.lastCheckAt,
+        latency: server.latency ?? undefined,
+        uptime: undefined,
+        activeConnections: server.activeConnections ?? 0,
+        errorCount: server.errorCount ?? 0,
+        serverIp: server.serverIp ?? null,
+        createdAt: server.createdAt,
+        updatedAt: server.updatedAt,
+    };
+}
+
 /**
  * Hook to fetch all portals (admin view)
  */
@@ -19,7 +62,8 @@ export function usePortals() {
         queryKey: portalKeys.lists(),
         queryFn: async () => {
             const response = await portalsApi.getAll();
-            return response.data as Portal[];
+            const servers = (response.data?.servers ?? []) as BackendServer[];
+            return servers.map(mapServerToPortal);
         },
     });
 }
@@ -32,7 +76,8 @@ export function usePublicPortals() {
         queryKey: [...portalKeys.all, 'public'],
         queryFn: async () => {
             const response = await portalsApi.getPublic();
-            return response.data as Portal[];
+            const servers = (response.data?.servers ?? []) as BackendServer[];
+            return servers.map(mapServerToPortal);
         },
     });
 }
@@ -46,7 +91,7 @@ export function useCreatePortal() {
     return useMutation({
         mutationFn: async (data: CreatePortalDTO) => {
             const response = await portalsApi.create(data);
-            return response.data as Portal;
+            return mapServerToPortal(response.data.server as BackendServer);
         },
         onSuccess: () => {
             // Invalidate and refetch portals list
@@ -64,7 +109,7 @@ export function useUpdatePortal() {
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdatePortalDTO }) => {
             const response = await portalsApi.update(id, data);
-            return response.data as Portal;
+            return mapServerToPortal(response.data.server as BackendServer);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: portalKeys.lists() });
@@ -98,7 +143,7 @@ export function useTogglePortal() {
     return useMutation({
         mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
             const response = await portalsApi.update(id, { isActive });
-            return response.data as Portal;
+            return mapServerToPortal(response.data.server as BackendServer);
         },
         onMutate: async ({ id, isActive }) => {
             // Cancel outgoing refetches

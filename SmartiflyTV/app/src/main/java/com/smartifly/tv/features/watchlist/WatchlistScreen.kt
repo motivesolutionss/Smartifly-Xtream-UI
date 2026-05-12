@@ -14,6 +14,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.ui.components.base.PosterGrid
 import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.PrimaryRed
@@ -22,7 +23,10 @@ import com.smartifly.tv.ui.theme.TextPrimary
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun WatchlistScreen(viewModel: WatchlistViewModel) {
+fun WatchlistScreen(
+    viewModel: WatchlistViewModel,
+    onItemClick: (MovieMetadata) -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     SmartiflyTheme {
@@ -43,7 +47,7 @@ fun WatchlistScreen(viewModel: WatchlistViewModel) {
                         PosterGrid(
                             items = state.items,
                             onItemFocused = { },
-                            onItemClick = { /* Navigate to Details */ }
+                            onItemClick = onItemClick
                         )
                     }
                     is WatchlistUiState.Empty -> {

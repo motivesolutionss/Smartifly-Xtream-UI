@@ -17,33 +17,81 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.models.MovieMetadata
-import com.smartifly.tv.data.remote.ApiClient
-import com.smartifly.tv.data.repository.ContentRepository
+import com.smartifly.tv.data.models.UserProfile
 import com.smartifly.tv.ui.components.base.ContentDetailsPanel
 import com.smartifly.tv.ui.components.base.PosterGrid
 import com.smartifly.tv.ui.components.base.SideCategoryRail
 import com.smartifly.tv.ui.theme.SmartiflyTheme
+import com.smartifly.tv.ui.components.dialogs.PinEntryDialog
+import com.smartifly.tv.data.repository.ParentalControlManager
+import androidx.compose.runtime.rememberCoroutineScope
+import com.smartifly.tv.features.profiles.ContentRestrictionManager
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun SeriesScreen(profile: com.smartifly.tv.data.models.UserProfile) {
-    val repository = remember { ContentRepository(ApiClient.api) }
-    val viewModel = remember(profile.id) { SeriesViewModel(repository, profile) }
+fun SeriesScreen(
+    profile: UserProfile,
+    repository: com.smartifly.tv.data.repository.XtreamRepository,
+    parentalControlManager: ParentalControlManager,
+    onSeriesClick: (MovieMetadata) -> Unit
+) {
+    val viewModel = remember(profile.id) { SeriesViewModel(repository) }
     val uiState by viewModel.uiState.collectAsState()
 
     SmartiflyTheme {
         when (val state = uiState) {
             is SeriesUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    com.smartifly.tv.ui.components.base.SmartiflyLoader()
                 }
             }
             is SeriesUiState.Success -> {
+                val isUnlocked by parentalControlManager.isUnlocked.collectAsState()
+                val scope = rememberCoroutineScope()
+                var showPinDialog by remember { mutableStateOf(false) }
+                var pendingCategory by remember { mutableStateOf<String?>(null) }
+                var pinError by remember { mutableStateOf<String?>(null) }
+
+                val filteredSeries = remember(state.series, profile) {
+                    ContentRestrictionManager.filterMovies(profile, state.series)
+                }
+
                 SeriesContent(
                     categories = state.categories,
-                    seriesList = state.series,
-                    onCategorySelected = { viewModel.loadSeries(it) }
+                    seriesList = filteredSeries,
+                    onCategorySelected = { category ->
+                        if (parentalControlManager.isCategoryLocked(category) && !isUnlocked) {
+                            pendingCategory = category
+                            showPinDialog = true
+                        } else {
+                            viewModel.loadSeriesByCategory(if (category == "All") null else category)
+                        }
+                    },
+                    onSeriesClick = onSeriesClick
                 )
+
+                if (showPinDialog) {
+                    PinEntryDialog(
+                        onDismiss = { 
+                            showPinDialog = false
+                            pendingCategory = null
+                        },
+                        onPinEntered = { pin ->
+                            scope.launch {
+                                if (parentalControlManager.validatePin(pin)) {
+                                    showPinDialog = false
+                                    pendingCategory?.let { viewModel.loadSeriesByCategory(if (it == "All") null else it) }
+                                    pendingCategory = null
+                                    pinError = null
+                                } else {
+                                    pinError = "Invalid PIN. Please try again."
+                                }
+                            }
+                        },
+                        errorMessage = pinError
+                    )
+                }
             }
             is SeriesUiState.Error -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -64,7 +112,8 @@ fun SeriesScreen(profile: com.smartifly.tv.data.models.UserProfile) {
 fun SeriesContent(
     categories: List<String>,
     seriesList: List<MovieMetadata>,
-    onCategorySelected: (String) -> Unit
+    onCategorySelected: (String) -> Unit,
+    onSeriesClick: (MovieMetadata) -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf(if (categories.isNotEmpty()) categories.first() else "") }
     var focusedSeries by remember { mutableStateOf(seriesList.firstOrNull()) }
@@ -87,7 +136,7 @@ fun SeriesContent(
             PosterGrid(
                 items = seriesList,
                 onItemFocused = { focusedSeries = it },
-                onItemClick = { /* Open Player */ }
+                onItemClick = onSeriesClick
             )
         }
     }

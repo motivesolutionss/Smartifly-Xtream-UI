@@ -45,6 +45,9 @@ import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.ui.theme.SmartiflyIcons
 import com.smartifly.tv.ui.components.base.Badge
 import com.smartifly.tv.ui.components.base.DotSeparator
+import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImagePolicyEngine
+import com.smartifly.tv.data.image.ImageQualityMonitor
 
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -72,8 +75,13 @@ fun HeroBanner(
         remember { mutableStateOf(1.0f) }
     }
 
+    val resolvedBackdrop = ImagePolicyEngine.resolveFirstUsable(
+        movie?.backdropUrl,
+        movie?.posterUrl
+    )
+
     Box(modifier = modifier.height(480.dp).fillMaxWidth()) {
-        Crossfade(targetState = movie?.backdropUrl, label = "heroFade") { url ->
+        Crossfade(targetState = resolvedBackdrop, label = "heroFade") { url ->
             AsyncImage(
                 model = url,
                 contentDescription = null,
@@ -83,7 +91,28 @@ fun HeroBanner(
                         scaleX = zoomScale
                         scaleY = zoomScale
                     },
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                onError = {
+                    if (!url.isNullOrBlank()) {
+                        ImageFailureMemory.markBad(url)
+                        ImageQualityMonitor.recordFailure(
+                            url = url,
+                            context = ImageQualityMonitor.Context.HOME_HERO,
+                            contentType = movie?.type,
+                            contentId = movie?.id
+                        )
+                    }
+                },
+                onSuccess = {
+                    if (!url.isNullOrBlank()) {
+                        ImageQualityMonitor.recordSuccess(
+                            url = url,
+                            context = ImageQualityMonitor.Context.HOME_HERO,
+                            contentType = movie?.type,
+                            contentId = movie?.id
+                        )
+                    }
+                }
             )
         }
 
@@ -165,4 +194,3 @@ fun HeroBanner(
         }
     }
 }
-

@@ -30,6 +30,8 @@ object SmartiflyIcons {
     
     // General
     val Back = Icons.AutoMirrored.Rounded.ArrowBack
+    val Lock = Icons.Rounded.Lock
+    val Person = Icons.Rounded.Person
 
     val ChevronRight = Icons.Rounded.ChevronRight
     val Check = Icons.Rounded.Check

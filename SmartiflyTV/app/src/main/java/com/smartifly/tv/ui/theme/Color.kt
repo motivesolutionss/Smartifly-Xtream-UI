@@ -4,11 +4,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 
-enum class ThemeMode {
-    Metallic, // Default
-    Gold,     // Premium
-    Aether    // Futuristic
-}
 
 // Futuristic & Enterprise Color Palette
 val PrimaryRed = Color(0xFFE50914) // Classic Netflix Red
@@ -47,3 +42,12 @@ val GlassGradient = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.1f)
 val OnboardingBg = Color(0xFF04070D)
 val OnboardingGlow = PrimaryRed.copy(alpha = 0.15f)
 
+// Extension to parse hex strings safely
+// Utility to parse hex strings safely
+fun fromHex(hex: String?): Color {
+    return try {
+        Color(android.graphics.Color.parseColor(hex ?: "#E50914"))
+    } catch (e: Exception) {
+        PrimaryRed
+    }
+}

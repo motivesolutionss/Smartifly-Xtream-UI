@@ -66,6 +66,7 @@ export default function PortalsPage() {
     const [formData, setFormData] = useState<CreatePortalDTO>({
         name: '',
         url: '',
+        serverIdentity: '',
         category: 'General',
         serverIp: '',
     });
@@ -89,7 +90,8 @@ export default function PortalsPage() {
         return portals.filter(p => {
             const matchesCategory = categoryFilter === 'All' || (p.category || 'General') === categoryFilter;
             const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.url.toLowerCase().includes(searchQuery.toLowerCase());
+                p.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                p.serverIdentity.toLowerCase().includes(searchQuery.toLowerCase());
             return matchesCategory && matchesSearch;
         });
     }, [portals, categoryFilter, searchQuery]);
@@ -259,12 +261,13 @@ export default function PortalsPage() {
             setFormData({
                 name: portal.name,
                 url: portal.url,
+                serverIdentity: portal.serverIdentity,
                 category: portal.category || 'General',
                 serverIp: portal.serverIp || ''
             });
         } else {
             setEditingPortal(null);
-            setFormData({ name: '', url: '', category: 'General', serverIp: '' });
+            setFormData({ name: '', url: '', serverIdentity: '', category: 'General', serverIp: '' });
         }
         setShowModal(true);
     };
@@ -272,7 +275,7 @@ export default function PortalsPage() {
     const closeModal = () => {
         setShowModal(false);
         setEditingPortal(null);
-        setFormData({ name: '', url: '', category: 'General', serverIp: '' });
+        setFormData({ name: '', url: '', serverIdentity: '', category: 'General', serverIp: '' });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -553,7 +556,7 @@ export default function PortalsPage() {
                                                 onCheckedChange={toggleSelectAll}
                                             />
                                         </th>
-                                        <th className="text-left p-4 font-semibold text-xs uppercase tracking-wider text-[var(--text-muted)] w-16">ID</th>
+                                        <th className="text-left p-4 font-semibold text-xs uppercase tracking-wider text-[var(--text-muted)] w-28">IDENTITY</th>
                                         <th className="text-left p-4 font-semibold text-xs uppercase tracking-wider text-[var(--text-muted)]">Portal Name</th>
                                         <th className="text-left p-4 font-semibold text-xs uppercase tracking-wider text-[var(--text-muted)] w-24">Category</th>
                                         <th className="text-center p-4 font-semibold text-xs uppercase tracking-wider text-[var(--text-muted)] w-24">Status</th>
@@ -582,10 +585,10 @@ export default function PortalsPage() {
                                                 />
                                             </td>
 
-                                            {/* ID */}
+                                            {/* Identity */}
                                             <td className="p-4">
-                                                <span className="text-sm font-mono text-[var(--text-muted)]">
-                                                    {portal.displayId || '—'}
+                                                <span className="text-xs font-mono text-[var(--text-secondary)]">
+                                                    {portal.serverIdentity || '—'}
                                                 </span>
                                             </td>
 
@@ -827,6 +830,14 @@ export default function PortalsPage() {
                             setFormData({ ...formData, url: e.target.value })
                         }
                         required
+                    />
+                    <Input
+                        label="Server Identity"
+                        placeholder="SMARTIFLY-01"
+                        value={formData.serverIdentity || ''}
+                        onChange={(e) =>
+                            setFormData({ ...formData, serverIdentity: e.target.value })
+                        }
                     />
                     <Input
                         label="Server IP"

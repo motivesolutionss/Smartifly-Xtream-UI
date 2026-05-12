@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 
 interface Admin {
-    id: string;
+    id: string | number;
     email: string;
     name: string | null;
 }
@@ -14,6 +14,7 @@ interface AuthState {
     isAuthenticated: boolean;
     login: (token: string, refreshToken: string, admin: Admin) => void;
     updateTokens: (token: string, refreshToken: string) => void;
+    setAdmin: (admin: Admin | null) => void;
     logout: () => void;
 }
 
@@ -37,6 +38,10 @@ export const useAuthStore = create<AuthState>()(
                     sessionStorage.setItem('refreshToken', refreshToken);
                 }
                 set({ token, refreshToken });
+            },
+            setAdmin: (admin) => {
+                const hasToken = typeof window !== 'undefined' ? !!sessionStorage.getItem('token') : false;
+                set({ admin, isAuthenticated: !!admin || hasToken });
             },
             logout: () => {
                 if (typeof window !== 'undefined') {

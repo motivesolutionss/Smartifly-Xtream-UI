@@ -24,13 +24,13 @@ export default function LoginPage() {
 
         try {
             const response = await authApi.login(email, password);
-            const { token, refreshToken, admin } = response.data;
-            login(token, refreshToken, admin);
+            const { accessToken, refreshToken, user } = response.data;
+            login(accessToken, refreshToken, user);
             toast.success('Welcome back!');
             router.push('/dashboard');
         } catch (error: unknown) {
-            const err = error as { response?: { data?: { error?: string } } };
-            const errorMessage = err.response?.data?.error || 'Login failed';
+            const err = error as { response?: { data?: { message?: string } } };
+            const errorMessage = err.response?.data?.message || 'Login failed';
             setError(errorMessage); // Set error state for display
             toast.error(errorMessage); // Show toast notification
             console.error('Login error:', error);

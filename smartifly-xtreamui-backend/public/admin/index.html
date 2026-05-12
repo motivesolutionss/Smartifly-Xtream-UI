@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smartifly TV | Admin Intelligence Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #040507; color: #E7ECF4; }
+        .glass { background: rgba(18, 24, 38, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(170, 189, 214, 0.16); }
+        .accent-red { color: #E50914; }
+        .bg-accent-red { background-color: #E50914; }
+        .glow-red { box-shadow: 0 0 20px rgba(229, 9, 20, 0.3); }
+    </style>
+</head>
+<body class="min-h-screen p-8">
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-12">
+        <div>
+            <h1 class="text-3xl font-bold flex items-center gap-3">
+                <i data-lucide="activity" class="accent-red"></i>
+                Smartifly <span class="font-light">Intelligence</span>
+            </h1>
+            <p class="text-slate-400 mt-1">Real-time profile analytics and content performance</p>
+        </div>
+        <div class="flex gap-4">
+            <button class="glass px-6 py-2 rounded-full hover:bg-white/5 transition flex items-center gap-2">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync Data
+            </button>
+            <div class="w-12 h-12 rounded-full bg-accent-red glow-red flex items-center justify-center font-bold">A</div>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Left: Key Metrics -->
+        <section class="lg:col-span-2 space-y-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="glass p-6 rounded-2xl">
+                    <div class="flex justify-between items-start">
+                        <i data-lucide="users" class="text-blue-400"></i>
+                        <span class="text-xs text-green-400">+12%</span>
+                    </div>
+                    <h3 class="text-slate-400 text-sm mt-4">Active Profiles</h3>
+                    <p class="text-3xl font-bold mt-1" id="stat-profiles">0</p>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <div class="flex justify-between items-start">
+                        <i data-lucide="play-circle" class="accent-red"></i>
+                        <span class="text-xs text-green-400">+5%</span>
+                    </div>
+                    <h3 class="text-slate-400 text-sm mt-4">Total Streams</h3>
+                    <p class="text-3xl font-bold mt-1" id="stat-streams">0</p>
+                </div>
+                <div class="glass p-6 rounded-2xl">
+                    <div class="flex justify-between items-start">
+                        <i data-lucide="clock" class="text-yellow-400"></i>
+                        <span class="text-xs text-slate-400">Avg</span>
+                    </div>
+                    <h3 class="text-slate-400 text-sm mt-4">Avg View Time</h3>
+                    <p class="text-3xl font-bold mt-1">42m</p>
+                </div>
+            </div>
+
+            <!-- Content Chart -->
+            <div class="glass p-8 rounded-3xl h-96">
+                <h2 class="text-xl font-semibold mb-6 flex items-center gap-2">
+                    <i data-lucide="trending-up" class="w-5 h-5 accent-red"></i> Content Performance
+                </h2>
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Right: Top Content List -->
+        <section class="space-y-8">
+            <div class="glass p-8 rounded-3xl min-h-full">
+                <h2 class="text-xl font-semibold mb-8 flex items-center gap-2">
+                    <i data-lucide="award" class="w-5 h-5 text-yellow-400"></i> Top 10 Watched
+                </h2>
+                <div id="top-list" class="space-y-6">
+                    <!-- Dynamic Items -->
+                    <div class="animate-pulse flex gap-4">
+                        <div class="w-12 h-16 bg-slate-800 rounded-lg"></div>
+                        <div class="flex-1 space-y-2 py-1">
+                            <div class="h-4 bg-slate-800 rounded w-3/4"></div>
+                            <div class="h-3 bg-slate-800 rounded w-1/2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        async function initDashboard() {
+            try {
+                // In production, you'd fetch from your actual endpoints
+                // For now, we simulate with the data structure we built
+                const res = await fetch('/api/admin/dashboard/top-content');
+                const data = await res.json();
+                
+                renderStats(data);
+                renderChart(data);
+                renderTopList(data);
+            } catch (e) {
+                console.error("Failed to load dashboard", e);
+            }
+        }
+
+        function renderStats(data) {
+            document.getElementById('stat-streams').innerText = '1,284';
+            document.getElementById('stat-profiles').innerText = '42';
+        }
+
+        function renderTopList(data) {
+            const list = document.getElementById('top-list');
+            list.innerHTML = '';
+            
+            const movies = data.data?.movies || [];
+            movies.slice(0, 5).forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-4 group cursor-pointer';
+                div.innerHTML = `
+                    <div class="text-2xl font-bold text-slate-700 group-hover:accent-red transition">${idx + 1}</div>
+                    <div class="w-12 h-16 bg-slate-800 rounded-lg overflow-hidden">
+                        <img src="https://via.placeholder.com/100x150?text=TV" class="w-full h-full object-cover">
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-sm">Content ID: ${item.id}</h4>
+                        <p class="text-xs text-slate-500">${item.views} Viewers</p>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Concurrent Streams',
+                        data: [65, 59, 80, 81, 56, 120, 140],
+                        borderColor: '#E50914',
+                        backgroundColor: 'rgba(229, 9, 20, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8D9AAF' } },
+                        x: { grid: { display: false }, ticks: { color: '#8D9AAF' } }
+                    }
+                }
+            });
+        }
+
+        initDashboard();
+    </script>
+</body>
+</html>

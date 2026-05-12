@@ -6,8 +6,14 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.smartifly.tv.data.models.MovieMetadata
+import com.smartifly.tv.data.remote.SmartiflyApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class WatchProgress(
     val contentId: String,
@@ -17,8 +23,12 @@ data class WatchProgress(
     val metadata: MovieMetadata
 )
 
-class ResumeWatchingRepository(private val context: Context) {
+class ResumeWatchingRepository(
+    private val context: Context,
+    private val api: SmartiflyApi
+) {
     private val gson = Gson()
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     private fun getProgressKey(profileId: String) = stringPreferencesKey("resume_watching_$profileId")
 
@@ -52,7 +62,52 @@ class ResumeWatchingRepository(private val context: Context) {
                 currentList.add(progress)
             }
 
-            preferences[key] = gson.toJson(currentList)
+            val updatedJson = gson.toJson(currentList)
+            preferences[key] = updatedJson
+            
+            // Enterprise Sync: Fire and forget to Smartifly Cloud
+            scope.launch {
+                try {
+                    api.syncResumeWatching(mapOf(
+                        "profileId" to profileId,
+                        "progressList" to currentList
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.e("SmartiflySync", "Failed to sync resume to cloud: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Enterprise Feature: Pulls resume status from other devices.
+     */
+    suspend fun syncFromCloud(profileId: String) {
+        try {
+            val response = api.fetchResumeWatching(profileId)
+            val data = response["data"] as? List<*> ?: return
+            
+            val type = object : TypeToken<List<WatchProgress>>() {}.type
+            val cloudList: List<WatchProgress> = gson.fromJson(gson.toJson(data), type)
+            
+            if (cloudList.isNotEmpty()) {
+                context.dataStore.edit { preferences ->
+                    val key = getProgressKey(profileId)
+                    val currentJson = preferences[key] ?: "[]"
+                    val currentList: MutableList<WatchProgress> = gson.fromJson(currentJson, type)
+                    
+                    // Merge logic: Keep the one with the latest lastUpdated timestamp
+                    val mergedList = (currentList + cloudList)
+                        .groupBy { it.contentId }
+                        .map { (_, versions) -> versions.maxBy { it.lastUpdated } }
+                        .sortedByDescending { it.lastUpdated }
+                    
+                    preferences[key] = gson.toJson(mergedList)
+                }
+                android.util.Log.d("SmartiflySync", "Cloud Resume SYNCED for profile $profileId")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SmartiflySync", "Failed to fetch resume from cloud: ${e.message}")
         }
     }
 }

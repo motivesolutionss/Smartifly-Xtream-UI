@@ -5,6 +5,7 @@
 export interface Portal {
     id: string;
     displayId: number;
+    serverIdentity: string;
     name: string;
     url: string;
     username?: string | null;
@@ -27,6 +28,7 @@ export interface Portal {
 export interface CreatePortalDTO {
     name: string;
     url: string;
+    serverIdentity?: string;
     username?: string;
     password?: string;
     description?: string;
@@ -37,6 +39,7 @@ export interface CreatePortalDTO {
 export interface UpdatePortalDTO {
     name?: string;
     url?: string;
+    serverIdentity?: string;
     username?: string;
     password?: string;
     description?: string;

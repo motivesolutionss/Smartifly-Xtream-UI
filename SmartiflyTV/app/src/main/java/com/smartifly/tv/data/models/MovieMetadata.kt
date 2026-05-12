@@ -9,5 +9,6 @@ data class MovieMetadata(
     val duration: String,
     val posterUrl: String,
     val backdropUrl: String,
-    val type: String = "movie"
+    val type: String = "movie",
+    val categoryId: String = ""
 )

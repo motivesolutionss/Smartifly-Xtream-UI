@@ -3,7 +3,13 @@
 // ============================================
 
 // API Configuration
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+if (process.env.NODE_ENV === 'development' && !process.env.NEXT_PUBLIC_API_URL) {
+    console.warn(
+        '[Config] NEXT_PUBLIC_API_URL is not set. Using fallback API_BASE_URL=http://localhost:5000'
+    );
+}
 
 // Pagination
 export const DEFAULT_PAGE_SIZE = 10;

@@ -41,9 +41,13 @@ object Dimensions {
     val BadgeCornerRadius = 4.dp
     val IconButtonSize = 48.dp
     
+    val BorderRadiusSmall = 8.dp
+    val BorderRadiusMedium = 16.dp
+    val BorderRadiusLarge = 24.dp
+    
     // Onboarding Sophistication Tokens
     val OnboardingPadding = 80.dp
-    val OnboardingLogoWidth = 160.dp
+    val OnboardingLogoWidth = 220.dp
     val OnboardingLogoHeight = 64.dp
     val OnboardingDescWidth = 380.dp
     val FocusScale = 1.05f

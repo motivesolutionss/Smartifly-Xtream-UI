@@ -6,6 +6,8 @@ import { useAuthStore } from '@/lib/store';
 import { authApi } from '@/lib/api';
 import {
     LayoutDashboard,
+    Users,
+    Wallet,
     Globe,
     Ticket,
     Package,
@@ -17,6 +19,8 @@ import {
 
 const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/users', label: 'Users', icon: Users },
+    { href: '/finance', label: 'Finance', icon: Wallet },
     { href: '/portals', label: 'Portals', icon: Globe },
     { href: '/tickets', label: 'Tickets', icon: Ticket },
     { href: '/packages', label: 'Packages', icon: Package },

@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactQueryProvider } from "@/components/providers/ReactQueryProvider";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { GlobalBackground } from "@/components/layout/GlobalBackground";
 import { ErrorBoundaryWrapper } from "@/components/ErrorBoundaryWrapper";
 import Navbar from "@/components/layout/Navbar";
@@ -70,7 +71,8 @@ export default function RootLayout({
         <ErrorBoundaryWrapper>
           <ReactQueryProvider>
             <CurrencyProvider>
-              <MotionProvider>
+              <AuthProvider>
+                <MotionProvider>
                 <TooltipProvider>
                   <div className="relative z-10 min-h-screen flex flex-col">
                     <Navbar />
@@ -87,8 +89,9 @@ export default function RootLayout({
                   <Sonner />
                 </TooltipProvider>
               </MotionProvider>
-            </CurrencyProvider>
-          </ReactQueryProvider>
+            </AuthProvider>
+          </CurrencyProvider>
+        </ReactQueryProvider>
         </ErrorBoundaryWrapper>
       </body>
     </html>

@@ -2,7 +2,6 @@ package com.smartifly.tv
 
 import android.content.res.Configuration
 import android.os.Bundle
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
@@ -15,21 +14,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        val initialIntentData = intent?.data
-        
+        // Initialize global dependencies
+        com.smartifly.tv.data.remote.ApiClient.init(this)
+
         setContent {
-            SmartiflyNavGraph(
-                isInPipMode = isInPipMode.value,
-                initialIntentUri = initialIntentData
-            )
+            SmartiflyNavGraph(isInPipMode = isInPipMode.value)
         }
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Enter PiP when Home is pressed, but only if we are playing video
-        // We'll use a global state or check the current destination
-        if (PipManager.isPipSupported(this)) {
+        if (PipManager.isPipSupported(this) && PipManager.isPlaybackActive()) {
             PipManager.enterPipMode(this)
         }
     }

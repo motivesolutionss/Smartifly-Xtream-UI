@@ -8,6 +8,8 @@ export * from './useAnnouncements';
 export * from './useSettings';
 export * from './useNotifications';
 export * from './useDashboard';
+export * from './useUsers';
+export * from './useFinance';
 
 // Utility hooks (uncomment as created)
 export { useSocket } from './useSocket';

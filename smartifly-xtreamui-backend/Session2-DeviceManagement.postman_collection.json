@@ -1,0 +1,215 @@
+{
+  "info": {
+    "_postman_id": "a1e3b55d-b123-46d3-a92e-s2-devicemgmt",
+    "name": "Godfather IPTV – Session 2 (Device + QR + Fraud System)",
+    "description": "Complete testing suite for Device Management, QR Activation, Fraud Detection, Cleanup Workers, and Admin Device Operations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "🏥 Health Check",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🟦 PUBLIC → DEVICE CHECK",
+      "item": [
+        {
+          "name": "POST /v1/public/device/check",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mac\": \"00:1A:79:9F:F6:7F\",\n  \"deviceId\": \"android-12345\",\n  \"licenseKey\": \"GF-TEST-1234-5678\",\n  \"deviceFingerprint\": \"fp-123abc456xyz\",\n  \"publicIp\": \"103.10.20.30\"\n}"
+            },
+            "headers": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/v1/public/device/check"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🟦 PUBLIC → QR REGISTRATION FLOW",
+      "item": [
+        {
+          "name": "1) POST /v1/public/qr/generate",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"licenseKey\": \"GF-XXXX-YYYY-ZZZZ\",\n  \"mac\": \"44:55:66:77:88:99\",\n  \"deviceId\": \"android-stb-8899\",\n  \"deviceId2\": \"chip-1234\",\n  \"serialNumber\": \"SERIAL-BOSS-777\",\n  \"platform\": \"ANDROID_STB\"\n}"
+            },
+            "headers": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/public/qr/generate"
+          }
+        },
+        {
+          "name": "2) GET /v1/public/qr/device/:token",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/public/qr/device/{{qr_token}}"
+          }
+        },
+        {
+          "name": "3) POST /v1/public/qr/activate-from-web",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{qr_token}}\",\n  \"portalAliasId\": 1\n}"
+            },
+            "headers": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/public/qr/activate-from-web"
+          }
+        },
+        {
+          "name": "4) POST /v1/public/qr/cleanup",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/public/qr/cleanup"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🟧 ADMIN → DEVICES",
+      "item": [
+        {
+          "name": "GET /v1/admin/devices",
+          "request": {
+            "method": "GET",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices"
+          }
+        },
+        {
+          "name": "GET /v1/admin/devices/:id",
+          "request": {
+            "method": "GET",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices/{{device_id}}"
+          }
+        },
+        {
+          "name": "POST /v1/admin/devices/:id/flag-suspicious",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"reason\": \"Suspicious activity detected manually\" }"
+            },
+            "url": "{{base_url}}/v1/admin/devices/{{device_id}}/flag-suspicious"
+          }
+        },
+        {
+          "name": "POST /v1/admin/devices/:id/clear-suspicious",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices/{{device_id}}/clear-suspicious"
+          }
+        },
+        {
+          "name": "POST /v1/admin/devices/:id/blacklist",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Fraud detected\",\n  \"details\": \"Multiple MAC swaps\",\n  \"expiresAt\": null\n}"
+            },
+            "url": "{{base_url}}/v1/admin/devices/{{device_id}}/blacklist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🟪 FRAUD SYSTEM TESTING",
+      "item": [
+        {
+          "name": "POST /v1/admin/devices/run-fraud-scan",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices/run-fraud-scan"
+          }
+        },
+        {
+          "name": "GET /v1/admin/devices/fraud/suspicious",
+          "request": {
+            "method": "GET",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices/fraud/suspicious"
+          }
+        },
+        {
+          "name": "GET /v1/admin/devices/fraud/blacklist",
+          "request": {
+            "method": "GET",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/devices/fraud/blacklist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🟩 CLEANUP WORKER",
+      "item": [
+        {
+          "name": "POST /v1/admin/cleanup/run",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/cleanup/run"
+          }
+        },
+        {
+          "name": "POST /v1/admin/cleanup/tokens",
+          "request": {
+            "method": "POST",
+            "headers": [
+              { "key": "Authorization", "value": "Bearer {{admin_access_token}}" }
+            ],
+            "url": "{{base_url}}/v1/admin/cleanup/tokens"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "admin_access_token", "value": "" },
+    { "key": "qr_token", "value": "" },
+    { "key": "device_id", "value": "1" }
+  ]
+}

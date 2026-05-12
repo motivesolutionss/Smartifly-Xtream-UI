@@ -7,6 +7,9 @@ import android.util.Rational
 import androidx.annotation.RequiresApi
 
 object PipManager {
+    @Volatile
+    private var playbackActive: Boolean = false
+
     fun enterPipMode(activity: Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val params = PictureInPictureParams.Builder()
@@ -15,6 +18,12 @@ object PipManager {
             activity.enterPictureInPictureMode(params)
         }
     }
+
+    fun setPlaybackActive(isActive: Boolean) {
+        playbackActive = isActive
+    }
+
+    fun isPlaybackActive(): Boolean = playbackActive
 
     fun isPipSupported(activity: Activity): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && 

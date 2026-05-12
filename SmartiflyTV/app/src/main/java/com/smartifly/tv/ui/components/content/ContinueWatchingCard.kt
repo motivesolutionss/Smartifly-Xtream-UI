@@ -16,16 +16,28 @@ import com.smartifly.tv.ui.components.base.BaseFocusableCard
 import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.PrimaryRed
 import com.smartifly.tv.ui.theme.TextPrimary
+import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImagePolicyEngine
+import com.smartifly.tv.data.image.ImageQualityMonitor
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun ContinueWatchingCard(
     imageUrl: String,
+    fallbackImageUrl: String? = null,
     progress: Float,
     title: String,
+    profileId: String? = null,
+    contentId: String? = null,
+    contentType: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val resolvedImage = ImagePolicyEngine.resolveFirstUsable(
+        imageUrl,
+        fallbackImageUrl
+    ) ?: imageUrl
+
     BaseFocusableCard(
         onClick = onClick,
         modifier = modifier.size(Dimensions.ContinueWatchingWidth, Dimensions.ContinueWatchingHeight)
@@ -33,10 +45,33 @@ fun ContinueWatchingCard(
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 AsyncImage(
-                    model = imageUrl,
+                    model = resolvedImage,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    onSuccess = {
+                        if (resolvedImage.isNotBlank()) {
+                            ImageQualityMonitor.recordSuccess(
+                                url = resolvedImage,
+                                context = ImageQualityMonitor.Context.CONTINUE_WATCHING,
+                                profileId = profileId,
+                                contentType = contentType,
+                                contentId = contentId
+                            )
+                        }
+                    },
+                    onError = {
+                        if (resolvedImage.isNotBlank()) {
+                            ImageFailureMemory.markBad(resolvedImage)
+                            ImageQualityMonitor.recordFailure(
+                                url = resolvedImage,
+                                context = ImageQualityMonitor.Context.CONTINUE_WATCHING,
+                                profileId = profileId,
+                                contentType = contentType,
+                                contentId = contentId
+                            )
+                        }
+                    }
                 )
                 
                 Box(

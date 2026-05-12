@@ -87,7 +87,7 @@ fun DeviceActivationScreen(
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            com.smartifly.tv.ui.components.base.SmartiflyLoader(modifier = Modifier.size(40.dp))
             Text(
                 text = "Waiting for operator approval...",
                 modifier = Modifier.padding(top = 16.dp),

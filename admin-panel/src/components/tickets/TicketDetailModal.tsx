@@ -42,6 +42,30 @@ interface TicketDetailModalProps {
     // Actions
     onReply: (text: string) => Promise<void>;
     onUpdateStatus: (status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED') => void;
+    onApprovePayment: (payload: {
+        userId?: number;
+        packageId?: string;
+        amount?: number;
+        currency?: string;
+        plan?: string;
+        serverId?: number;
+    }) => Promise<void>;
+    approvalPayload: {
+        userId: string;
+        packageId: string;
+        amount: string;
+        currency: string;
+        plan: string;
+        serverId: string;
+    };
+    onApprovalPayloadChange: (next: {
+        userId?: string;
+        packageId?: string;
+        amount?: string;
+        currency?: string;
+        plan?: string;
+        serverId?: string;
+    }) => void;
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
     onFileUpload: (files: FileList) => Promise<void>;
@@ -49,6 +73,7 @@ interface TicketDetailModalProps {
     // Loading states
     isReplyLoading?: boolean;
     isUploading?: boolean;
+    isApprovingPayment?: boolean;
 }
 
 function formatBytes(bytes: number) {
@@ -66,11 +91,15 @@ export function TicketDetailModal({
     templates,
     onReply,
     onUpdateStatus,
+    onApprovePayment,
+    approvalPayload,
+    onApprovalPayloadChange,
     onAddTag,
     onRemoveTag,
     onFileUpload,
     isReplyLoading = false,
     isUploading = false,
+    isApprovingPayment = false,
 }: TicketDetailModalProps) {
     // Local state
     const [replyText, setReplyText] = useState('');
@@ -90,6 +119,7 @@ export function TicketDetailModal({
     }, [ticket?.replies, isOpen]);
 
     if (!ticket) return null;
+    const canApprovePayment = Boolean(approvalPayload.userId.trim()) && !isApprovingPayment && ticket.status !== 'RESOLVED' && ticket.status !== 'CLOSED';
 
     const handleCopyId = () => {
         navigator.clipboard.writeText(ticket.ticketNo);
@@ -380,6 +410,25 @@ export function TicketDetailModal({
                                 <Button
                                     variant="outline"
                                     size="sm"
+                                    className="w-full justify-start hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-400"
+                                    onClick={() =>
+                                        onApprovePayment({
+                                            userId: approvalPayload.userId ? Number(approvalPayload.userId) : undefined,
+                                            packageId: approvalPayload.packageId || undefined,
+                                            amount: approvalPayload.amount ? Number(approvalPayload.amount) : undefined,
+                                            currency: approvalPayload.currency || undefined,
+                                            plan: approvalPayload.plan || undefined,
+                                            serverId: approvalPayload.serverId ? Number(approvalPayload.serverId) : undefined,
+                                        })
+                                    }
+                                    disabled={!canApprovePayment}
+                                >
+                                    {isApprovingPayment ? <Loader2 size={14} className="mr-2 animate-spin text-emerald-400" /> : <CheckCircle size={14} className="mr-2 text-emerald-500" />}
+                                    Approve & Assign Package
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
                                     className="w-full justify-start hover:bg-green-500/10 hover:border-green-500/20 hover:text-green-500"
                                     onClick={() => onUpdateStatus('RESOLVED')}
                                     disabled={ticket.status === 'RESOLVED'}
@@ -395,6 +444,48 @@ export function TicketDetailModal({
                                 >
                                     <XCircle size={14} className="mr-2 text-gray-400" /> Close Ticket
                                 </Button>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                                <Input
+                                    value={approvalPayload.userId}
+                                    onChange={(e) => onApprovalPayloadChange({ userId: e.target.value })}
+                                    placeholder="User ID (required)"
+                                    className="h-8 text-xs"
+                                />
+                                <Input
+                                    value={approvalPayload.packageId}
+                                    onChange={(e) => onApprovalPayloadChange({ packageId: e.target.value })}
+                                    placeholder="Package ID (optional)"
+                                    className="h-8 text-xs"
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Input
+                                        value={approvalPayload.amount}
+                                        onChange={(e) => onApprovalPayloadChange({ amount: e.target.value })}
+                                        placeholder="Amount"
+                                        className="h-8 text-xs"
+                                    />
+                                    <Input
+                                        value={approvalPayload.currency}
+                                        onChange={(e) => onApprovalPayloadChange({ currency: e.target.value.toUpperCase() })}
+                                        placeholder="Currency"
+                                        className="h-8 text-xs"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Input
+                                        value={approvalPayload.plan}
+                                        onChange={(e) => onApprovalPayloadChange({ plan: e.target.value.toUpperCase() })}
+                                        placeholder="Plan (MONTHLY...)"
+                                        className="h-8 text-xs"
+                                    />
+                                    <Input
+                                        value={approvalPayload.serverId}
+                                        onChange={(e) => onApprovalPayloadChange({ serverId: e.target.value })}
+                                        placeholder="Server ID"
+                                        className="h-8 text-xs"
+                                    />
+                                </div>
                             </div>
                         </div>
 

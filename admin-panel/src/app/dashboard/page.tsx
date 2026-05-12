@@ -24,6 +24,8 @@ import {
 } from '@/hooks';
 import {
     Globe,
+    Users,
+    KeyRound,
     Ticket,
     Package,
     Bell,
@@ -73,6 +75,14 @@ export default function DashboardPage() {
     const { data: packages = [], isLoading: packagesLoading } = usePackages();
     const { data: packageAnalytics } = usePackageAnalytics();
 
+    const ticketList = useMemo(() => {
+        if (Array.isArray(tickets)) return tickets;
+        if (tickets && typeof tickets === 'object' && Array.isArray((tickets as any).data)) {
+            return (tickets as any).data;
+        }
+        return [];
+    }, [tickets]);
+
     const dashboardRef = useRef<HTMLDivElement>(null);
     const [isExporting, setIsExporting] = useState(false);
 
@@ -104,7 +114,7 @@ export default function DashboardPage() {
 
     // Filter recent open tickets
     const recentTickets = useMemo(() => {
-        return tickets
+        return ticketList
             .filter((t: any) => t.status === 'OPEN' || t.status === 'IN_PROGRESS')
             .slice(0, 5)
             .map((t: any) => ({
@@ -114,7 +124,7 @@ export default function DashboardPage() {
                 status: t.status,
                 createdAt: t.createdAt,
             }));
-    }, [tickets]);
+    }, [ticketList]);
 
     // Filter active announcements
     const activeAnnouncements = useMemo(() => {
@@ -235,11 +245,21 @@ export default function DashboardPage() {
                         Failed to load statistics. Please refresh the page.
                     </Card>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                         <StatsCard
                             title="Portals"
                             value={dashboardAnalytics?.summary.portals ?? stats?.portals ?? 0}
                             icon={<Globe size={24} />}
+                        />
+                        <StatsCard
+                            title="Users"
+                            value={dashboardAnalytics?.summary.users ?? 0}
+                            icon={<Users size={24} />}
+                        />
+                        <StatsCard
+                            title="Active Licenses"
+                            value={dashboardAnalytics?.summary.activeLicenses ?? 0}
+                            icon={<KeyRound size={24} />}
                         />
                         <StatsCard
                             title="Open Tickets"

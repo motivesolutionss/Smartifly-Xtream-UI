@@ -41,6 +41,7 @@ import com.smartifly.tv.ui.theme.TextSecondary
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    profileId: String,
     onMovieClick: (MovieMetadata) -> Unit,
     onPlayClick: (MovieMetadata) -> Unit
 ) {
@@ -61,6 +62,14 @@ fun HomeScreen(
         )
 
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // Enterprise Branding: Subtle Wallpaper Layer
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.smartifly.tv.R.drawable.loginscreen_image),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.05f },
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+
             // Atmospheric Glow (Top Left) - Only on High/Medium Tier
             if (config.tier != DeviceTier.LOW) {
                 Box(
@@ -96,6 +105,7 @@ fun HomeScreen(
                     HomeContent(
                         heroMovie = state.heroMovie,
                         sections = state.sections,
+                        profileId = profileId,
                         prefetchManager = prefetchManager,
                         onMovieClick = onMovieClick,
                         onPlayClick = onPlayClick,
@@ -125,16 +135,26 @@ fun HomeScreen(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HomeContent(
-    heroMovie: MovieMetadata,
+    heroMovie: MovieMetadata?,
     sections: List<HomeSection>,
+    profileId: String,
     prefetchManager: RowPrefetchManager,
     onMovieClick: (MovieMetadata) -> Unit,
     onPlayClick: (MovieMetadata) -> Unit,
     onAtmosphereChange: (Color) -> Unit
 ) {
-    var focusedMovie by remember { mutableStateOf(heroMovie) }
     var isBrowsingRails by remember { mutableStateOf(false) }
     val config = LocalPerformanceConfig.current
+    val resolvedHero = remember(heroMovie, sections) {
+        val candidate = heroMovie ?: sections.firstOrNull()?.items?.firstOrNull()
+        candidate?.let { movie ->
+            if (movie.backdropUrl.isBlank() && movie.posterUrl.isNotBlank()) {
+                movie.copy(backdropUrl = movie.posterUrl)
+            } else {
+                movie
+            }
+        }
+    }
 
     // Masterpiece Enhancement: Depth Perception (Hero recedes when browsing)
     val heroScale by animateFloatAsState(
@@ -143,53 +163,63 @@ fun HomeContent(
         label = "heroDepth"
     )
     val heroAlpha by animateFloatAsState(
-        targetValue = if (isBrowsingRails) 0.7f else 1.0f,
+        targetValue = if (isBrowsingRails) 0.6f else 1.0f,
         animationSpec = tween(500),
         label = "heroDim"
     )
+
+    // Stable Hero Logic: We use the heroMovie from the Success state
+    // We only update focusedMovie for the atmosphere/metadata preview, NOT the hero banner image
+    var currentlySelectedMovie by remember { mutableStateOf<MovieMetadata?>(null) }
 
     TvLazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = Dimensions.RowSpacing * 2)
     ) {
         item {
-            HeroBanner(
-                movie = focusedMovie,
-                onPlayClick = { onPlayClick(it) },
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = if (config.tier == DeviceTier.LOW) 1f else heroScale
-                        scaleY = if (config.tier == DeviceTier.LOW) 1f else heroScale
-                        alpha = if (config.tier == DeviceTier.LOW) 1f else heroAlpha
-                    }
-                    .padding(bottom = Dimensions.PaddingLarge)
-                    .onFocusChanged { state ->
-                        if (state.isFocused) {
-                            isBrowsingRails = false
-                            onAtmosphereChange(Color.Transparent) // Reset atmosphere on hero
+            resolvedHero?.let { movie ->
+                HeroBanner(
+                    movie = movie,
+                    onPlayClick = { onPlayClick(it) },
+                    modifier = Modifier
+                        .graphicsLayer {
+                            val isLowEnd = config.tier == DeviceTier.LOW
+                            scaleX = if (isLowEnd) 1f else heroScale
+                            scaleY = if (isLowEnd) 1f else heroScale
+                            alpha = if (isLowEnd) 1f else heroAlpha
                         }
-                    }
-            )
+                        .padding(bottom = Dimensions.PaddingLarge)
+                        .onFocusChanged { state ->
+                            if (state.isFocused) {
+                                isBrowsingRails = false
+                                onAtmosphereChange(Color.Transparent) // Reset atmosphere on hero
+                            }
+                        }
+                )
+            } ?: Spacer(modifier = Modifier.height(300.dp))
         }
         
         items(sections) { section ->
             ContentRow(
                 section = section,
+                profileId = profileId,
                 onMovieClick = onMovieClick,
                 onMovieFocused = { movie, index -> 
-                    focusedMovie = movie
+                    currentlySelectedMovie = movie
                     isBrowsingRails = true
                     prefetchManager.onCardFocused(index, section.items)
                     
-                    // Update atmosphere based on movie genre/vibe
-                    // In a real app, this would come from movie metadata
-                    val vibeColor = when {
-                        section.title.contains("Action") -> Color(0xFFE50914) // Netflix Red
-                        section.title.contains("Sci-Fi") -> Color(0xFF00D1FF) // Cyber Cyan
-                        section.title.contains("Continue") -> Color(0xFFFFA500) // Warm Gold
-                        else -> Color.White
+                    if (config.tier != DeviceTier.LOW) {
+                        // Update atmosphere based on movie genre/vibe
+                        val vibeColor = when {
+                            section.title.contains("Action") || movie.title.contains("War", true) -> Color(0xFFE50914)
+                            section.title.contains("Sci-Fi") || movie.title.contains("Space", true) -> Color(0xFF00D1FF)
+                            section.title.contains("Trending") -> Color(0xFF6200EE) // Premium Purple
+                            section.title.contains("Continue") -> Color(0xFFFFA500)
+                            else -> Color(0xFF1F1F1F)
+                        }
+                        onAtmosphereChange(vibeColor)
                     }
-                    onAtmosphereChange(vibeColor)
                 }
             )
             Spacer(modifier = Modifier.height(Dimensions.RowSpacing))
@@ -203,6 +233,7 @@ fun HomeContent(
 @Composable
 fun ContentRow(
     section: HomeSection,
+    profileId: String,
     onMovieClick: (MovieMetadata) -> Unit,
     onMovieFocused: (MovieMetadata, Int) -> Unit
 ) {
@@ -225,14 +256,19 @@ fun ContentRow(
             itemsIndexed(movies) { index, movie ->
                 if (title == "Continue Watching" && section.progressList != null) {
                     com.smartifly.tv.ui.components.content.ContinueWatchingCard(
-                        imageUrl = movie.posterUrl,
+                        imageUrl = if (movie.backdropUrl.isNotBlank()) movie.backdropUrl else movie.posterUrl,
+                        fallbackImageUrl = movie.posterUrl,
                         progress = section.progressList[index],
                         title = movie.title,
+                        profileId = profileId,
+                        contentId = movie.id,
+                        contentType = movie.type,
                         onClick = { onMovieClick(movie) }
                     )
                 } else {
                     PosterCard(
                         movie = movie,
+                        profileId = profileId,
                         onFocus = { onMovieFocused(movie, index) },
                         onClick = { onMovieClick(movie) }
                     )

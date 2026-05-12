@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import {
@@ -29,6 +29,8 @@ import {
     useUpdateTicketTags,
     useUploadAttachments,
     useTicketStats,
+    useUsers,
+    usePackages,
 } from '@/hooks';
 import type { Ticket, TicketTemplate } from '@/types';
 import toast from 'react-hot-toast';
@@ -102,6 +104,8 @@ export default function TicketsPage() {
     const replyMutation = useReplyTicket();
     const uploadAttachmentsMutation = useUploadAttachments();
     const { data: templates } = useTicketTemplates();
+    const { data: usersData } = useUsers({ page: 1, limit: 200 });
+    const { data: packagesData } = usePackages();
 
     // Local state
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -112,6 +116,15 @@ export default function TicketsPage() {
     });
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [isApprovingPayment, setIsApprovingPayment] = useState(false);
+    const [approvalPayload, setApprovalPayload] = useState({
+        userId: '',
+        packageId: '',
+        amount: '',
+        currency: 'USD',
+        plan: 'MONTHLY',
+        serverId: '',
+    });
 
     // Handlers
     const handleSort = (key: keyof Ticket) => {
@@ -236,6 +249,55 @@ export default function TicketsPage() {
             toast.error('Failed to update status');
         }
     };
+
+    const handleApprovePayment = async (payload: {
+        userId?: number;
+        packageId?: string;
+        amount?: number;
+        currency?: string;
+        plan?: string;
+        serverId?: number;
+    }) => {
+        if (!selectedTicket) return;
+        if (!payload.userId || !Number.isFinite(payload.userId)) {
+            toast.error('User ID is required before approving payment.');
+            return;
+        }
+        setIsApprovingPayment(true);
+        try {
+            await ticketsApi.approvePayment(selectedTicket.id, payload);
+            toast.success('Payment approved, package assigned, and finance ledger posted.');
+            await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+            setSelectedTicket(null);
+        } catch (error: any) {
+            const message =
+                error?.response?.data?.message ||
+                'Failed to approve payment. Ensure ticket user exists or pass userId in backend call.';
+            toast.error(message);
+        } finally {
+            setIsApprovingPayment(false);
+        }
+    };
+
+    const prefillApprovalPayload = (ticket: Ticket) => {
+        const users = (usersData as any)?.users ?? [];
+        const matchingUser = users.find((u: any) => String(u.email ?? '').toLowerCase() === String(ticket.email ?? '').toLowerCase());
+        const defaultPkg = Array.isArray(packagesData) && packagesData.length > 0 ? packagesData[0] : null;
+        setApprovalPayload({
+            userId: matchingUser?.id ? String(matchingUser.id) : '',
+            packageId: defaultPkg?.id ? String(defaultPkg.id) : '',
+            amount: defaultPkg?.price != null ? String(defaultPkg.price) : '',
+            currency: String(defaultPkg?.currency ?? 'USD'),
+            plan: String(defaultPkg?.duration ?? 'MONTHLY').toUpperCase(),
+            serverId: '',
+        });
+    };
+
+    useEffect(() => {
+        if (selectedTicket) {
+            prefillApprovalPayload(selectedTicket);
+        }
+    }, [selectedTicket, usersData, packagesData]);
 
     const handleBulkAction = async (action: 'close' | 'resolve' | 'delete') => {
         if (selectedIds.length === 0) return;
@@ -776,6 +838,9 @@ export default function TicketsPage() {
                     });
                 }}
                 onUpdateStatus={(status) => handleUpdateStatus(selectedTicket!.id, status)}
+                onApprovePayment={handleApprovePayment}
+                approvalPayload={approvalPayload}
+                onApprovalPayloadChange={(next) => setApprovalPayload((prev) => ({ ...prev, ...next }))}
                 onAddTag={(tag) => {
                     const currentTags = selectedTicket!.tags || [];
                     if (!currentTags.includes(tag)) {
@@ -799,6 +864,7 @@ export default function TicketsPage() {
                 }}
                 isReplyLoading={replyMutation.isPending}
                 isUploading={uploadAttachmentsMutation.isPending}
+                isApprovingPayment={isApprovingPayment}
             />
 
             <ConfirmModal

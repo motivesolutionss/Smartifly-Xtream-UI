@@ -9,12 +9,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import com.smartifly.tv.navigation.Destination
 import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.PrimaryRed
 import com.smartifly.tv.ui.theme.TextPrimary
 import com.smartifly.tv.ui.theme.TextSecondary
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.smartifly.tv.R
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -26,7 +33,12 @@ fun SidebarNav(
     var isExpanded by remember { mutableStateOf(false) }
     val isLowEnd = com.smartifly.tv.performance.lowend.LocalPerformanceConfig.current.tier == com.smartifly.tv.performance.lowend.DeviceTier.LOW
     
-    val backgroundColor = if (isLowEnd) Color(0xFF0D1117) else Color(0xFF0D1117).copy(alpha = 0.8f)
+    // Enterprise Glassmorphism Logic
+    val backgroundColor = if (isLowEnd) {
+        Color(0xFF0D1117) 
+    } else {
+        Color(0xFF0D1117).copy(alpha = 0.85f)
+    }
 
     Box(
         modifier = modifier
@@ -38,21 +50,51 @@ fun SidebarNav(
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.Start
         ) {
-            Box(modifier = Modifier.size(40.dp).background(PrimaryRed, shape = androidx.compose.foundation.shape.CircleShape))
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Destination.entries.forEach { destination ->
-                if (destination != Destination.Details && destination != Destination.Player) {
-                    NavItem(
-                        destination = destination,
-                        isSelected = selectedDestination == destination,
-                        isExpanded = isExpanded,
-                        onClick = { onDestinationSelected(destination) }
+            // Smartifly Logo Integration
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.smartifly_icon),
+                    contentDescription = "Smartifly",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                
+                if (isExpanded) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "SMARTIFLY",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PrimaryRed,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Black,
+                        letterSpacing = 2.sp
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(48.dp))
+            
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Destination.entries.forEach { destination ->
+                    if (destination != Destination.Details && destination != Destination.Player) {
+                        NavItem(
+                            destination = destination,
+                            isSelected = selectedDestination == destination,
+                            isExpanded = isExpanded,
+                            onClick = { onDestinationSelected(destination) }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -81,17 +123,23 @@ fun NavItem(
             .height(48.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(24.dp).background(if (isSelected) PrimaryRed else Color.Gray.copy(alpha = 0.5f), shape = androidx.compose.foundation.shape.CircleShape))
+            Icon(
+                imageVector = destination.icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = if (isSelected) PrimaryRed else LocalContentColor.current
+            )
             
             if (isExpanded) {
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(20.dp))
                 Text(
                     text = destination.title,
                     maxLines = 1,
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isSelected) Color.White else TextSecondary
                 )
             }
         }

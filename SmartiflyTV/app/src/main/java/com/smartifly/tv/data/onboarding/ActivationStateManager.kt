@@ -17,6 +17,21 @@ class ActivationStateManager(private val context: Context) {
     private val ASSIGNED_USER = stringPreferencesKey("assigned_user")
     private val LAST_SYNC = longPreferencesKey("last_sync_at")
 
+    suspend fun ensureDeviceId(): String {
+        var currentId = ""
+        context.onboardingDataStore.edit { prefs ->
+            val existing = prefs[DEVICE_ID]
+            if (existing.isNullOrEmpty()) {
+                val newId = "SF-${java.util.UUID.randomUUID().toString().take(8).uppercase()}"
+                prefs[DEVICE_ID] = newId
+                currentId = newId
+            } else {
+                currentId = existing
+            }
+        }
+        return currentId
+    }
+
     val activationStatus: Flow<DeviceStatus> = context.onboardingDataStore.data.map { prefs ->
         val statusStr = prefs[STATUS] ?: DeviceStatus.PENDING.name
         DeviceStatus.valueOf(statusStr)

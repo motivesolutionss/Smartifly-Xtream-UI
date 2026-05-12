@@ -1,12 +1,12 @@
 package com.smartifly.tv.data.epg
 
-import com.smartifly.tv.data.remote.SmartiflyApi
+import com.smartifly.tv.data.SessionManager
 import com.smartifly.tv.features.live.epg.EpgChannel
 import com.smartifly.tv.features.live.epg.EpgProgram
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class EpgRepository(private val api: SmartiflyApi) {
+class EpgRepository(private val sessionManager: SessionManager) {
     private val parser = XmlTvParser()
 
     suspend fun getEpgForChannels(channelIds: List<String>): List<EpgChannel> = withContext(Dispatchers.IO) {

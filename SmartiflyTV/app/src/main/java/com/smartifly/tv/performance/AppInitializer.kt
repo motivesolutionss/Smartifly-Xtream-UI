@@ -18,6 +18,7 @@ object AppInitializer {
         
         // Initialize Analytics & Stability monitoring
         com.smartifly.tv.analytics.TelemetryManager.initialize(context)
+        com.smartifly.tv.data.image.ProviderHealthTelemetry.initialize(context)
         val perfConfig = com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig()
         com.smartifly.tv.analytics.TelemetryManager.setDeviceContext(
             deviceId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown",
