@@ -22,6 +22,7 @@ import {
 // Using fallback gradient view for now
 
 import { colors, spacing, borderRadius } from '../../../../theme';
+import { normalizeImageUri } from '../../../../utils/image';
 
 
 const HERO_HEIGHT = 480;
@@ -132,7 +133,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
         >
             <ImageBackground
                 source={{
-                    uri: item.image || 'https://via.placeholder.com/400x225/0B1220/333333?text=No+Image'
+                    uri: normalizeImageUri(item.image) || 'https://via.placeholder.com/400x225/0B1220/333333?text=No+Image'
                 }}
                 style={styles.background}
                 resizeMode="cover"

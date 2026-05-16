@@ -18,6 +18,7 @@ import useStore from '../../store';
 import { logger } from '../../config';
 import { SeriesItem, EpisodeItem } from '../../navigation/types';
 import DownloadButton from '../../components/DownloadButton';
+import { normalizeImageUri } from '../../utils/image';
 
 type ParamList = {
     SeriesDetail: { series: SeriesItem };
@@ -128,7 +129,7 @@ const SeriesDetailScreen: React.FC = () => {
             onPress={() => handlePlayEpisode(episode)}
         >
             <FastImageComponent
-                source={{ uri: episode.info?.movie_image || series.cover }}
+                source={{ uri: normalizeImageUri(episode.info?.movie_image || series.cover) }}
                 style={styles.episodeThumbnail}
             />
             <View style={styles.episodeInfo}>
@@ -157,7 +158,7 @@ const SeriesDetailScreen: React.FC = () => {
         <View>
             <View style={styles.infoRow}>
                 <FastImageComponent
-                    source={{ uri: series.cover }}
+                    source={{ uri: normalizeImageUri(series.cover) }}
                     style={styles.poster}
                 />
                 <View style={styles.infoText}>
@@ -303,9 +304,10 @@ const SeriesDetailScreen: React.FC = () => {
             <View style={styles.header}>
                 <FastImageComponent
                     source={{
-                        uri: (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0])
+                        uri: normalizeImageUri(
+                            (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0])
                             || series?.cover
-                            || 'https://via.placeholder.com/400x200?text=No+Image'
+                        ) || 'https://via.placeholder.com/400x200?text=No+Image'
                     }}
                     style={styles.backdrop}
                 />

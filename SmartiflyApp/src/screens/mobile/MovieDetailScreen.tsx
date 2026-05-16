@@ -24,6 +24,7 @@ import useStore from '../../store';
 import { logger } from '../../config';
 import { MovieItem } from '../../navigation/types';
 import DownloadButton from '../../components/DownloadButton';
+import { normalizeImageUri } from '../../utils/image';
 
 type ParamList = {
     MovieDetail: { movie: MovieItem };
@@ -120,7 +121,7 @@ const MovieDetailScreen: React.FC = () => {
             <View style={styles.header}>
                 <FastImageComponent
                     source={{
-                        uri: info.backdrop || info.cover || 'https://via.placeholder.com/400x200?text=No+Image'
+                        uri: normalizeImageUri(info.backdrop || info.cover) || 'https://via.placeholder.com/400x200?text=No+Image'
                     }}
                     style={styles.backdrop}
                 />
@@ -134,7 +135,7 @@ const MovieDetailScreen: React.FC = () => {
             <ScrollView style={styles.content}>
                 <View style={styles.infoRow}>
                     <FastImageComponent
-                        source={{ uri: info.cover }}
+                        source={{ uri: normalizeImageUri(info.cover) }}
                         style={styles.poster}
                     />
                     <View style={styles.infoText}>

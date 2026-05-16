@@ -23,6 +23,7 @@ import Animated, {
 import FastImageComponent from '../../../../components/FastImageComponent';
 import type { ImageStyle as FastImageImageStyle } from '@d11/react-native-fast-image';
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
+import { normalizeImageUri } from '../../../../utils/image';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -113,7 +114,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
             >
                 {item.image ? (
                     <FastImageComponent
-                        source={{ uri: item.image }}
+                        source={{ uri: normalizeImageUri(item.image) }}
                         style={[styles.fastImage, { width: size.width, height: size.height }, imageStyle]}
                     />
                 ) : (

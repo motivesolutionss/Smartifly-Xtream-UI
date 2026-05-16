@@ -8,6 +8,18 @@ const prefetchOrder: string[] = [];
 const prefetchQueue: string[] = [];
 let activePrefetchCount = 0;
 
+/**
+ * Normalize an image URI for safe use on iOS and Android.
+ * - Trims whitespace
+ * - Handles protocol-relative //... URLs
+ */
+export const normalizeImageUri = (uri?: string | null): string => {
+    if (!uri || typeof uri !== 'string') return '';
+    const trimmed = uri.trim();
+    if (trimmed.startsWith('//')) return `http:${trimmed}`;
+    return trimmed;
+};
+
 const isRemoteUri = (uri: string) => uri.startsWith('http://') || uri.startsWith('https://');
 
 const trimPrefetchCache = () => {
@@ -42,16 +54,19 @@ const schedulePrefetch = () => {
 };
 
 export const prefetchImage = (uri?: string) => {
-    if (!uri || !isRemoteUri(uri) || prefetchedUris.has(uri)) return;
-    prefetchedUris.add(uri);
-    prefetchOrder.push(uri);
+    const normalized = normalizeImageUri(uri);
+    if (!normalized || !isRemoteUri(normalized) || prefetchedUris.has(normalized)) return;
+    prefetchedUris.add(normalized);
+    prefetchOrder.push(normalized);
     trimPrefetchCache();
-    prefetchQueue.push(uri);
+    prefetchQueue.push(normalized);
     schedulePrefetch();
 };
 
 export const prefetchImages = (uris: Array<string | undefined>) => {
-    const validUris = uris.filter(uri => uri && isRemoteUri(uri) && !prefetchedUris.has(uri)) as string[];
+    const validUris = uris
+        .map(uri => normalizeImageUri(uri))
+        .filter(uri => uri && isRemoteUri(uri) && !prefetchedUris.has(uri)) as string[];
     if (validUris.length === 0) return;
 
     // FastImage can preload multiple at once
