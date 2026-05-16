@@ -7,16 +7,28 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Keyboard,
+    useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { colors, spacing, borderRadius, Icon } from '../../../theme';
 import NavBar from '../../../components/NavBar';
 import ContentRow, { RowType } from '../home/components/ContentRow';
-import { ContentItem } from '../home/components/ContentCard';
+import ContentCard, { ContentItem } from '../home/components/ContentCard';
 import useContentStore from '../../../store/contentStore';
 import { useContentFilter } from '../../../store/profileStore';
 import { scheduleIdleWork } from '../../../utils/idle';
+import {
+    ENABLE_MOVIE_DETAIL_ROUTE_IMAGE_ENRICHMENT_V1,
+    ENABLE_SEARCH_FUZZY_MATCH_V1,
+    ENABLE_SEARCH_IMAGE_TIEBREAK_V1,
+    ENABLE_SEARCH_RELEVANCE_RANKING_V1,
+    ENABLE_SEARCH_SUGGESTED_QUALITY_V1,
+    ENABLE_SEARCH_TOKENIZED_MATCH_V1,
+    ENABLE_SEARCH_TYPED_GRID_V1,
+} from '../../../playerFlags';
+import { getPersistedDetailBackdropOverride } from '../../../services/persistedImageState';
+import { getHomeImageVerificationStatus } from '../../../services/homeImageVerification';
 import type { SearchScreenProps } from '../../../navigation/types';
 import type { XtreamLiveStream, XtreamMovie, XtreamSeries } from '../../../api/xtream';
 
@@ -39,6 +51,7 @@ interface SuggestedContent {
 type SearchListItem =
     | { key: string; kind: 'heading'; title: string }
     | { key: string; kind: 'status'; title: string; message?: string; loading?: boolean }
+    | { key: string; kind: 'typedSection'; title: string; rowType: RowType; items: ContentItem[]; accentColor?: string }
     | {
         key: string;
         kind: 'row';
@@ -49,6 +62,7 @@ type SearchListItem =
     };
 
 const resolveMovieImage = (movie: any): string => String(
+    getPersistedDetailBackdropOverride('movie', movie?.stream_id || '') ||
     movie?.stream_icon ||
     movie?.movie_image ||
     movie?.cover_big ||
@@ -63,6 +77,225 @@ const resolveSeriesImage = (series: any): string => String(
     series?.backdrop_path?.[0] ||
     ''
 );
+
+const isHttpsImage = (value?: string | null): boolean => String(value || '').trim().startsWith('https://');
+
+const shouldKeepSuggestedImage = (image?: string | null): boolean => {
+    const normalized = String(image || '').trim();
+    if (!normalized) return false;
+    if (!isHttpsImage(normalized)) return false;
+
+    const status = getHomeImageVerificationStatus(normalized);
+    return status === 'verified_ok' || status === 'unknown';
+};
+
+const rankSuggestedByImageQuality = <T,>(
+    items: T[],
+    resolveImage: (item: T) => string
+): T[] => {
+    const scored = items
+        .map((item) => {
+            const image = resolveImage(item);
+            const status = getHomeImageVerificationStatus(image);
+            const https = isHttpsImage(image);
+            let score = -1;
+
+            if (https && status === 'verified_ok') score = 3;
+            else if (https && status === 'unknown') score = 2;
+            else if (status === 'verified_ok') score = 1;
+
+            return { item, score };
+        })
+        .filter((entry) => entry.score >= 0)
+        .sort((a, b) => b.score - a.score);
+
+    return scored.map((entry) => entry.item);
+};
+
+const normalizeSearchText = (value?: string): string => (
+    String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+);
+
+const tokenizeSearchText = (value?: string): string[] => (
+    normalizeSearchText(value)
+        .split(/[\s:|/.,()[\]{}_-]+/)
+        .map((token) => token.trim())
+        .filter(Boolean)
+);
+
+const matchesAllQueryTokens = (name: string | undefined, query: string): boolean => {
+    const normalizedName = normalizeSearchText(name);
+    const queryTokens = tokenizeSearchText(query);
+    if (!normalizedName || queryTokens.length === 0) return false;
+
+    const nameTokens = tokenizeSearchText(normalizedName);
+    return queryTokens.every((queryToken) => (
+        nameTokens.some((nameToken) => nameToken.includes(queryToken)) ||
+        normalizedName.includes(queryToken)
+    ));
+};
+
+const getSearchRelevanceScore = (name: string | undefined, query: string): number => {
+    const normalizedName = normalizeSearchText(name);
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedName || !normalizedQuery) return 999;
+
+    if (normalizedName === normalizedQuery) return 0;
+    if (normalizedName.startsWith(normalizedQuery)) return 1;
+
+    const tokens = normalizedName.split(/[\s:|/.,()[\]{}_-]+/).filter(Boolean);
+    if (tokens.some((token) => token === normalizedQuery)) return 2;
+    if (tokens.some((token) => token.startsWith(normalizedQuery))) return 3;
+    if (normalizedName.includes(` ${normalizedQuery}`)) return 4;
+    if (normalizedName.includes(normalizedQuery)) return 5;
+
+    return 999;
+};
+
+const getSearchImageQualityScore = <T,>(item: T, resolveImage: (item: T) => string): number => {
+    const image = resolveImage(item);
+    const status = getHomeImageVerificationStatus(image);
+    const https = isHttpsImage(image);
+
+    if (https && status === 'verified_ok') return 4;
+    if (https && status === 'unknown') return 3;
+    if (status === 'verified_ok') return 2;
+    if (https) return 1;
+    return 0;
+};
+
+const rankSearchResultsByRelevance = <T extends { name?: string }>(
+    items: T[],
+    query: string,
+    resolveImage?: (item: T) => string
+): T[] => {
+    if (!ENABLE_SEARCH_RELEVANCE_RANKING_V1 || items.length <= 1) return items;
+
+    return items
+        .map((item, index) => ({
+            item,
+            index,
+            score: getSearchRelevanceScore(item.name, query),
+            imageScore: ENABLE_SEARCH_IMAGE_TIEBREAK_V1 && resolveImage
+                ? getSearchImageQualityScore(item, resolveImage)
+                : 0,
+        }))
+        .sort((a, b) => {
+            if (a.score !== b.score) return a.score - b.score;
+            if (a.imageScore !== b.imageScore) return b.imageScore - a.imageScore;
+            return a.index - b.index;
+        })
+        .map(({ item }) => item);
+};
+
+const searchTokenizedLimited = <T extends { name?: string }>(
+    query: string,
+    index: Array<{ nameLower: string; item: T }> | undefined,
+    items: T[],
+    loaded: boolean,
+    maxMatches: number
+): T[] => {
+    if (!loaded || maxMatches <= 0) return [];
+
+    const source = index && index.length > 0
+        ? index.map((entry) => ({ name: entry.nameLower, item: entry.item }))
+        : items.map((item) => ({ name: String(item?.name || '').toLowerCase(), item }));
+
+    const matches: T[] = [];
+    for (const entry of source) {
+        if (!matchesAllQueryTokens(entry.name, query)) continue;
+        matches.push(entry.item);
+        if (matches.length >= maxMatches) break;
+    }
+
+    return matches;
+};
+
+const getAllowedFuzzyDistance = (token: string): number => {
+    if (token.length <= 4) return 1;
+    if (token.length <= 8) return 2;
+    return 3;
+};
+
+const getBoundedEditDistance = (left: string, right: string, maxDistance: number): number => {
+    if (left === right) return 0;
+    if (!left || !right) return Math.max(left.length, right.length);
+    if (Math.abs(left.length - right.length) > maxDistance) return maxDistance + 1;
+
+    const previous = new Array(right.length + 1);
+    const current = new Array(right.length + 1);
+
+    for (let column = 0; column <= right.length; column += 1) {
+        previous[column] = column;
+    }
+
+    for (let row = 1; row <= left.length; row += 1) {
+        current[0] = row;
+        let rowMin = current[0];
+
+        for (let column = 1; column <= right.length; column += 1) {
+            const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+            current[column] = Math.min(
+                previous[column] + 1,
+                current[column - 1] + 1,
+                previous[column - 1] + cost
+            );
+            rowMin = Math.min(rowMin, current[column]);
+        }
+
+        if (rowMin > maxDistance) return maxDistance + 1;
+
+        for (let column = 0; column <= right.length; column += 1) {
+            previous[column] = current[column];
+        }
+    }
+
+    return previous[right.length];
+};
+
+const matchesFuzzyQueryTokens = (name: string | undefined, query: string): boolean => {
+    const normalizedName = normalizeSearchText(name);
+    const queryTokens = tokenizeSearchText(query);
+    if (!normalizedName || queryTokens.length === 0) return false;
+
+    const nameTokens = tokenizeSearchText(normalizedName);
+    if (nameTokens.length === 0) return false;
+
+    return queryTokens.every((queryToken) => {
+        const allowedDistance = getAllowedFuzzyDistance(queryToken);
+        return nameTokens.some((nameToken) => {
+            if (nameToken === queryToken) return true;
+            if (nameToken.includes(queryToken) || queryToken.includes(nameToken)) return true;
+            return getBoundedEditDistance(nameToken, queryToken, allowedDistance) <= allowedDistance;
+        });
+    });
+};
+
+const searchFuzzyLimited = <T extends { name?: string }>(
+    query: string,
+    index: Array<{ nameLower: string; item: T }> | undefined,
+    items: T[],
+    loaded: boolean,
+    maxMatches: number
+): T[] => {
+    if (!loaded || maxMatches <= 0) return [];
+
+    const source = index && index.length > 0
+        ? index.map((entry) => ({ name: entry.nameLower, item: entry.item }))
+        : items.map((item) => ({ name: String(item?.name || '').toLowerCase(), item }));
+
+    const matches: T[] = [];
+    for (const entry of source) {
+        if (!matchesFuzzyQueryTokens(entry.name, query)) continue;
+        matches.push(entry.item);
+        if (matches.length >= maxMatches) break;
+    }
+
+    return matches;
+};
 
 const hasDisplayName = (item: any): boolean => String(item?.name || '').trim().length > 0;
 
@@ -100,9 +333,20 @@ const LIVE_POOL_LIMIT = 120;
 const SEARCH_WINDOW_SHORT_QUERY = 180;
 const SEARCH_WINDOW_LONG_QUERY = 320;
 const MAIN_TAB_BOTTOM_SPACER = 112;
+const TYPED_GRID_COLUMNS = 3;
+
+const getTypeAccent = (type: ContentItem['type']): string => {
+    switch (type) {
+        case 'movie': return colors.movies;
+        case 'series': return colors.series;
+        case 'live': return colors.live;
+        default: return colors.primary;
+    }
+};
 
 const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
 
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResults>({ live: [], movies: [], series: [] });
@@ -137,15 +381,108 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
             const domainWindow = trimmed.length >= 5
                 ? SEARCH_WINDOW_LONG_QUERY
                 : SEARCH_WINDOW_SHORT_QUERY;
-            const result = searchContentLimited(trimmed, {
-                live: domainWindow,
-                movies: domainWindow,
-                series: domainWindow,
-            });
+            const shouldUseFuzzyFallback = ENABLE_SEARCH_FUZZY_MATCH_V1 && trimmed.length >= 3;
+            const shouldUseTokenizedMatch = ENABLE_SEARCH_TOKENIZED_MATCH_V1 && tokenizeSearchText(trimmed).length > 1;
+            const baseResult = shouldUseTokenizedMatch
+                ? (() => {
+                    const {
+                        content,
+                        searchIndex,
+                    } = useContentStore.getState();
+
+                    return {
+                        live: searchTokenizedLimited(trimmed, searchIndex.live, content.live.items, content.live.loaded, domainWindow),
+                        movies: searchTokenizedLimited(trimmed, searchIndex.movies, content.movies.items, content.movies.loaded, domainWindow),
+                        series: searchTokenizedLimited(trimmed, searchIndex.series, content.series.items, content.series.loaded, domainWindow),
+                    };
+                })()
+                : searchContentLimited(trimmed, {
+                    live: domainWindow,
+                    movies: domainWindow,
+                    series: domainWindow,
+                });
+            const result = shouldUseFuzzyFallback
+                ? (() => {
+                    const {
+                        content,
+                        searchIndex,
+                    } = useContentStore.getState();
+
+                    const mergeWithFuzzy = <T extends { name?: string }>(
+                        primary: T[],
+                        fuzzy: T[]
+                    ): T[] => {
+                        const merged = [...primary];
+                        const seen = new Set(primary.map((item) => item));
+
+                        for (const item of fuzzy) {
+                            if (seen.has(item)) continue;
+                            seen.add(item);
+                            merged.push(item);
+                            if (merged.length >= domainWindow) break;
+                        }
+
+                        return merged;
+                    };
+
+                    const fuzzyTopUpLimit = Math.max(6, Math.min(18, Math.floor(domainWindow / 10)));
+
+                    return {
+                        live: baseResult.live.length >= fuzzyTopUpLimit
+                            ? baseResult.live
+                            : mergeWithFuzzy(
+                                baseResult.live,
+                                searchFuzzyLimited(
+                                    trimmed,
+                                    searchIndex.live,
+                                    content.live.items,
+                                    content.live.loaded,
+                                    domainWindow
+                                )
+                            ),
+                        movies: baseResult.movies.length >= fuzzyTopUpLimit
+                            ? baseResult.movies
+                            : mergeWithFuzzy(
+                                baseResult.movies,
+                                searchFuzzyLimited(
+                                    trimmed,
+                                    searchIndex.movies,
+                                    content.movies.items,
+                                    content.movies.loaded,
+                                    domainWindow
+                                )
+                            ),
+                        series: baseResult.series.length >= fuzzyTopUpLimit
+                            ? baseResult.series
+                            : mergeWithFuzzy(
+                                baseResult.series,
+                                searchFuzzyLimited(
+                                    trimmed,
+                                    searchIndex.series,
+                                    content.series.items,
+                                    content.series.loaded,
+                                    domainWindow
+                                )
+                            ),
+                    };
+                })()
+                : baseResult;
             setResults({
-                live: sanitizeNamedItems(result.live),
-                movies: sanitizeNamedItems(filterContent(result.movies)),
-                series: sanitizeNamedItems(filterContent(result.series)),
+                live: rankSearchResultsByRelevance(
+                    sanitizeNamedItems(result.live),
+                    trimmed,
+                    (live) => String((live as any)?.stream_icon || '')
+                ),
+                movies: rankSearchResultsByRelevance(
+                    sanitizeNamedItems(filterContent(result.movies)),
+                    trimmed,
+                    resolveMovieImage
+                ),
+                series: rankSearchResultsByRelevance(
+                    sanitizeNamedItems(filterContent(result.series)),
+                    trimmed,
+                    resolveSeriesImage
+                ),
             });
         } catch (error) {
             console.warn('[Search] Search failed', error);
@@ -179,10 +516,20 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
                 const seriesPool = sanitizeNamedItems(filterContent(seriesItems.slice(0, SERIES_POOL_LIMIT)));
                 const livePool = sanitizeNamedItems(liveItems.slice(0, LIVE_POOL_LIMIT));
 
+                const curatedMoviePool = ENABLE_SEARCH_SUGGESTED_QUALITY_V1
+                    ? rankSuggestedByImageQuality(moviePool, resolveMovieImage)
+                    : moviePool;
+                const curatedSeriesPool = ENABLE_SEARCH_SUGGESTED_QUALITY_V1
+                    ? rankSuggestedByImageQuality(seriesPool, resolveSeriesImage)
+                    : seriesPool;
+                const curatedLivePool = ENABLE_SEARCH_SUGGESTED_QUALITY_V1
+                    ? rankSuggestedByImageQuality(livePool, (live) => String((live as any)?.stream_icon || ''))
+                    : livePool;
+
                 setSuggestedContent({
-                    movies: selectSpreadItems(moviePool, SUGGESTION_LIMIT),
-                    series: selectSpreadItems(seriesPool, SUGGESTION_LIMIT),
-                    live: selectSpreadItems(livePool, SUGGESTION_LIMIT),
+                    movies: selectSpreadItems(curatedMoviePool, SUGGESTION_LIMIT),
+                    series: selectSpreadItems(curatedSeriesPool, SUGGESTION_LIMIT),
+                    live: selectSpreadItems(curatedLivePool, SUGGESTION_LIMIT),
                 });
                 setSearchError(null);
             } catch (error) {
@@ -234,11 +581,24 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         if (item.type === 'movie') {
             const movie = item.data as XtreamMovie | undefined;
             if (!movie) return;
+            const persistedBackdrop = getPersistedDetailBackdropOverride('movie', movie.stream_id);
+            const movieBackdropPath = [
+                persistedBackdrop,
+                ...(Array.isArray(movie.backdrop_path) ? movie.backdrop_path : []),
+            ].filter(Boolean);
             navigation.navigate('MovieDetail', {
                 movie: {
                     stream_id: movie.stream_id,
                     name: movie.name,
                     stream_icon: movie.stream_icon,
+                    ...(ENABLE_MOVIE_DETAIL_ROUTE_IMAGE_ENRICHMENT_V1 ? {
+                        cover: movie.cover,
+                        cover_big: movie.cover_big,
+                        movie_image: movie.movie_image,
+                        backdrop_path: movieBackdropPath.length > 0
+                            ? Array.from(new Set(movieBackdropPath))
+                            : undefined,
+                    } : {}),
                     rating: movie.rating,
                     rating_5based: movie.rating_5based,
                     container_extension: movie.container_extension,
@@ -296,35 +656,41 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     ), [limitedResults.live]);
 
     const suggestedMovies = useMemo<ContentItem[]>(() => (
-        suggestedContent.movies.map((movie) => ({
-            id: String(movie.stream_id),
-            name: movie.name,
-            image: resolveMovieImage(movie),
-            type: 'movie',
-            rating: movie.rating_5based,
-            data: movie,
-        }))
+        suggestedContent.movies
+            .map((movie) => ({
+                id: String(movie.stream_id),
+                name: movie.name,
+                image: resolveMovieImage(movie),
+                type: 'movie' as const,
+                rating: movie.rating_5based,
+                data: movie,
+            }))
+            .filter((item) => !ENABLE_SEARCH_SUGGESTED_QUALITY_V1 || shouldKeepSuggestedImage(item.image))
     ), [suggestedContent.movies]);
 
     const suggestedSeries = useMemo<ContentItem[]>(() => (
-        suggestedContent.series.map((series) => ({
-            id: String(series.series_id),
-            name: series.name,
-            image: resolveSeriesImage(series),
-            type: 'series',
-            rating: series.rating_5based,
-            data: series,
-        }))
+        suggestedContent.series
+            .map((series) => ({
+                id: String(series.series_id),
+                name: series.name,
+                image: resolveSeriesImage(series),
+                type: 'series' as const,
+                rating: series.rating_5based,
+                data: series,
+            }))
+            .filter((item) => !ENABLE_SEARCH_SUGGESTED_QUALITY_V1 || shouldKeepSuggestedImage(item.image))
     ), [suggestedContent.series]);
 
     const suggestedLive = useMemo<ContentItem[]>(() => (
-        suggestedContent.live.map((live) => ({
-            id: String(live.stream_id),
-            name: live.name,
-            image: live.stream_icon,
-            type: 'live',
-            data: live,
-        }))
+        suggestedContent.live
+            .map((live) => ({
+                id: String(live.stream_id),
+                name: live.name,
+                image: live.stream_icon,
+                type: 'live' as const,
+                data: live,
+            }))
+            .filter((item) => !ENABLE_SEARCH_SUGGESTED_QUALITY_V1 || shouldKeepSuggestedImage(item.image))
     ), [suggestedContent.live]);
 
     const hasResults = useMemo(() => (
@@ -335,6 +701,11 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const totalResults = useMemo(() => (
         moviesResultItems.length + seriesResultItems.length + liveResultItems.length
     ), [liveResultItems.length, moviesResultItems.length, seriesResultItems.length]);
+    const typedCardWidth = useMemo(() => {
+        const horizontalPadding = spacing.base * 2;
+        const gapTotal = spacing.sm * (TYPED_GRID_COLUMNS - 1);
+        return Math.floor((width - horizontalPadding - gapTotal) / TYPED_GRID_COLUMNS);
+    }, [width]);
 
     const renderSection = useCallback((title: string, type: RowType, items: ContentItem[], accentColor?: string) => {
         if (!items.length) return null;
@@ -415,6 +786,40 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
             return items;
         }
 
+        if (ENABLE_SEARCH_TYPED_GRID_V1) {
+            if (moviesResultItems.length) {
+                items.push({
+                    key: 'typed-section-movies',
+                    kind: 'typedSection',
+                    title: 'Movies',
+                    rowType: 'movies',
+                    items: moviesResultItems,
+                    accentColor: colors.movies,
+                });
+            }
+            if (seriesResultItems.length) {
+                items.push({
+                    key: 'typed-section-series',
+                    kind: 'typedSection',
+                    title: 'Series',
+                    rowType: 'series',
+                    items: seriesResultItems,
+                    accentColor: colors.series,
+                });
+            }
+            if (liveResultItems.length) {
+                items.push({
+                    key: 'typed-section-live',
+                    kind: 'typedSection',
+                    title: 'Live TV',
+                    rowType: 'live',
+                    items: liveResultItems,
+                    accentColor: colors.live,
+                });
+            }
+            return items;
+        }
+
         const moviesRow = renderSection('Movies', 'movies', moviesResultItems, colors.movies);
         const seriesRow = renderSection('Series', 'series', seriesResultItems, colors.series);
         const liveRow = renderSection('Live TV', 'live', liveResultItems, colors.live);
@@ -452,6 +857,37 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
             );
         }
 
+        if (item.kind === 'typedSection') {
+            return (
+                <View style={styles.typedSectionWrap}>
+                    <View style={styles.typedSectionHeader}>
+                        <View style={[styles.typedSectionAccent, { backgroundColor: item.accentColor || getTypeAccent(item.items[0]?.type || 'movie') }]} />
+                        <Text style={styles.typedSectionTitle}>{item.title}</Text>
+                    </View>
+                    <View style={styles.typedGrid}>
+                        {item.items.map((result) => (
+                            <View
+                                key={`${result.type}:${String(result.id)}`}
+                                style={styles.typedGridCard}
+                            >
+                                <ContentCard
+                                    item={result}
+                                    onPress={handleContentPress}
+                                    variant={result.type === 'live' ? 'channel' : 'poster'}
+                                    sizeOverride={{
+                                        width: typedCardWidth,
+                                        height: result.type === 'live'
+                                            ? Math.round(typedCardWidth * 0.86)
+                                            : Math.round(typedCardWidth * 1.45),
+                                    }}
+                                />
+                            </View>
+                        ))}
+                    </View>
+                </View>
+            );
+        }
+
         return (
             <ContentRow
                 title={item.title}
@@ -463,7 +899,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
                 accentColor={item.accentColor}
             />
         );
-    }, [handleContentPress]);
+    }, [handleContentPress, typedCardWidth]);
 
     return (
         <View style={styles.container}>
@@ -613,6 +1049,38 @@ const styles = StyleSheet.create({
         paddingTop: spacing.sm,
         paddingBottom: spacing.xl,
     },
+    typedSectionWrap: {
+        marginBottom: spacing.lg,
+    },
+    typedSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        paddingHorizontal: spacing.base,
+        marginBottom: spacing.sm,
+    },
+    typedSectionAccent: {
+        width: 6,
+        height: 18,
+        borderRadius: 3,
+    },
+    typedSectionTitle: {
+        color: colors.textPrimary,
+        fontSize: 17,
+        fontWeight: '800',
+        letterSpacing: 0.1,
+    },
+    typedGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        paddingHorizontal: spacing.base,
+        paddingTop: spacing.xs,
+    },
+    typedGridCard: {
+        marginBottom: spacing.sm,
+        width: '31%',
+    },
     sectionHeading: {
         color: colors.textPrimary,
         fontSize: 18,
@@ -650,4 +1118,3 @@ const styles = StyleSheet.create({
 });
 
 export default SearchScreen;
-

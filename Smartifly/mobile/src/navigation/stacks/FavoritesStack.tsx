@@ -18,6 +18,7 @@ const FavoritesStack: React.FC = () => {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
+        orientation: 'portrait',
         animation: 'slide_from_right',
       }}
       initialRouteName="FavoritesMain"

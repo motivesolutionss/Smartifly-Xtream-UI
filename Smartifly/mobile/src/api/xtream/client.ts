@@ -134,6 +134,7 @@ const repairXtreamResponse = (response: AxiosResponse) => {
 };
 
 export const createXtreamClient = (baseUrl: string): AxiosInstance => {
+    logger.info('createXtreamClient called with baseUrl:', { baseUrl, type: typeof baseUrl, length: baseUrl?.length });
     const client = axios.create({
         baseURL: baseUrl,
         timeout: config.xtream.timeout ?? 30000,
@@ -184,7 +185,12 @@ export const createXtreamClient = (baseUrl: string): AxiosInstance => {
             logger.error('Xtream API request failed', {
                 message: error.message,
                 url: error.config?.url,
+                baseURL: error.config?.baseURL,
+                fullUrl: (error.config?.baseURL || '') + (error.config?.url || ''),
                 status: error.response?.status,
+                code: error.code,
+                isAxiosError: error.isAxiosError,
+                errorType: error.constructor?.name,
             });
             throw error;
         }

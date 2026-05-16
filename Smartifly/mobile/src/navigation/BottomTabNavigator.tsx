@@ -26,6 +26,7 @@ const BottomTabNavigator: React.FC = () => {
       detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
+        orientation: 'portrait',
         tabBarHideOnKeyboard: true,
         freezeOnBlur: true,
         lazy: false,

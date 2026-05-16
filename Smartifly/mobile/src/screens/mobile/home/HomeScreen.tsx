@@ -9,7 +9,7 @@
  * - Uses domain.loaded flags for proper data access
  */
 
-import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react';
 import {
     View,
     StyleSheet,
@@ -38,6 +38,32 @@ import useOfflineQueueStore from '../../../store/offlineQueueStore';
 import { prefetchImages } from '../../../utils/image';
 import { usePerfProfile } from '../../../utils/perf';
 import { useHeroCarousel } from '../../../utils/heroPicker';
+import {
+    ENABLE_HOME_IMAGE_VERIFICATION_V1,
+    ENABLE_HOME_HERO_DETAIL_IMAGE_CHAIN_V1,
+    ENABLE_HOME_HERO_DETAIL_PREFETCH_V1,
+    ENABLE_HOME_HTTPS_ONLY_IMAGES,
+    ENABLE_HOME_HTTPS_RAIL_BACKFILL,
+    ENABLE_HOME_VISIBLE_DETAIL_PREFETCH_V1,
+    ENABLE_HOME_LEAN_RAILS,
+    ENABLE_MOVIE_DETAIL_ROUTE_IMAGE_ENRICHMENT_V1,
+} from '../../../playerFlags';
+import {
+    getHomeImageVerificationStatus,
+    markHomeImageVerifiedFailed,
+    markHomeImageVerifiedOk,
+    shouldAllowHomeImageUri,
+    verifyHomeImageUri,
+} from '../../../services/homeImageVerification';
+import {
+    getMovieDetailBackdropCandidates,
+    getSeriesDetailBackdropCandidates,
+} from '../../../utils/detailImages';
+import {
+    getPersistedDetailBackdropOverride,
+    getPersistedHomeImageOverrides,
+    setPersistedHomeImageOverride,
+} from '../../../services/persistedImageState';
 
 // Theme and Config
 import { colors, spacing, Icon } from '../../../theme';
@@ -106,18 +132,14 @@ const PREFETCH_ITEMS_PER_ROW = 6;
 const MAIN_TAB_BOTTOM_SPACER = 112;
 const QUICK_ACTION_COLUMNS = 3;
 const QUICK_ACTION_GRID_GAP = spacing.sm;
-const HOME_INITIAL_SECTION_COUNT = 6;
-const HOME_SECTION_BATCH = 4;
+// Keep Home content selection consistent across devices.
+// Performance tuning should affect rendering/prefetch, not which rails exist.
 const HOME_POOL_LIMITS = {
-    low: { media: 220, live: 180 },
-    medium: { media: 360, live: 260 },
-    high: { media: 520, live: 360 },
+    media: 360,
+    live: 260,
 } as const;
-const HOME_CATEGORY_RAIL_LIMITS = {
-    low: 2,
-    normal: 3,
-    high: 4,
-} as const;
+const HOME_CATEGORY_RAIL_LIMIT = 4;
+const HOME_VISIBLE_DETAIL_PREFETCH_CONCURRENCY = 2;
 
 const resolveMovieImage = (movie: any): string => String(
     movie?.stream_icon ||
@@ -134,6 +156,34 @@ const resolveSeriesImage = (series: any): string => String(
     series?.backdrop_path?.[0] ||
     ''
 );
+
+const resolveImageFromDetailInfo = (info: any): string => String(
+    info?.cover_big ||
+    info?.movie_image ||
+    info?.cover ||
+    info?.backdrop_path?.[0] ||
+    ''
+);
+
+const hasHomeImage = (value?: string | null): boolean => {
+    if (!value) return false;
+    return String(value).trim().length > 0;
+};
+
+const isHttpsImage = (value?: string | null): boolean => {
+    if (!value) return false;
+    return String(value).trim().toLowerCase().startsWith('https://');
+};
+
+const resolveFirstHttpsImage = (...candidates: Array<string | undefined | null>): string => {
+    for (const candidate of candidates) {
+        const normalized = String(candidate || '').trim();
+        if (isHttpsImage(normalized)) {
+            return normalized;
+        }
+    }
+    return '';
+};
 
 const takeTopN = <T,>(
     source: T[],
@@ -190,6 +240,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const lastFetchTime = useContentStore((state) => state.content.lastFetchTime);
     const userInfo = useAuthStore((state) => state.userInfo);
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
+    const prefetchDetail = useContentStore((state) => state.prefetchDetail);
     const forceRefresh = useContentStore((state) => state.forceRefresh);
     const isConnected = useContentStore((state) => state.isConnected);
     const fetchAnnouncements = useAppStatusStore((state) => state.fetchAnnouncements);
@@ -209,17 +260,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const perf = usePerfProfile();
     const enqueueOfflineAction = useOfflineQueueStore((state) => state.enqueueAction);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [visibleSectionCount, setVisibleSectionCount] = useState(HOME_INITIAL_SECTION_COUNT);
-    const homePoolLimits = perf.tier === 'low'
-        ? HOME_POOL_LIMITS.low
-        : perf.tier === 'high'
-            ? HOME_POOL_LIMITS.high
-            : HOME_POOL_LIMITS.medium;
-    const maxCategoryRailsPerDomain = perf.tier === 'low'
-        ? HOME_CATEGORY_RAIL_LIMITS.low
-        : perf.tier === 'high'
-            ? HOME_CATEGORY_RAIL_LIMITS.high
-            : HOME_CATEGORY_RAIL_LIMITS.normal;
+    const [imageVerificationVersion, setImageVerificationVersion] = useState(0);
+    const [homeImageOverrides, setHomeImageOverrides] = useState<Record<string, string>>(() => getPersistedHomeImageOverrides());
+    const imageRescueInFlightRef = useRef<Set<string>>(new Set());
+    const imageRescueResolvedRef = useRef<Set<string>>(new Set());
+    const imageVerificationInFlightRef = useRef<Set<string>>(new Set());
+    const visibleDetailPrefetchQueuedRef = useRef<Set<string>>(new Set());
+    const visibleDetailPrefetchDoneRef = useRef<Set<string>>(new Set());
+    const visibleDetailPrefetchInFlightRef = useRef(0);
+    const visibleDetailPrefetchQueueRef = useRef<Array<{ type: 'movie' | 'series'; id: string | number }>>([]);
+    const heroDetailPrefetchDoneRef = useRef<Set<string>>(new Set());
+    const homePoolLimits = HOME_POOL_LIMITS;
+    const maxCategoryRailsPerDomain = HOME_CATEGORY_RAIL_LIMIT;
 
     const filterContent = useCallback(<T extends { rating?: string; rating_5based?: number }>(
         items: T[]
@@ -244,6 +296,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         series: seriesItems.length,
     }), [liveItems.length, moviesItems.length, seriesItems.length]);
 
+    const isHomeImageAllowed = useCallback((uri?: string | null) => {
+        if (!hasHomeImage(uri)) return false;
+        if (!ENABLE_HOME_IMAGE_VERIFICATION_V1) return true;
+        return shouldAllowHomeImageUri(uri);
+    }, []);
+
     const continueWatching = useMemo<WatchProgress[]>(() => {
         const profileId = activeProfileId || 'default';
         return Object.values(watchHistory)
@@ -262,18 +320,22 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }, [continueWatching]);
 
     const continueRowItems = useMemo<ContentItem[]>(() => (
-        continueWatching.map((progress) => ({
-            id: progress.id,
-            name: progress.title,
-            image: progress.thumbnail,
-            type: progress.type === 'movie'
-                ? 'movie'
-                : progress.type === 'series'
-                    ? 'series'
-                    : 'live',
-            progress: progress.progress,
-        }))
-    ), [continueWatching]);
+        continueWatching
+            .map((progress) => ({
+                id: progress.id,
+                name: progress.title,
+                image: ENABLE_HOME_HTTPS_ONLY_IMAGES
+                    ? resolveFirstHttpsImage(progress.thumbnail)
+                    : progress.thumbnail,
+                type: progress.type === 'movie'
+                    ? 'movie'
+                    : progress.type === 'series'
+                        ? 'series'
+                        : 'live',
+                progress: progress.progress,
+            }))
+            .filter((item) => !ENABLE_HOME_HTTPS_ONLY_IMAGES || isHomeImageAllowed(item.image))
+    ), [continueWatching, isHomeImageAllowed]);
 
     const watchedMovieIds = useMemo(() => (
         new Set(
@@ -316,38 +378,198 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         return filterContent(moviesItems.slice(0, homePoolLimits.media));
     }, [moviesItems, moviesLoaded, filterContent, homePoolLimits.media]);
 
+    const railSourceMovies = useMemo(() => {
+        if (!moviesLoaded) return [];
+        if (!ENABLE_HOME_HTTPS_RAIL_BACKFILL) return filteredMovies;
+        return filterContent(moviesItems);
+    }, [filteredMovies, filterContent, moviesItems, moviesLoaded]);
+
     const filteredSeries = useMemo(() => {
         if (!seriesLoaded) return [];
         return filterContent(seriesItems.slice(0, homePoolLimits.media));
     }, [seriesItems, seriesLoaded, filterContent, homePoolLimits.media]);
+
+    const railSourceSeries = useMemo(() => {
+        if (!seriesLoaded) return [];
+        if (!ENABLE_HOME_HTTPS_RAIL_BACKFILL) return filteredSeries;
+        return filterContent(seriesItems);
+    }, [filterContent, filteredSeries, seriesItems, seriesLoaded]);
 
     const livePool = useMemo(() => {
         if (!liveLoaded) return [];
         return liveItems.slice(0, homePoolLimits.live);
     }, [liveItems, liveLoaded, homePoolLimits.live]);
 
+    const railSourceLive = useMemo(() => {
+        if (!liveLoaded) return [];
+        if (!ENABLE_HOME_HTTPS_RAIL_BACKFILL) return livePool;
+        return liveItems;
+    }, [liveItems, liveLoaded, livePool]);
+
+    const resolveMovieImageForHome = useCallback((movie: any): string => {
+        const key = `movie:${String(movie?.stream_id ?? '')}`;
+        const override = homeImageOverrides[key];
+        const persistedBackdrop = getPersistedDetailBackdropOverride('movie', movie?.stream_id ?? '');
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES) {
+            return resolveFirstHttpsImage(
+                override,
+                persistedBackdrop,
+                movie?.stream_icon,
+                movie?.movie_image,
+                movie?.cover_big,
+                movie?.cover,
+                movie?.backdrop_path?.[0]
+            );
+        }
+        return override || persistedBackdrop || resolveMovieImage(movie);
+    }, [homeImageOverrides]);
+
+    const resolveSeriesImageForHome = useCallback((series: any): string => {
+        const key = `series:${String(series?.series_id ?? '')}`;
+        const override = homeImageOverrides[key];
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES) {
+            return resolveFirstHttpsImage(
+                override,
+                series?.cover,
+                series?.cover_big,
+                series?.backdrop_path?.[0]
+            );
+        }
+        return override || resolveSeriesImage(series);
+    }, [homeImageOverrides]);
+
+    const resolveLiveImageForHome = useCallback((channel: any): string => {
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES) {
+            return resolveFirstHttpsImage(channel?.stream_icon);
+        }
+        return String(channel?.stream_icon || '');
+    }, []);
+
+    const resolveFeaturedImageForHome = useCallback((item: any): string => {
+        if (!item) return '';
+        if (item.type === 'movie') {
+            const httpsImage = resolveFirstHttpsImage(
+                item?.backdrop,
+                item?.poster,
+                resolveMovieImageForHome(item?.data)
+            );
+            if (ENABLE_HOME_HTTPS_ONLY_IMAGES) {
+                return httpsImage;
+            }
+            return httpsImage || (item?.backdrop || item?.poster || resolveMovieImageForHome(item?.data) || '');
+        }
+        if (item.type === 'series') {
+            const httpsImage = resolveFirstHttpsImage(
+                item?.backdrop,
+                item?.poster,
+                resolveSeriesImageForHome(item?.data)
+            );
+            if (ENABLE_HOME_HTTPS_ONLY_IMAGES) {
+                return httpsImage;
+            }
+            return httpsImage || (item?.backdrop || item?.poster || resolveSeriesImageForHome(item?.data) || '');
+        }
+        return '';
+    }, [resolveMovieImageForHome, resolveSeriesImageForHome]);
+
+    const getFeaturedImageCandidatesForHome = useCallback((item: any): string[] => {
+        if (!item) return [];
+
+        const raw = item.type === 'movie'
+            ? [
+                ...getMovieDetailBackdropCandidates(item?.data),
+                resolveMovieImageForHome(item?.data),
+                item?.poster,
+                item?.backdrop,
+            ]
+            : item.type === 'series'
+                ? [
+                    ...getSeriesDetailBackdropCandidates(item?.data),
+                    resolveSeriesImageForHome(item?.data),
+                    item?.poster,
+                    item?.backdrop,
+                ]
+                : [];
+
+        const unique = new Set<string>();
+        for (const candidate of raw) {
+            const normalized = String(candidate || '').trim();
+            if (!normalized) continue;
+            if (ENABLE_HOME_HTTPS_ONLY_IMAGES && !isHttpsImage(normalized)) continue;
+            unique.add(normalized);
+        }
+        return Array.from(unique);
+    }, [resolveMovieImageForHome, resolveSeriesImageForHome]);
+
+    const pickFeaturedImageForHome = useCallback((item: any): { image: string; candidates: string[] } => {
+        const candidates = getFeaturedImageCandidatesForHome(item);
+        if (candidates.length === 0) {
+            return { image: '', candidates: [] };
+        }
+
+        const verifiedOk = candidates.find((candidate) => (
+            getHomeImageVerificationStatus(candidate) === 'verified_ok' && isHomeImageAllowed(candidate)
+        ));
+        if (verifiedOk) {
+            return { image: verifiedOk, candidates };
+        }
+
+        const allowed = candidates.find((candidate) => isHomeImageAllowed(candidate)) || '';
+        return { image: allowed, candidates };
+    }, [getFeaturedImageCandidatesForHome, isHomeImageAllowed]);
+
+    const homeMovies = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return filteredMovies;
+        return filteredMovies.filter((movie) => isHomeImageAllowed(resolveMovieImageForHome(movie)));
+    }, [filteredMovies, imageVerificationVersion, isHomeImageAllowed, resolveMovieImageForHome]);
+
+    const railHomeMovies = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return railSourceMovies;
+        return railSourceMovies.filter((movie) => isHomeImageAllowed(resolveMovieImageForHome(movie)));
+    }, [imageVerificationVersion, isHomeImageAllowed, railSourceMovies, resolveMovieImageForHome]);
+
+    const homeSeries = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return filteredSeries;
+        return filteredSeries.filter((series) => isHomeImageAllowed(resolveSeriesImageForHome(series)));
+    }, [filteredSeries, imageVerificationVersion, isHomeImageAllowed, resolveSeriesImageForHome]);
+
+    const railHomeSeries = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return railSourceSeries;
+        return railSourceSeries.filter((series) => isHomeImageAllowed(resolveSeriesImageForHome(series)));
+    }, [imageVerificationVersion, isHomeImageAllowed, railSourceSeries, resolveSeriesImageForHome]);
+
+    const homeLivePool = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return livePool;
+        return livePool.filter((channel) => isHomeImageAllowed(resolveLiveImageForHome(channel)));
+    }, [imageVerificationVersion, isHomeImageAllowed, livePool, resolveLiveImageForHome]);
+
+    const railHomeLivePool = useMemo(() => {
+        if (!ENABLE_HOME_HTTPS_ONLY_IMAGES) return railSourceLive;
+        return railSourceLive.filter((channel) => isHomeImageAllowed(resolveLiveImageForHome(channel)));
+    }, [imageVerificationVersion, isHomeImageAllowed, railSourceLive, resolveLiveImageForHome]);
+
     const forYouItems = useMemo<ContentItem[]>(() => {
-        const moviePicks = filteredMovies
+        const moviePicks = railHomeMovies
             .filter((movie) => !watchedMovieIds.has(String(movie.stream_id)))
             .sort((a, b) => (b.rating_5based || 0) - (a.rating_5based || 0))
             .slice(0, 8)
             .map((movie) => ({
                 id: String(movie.stream_id),
                 name: movie.name,
-                image: resolveMovieImage(movie),
+                image: resolveMovieImageForHome(movie),
                 type: 'movie' as const,
                 rating: movie.rating_5based,
                 data: movie,
             }));
 
-        const seriesPicks = filteredSeries
+        const seriesPicks = railHomeSeries
             .filter((series) => !watchedSeriesIds.has(String(series.series_id)))
             .sort((a, b) => (b.rating_5based || 0) - (a.rating_5based || 0))
             .slice(0, 8)
             .map((series) => ({
                 id: String(series.series_id),
                 name: series.name,
-                image: resolveSeriesImage(series),
+                image: resolveSeriesImageForHome(series),
                 type: 'series' as const,
                 rating: series.rating_5based,
                 data: series,
@@ -361,7 +583,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             if (mixed.length >= RAIL_ITEM_LIMIT) break;
         }
         return mixed;
-    }, [filteredMovies, filteredSeries, watchedMovieIds, watchedSeriesIds]);
+    }, [railHomeMovies, railHomeSeries, watchedMovieIds, watchedSeriesIds, resolveMovieImageForHome, resolveSeriesImageForHome]);
 
     // UX: Auto-reset category if it becomes invalid (no longer exists in source)
     useEffect(() => {
@@ -410,61 +632,104 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     // =============================================================================
 
     const heroSeed = activeProfileId || userInfo?.username || 'default';
-    const heroCarousel = useHeroCarousel(filteredMovies, filteredSeries, heroSeed, 12, 15000);
+    const heroCarousel = useHeroCarousel(homeMovies, homeSeries, heroSeed, 12, 15000);
     const heroCurrent = heroCarousel.current;
     const heroNext = heroCarousel.next;
 
     const featuredContent: FeaturedContent | null = useMemo(() => {
         if (!heroCurrent) return null;
+        const resolved = ENABLE_HOME_HERO_DETAIL_IMAGE_CHAIN_V1
+            ? pickFeaturedImageForHome(heroCurrent)
+            : { image: resolveFeaturedImageForHome(heroCurrent), candidates: [] };
+        const image = resolved.image;
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES && !isHomeImageAllowed(image)) {
+            return null;
+        }
         return {
             id: heroCurrent.id,
             type: heroCurrent.type,
             name: heroCurrent.title,
-            image: heroCurrent.backdrop || heroCurrent.poster,
+            image,
+            imageCandidates: resolved.candidates,
             rating: heroCurrent.rating,
             plot: heroCurrent.description,
             genre: heroCurrent.genre,
             data: heroCurrent.data,
         };
-    }, [heroCurrent]);
+    }, [heroCurrent, isHomeImageAllowed, pickFeaturedImageForHome, resolveFeaturedImageForHome]);
 
     const nextFeatured: FeaturedContent | null = useMemo(() => {
         if (!heroNext) return null;
+        const resolved = ENABLE_HOME_HERO_DETAIL_IMAGE_CHAIN_V1
+            ? pickFeaturedImageForHome(heroNext)
+            : { image: resolveFeaturedImageForHome(heroNext), candidates: [] };
+        const image = resolved.image;
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES && !isHomeImageAllowed(image)) {
+            return null;
+        }
         return {
             id: heroNext.id,
             type: heroNext.type,
             name: heroNext.title,
-            image: heroNext.backdrop || heroNext.poster,
+            image,
+            imageCandidates: resolved.candidates,
             rating: heroNext.rating,
             plot: heroNext.description,
             genre: heroNext.genre,
             data: heroNext.data,
         };
-    }, [heroNext]);
+    }, [heroNext, isHomeImageAllowed, pickFeaturedImageForHome, resolveFeaturedImageForHome]);
+
+    useEffect(() => {
+        if (!ENABLE_HOME_HERO_DETAIL_PREFETCH_V1) return;
+
+        const candidates = [featuredContent, nextFeatured].filter(Boolean) as FeaturedContent[];
+        const heroUris = candidates.flatMap((item) => item.imageCandidates?.slice(0, 3) || (item.image ? [item.image] : []));
+        if (heroUris.length > 0) {
+            prefetchImages(heroUris);
+        }
+
+        for (const item of candidates) {
+            if (item.type !== 'movie' && item.type !== 'series') continue;
+
+            const id = item.type === 'movie'
+                ? item.data?.stream_id
+                : item.data?.series_id;
+            if (!id) continue;
+
+            const key = `${item.type}:${String(id)}`;
+            if (heroDetailPrefetchDoneRef.current.has(key)) continue;
+
+            heroDetailPrefetchDoneRef.current.add(key);
+            prefetchDetail(item.type, id).catch(() => {
+                heroDetailPrefetchDoneRef.current.delete(key);
+            });
+        }
+    }, [featuredContent, nextFeatured, prefetchDetail]);
 
     const moviesForRows = useMemo(() => {
         if (!moviesLoaded) return [];
         if (selectedType === 'movies' && selectedMovieCategoryId) {
-            return filteredMovies.filter((m) => String(m.category_id) === String(selectedMovieCategoryId));
+            return railHomeMovies.filter((m) => String(m.category_id) === String(selectedMovieCategoryId));
         }
-        return filteredMovies;
-    }, [moviesLoaded, filteredMovies, selectedMovieCategoryId, selectedType]);
+        return railHomeMovies;
+    }, [railHomeMovies, moviesLoaded, selectedMovieCategoryId, selectedType]);
 
     const seriesForRows = useMemo(() => {
         if (!seriesLoaded) return [];
         if (selectedType === 'series' && selectedSeriesCategoryId) {
-            return filteredSeries.filter((s) => String(s.category_id) === String(selectedSeriesCategoryId));
+            return railHomeSeries.filter((s) => String(s.category_id) === String(selectedSeriesCategoryId));
         }
-        return filteredSeries;
-    }, [seriesLoaded, filteredSeries, selectedSeriesCategoryId, selectedType]);
+        return railHomeSeries;
+    }, [railHomeSeries, selectedSeriesCategoryId, selectedType, seriesLoaded]);
 
     const liveForRows = useMemo(() => {
         if (!liveLoaded) return [];
         if (selectedType === 'live' && selectedLiveCategoryId) {
-            return livePool.filter((channel) => String(channel.category_id) === String(selectedLiveCategoryId));
+            return railHomeLivePool.filter((channel) => String(channel.category_id) === String(selectedLiveCategoryId));
         }
-        return livePool;
-    }, [liveLoaded, livePool, selectedLiveCategoryId, selectedType]);
+        return railHomeLivePool;
+    }, [railHomeLivePool, liveLoaded, selectedLiveCategoryId, selectedType]);
 
     // Recently added movies
     const recentMovies = useMemo(() => {
@@ -478,12 +743,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(m => ({
                 id: String(m.stream_id),
                 name: m.name,
-                image: resolveMovieImage(m),
+                image: resolveMovieImageForHome(m),
                 type: 'movie' as const,
                 rating: m.rating_5based,
                 data: m,
-            }));
-    }, [moviesForRows]);
+            }))
+            .filter((item) => hasHomeImage(item.image));
+    }, [moviesForRows, resolveMovieImageForHome]);
 
     // Recently added series
     const recentSeries = useMemo(() => {
@@ -497,12 +763,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(s => ({
                 id: String(s.series_id),
                 name: s.name,
-                image: resolveSeriesImage(s),
+                image: resolveSeriesImageForHome(s),
                 type: 'series' as const,
                 rating: s.rating_5based,
                 data: s,
-            }));
-    }, [seriesForRows]);
+            }))
+            .filter((item) => hasHomeImage(item.image));
+    }, [seriesForRows, resolveSeriesImageForHome]);
 
     // Top rated movies
     const topRatedMovies = useMemo(() => {
@@ -516,32 +783,36 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             .map(m => ({
                 id: String(m.stream_id),
                 name: m.name,
-                image: resolveMovieImage(m),
+                image: resolveMovieImageForHome(m),
                 type: 'movie' as const,
                 rating: m.rating_5based,
                 data: m,
-            }));
-    }, [moviesForRows]);
+            }))
+            .filter((item) => hasHomeImage(item.image));
+    }, [moviesForRows, resolveMovieImageForHome]);
 
     // Popular live channels
     const popularChannels = useMemo(() => {
         if (liveForRows.length === 0) return [];
 
-        return liveForRows.slice(0, RAIL_ITEM_LIMIT).map(ch => ({
-            id: String(ch.stream_id),
-            name: ch.name,
-            image: ch.stream_icon,
-            type: 'live' as const,
-            data: ch,
-        }));
-    }, [liveForRows]);
+        return liveForRows
+            .slice(0, RAIL_ITEM_LIMIT)
+            .map(ch => ({
+                id: String(ch.stream_id),
+                name: ch.name,
+                image: resolveLiveImageForHome(ch),
+                type: 'live' as const,
+                data: ch,
+            }))
+            .filter((item) => hasHomeImage(item.image));
+    }, [liveForRows, resolveLiveImageForHome]);
 
     // Category rails logic
     const movieCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!moviesLoaded) return map;
 
-        for (const movie of filteredMovies) {
+        for (const movie of railHomeMovies) {
             const catId = String(movie.category_id);
             if (!catId) continue;
 
@@ -555,7 +826,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(movie.stream_id),
                     name: movie.name,
-                    image: resolveMovieImage(movie),
+                    image: resolveMovieImageForHome(movie),
                     type: 'movie' as const,
                     rating: movie.rating_5based,
                     data: movie,
@@ -563,7 +834,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             }
         }
         return map;
-    }, [moviesLoaded, filteredMovies]);
+    }, [railHomeMovies, moviesLoaded, resolveMovieImageForHome]);
 
     const movieCategoryRails = useMemo(() => {
         if (!moviesLoaded || !movieCategories) return [];
@@ -583,7 +854,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const seriesCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!seriesLoaded) return map;
-        for (const series of filteredSeries) {
+        for (const series of railHomeSeries) {
             const catId = String(series.category_id);
             if (!catId) continue;
             let items = map.get(catId);
@@ -595,7 +866,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(series.series_id),
                     name: series.name,
-                    image: resolveSeriesImage(series),
+                    image: resolveSeriesImageForHome(series),
                     type: 'series' as const,
                     rating: series.rating_5based,
                     data: series,
@@ -603,7 +874,116 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             }
         }
         return map;
-    }, [seriesLoaded, filteredSeries]);
+    }, [railHomeSeries, resolveSeriesImageForHome, seriesLoaded]);
+
+    useEffect(() => {
+        if (ENABLE_HOME_HTTPS_ONLY_IMAGES) return;
+
+        const api = getXtreamAPI();
+        if (!api || !moviesLoaded || !seriesLoaded) return;
+
+        const movieTargets = filteredMovies
+            .slice(0, 30)
+            .map((movie) => ({ kind: 'movie' as const, id: String(movie.stream_id), baseImage: resolveMovieImage(movie) }));
+        const seriesTargets = filteredSeries
+            .slice(0, 30)
+            .map((series) => ({ kind: 'series' as const, id: String(series.series_id), baseImage: resolveSeriesImage(series) }));
+
+        const targets = [...movieTargets, ...seriesTargets];
+        if (targets.length === 0) return;
+
+        let cancelled = false;
+
+        const run = async () => {
+            for (const target of targets) {
+                if (cancelled) break;
+                const rescueKey = `${target.kind}:${target.id}`;
+                if (!target.id || imageRescueInFlightRef.current.has(rescueKey) || imageRescueResolvedRef.current.has(rescueKey)) {
+                    continue;
+                }
+
+                imageRescueInFlightRef.current.add(rescueKey);
+                try {
+                    const detail = target.kind === 'movie'
+                        ? await api.getVodInfo(Number(target.id))
+                        : await api.getSeriesInfo(Number(target.id));
+                    const resolved = resolveImageFromDetailInfo(detail?.info);
+                    if (resolved && resolved !== target.baseImage && !cancelled) {
+                        setPersistedHomeImageOverride(rescueKey, resolved);
+                        setHomeImageOverrides((prev) => (
+                            prev[rescueKey] === resolved ? prev : { ...prev, [rescueKey]: resolved }
+                        ));
+                    }
+                } catch {
+                    // Ignore per-item rescue failures.
+                } finally {
+                    imageRescueResolvedRef.current.add(rescueKey);
+                    imageRescueInFlightRef.current.delete(rescueKey);
+                }
+            }
+        };
+
+        run();
+        return () => {
+            cancelled = true;
+        };
+    }, [filteredMovies, filteredSeries, getXtreamAPI, moviesLoaded, seriesLoaded]);
+
+    useEffect(() => {
+        if (!ENABLE_HOME_IMAGE_VERIFICATION_V1 || !ENABLE_HOME_HTTPS_ONLY_IMAGES) return;
+
+        const candidates = [
+            ...railSourceMovies.slice(0, 180).map((movie) => resolveMovieImageForHome(movie)),
+            ...railSourceSeries.slice(0, 180).map((series) => resolveSeriesImageForHome(series)),
+            ...railSourceLive.slice(0, 180).map((channel) => resolveLiveImageForHome(channel)),
+        ]
+            .filter((uri): uri is string => Boolean(uri && uri.startsWith('https://')));
+
+        if (candidates.length === 0) return;
+
+        const uniqueCandidates = Array.from(new Set(candidates))
+            .filter((uri) => getHomeImageVerificationStatus(uri) === 'unknown')
+            .filter((uri) => !imageVerificationInFlightRef.current.has(uri))
+            .slice(0, 36);
+
+        if (uniqueCandidates.length === 0) return;
+
+        let cancelled = false;
+
+        const run = async () => {
+            let changed = false;
+
+            for (const uri of uniqueCandidates) {
+                if (cancelled) break;
+                imageVerificationInFlightRef.current.add(uri);
+                try {
+                    const status = await verifyHomeImageUri(uri);
+                    if (status === 'verified_ok' || status === 'verified_failed' || status === 'rejected_pattern') {
+                        changed = true;
+                    }
+                } finally {
+                    imageVerificationInFlightRef.current.delete(uri);
+                }
+            }
+
+            if (!cancelled && changed) {
+                setImageVerificationVersion((value) => value + 1);
+            }
+        };
+
+        run();
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        imageVerificationVersion,
+        railSourceLive,
+        railSourceMovies,
+        railSourceSeries,
+        resolveLiveImageForHome,
+        resolveMovieImageForHome,
+        resolveSeriesImageForHome,
+    ]);
 
     const seriesCategoryRails = useMemo(() => {
         if (!seriesLoaded || !seriesCategories) return [];
@@ -623,7 +1003,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const liveCategoryMap = useMemo(() => {
         const map = new Map<string, ContentItem[]>();
         if (!liveLoaded) return map;
-        for (const channel of livePool) {
+        for (const channel of railHomeLivePool) {
             const catId = String(channel.category_id);
             if (!catId) continue;
             let items = map.get(catId);
@@ -635,14 +1015,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(channel.stream_id),
                     name: channel.name,
-                    image: channel.stream_icon,
+                    image: resolveLiveImageForHome(channel),
                     type: 'live' as const,
                     data: channel,
                 });
             }
         }
         return map;
-    }, [liveLoaded, livePool]);
+    }, [railHomeLivePool, liveLoaded, resolveLiveImageForHome]);
 
     const liveCategoryRails = useMemo(() => {
         if (!liveLoaded || !liveCategories) return [];
@@ -658,6 +1038,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         }
         return rails.sort((a, b) => b.items.length - a.items.length).slice(0, maxCategoryRailsPerDomain);
     }, [liveCategories, liveLoaded, liveCategoryMap, maxCategoryRailsPerDomain]);
+
 
     // =============================================================================
     // HANDLERS
@@ -717,11 +1098,24 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             });
         } else if (item.type === 'movie') {
             const movieData = item.data as any;
+            const persistedBackdrop = getPersistedDetailBackdropOverride('movie', movieData.stream_id);
+            const movieBackdropPath = [
+                persistedBackdrop,
+                ...(Array.isArray(movieData.backdrop_path) ? movieData.backdrop_path : []),
+            ].filter(Boolean);
             navigation.navigate('MovieDetail', {
                 movie: {
                     stream_id: movieData.stream_id,
                     name: movieData.name,
                     stream_icon: movieData.stream_icon,
+                    ...(ENABLE_MOVIE_DETAIL_ROUTE_IMAGE_ENRICHMENT_V1 ? {
+                        cover: movieData.cover,
+                        cover_big: movieData.cover_big,
+                        movie_image: movieData.movie_image,
+                        backdrop_path: movieBackdropPath.length > 0
+                            ? Array.from(new Set(movieBackdropPath))
+                            : undefined,
+                    } : {}),
                     rating: movieData.rating,
                     rating_5based: movieData.rating_5based,
                     container_extension: movieData.container_extension,
@@ -802,6 +1196,100 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         if (!featuredContent) return;
         handleContentPress(featuredContent);
     }, [featuredContent, handleContentPress]);
+
+    const handleHomeItemImageLoad = useCallback((item: ContentItem, imageUri?: string) => {
+        const targetKey = item.type === 'movie'
+            ? `movie:${String(item.data?.stream_id ?? item.id ?? '')}`
+            : item.type === 'series'
+                ? `series:${String(item.data?.series_id ?? item.id ?? '')}`
+                : '';
+        if (targetKey && imageUri) {
+            setHomeImageOverrides((prev) => (
+                prev[targetKey] === imageUri ? prev : { ...prev, [targetKey]: imageUri }
+            ));
+            setPersistedHomeImageOverride(targetKey, imageUri);
+        }
+        if (!ENABLE_HOME_IMAGE_VERIFICATION_V1) return;
+        const targetUri = item.image || imageUri;
+        if (!targetUri) return;
+        if (getHomeImageVerificationStatus(targetUri) === 'verified_ok') return;
+        markHomeImageVerifiedOk(targetUri);
+        setImageVerificationVersion((value) => value + 1);
+    }, []);
+
+    const handleHeroImageResolved = useCallback((item: FeaturedContent, imageUri: string) => {
+        const targetKey = item.type === 'movie'
+            ? `movie:${String(item.data?.stream_id ?? item.id ?? '')}`
+            : item.type === 'series'
+                ? `series:${String(item.data?.series_id ?? item.id ?? '')}`
+                : '';
+        if (!targetKey || !imageUri) return;
+        setHomeImageOverrides((prev) => (
+            prev[targetKey] === imageUri ? prev : { ...prev, [targetKey]: imageUri }
+        ));
+        setPersistedHomeImageOverride(targetKey, imageUri);
+        if (ENABLE_HOME_IMAGE_VERIFICATION_V1) {
+            markHomeImageVerifiedOk(imageUri);
+            setImageVerificationVersion((value) => value + 1);
+        }
+    }, []);
+
+    const handleHomeItemImageError = useCallback((item: ContentItem, imageUri?: string) => {
+        if (!ENABLE_HOME_IMAGE_VERIFICATION_V1) return;
+        const targetUri = item.image || imageUri;
+        if (!targetUri) return;
+        if (getHomeImageVerificationStatus(targetUri) === 'verified_failed') return;
+        markHomeImageVerifiedFailed(targetUri);
+        setImageVerificationVersion((value) => value + 1);
+    }, []);
+
+    const flushVisibleDetailPrefetchQueue = useCallback(() => {
+        while (
+            visibleDetailPrefetchInFlightRef.current < HOME_VISIBLE_DETAIL_PREFETCH_CONCURRENCY &&
+            visibleDetailPrefetchQueueRef.current.length > 0
+        ) {
+            const next = visibleDetailPrefetchQueueRef.current.shift();
+            if (!next) return;
+
+            const prefetchKey = `${next.type}:${String(next.id)}`;
+            visibleDetailPrefetchInFlightRef.current += 1;
+
+            prefetchDetail(next.type, next.id)
+                .catch(() => {
+                    // Background optimization only.
+                })
+                .finally(() => {
+                    visibleDetailPrefetchInFlightRef.current -= 1;
+                    visibleDetailPrefetchQueuedRef.current.delete(prefetchKey);
+                    visibleDetailPrefetchDoneRef.current.add(prefetchKey);
+                    flushVisibleDetailPrefetchQueue();
+                });
+        }
+    }, [prefetchDetail]);
+
+    const handleVisibleHomeItemsChange = useCallback((items: ContentItem[]) => {
+        if (!ENABLE_HOME_VISIBLE_DETAIL_PREFETCH_V1) return;
+
+        for (const item of items) {
+            if (item.type !== 'movie' && item.type !== 'series') continue;
+
+            const prefetchKey = `${item.type}:${String(item.id)}`;
+            if (
+                visibleDetailPrefetchDoneRef.current.has(prefetchKey) ||
+                visibleDetailPrefetchQueuedRef.current.has(prefetchKey)
+            ) {
+                continue;
+            }
+
+            visibleDetailPrefetchQueuedRef.current.add(prefetchKey);
+            visibleDetailPrefetchQueueRef.current.push({
+                type: item.type,
+                id: item.id,
+            });
+        }
+
+        flushVisibleDetailPrefetchQueue();
+    }, [flushVisibleDetailPrefetchQueue]);
 
     const handleSeeAll = useCallback((section: string) => {
         switch (section) {
@@ -895,7 +1383,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             });
         }
 
-        if (forYouItems.length > 0) {
+        if (!ENABLE_HOME_LEAN_RAILS && forYouItems.length > 0) {
             list.push({
                 key: 'for-you',
                 type: 'row',
@@ -908,7 +1396,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             });
         }
 
-        if (showLive && popularChannels.length > 0) {
+        if (!ENABLE_HOME_LEAN_RAILS && showLive && popularChannels.length > 0) {
             list.push({
                 key: 'live-now',
                 type: 'row',
@@ -947,7 +1435,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             });
         }
 
-        if (showMovies && topRatedMovies.length > 0) {
+        if (!ENABLE_HOME_LEAN_RAILS && showMovies && topRatedMovies.length > 0) {
             list.push({
                 key: 'top-rated',
                 type: 'row',
@@ -1036,24 +1524,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         navigation,
     ]);
 
-    useEffect(() => {
-        setVisibleSectionCount((prev) => {
-            const nextBase = Math.min(HOME_INITIAL_SECTION_COUNT, sections.length);
-            if (prev <= nextBase) return nextBase;
-            return Math.min(prev, sections.length);
-        });
-    }, [sections.length]);
-
-    const renderedSections = useMemo(() => (
-        sections.slice(0, visibleSectionCount)
-    ), [sections, visibleSectionCount]);
-
-    const handleLoadMoreSections = useCallback(() => {
-        setVisibleSectionCount((prev) => {
-            if (prev >= sections.length) return prev;
-            return Math.min(prev + HOME_SECTION_BATCH, sections.length);
-        });
-    }, [sections.length]);
+    const renderedSections = sections;
 
     const homePrefetchUris = useMemo(() => {
         const preloadSet = new Set<string>();
@@ -1069,7 +1540,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         };
 
         addUri(featuredContent?.image);
+        featuredContent?.imageCandidates?.slice(0, 3).forEach(addUri);
         addUri(nextFeatured?.image);
+        nextFeatured?.imageCandidates?.slice(0, 3).forEach(addUri);
         for (const section of renderedSections) {
             if (section.type !== 'row') continue;
             addRowImages(section.items);
@@ -1078,7 +1551,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         return Array.from(preloadSet);
     }, [
         featuredContent?.image,
+        featuredContent?.imageCandidates,
         nextFeatured?.image,
+        nextFeatured?.imageCandidates,
         perf.tier,
         renderedSections,
     ]);
@@ -1096,6 +1571,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                         onPress={handleHeroInfo}
                         onPlayPress={handleHeroPlay}
                         onInfoPress={handleHeroInfo}
+                        onImageResolved={handleHeroImageResolved}
                     />
                 );
             case 'row':
@@ -1105,9 +1581,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                         type={item.rowType}
                         items={item.items}
                         onItemPress={item.onItemPress}
+                        onVisibleItemsChange={handleVisibleHomeItemsChange}
+                        onItemImageLoad={handleHomeItemImageLoad}
+                        onItemImageError={handleHomeItemImageError}
                         onSeeAllPress={item.onSeeAllPress}
                         showSeeAll={item.showSeeAll}
                         accentColor={item.accentColor}
+                        strictImageSource={ENABLE_HOME_IMAGE_VERIFICATION_V1}
                     />
                 );
             case 'quickActions':
@@ -1156,7 +1636,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             default:
                 return null;
         }
-    }, [handleHeroInfo, handleHeroPlay, quickActionCardStyle]);
+    }, [handleHeroImageResolved, handleHeroInfo, handleHeroPlay, handleHomeItemImageError, handleHomeItemImageLoad, handleVisibleHomeItemsChange, quickActionCardStyle]);
 
     const getItemType = useCallback((item: HomeSection) => item.type, []);
 
@@ -1172,8 +1652,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 onLogoPress={handleProfile}
                 onCategoryTypePress={handleCategoryTypePress}
             />
-                <FlashList
-                    style={styles.scrollView}
+            <FlashList
+                style={styles.scrollView}
                 data={renderedSections}
                 renderItem={renderSection}
                 keyExtractor={(item) => item.key}
@@ -1181,7 +1661,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 estimatedItemSize={280}
                 getItemType={getItemType}
                 drawDistance={perf.home.drawDistance}
-                initialNumToRender={Math.min(visibleSectionCount, 6)}
+                initialNumToRender={Math.min(sections.length, 6)}
                 maxToRenderPerBatch={4}
                 windowSize={7}
                 showsVerticalScrollIndicator={false}
@@ -1189,8 +1669,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     styles.scrollContent,
                     { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER }
                 ]}
-                onEndReached={handleLoadMoreSections}
-                onEndReachedThreshold={0.35}
             />
         </View>
     );

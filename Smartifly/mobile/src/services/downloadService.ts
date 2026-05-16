@@ -56,6 +56,27 @@ class DownloadService {
     }
 
     /**
+     * Resolve redirect chain to get the final download URL with token.
+     * Xtream servers return 302 → CDN URL with a time-limited token.
+     * We need the final URL so react-native-blob-util can track Content-Length correctly.
+     * Also used by the VLC player to avoid MobileVLCKit redirect issues.
+     */
+    public async resolveFinalUrl(url: string): Promise<string> {
+        try {
+            const ReactNativeBlobUtil = getBlobUtil();
+            if (!ReactNativeBlobUtil) return url;
+
+            // Use a HEAD request to follow redirects and get the final URL
+            const response = await ReactNativeBlobUtil.fetch('HEAD', url, {});
+            // react-native-blob-util exposes the final URL after redirects
+            const finalUrl = response.info()?.redirects?.slice(-1)[0] || url;
+            return finalUrl;
+        } catch {
+            return url; // fall back to original if resolution fails
+        }
+    }
+
+    /**
      * Start a new download using react-native-blob-util
      */
     public async startDownload(id: string, url: string, filename: string): Promise<boolean> {
@@ -78,22 +99,47 @@ class DownloadService {
             const downloadsDir = this.getDownloadsDir();
             const destination = `${downloadsDir}/${filename}`;
 
-            logger.debug(`Starting download: ${id}`, { destination });
+            logger.debug(`Starting download: ${id}`, { url, destination });
 
-            // Configure the download
-            const config = {
+            // Resolve the final CDN URL with token so progress tracking works.
+            // Xtream servers redirect to a CDN URL with Content-Length — we need
+            // that final URL for react-native-blob-util to report progress correctly.
+            const finalUrl = await this.resolveFinalUrl(url);
+            logger.debug(`Resolved download URL: ${id}`, { finalUrl: finalUrl.substring(0, 80) });
+
+            const config: any = {
                 fileCache: true,
                 path: destination,
-                // For iOS, prevent file from being backed up to iCloud
                 appendExt: filename.split('.').pop() || 'mp4',
+                // iOS: allow download to continue in background
+                ...(Platform.OS === 'ios' ? { IOSBackgroundTask: true } : {}),
+                // Android: show notification
+                ...(Platform.OS === 'android' ? {
+                    addAndroidDownloads: {
+                        useDownloadManager: false,
+                        notification: true,
+                        title: filename,
+                        description: 'Downloading...',
+                    }
+                } : {}),
             };
 
             // Start the download task
             const task = ReactNativeBlobUtil.config(config)
-                .fetch('GET', url)
-                .progress({ count: 10, interval: 250 }, (received: number, total: number) => {
-                    const progress = total > 0 ? received / total : 0;
-                    useDownloadStore.getState().updateProgress(id, progress, received, total);
+                .fetch('GET', finalUrl, {
+                    'User-Agent': Platform.OS === 'ios'
+                        ? 'Smartifly/3.0 iOS'
+                        : 'Smartifly/3.0 Android',
+                })
+                .progress({ count: 20, interval: 500 }, (received: number, total: number) => {
+                    // total can be -1 if Content-Length is missing — show indeterminate
+                    const progress = total > 0 ? received / total : -1;
+                    useDownloadStore.getState().updateProgress(
+                        id,
+                        progress < 0 ? 0 : progress,
+                        received,
+                        total > 0 ? total : undefined
+                    );
                 });
 
             // Store the task for potential cancellation
@@ -105,7 +151,6 @@ class DownloadService {
             // Remove from active tasks
             activeTasks.delete(id);
 
-            // Check if download was successful
             const path = res.path();
             if (path) {
                 logger.info(`Download completed: ${id}`, { path });
@@ -118,7 +163,6 @@ class DownloadService {
         } catch (error: any) {
             activeTasks.delete(id);
 
-            // Check if it was cancelled
             if (error.message?.includes('cancelled') || error.message?.includes('canceled')) {
                 logger.info(`Download cancelled: ${id}`);
                 return false;

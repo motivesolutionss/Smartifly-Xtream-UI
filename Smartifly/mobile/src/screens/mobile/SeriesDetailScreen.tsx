@@ -19,6 +19,23 @@ import useContentStore from '../../store/contentStore';
 import { logger } from '../../config';
 import { SeriesItem, EpisodeItem } from '../../navigation/types';
 import DownloadButton from '../../components/DownloadButton';
+import { prefetchImages } from '../../utils/image';
+import {
+    getSeriesDetailBackdropCandidates,
+    getSeriesEpisodeThumbnailCandidates,
+    getSeriesFirstSeasonImageUrls,
+    getSeriesSeasonImageUrls,
+    resolveSeriesDetailImages,
+} from '../../utils/detailImages';
+import {
+    getPersistedDetailBackdropOverride,
+    getPersistedEpisodeThumbnailOverride,
+    isPersistedEpisodeThumbnailWarm,
+    markPersistedEpisodeThumbnailWarm,
+    setPersistedDetailBackdropOverride,
+    setPersistedEpisodeThumbnailOverride,
+} from '../../services/persistedImageState';
+import { markImageWarm } from '../../utils/image';
 
 type ParamList = {
     SeriesDetail: { series: SeriesItem };
@@ -37,6 +54,9 @@ const SeriesDetailScreen: React.FC = () => {
     const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [trailerVisible, setTrailerVisible] = useState(false);
+    const [backdropCandidateIndex, setBackdropCandidateIndex] = useState(0);
+    const [backdropReady, setBackdropReady] = useState(false);
+    const [episodeCandidateIndices, setEpisodeCandidateIndices] = useState<Record<string, number>>({});
     const MAIN_TAB_BOTTOM_SPACER = 112;
 
     // Ref to track if component is still mounted (prevents memory leaks)
@@ -53,23 +73,43 @@ const SeriesDetailScreen: React.FC = () => {
             try {
                 const info = await api.getSeriesInfo(series.series_id);
 
-                // DEBUG: Log series info shape to diagnose data issues
-
-                // Check if still mounted before updating state
                 if (!isMountedRef.current) return;
 
                 setSeriesInfo(info);
                 if (info.episodes) {
-                    // Sort seasons numerically (Xtream returns strings: "1", "10", "2")
-                    const seasons = Object.keys(info.episodes).sort(
+                    const sortedSeasons = Object.keys(info.episodes).sort(
                         (a, b) => Number(a) - Number(b)
                     );
-                    if (seasons.length > 0) {
-                        setSelectedSeason(seasons[0]);
+                    if (sortedSeasons.length > 0) {
+                        setSelectedSeason(sortedSeasons[0]);
+                        const images = resolveSeriesDetailImages(series, info);
+
+                        // Warm Season 1 thumbnails immediately — these are what
+                        // the user sees first, so we want them in FastImage cache
+                        // before the list renders.
+                        const firstSeasonUrls = getSeriesFirstSeasonImageUrls(series, info);
+                        prefetchImages(firstSeasonUrls);
+
+                        // Warm remaining seasons in the background so switching
+                        // seasons feels instant too.
+                        if (sortedSeasons.length > 1) {
+                            setTimeout(() => {
+                                if (!isMountedRef.current) return;
+                                for (let i = 1; i < sortedSeasons.length; i++) {
+                                    const seasonEps = Array.isArray(info.episodes[sortedSeasons[i]])
+                                        ? info.episodes[sortedSeasons[i]]
+                                        : Object.values(info.episodes[sortedSeasons[i]] || {});
+                                    const urls = getSeriesSeasonImageUrls(
+                                        seasonEps as EpisodeItem[],
+                                        images.cover || series.cover
+                                    );
+                                    prefetchImages(urls);
+                                }
+                            }, 800); // slight delay so Season 1 gets priority
+                        }
                     }
                 }
             } catch (error: unknown) {
-                // Safe error logging - avoid dumping huge Xtream error objects
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 logger.error('Failed to fetch series info', {
                     seriesId: series.series_id,
@@ -84,11 +124,10 @@ const SeriesDetailScreen: React.FC = () => {
 
         fetchSeriesInfo();
 
-        // Cleanup: mark as unmounted to prevent state updates after unmount
         return () => {
             isMountedRef.current = false;
         };
-    }, [series.series_id, getXtreamAPI]); // Proper dependencies
+    }, [series.series_id, series.cover, getXtreamAPI]);
 
     // Memoized episode play handler
     const handlePlayEpisode = useCallback((episode: EpisodeItem) => {
@@ -139,45 +178,110 @@ const SeriesDetailScreen: React.FC = () => {
         }
         return raw;
     }, [series.youtube_trailer, seriesInfo?.info?.youtube_trailer]);
+    const detailImages = useMemo(() => resolveSeriesDetailImages(series, seriesInfo), [series, seriesInfo]);
+    const backdropCandidates = useMemo(
+        () => {
+            const persisted = getPersistedDetailBackdropOverride('series', series.series_id);
+            const raw = [persisted, ...getSeriesDetailBackdropCandidates(series, seriesInfo)].filter(Boolean);
+            return Array.from(new Set(raw));
+        },
+        [series, seriesInfo]
+    );
+    const activeBackdropUri = backdropCandidates[backdropCandidateIndex] || detailImages.cover || '';
 
-    // Render episode item for FlatList (virtualized for performance)
-    const renderEpisodeItem = useCallback(({ item: episode }: { item: EpisodeItem }) => (
-        <TouchableOpacity
-            style={styles.episodeCard}
-            onPress={() => handlePlayEpisode(episode)}
-        >
-            <FastImageComponent
-                source={episode.info?.movie_image || series.cover ? { uri: episode.info?.movie_image || series.cover } : DETAIL_FALLBACK_IMAGE}
-                fallbackSource={DETAIL_FALLBACK_IMAGE}
-                style={styles.episodeThumbnail}
-            />
-            <View style={styles.episodeInfo}>
-                <Text style={styles.episodeTitle}>
-                    E{episode.episode_num}. {episode.title}
-                </Text>
-                {episode.info?.duration && (
-                    <Text style={styles.episodeDuration}>{episode.info.duration}</Text>
-                )}
-            </View>
-            <DownloadButton
-                item={{
-                    id: String(episode.id),
-                    name: `${series.name} - ${episode.title}`,
-                    stream_icon: episode.info?.movie_image || series.cover,
-                    container_extension: episode.container_extension || 'mp4',
-                    type: 'series',
-                }}
-                style={styles.episodeDownloadButton}
-            />
-            <Icon name="play" size={18} color={colors.textPrimary} />
-        </TouchableOpacity>
-    ), [handlePlayEpisode, series.cover, series.name]);
+    useEffect(() => {
+        setBackdropCandidateIndex(0);
+        setBackdropReady(false);
+    }, [backdropCandidates.join('|')]);
+
+    const getEpisodeThumbnailCandidates = useCallback((episode: EpisodeItem): string[] => {
+        const persisted = getPersistedEpisodeThumbnailOverride(series.series_id, episode.id);
+        return Array.from(new Set([
+            persisted,
+            ...getSeriesEpisodeThumbnailCandidates(episode, detailImages.cover || series.cover),
+        ].filter(Boolean)));
+    }, [detailImages.cover, series.cover, series.series_id]);
+
+    const getEpisodeThumbnailUri = useCallback((episode: EpisodeItem) => {
+        const candidates = getEpisodeThumbnailCandidates(episode);
+        const candidateIndex = episodeCandidateIndices[String(episode.id)] || 0;
+        const resolved = candidates[candidateIndex] || '';
+        if (resolved && isPersistedEpisodeThumbnailWarm(series.series_id, episode.id)) {
+            markImageWarm(resolved);
+        }
+        return resolved;
+    }, [episodeCandidateIndices, getEpisodeThumbnailCandidates, series.series_id]);
+
+    const getSeasonThumbnailUris = useCallback((seasonEpisodes: EpisodeItem[]) => (
+        seasonEpisodes
+            .map((episode) => getEpisodeThumbnailUri(episode))
+            .filter(Boolean)
+    ), [getEpisodeThumbnailUri]);
+
+    // Render episode item for FlashList (virtualized for performance)
+    const renderEpisodeItem = useCallback(({ item: episode }: { item: EpisodeItem }) => {
+        const episodeThumbUri = getEpisodeThumbnailUri(episode);
+        const episodeThumbWarm = isPersistedEpisodeThumbnailWarm(series.series_id, episode.id);
+        const episodeThumbCandidates = getEpisodeThumbnailCandidates(episode);
+        const episodeThumbExhausted = episodeThumbCandidates.length === 0 || !episodeThumbUri;
+
+        return (
+            <TouchableOpacity
+                style={styles.episodeCard}
+                onPress={() => handlePlayEpisode(episode)}
+            >
+                <FastImageComponent
+                    source={episodeThumbExhausted ? DETAIL_FALLBACK_IMAGE : { uri: episodeThumbUri }}
+                    style={styles.episodeThumbnail}
+                    suppressStateOverlays={episodeThumbWarm}
+                    enableColdFade={!episodeThumbWarm}
+                    onLoad={() => {
+                        if (episodeThumbExhausted || !episodeThumbUri) return;
+                        setPersistedEpisodeThumbnailOverride(series.series_id, episode.id, episodeThumbUri);
+                        markPersistedEpisodeThumbnailWarm(series.series_id, episode.id);
+                    }}
+                    onError={() => {
+                        setEpisodeCandidateIndices((prev) => {
+                            const key = String(episode.id);
+                            const nextIndex = (prev[key] || 0) + 1;
+                            if (nextIndex >= episodeThumbCandidates.length) {
+                                return prev;
+                            }
+                            return {
+                                ...prev,
+                                [key]: nextIndex,
+                            };
+                        });
+                    }}
+                />
+                <View style={styles.episodeInfo}>
+                    <Text style={styles.episodeTitle}>
+                        E{episode.episode_num}. {episode.title}
+                    </Text>
+                    {episode.info?.duration && (
+                        <Text style={styles.episodeDuration}>{episode.info.duration}</Text>
+                    )}
+                </View>
+                <DownloadButton
+                    item={{
+                        id: String(episode.id),
+                        name: `${series.name} - ${episode.title}`,
+                        stream_icon: episodeThumbUri,
+                        container_extension: episode.container_extension || 'mp4',
+                        type: 'series',
+                    }}
+                    style={styles.episodeDownloadButton}
+                />
+                <Icon name="play" size={18} color={colors.textPrimary} />
+            </TouchableOpacity>
+        );
+    }, [getEpisodeThumbnailCandidates, getEpisodeThumbnailUri, handlePlayEpisode, series.name, series.series_id]);
 
     const listHeader = useMemo(() => (
         <View>
             <View style={styles.infoRow}>
                 <FastImageComponent
-                    source={series.cover ? { uri: series.cover } : DETAIL_FALLBACK_IMAGE}
+                    source={detailImages.cover ? { uri: detailImages.cover } : DETAIL_FALLBACK_IMAGE}
                     fallbackSource={DETAIL_FALLBACK_IMAGE}
                     style={styles.poster}
                 />
@@ -262,7 +366,27 @@ const SeriesDetailScreen: React.FC = () => {
                                     styles.seasonChip,
                                     selectedSeason === item && styles.seasonChipActive,
                                 ]}
-                                onPress={() => setSelectedSeason(item)}
+                                onPress={() => {
+                                    // Warm this season's thumbnails immediately on tap
+                                    // so images are in cache when the list re-renders
+                                    if (seriesInfo?.episodes?.[item]) {
+                                        const seasonEps = Array.isArray(seriesInfo.episodes[item])
+                                            ? seriesInfo.episodes[item]
+                                            : Object.values(seriesInfo.episodes[item] || {});
+                                        const seasonThumbs = getSeasonThumbnailUris(seasonEps as EpisodeItem[]);
+                                        if (seasonThumbs.length > 0) {
+                                            prefetchImages(seasonThumbs);
+                                        } else {
+                                            prefetchImages(
+                                                getSeriesSeasonImageUrls(
+                                                    seasonEps as EpisodeItem[],
+                                                    detailImages.cover || series.cover
+                                                )
+                                            );
+                                        }
+                                    }
+                                    setSelectedSeason(item);
+                                }}
                             >
                                 <Text
                                     style={[
@@ -301,8 +425,10 @@ const SeriesDetailScreen: React.FC = () => {
         seriesInfo?.info?.cast,
         seriesInfo?.info?.director,
         seriesInfo?.info?.youtube_trailer,
+        seriesInfo?.episodes,
         seasons,
         selectedSeason,
+        getSeasonThumbnailUris,
     ]);
 
     const renderEmptyEpisodes = useCallback(() => {
@@ -324,18 +450,23 @@ const SeriesDetailScreen: React.FC = () => {
         <View style={styles.container}>
             {/* Header with backdrop */}
             <View style={styles.header}>
-                <FastImageComponent
-                    source={
-                        (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0]) || series?.cover
-                            ? {
-                                uri: (series && Array.isArray(series.backdrop_path) && series.backdrop_path[0])
-                                    || series?.cover
-                            }
-                            : DETAIL_FALLBACK_IMAGE
-                    }
-                    fallbackSource={DETAIL_FALLBACK_IMAGE}
-                    style={styles.backdrop}
-                />
+                {activeBackdropUri ? (
+                    <FastImageComponent
+                        source={{ uri: activeBackdropUri }}
+                        style={[styles.backdrop, backdropReady ? null : styles.backdropHidden]}
+                        onLoad={() => {
+                            setBackdropReady(true);
+                            setPersistedDetailBackdropOverride('series', series.series_id, activeBackdropUri);
+                        }}
+                        onError={() => {
+                            setBackdropReady(false);
+                            setBackdropCandidateIndex((current) => {
+                                const nextIndex = current + 1;
+                                return nextIndex < backdropCandidates.length ? nextIndex : current;
+                            });
+                        }}
+                    />
+                ) : null}
                 <View style={[styles.headerOverlay, headerOverlayStyle]}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Icon name="caretLeft" size={18} color={colors.textPrimary} />
@@ -349,6 +480,7 @@ const SeriesDetailScreen: React.FC = () => {
                 keyExtractor={(item) => String(item.id)}
                 ListHeaderComponent={listHeader}
                 ListEmptyComponent={renderEmptyEpisodes}
+                style={styles.content}
                 contentContainerStyle={[
                     styles.listContent,
                     { paddingBottom: insets.bottom + MAIN_TAB_BOTTOM_SPACER },
@@ -404,6 +536,9 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    backdropHidden: {
+        opacity: 0,
+    },
     headerOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: colors.overlayLight,
@@ -429,7 +564,11 @@ const styles = StyleSheet.create({
     },
     listContent: {
         padding: spacing.md,
-        marginTop: -40,
+        paddingBottom: spacing.xxl,
+    },
+    content: {
+        flex: 1,
+        marginTop: -24,
     },
     infoRow: {
         flexDirection: 'row',

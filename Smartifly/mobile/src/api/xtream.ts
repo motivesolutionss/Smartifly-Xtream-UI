@@ -65,6 +65,10 @@ class XtreamAPI {
             baseUrl: this.baseUrl,
             username: this.username,
         });
+        logger.error('[DEBUG] Xtream runtime endpoint', {
+            baseUrl: this.baseUrl,
+            authUrl: `${this.baseUrl}/player_api.php?username=${encodeURIComponent(this.username)}&password=***`,
+        });
 
         this.client = createXtreamClient(this.baseUrl);
     }

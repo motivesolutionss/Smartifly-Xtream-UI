@@ -40,20 +40,11 @@ export const optimizeCardImageUri = (uri?: string | null) => {
     const normalized = normalizeImageUri(uri);
     if (!normalized) return '';
 
-    try {
-        let optimized = encodeURI(normalized);
-
-        // Many portals proxy TMDB originals, which are often much heavier than needed for rail cards.
-        // Downshift to a card-friendly size to improve decode/render stability on TV hardware.
-        optimized = optimized.replace(
-            /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
-            '$1w500/'
-        );
-
-        return optimized;
-    } catch {
-        return encodeURI(normalized);
-    }
+    // Downshift TMDB originals to card-friendly size
+    return normalized.replace(
+        /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
+        '$1w500/'
+    );
 };
 
 export const optimizeCardImageUriForVariant = (
@@ -69,16 +60,12 @@ export const optimizeCardImageUriForVariant = (
             ? 'w300'
             : 'w342';
 
-    try {
-        let optimized = encodeURI(normalized);
-        optimized = optimized.replace(
-            /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
-            `$1${tmdbSize}/`
-        );
-        return optimized;
-    } catch {
-        return encodeURI(normalized);
-    }
+    // Only rewrite TMDB size — do NOT encodeURI, FastImage handles raw URLs
+    // natively on both iOS and Android. Pre-encoding causes double-encoding on iOS.
+    return normalized.replace(
+        /(https?:\/\/image\.tmdb\.org\/t\/p\/)(?:original|w\d+)\//i,
+        `$1${tmdbSize}/`
+    );
 };
 
 export const isRemoteImageUri = (uri?: string | null) => {

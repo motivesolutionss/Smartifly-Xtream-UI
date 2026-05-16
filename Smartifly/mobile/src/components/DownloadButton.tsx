@@ -69,12 +69,21 @@ const DownloadButton: React.FC<DownloadButtonProps> = ({ item, style }) => {
 
         // Get the actual stream URL
         const extension = item.container_extension || 'mkv';
-        const url = item.type === 'movie'
-            ? api.getVodStreamUrl(parseInt(item.id, 10), extension)
-            : ''; // For series, we'd need the specific episode ID
+        let url = '';
+
+        if (item.type === 'movie') {
+            url = api.getVodStreamUrl(parseInt(item.id, 10), extension);
+        } else if (item.type === 'series') {
+            // For series episodes, item.id is the episode stream_id
+            url = api.getSeriesEpisodeUrl(parseInt(item.id, 10), extension);
+        }
 
         if (!url) {
-            logger.error('Could not resolve download URL');
+            logger.error('Could not resolve download URL', { type: item.type, id: item.id });
+            Alert.alert(
+                'Download Error',
+                'Could not build the download URL for this item. Please try again.'
+            );
             return;
         }
 
@@ -105,10 +114,15 @@ const DownloadButton: React.FC<DownloadButtonProps> = ({ item, style }) => {
 
     if (download?.status === 'downloading' || download?.status === 'pending') {
         const progress = Math.round((download.progress || 0) * 100);
+        const label = download.status === 'pending'
+            ? 'Preparing...'
+            : progress > 0
+                ? `${progress}%`
+                : 'Starting...';
         return (
             <TouchableOpacity style={[styles.container, styles.active, style]} onPress={handleDownload}>
                 <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
-                <Text style={styles.text}>{progress > 0 ? `${progress}%` : 'Starting...'}</Text>
+                <Text style={styles.text}>{label}</Text>
             </TouchableOpacity>
         );
     }

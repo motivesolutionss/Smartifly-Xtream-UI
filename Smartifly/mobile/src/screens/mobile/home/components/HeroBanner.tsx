@@ -24,7 +24,7 @@ import {
 
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
 import FastImageComponent from '../../../../components/FastImageComponent';
-import { normalizeImageUri } from '../../../../utils/image';
+import { isImageWarm, normalizeImageUri } from '../../../../utils/image';
 
 
 const HERO_HEIGHT = 480;
@@ -45,6 +45,7 @@ export interface HeroBannerItem {
     id: string | number;
     name: string;
     image?: string;
+    imageCandidates?: string[];
     type: 'live' | 'movie' | 'series';
     rating?: number;
     year?: string;
@@ -58,6 +59,7 @@ export interface HeroBannerProps {
     onPress?: () => void;
     onPlayPress?: () => void;
     onInfoPress?: () => void;
+    onImageResolved?: (item: HeroBannerItem, uri: string) => void;
     style?: ViewStyle;
     isLoading?: boolean;
 }
@@ -99,6 +101,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     onPress,
     onPlayPress,
     onInfoPress,
+    onImageResolved,
     style,
     isLoading = false,
 }) => {
@@ -110,12 +113,14 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     const isTransitioningRef = useRef(false);
     const [baseImageLoaded, setBaseImageLoaded] = useState(false);
     const [incomingImageLoaded, setIncomingImageLoaded] = useState(false);
+    const [baseCandidateIndex, setBaseCandidateIndex] = useState(0);
+    const [incomingCandidateIndex, setIncomingCandidateIndex] = useState(0);
 
     const baseOpacity = useRef(new Animated.Value(1)).current;
     const incomingOpacity = useRef(new Animated.Value(0)).current;
     const contentOpacity = useRef(new Animated.Value(1)).current;
     const isReady = Boolean(item) && !isLoading;
-    const itemKey = item ? `${item.id}-${item.image ?? ''}` : '';
+    const itemKey = item ? `${item.id}-${item.image ?? ''}-${(item.imageCandidates || []).join('|')}` : '';
     const baseItem = displayItem ?? item ?? null;
     const displayRating = toDisplayRating(baseItem?.rating as number | string | undefined);
 
@@ -138,21 +143,43 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
         setIncomingItem(item);
     }, [item, itemKey]);
 
-    const getImageUri = useCallback((hero: HeroBannerItem | null) => {
-        if (!hero) return '';
-        return normalizeImageUri(hero.image);
+    const getImageCandidates = useCallback((hero: HeroBannerItem | null): string[] => {
+        if (!hero) return [];
+        const raw = Array.isArray(hero.imageCandidates) && hero.imageCandidates.length > 0
+            ? hero.imageCandidates
+            : hero.image
+                ? [hero.image]
+                : [];
+        return raw.map((uri) => normalizeImageUri(uri)).filter(Boolean);
     }, []);
 
-    const baseImageUri = getImageUri(baseItem);
-    const incomingImageUri = getImageUri(incomingItem);
+    const getImageUri = useCallback((hero: HeroBannerItem | null, candidateIndex: number) => {
+        if (!hero) return '';
+        return getImageCandidates(hero)[candidateIndex] || '';
+    }, [getImageCandidates]);
+
+    const baseImageCandidates = getImageCandidates(baseItem);
+    const incomingImageCandidates = getImageCandidates(incomingItem);
+    const baseImageUri = getImageUri(baseItem, baseCandidateIndex);
+    const incomingImageUri = getImageUri(incomingItem, incomingCandidateIndex);
+    const baseImageWarm = Boolean(baseImageUri) && isImageWarm(baseImageUri);
+    const incomingImageWarm = Boolean(incomingImageUri) && isImageWarm(incomingImageUri);
 
     useEffect(() => {
-        setBaseImageLoaded(false);
-    }, [baseImageUri]);
+        setBaseImageLoaded(baseImageWarm);
+    }, [baseImageUri, baseImageWarm]);
 
     useEffect(() => {
-        setIncomingImageLoaded(false);
-    }, [incomingImageUri]);
+        setIncomingImageLoaded(incomingImageWarm);
+    }, [incomingImageUri, incomingImageWarm]);
+
+    useEffect(() => {
+        setBaseCandidateIndex(0);
+    }, [baseItem?.id, baseImageCandidates.join('|')]);
+
+    useEffect(() => {
+        setIncomingCandidateIndex(0);
+    }, [incomingItem?.id, incomingImageCandidates.join('|')]);
 
     const handleIncomingResolve = useCallback(() => {
         const nextItem = incomingItemRef.current;
@@ -198,8 +225,22 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     }, [baseOpacity, incomingOpacity, contentOpacity]);
 
     const handleIncomingError = useCallback(() => {
-        handleIncomingResolve();
-    }, [handleIncomingResolve]);
+        setIncomingCandidateIndex((current) => {
+            const nextIndex = current + 1;
+            if (nextIndex < incomingImageCandidates.length) {
+                return nextIndex;
+            }
+            handleIncomingResolve();
+            return current;
+        });
+    }, [handleIncomingResolve, incomingImageCandidates.length]);
+
+    const handleBaseError = useCallback(() => {
+        setBaseCandidateIndex((current) => {
+            const nextIndex = current + 1;
+            return nextIndex < baseImageCandidates.length ? nextIndex : current;
+        });
+    }, [baseImageCandidates.length]);
 
     useEffect(() => {
         if (!incomingItem) return;
@@ -248,11 +289,13 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             activeOpacity={0.95}
         >
             <View style={styles.backgroundContainer}>
-                <Image
-                    source={HERO_FALLBACK_IMAGE}
-                    style={styles.fallbackBackground}
-                    resizeMode="stretch"
-                />
+                {!baseImageLoaded ? (
+                    <Image
+                        source={HERO_FALLBACK_IMAGE}
+                        style={styles.fallbackBackground}
+                        resizeMode="stretch"
+                    />
+                ) : null}
                 <Animated.View style={[styles.backgroundLayer, { opacity: baseOpacity }]}>
                     {baseImageUri ? (
                         <FastImageComponent
@@ -261,8 +304,16 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                             resizeMode="cover"
                             showLoader={true}
                             suppressStateOverlays={true}
-                            onLoad={() => setBaseImageLoaded(true)}
-                            onError={() => setBaseImageLoaded(false)}
+                            onLoad={() => {
+                                setBaseImageLoaded(true);
+                                if (baseItem && baseImageUri) {
+                                    onImageResolved?.(baseItem, baseImageUri);
+                                }
+                            }}
+                            onError={() => {
+                                setBaseImageLoaded(false);
+                                handleBaseError();
+                            }}
                         />
                     ) : null}
                 </Animated.View>
@@ -278,6 +329,9 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                                 suppressStateOverlays={true}
                                 onLoad={() => {
                                     setIncomingImageLoaded(true);
+                                    if (incomingItem && incomingImageUri) {
+                                        onImageResolved?.(incomingItem, incomingImageUri);
+                                    }
                                     handleIncomingResolve();
                                 }}
                                 onError={handleIncomingError}

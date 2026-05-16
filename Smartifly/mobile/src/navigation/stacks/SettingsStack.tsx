@@ -18,6 +18,7 @@ const SettingsStack: React.FC = () => {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
+        orientation: 'portrait',
         contentStyle: { backgroundColor: colors.background },
         animation: 'fade',
       }}

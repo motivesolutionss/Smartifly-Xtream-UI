@@ -25,6 +25,9 @@ export interface MovieItem {
     name: string;
     stream_icon?: string;
     cover?: string;
+    cover_big?: string;
+    movie_image?: string;
+    backdrop_path?: string[];
     rating?: string;
     rating_5based?: number;
     category_id?: string;

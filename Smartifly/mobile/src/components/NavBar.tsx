@@ -25,6 +25,7 @@ import { colors, spacing, borderRadius, Icon } from '../theme';
 import CategoryFilter from './CategoryFilter';
 import CategoryModal from './CategoryModal';
 import type { ContentType } from '../store/filterStore';
+import { AVATAR_IMAGE_URLS, AvatarId } from '../store/profileStore';
 
 
 
@@ -41,6 +42,8 @@ export interface NavBarProps {
     title?: string;
     /** User's name for greeting */
     username?: string;
+    /** Active profile avatar id */
+    profileAvatar?: AvatarId;
     /** Show back button */
     showBack?: boolean;
     /** Show search button */
@@ -91,6 +94,7 @@ const NavBar: React.FC<NavBarProps> = ({
     variant = 'home',
     title,
     username = 'Guest',
+    profileAvatar,
     showBack = false,
     showSearch = true,
     showNotifications = true,
@@ -132,6 +136,10 @@ const NavBar: React.FC<NavBarProps> = ({
     const profileInitial = useMemo(() => {
         return normalizedName.charAt(0).toUpperCase();
     }, [normalizedName]);
+    const profileAvatarUri = useMemo(
+        () => (profileAvatar ? AVATAR_IMAGE_URLS[profileAvatar] : ''),
+        [profileAvatar]
+    );
 
     // ==========================================================================
     // RENDER VARIANTS
@@ -158,7 +166,15 @@ const NavBar: React.FC<NavBarProps> = ({
                             activeOpacity={0.8}
                         >
                             <View style={styles.profilePillAvatar}>
-                                <Text style={styles.profilePillText}>{profileInitial}</Text>
+                                {profileAvatarUri ? (
+                                    <Image
+                                        source={{ uri: profileAvatarUri }}
+                                        style={styles.profilePillAvatarImage}
+                                        resizeMode="cover"
+                                    />
+                                ) : (
+                                    <Text style={styles.profilePillText}>{profileInitial}</Text>
+                                )}
                             </View>
                             <Icon name="caretDown" size={14} color={colors.textSecondary} />
                         </TouchableOpacity>
@@ -346,6 +362,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 4,
         elevation: 2,
+        overflow: 'hidden',
+    },
+    profilePillAvatarImage: {
+        width: '100%',
+        height: '100%',
     },
     profilePillText: {
         fontSize: 14,

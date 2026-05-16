@@ -19,13 +19,18 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withSpring,
-    withTiming
+    withTiming,
+    withRepeat,
+    withSequence,
+    cancelAnimation,
 } from 'react-native-reanimated';
 import FastImageComponent from '../../../../components/FastImageComponent';
 import type { ImageStyle as FastImageImageStyle } from '@d11/react-native-fast-image';
 import { colors, spacing, borderRadius, Icon } from '../../../../theme';
 import { getCurrentPerfProfile } from '../../../../utils/perf';
 import { optimizeCardImageUriForVariant } from '@smartifly/shared/src/utils/image';
+import useContentStore from '../../../../store/contentStore';
+import { isImageWarm } from '../../../../utils/image';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -48,9 +53,13 @@ export interface ContentItem {
 export interface ContentCardProps {
     item: ContentItem;
     onPress?: (item: ContentItem) => void;
+    onImageLoad?: (item: ContentItem, imageUri?: string) => void;
+    onImageError?: (item: ContentItem, imageUri?: string) => void;
     variant?: 'poster' | 'thumbnail' | 'channel';
     showTitle?: boolean;
     showRating?: boolean;
+    strictImageSource?: boolean;
+    initialImageWarm?: boolean;
     style?: StyleProp<ViewStyle>;
     imageStyle?: StyleProp<FastImageImageStyle>;
     sizeOverride?: {
@@ -78,12 +87,58 @@ const getFallbackInitials = (title?: string): string => {
     return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
 };
 
+const toCandidate = (value: unknown): string => {
+    if (typeof value !== 'string') return '';
+    return value.trim();
+};
+
+const buildImageCandidates = (item: ContentItem, strictImageSource: boolean): string[] => {
+    if (strictImageSource) {
+        return [item.image].map(toCandidate).filter(Boolean);
+    }
+
+    const data = item?.data || {};
+    const backdrop = Array.isArray(data?.backdrop_path) ? data.backdrop_path[0] : '';
+    const infoBackdrop = Array.isArray(data?.info?.backdrop_path) ? data.info.backdrop_path[0] : '';
+
+    const raw = [
+        item.image,           // primary (stream_icon / cover passed from home)
+        data?.stream_icon,    // raw stream icon
+        data?.movie_image,    // richest — from detail API
+        data?.info?.movie_image,
+        data?.cover_big,
+        data?.info?.cover_big,
+        data?.cover,
+        backdrop,
+        infoBackdrop,
+    ]
+        .map(toCandidate)
+        .filter(Boolean);
+
+    const unique = new Set<string>();
+    for (const uri of raw) {
+        unique.add(uri);
+    }
+
+    // Sort: https:// URLs first (TMDB, YouTube etc. are reliable),
+    // http:// URLs last (portal image servers are often unreachable)
+    return Array.from(unique).sort((a, b) => {
+        const aHttps = a.startsWith('https://') ? 0 : 1;
+        const bHttps = b.startsWith('https://') ? 0 : 1;
+        return aHttps - bHttps;
+    });
+};
+
 const ContentCard: React.FC<ContentCardProps> = ({
     item,
     onPress,
+    onImageLoad,
+    onImageError,
     variant = 'poster',
     showTitle = true,
     showRating = true,
+    strictImageSource = false,
+    initialImageWarm = false,
     style,
     imageStyle,
     sizeOverride,
@@ -91,6 +146,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
     const perf = getCurrentPerfProfile();
     const scale = useSharedValue(1);
     const opacity = useSharedValue(1);
+    const prefetchDetail = useContentStore((state) => state.prefetchDetail);
 
     const size = variant === 'channel'
         ? cardSizes.channel
@@ -110,6 +166,14 @@ const ContentCard: React.FC<ContentCardProps> = ({
     const onPressIn = () => {
         scale.value = withSpring(0.96, { damping: 10, stiffness: 200 });
         opacity.value = withTiming(0.9, { duration: 100 });
+        // Speculatively fetch detail data while the press animation plays (~300ms).
+        // The response is cached by XtreamRequestCache so the detail screen
+        // renders instantly instead of showing a loading spinner.
+        if (item.type === 'movie' && item.id) {
+            prefetchDetail('movie', item.id);
+        } else if (item.type === 'series' && item.id) {
+            prefetchDetail('series', item.id);
+        }
     };
 
     const onPressOut = () => {
@@ -120,10 +184,38 @@ const ContentCard: React.FC<ContentCardProps> = ({
     const shadowStyle = perf.enableFocusGlow ? styles.imageShadow : styles.imageShadowOff;
     const imageResizeMode = variant === 'channel' ? 'contain' : 'cover';
     const displayRating = useMemo(() => toDisplayRating(item.rating as number | string | undefined), [item.rating]);
-    const [imageLoaded, setImageLoaded] = React.useState(false);
-    const optimizedImageUri = useMemo(
-        () => optimizeCardImageUriForVariant(item.image, variant),
-        [item.image, variant]
+    const [imageLoaded, setImageLoaded] = React.useState(initialImageWarm);
+    const [showFallback, setShowFallback] = React.useState(false);
+    const [candidateIndex, setCandidateIndex] = React.useState(0);
+    const fallbackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Skeleton pulse animation
+    const shimmerOpacity = useSharedValue(0.4);
+    const shimmerStyle = useAnimatedStyle(() => ({ opacity: shimmerOpacity.value }));
+
+    React.useEffect(() => {
+        if (!imageLoaded && !showFallback) {
+            shimmerOpacity.value = withRepeat(
+                withSequence(
+                    withTiming(1, { duration: 700 }),
+                    withTiming(0.4, { duration: 700 })
+                ),
+                -1,
+                false
+            );
+        } else {
+            cancelAnimation(shimmerOpacity);
+            shimmerOpacity.value = 0;
+        }
+    }, [imageLoaded, showFallback, shimmerOpacity]);
+    const imageCandidates = useMemo(() => (
+        buildImageCandidates(item, strictImageSource).map((uri) => optimizeCardImageUriForVariant(uri, variant)).filter(Boolean)
+    ), [item, strictImageSource, variant]);
+    const optimizedImageUri = imageCandidates[candidateIndex] || '';
+    const candidateSignature = useMemo(() => imageCandidates.join('|'), [imageCandidates]);
+    const isWarmCandidate = useMemo(
+        () => Boolean(initialImageWarm || isImageWarm(optimizedImageUri)),
+        [initialImageWarm, optimizedImageUri]
     );
     const imageVisibilityStyle = useMemo(
         () => ({ opacity: imageLoaded ? 1 : 0 }),
@@ -131,8 +223,47 @@ const ContentCard: React.FC<ContentCardProps> = ({
     );
 
     React.useEffect(() => {
-        setImageLoaded(false);
-    }, [item.id, optimizedImageUri]);
+        setCandidateIndex(0);
+        setShowFallback(false);
+        const firstCandidate = imageCandidates[0] || '';
+        setImageLoaded(Boolean(initialImageWarm || isImageWarm(firstCandidate)));
+
+        return () => {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+        };
+    }, [candidateSignature, imageCandidates, initialImageWarm, item.id]);
+
+    React.useEffect(() => {
+        if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+        }
+
+        if (isWarmCandidate) {
+            setImageLoaded(true);
+            setShowFallback(false);
+            return;
+        }
+
+        if (imageLoaded) return;
+
+        fallbackTimerRef.current = setTimeout(() => {
+            setShowFallback(true);
+            setCandidateIndex((current) => (
+                current < imageCandidates.length - 1 ? current + 1 : current
+            ));
+        }, 1500);
+
+        return () => {
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+        };
+    }, [imageCandidates.length, imageLoaded, isWarmCandidate]);
 
     return (
         <AnimatedTouchableOpacity
@@ -151,38 +282,45 @@ const ContentCard: React.FC<ContentCardProps> = ({
                 ]}
             >
                 <View style={[styles.placeholder, { width: resolvedWidth, height: resolvedHeight }, variant === 'channel' && styles.placeholderChannel]}>
-                    <Image
-                        source={require('../../../../assets/fallback image.jpeg')}
-                        style={styles.placeholderImage}
-                        resizeMode="contain"
-                    />
-                    <View style={styles.placeholderScrim} />
-                    <View style={styles.placeholderBottomShade} />
-                    {!imageLoaded ? (
-                        <View style={styles.placeholderContent}>
-                            <View style={[styles.placeholderInitialWrap, variant === 'channel' && styles.placeholderInitialWrapChannel]}>
-                                <Text style={[styles.placeholderText, variant === 'channel' && styles.placeholderTextChannel]}>
-                                    {placeholderText}
-                                </Text>
-                            </View>
-                            <Text
-                                style={[styles.placeholderTitle, variant === 'channel' && styles.placeholderTitleChannel]}
-                                numberOfLines={variant === 'channel' ? 3 : 2}
-                            >
-                                {item.name || 'Unknown'}
-                            </Text>
-                            <Text
-                                style={[styles.placeholderSubtitle, variant === 'channel' && styles.placeholderSubtitleChannel]}
-                                numberOfLines={1}
-                            >
-                                {item.type === 'live'
-                                    ? 'LIVE CHANNEL'
-                                    : item.year
-                                        ? item.year
-                                        : String(item.type || 'content').toUpperCase()}
-                            </Text>
-                        </View>
-                    ) : null}
+                    {showFallback ? (
+                        <>
+                            <Image
+                                source={require('../../../../assets/fallback image.jpeg')}
+                                style={styles.placeholderImage}
+                                resizeMode="contain"
+                            />
+                            <View style={styles.placeholderScrim} />
+                            <View style={styles.placeholderBottomShade} />
+                            {!imageLoaded ? (
+                                <View style={styles.placeholderContent}>
+                                    <View style={[styles.placeholderInitialWrap, variant === 'channel' && styles.placeholderInitialWrapChannel]}>
+                                        <Text style={[styles.placeholderText, variant === 'channel' && styles.placeholderTextChannel]}>
+                                            {placeholderText}
+                                        </Text>
+                                    </View>
+                                    <Text
+                                        style={[styles.placeholderTitle, variant === 'channel' && styles.placeholderTitleChannel]}
+                                        numberOfLines={variant === 'channel' ? 3 : 2}
+                                    >
+                                        {item.name || 'Unknown'}
+                                    </Text>
+                                    <Text
+                                        style={[styles.placeholderSubtitle, variant === 'channel' && styles.placeholderSubtitleChannel]}
+                                        numberOfLines={1}
+                                    >
+                                        {item.type === 'live'
+                                            ? 'LIVE CHANNEL'
+                                            : item.year
+                                                ? item.year
+                                                : String(item.type || 'content').toUpperCase()}
+                                    </Text>
+                                </View>
+                            ) : null}
+                        </>
+                    ) : (
+                        // Skeleton shimmer during 1.5s loading window
+                        !imageLoaded && <Animated.View style={[styles.skeletonShimmer, shimmerStyle]} />
+                    )}
                 </View>
 
                 {optimizedImageUri ? (
@@ -197,8 +335,26 @@ const ContentCard: React.FC<ContentCardProps> = ({
                         resizeMode={imageResizeMode}
                         showLoader={true}
                         suppressStateOverlays={true}
-                        onLoad={() => setImageLoaded(true)}
-                        onError={() => setImageLoaded(false)}
+                        onLoad={() => {
+                            if (fallbackTimerRef.current) {
+                                clearTimeout(fallbackTimerRef.current);
+                                fallbackTimerRef.current = null;
+                            }
+                            setShowFallback(false);
+                            setImageLoaded(true);
+                            onImageLoad?.(item, optimizedImageUri);
+                        }}
+                        onError={() => {
+                            setImageLoaded(false);
+                            onImageError?.(item, optimizedImageUri);
+                            setCandidateIndex((current) => {
+                                const nextIndex = current + 1;
+                                if (nextIndex < imageCandidates.length) {
+                                    return nextIndex;
+                                }
+                                return current;
+                            });
+                        }}
                     />
                 ) : null}
 
@@ -552,6 +708,11 @@ const styles = StyleSheet.create({
     skeletonImage: {
         borderRadius: borderRadius.lg,
         backgroundColor: colors.skeleton,
+    },
+    skeletonShimmer: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: colors.skeleton,
+        borderRadius: borderRadius.lg,
     },
     skeletonChannel: {
         borderRadius: borderRadius.md,

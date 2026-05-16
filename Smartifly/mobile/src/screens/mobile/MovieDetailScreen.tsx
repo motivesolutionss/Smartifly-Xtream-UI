@@ -25,6 +25,16 @@ import useContentStore from '../../store/contentStore';
 import { logger } from '../../config';
 import { MovieItem } from '../../navigation/types';
 import DownloadButton from '../../components/DownloadButton';
+import { ENABLE_MOVIE_DETAIL_SHOW_ART_IMMEDIATELY_V1 } from '../../playerFlags';
+import {
+    getMovieDetailBackdropCandidates,
+    getMovieTrueBackdropCandidates,
+    resolveMovieDetailImages,
+} from '../../utils/detailImages';
+import {
+    getPersistedDetailBackdropOverride,
+    setPersistedDetailBackdropOverride,
+} from '../../services/persistedImageState';
 
 type ParamList = {
     MovieDetail: { movie: MovieItem };
@@ -42,6 +52,8 @@ const MovieDetailScreen: React.FC = () => {
     const [movieInfo, setMovieInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [trailerVisible, setTrailerVisible] = useState(false);
+    const [backdropCandidateIndex, setBackdropCandidateIndex] = useState(0);
+    const [backdropReady, setBackdropReady] = useState(false);
 
     // Ref to track if component is still mounted
     const isMountedRef = useRef(true);
@@ -101,21 +113,47 @@ const MovieDetailScreen: React.FC = () => {
     };
 
     // Get data from either passed movie or fetched movieInfo
-    const getInfo = () => ({
-        name: movie.name || movieInfo?.info?.name,
-        cover: movie.stream_icon || movie.cover || movieInfo?.info?.cover_big || movieInfo?.info?.movie_image,
-        backdrop: movieInfo?.info?.backdrop_path?.[0] || movie.stream_icon,
-        rating: movie.rating || movieInfo?.info?.rating,
-        genre: movie.genre || movieInfo?.info?.genre,
-        duration: movie.duration || movieInfo?.info?.duration,
-        releaseDate: movie.releaseDate || movieInfo?.info?.releasedate,
-        plot: movie.plot || movieInfo?.info?.plot || movieInfo?.info?.description,
-        cast: movie.cast || movieInfo?.info?.cast,
-        director: movie.director || movieInfo?.info?.director,
-        youtube_trailer: movie.youtube_trailer || movieInfo?.info?.youtube_trailer,
-    });
+    // Prefer https:// URLs (TMDB/external) over http:// (portal image servers often unreachable)
+    const getInfo = () => {
+        const images = resolveMovieDetailImages(movie, movieInfo);
+        return {
+            name: movie.name || movieInfo?.info?.name,
+            cover: images.cover,
+            backdrop: images.backdrop,
+            rating: movie.rating || movieInfo?.info?.rating,
+            genre: movie.genre || movieInfo?.info?.genre,
+            duration: movie.duration || movieInfo?.info?.duration,
+            releaseDate: movie.releaseDate || movieInfo?.info?.releasedate,
+            plot: movie.plot || movieInfo?.info?.plot || movieInfo?.info?.description,
+            cast: movie.cast || movieInfo?.info?.cast,
+            director: movie.director || movieInfo?.info?.director,
+            youtube_trailer: movie.youtube_trailer || movieInfo?.info?.youtube_trailer,
+        };
+    };
 
     const info = getInfo();
+    const backdropCandidates = useMemo(
+        () => {
+            const persisted = getPersistedDetailBackdropOverride('movie', movie.stream_id);
+            const trueBackdrops = getMovieTrueBackdropCandidates(movie, movieInfo);
+            const allCandidates = getMovieDetailBackdropCandidates(movie, movieInfo);
+            const fallbackCandidates = allCandidates.filter((uri) => !trueBackdrops.includes(uri));
+            const raw = [
+                ...trueBackdrops,
+                ...(persisted && trueBackdrops.includes(persisted) ? [persisted] : []),
+                ...fallbackCandidates,
+            ].filter(Boolean);
+            return Array.from(new Set(raw));
+        },
+        [movie, movieInfo]
+    );
+    const activeBackdropUri = backdropCandidates[backdropCandidateIndex] || info.cover || '';
+
+    useEffect(() => {
+        setBackdropCandidateIndex(0);
+        setBackdropReady(false);
+    }, [backdropCandidates.join('|')]);
+
     const headerOverlayStyle = useMemo(() => ({
         paddingTop: insets.top + spacing.sm,
     }), [insets.top]);
@@ -134,11 +172,30 @@ const MovieDetailScreen: React.FC = () => {
         <View style={styles.container}>
             {/* Header with backdrop */}
             <View style={styles.header}>
-                <FastImageComponent
-                    source={info.backdrop || info.cover ? { uri: info.backdrop || info.cover } : DETAIL_FALLBACK_IMAGE}
-                    fallbackSource={DETAIL_FALLBACK_IMAGE}
-                    style={styles.backdrop}
-                />
+                {activeBackdropUri ? (
+                    <FastImageComponent
+                        source={{ uri: activeBackdropUri }}
+                        style={[
+                            styles.backdrop,
+                            ENABLE_MOVIE_DETAIL_SHOW_ART_IMMEDIATELY_V1 || backdropReady
+                                ? null
+                                : styles.backdropHidden,
+                        ]}
+                        onLoad={() => {
+                            setBackdropReady(true);
+                            if (getMovieTrueBackdropCandidates(movie, movieInfo).includes(activeBackdropUri)) {
+                                setPersistedDetailBackdropOverride('movie', movie.stream_id, activeBackdropUri);
+                            }
+                        }}
+                        onError={() => {
+                            setBackdropReady(false);
+                            setBackdropCandidateIndex((current) => {
+                                const nextIndex = current + 1;
+                                return nextIndex < backdropCandidates.length ? nextIndex : current;
+                            });
+                        }}
+                    />
+                ) : null}
                 <View style={[styles.headerOverlay, headerOverlayStyle]}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Icon name="caretLeft" size={18} color={colors.textPrimary} />
@@ -158,7 +215,7 @@ const MovieDetailScreen: React.FC = () => {
                         <Text style={styles.title}>{info.name}</Text>
 
                         {/* Rating out of 10 */}
-                        {info.rating && (
+                        {!!info.rating && (
                             <View style={styles.ratingRow}>
                                 <Icon name="star" size={14} color={colors.qualityUHD} />
                                 <Text style={styles.rating}>{info.rating} / 10</Text>
@@ -166,12 +223,12 @@ const MovieDetailScreen: React.FC = () => {
                         )}
 
                         {/* Genre */}
-                        {info.genre && (
+                        {!!info.genre && (
                             <Text style={styles.genre}>{info.genre}</Text>
                         )}
 
                         {/* Duration */}
-                        {info.duration && (
+                        {!!info.duration && (
                             <View style={styles.metaChip}>
                                 <Icon name="clock" size={12} color={colors.textSecondary} />
                                 <Text style={styles.duration}>{info.duration}</Text>
@@ -179,7 +236,7 @@ const MovieDetailScreen: React.FC = () => {
                         )}
 
                         {/* Release Date */}
-                        {info.releaseDate && (
+                        {!!info.releaseDate && (
                             <Text style={styles.year}>{info.releaseDate}</Text>
                         )}
                     </View>
@@ -192,12 +249,12 @@ const MovieDetailScreen: React.FC = () => {
                 </TouchableOpacity>
 
                 {/* Plot */}
-                {info.plot && (
+                {!!info.plot && (
                     <Text style={styles.plot}>{info.plot}</Text>
                 )}
 
                 {/* Cast */}
-                {info.cast && (
+                {!!info.cast && (
                     <View style={styles.metaSection}>
                         <Text style={styles.metaLabel}>Cast</Text>
                         <Text style={styles.metaValue}>{info.cast}</Text>
@@ -205,7 +262,7 @@ const MovieDetailScreen: React.FC = () => {
                 )}
 
                 {/* Director */}
-                {info.director && (
+                {!!info.director && (
                     <View style={styles.metaSection}>
                         <Text style={styles.metaLabel}>Director</Text>
                         <Text style={styles.metaValue}>{info.director}</Text>
@@ -215,7 +272,7 @@ const MovieDetailScreen: React.FC = () => {
                 {/* Action Buttons Row */}
                 <View style={styles.actionButtonsRow}>
                     {/* YouTube Trailer Button */}
-                    {info.youtube_trailer && (
+                    {!!info.youtube_trailer && (
                         <TouchableOpacity
                             style={styles.trailerButton}
                             onPress={() => setTrailerVisible(true)}
@@ -288,6 +345,9 @@ const styles = StyleSheet.create({
     backdrop: {
         width: '100%',
         height: '100%',
+    },
+    backdropHidden: {
+        opacity: 0,
     },
     headerOverlay: {
         ...StyleSheet.absoluteFillObject,

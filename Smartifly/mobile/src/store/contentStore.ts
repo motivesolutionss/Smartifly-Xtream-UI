@@ -15,6 +15,16 @@ import XtreamAPI, {
 } from '../api/xtream';
 import config, { logger } from '../config';
 import { buildSafeAppError, inferErrorCategory } from '../utils/errorHandling';
+import { prefetchImages, prefetchImagesReady } from '../utils/image';
+import { ENABLE_HOME_DETAIL_MEDIA_PREFETCH_V1 } from '../playerFlags';
+import {
+    getMovieDetailBackdropCandidates,
+    getSeriesDetailBackdropCandidates,
+    getSeriesFirstSeasonImageUrls,
+    resolveMovieDetailImages,
+    resolveSeriesDetailImages,
+} from '../utils/detailImages';
+import { getHeroCandidates } from '../utils/heroPicker';
 
 // =============================================================================
 // TYPES
@@ -107,6 +117,9 @@ interface ContentState {
     connectionType: string | null;
 
     cacheMaxAge: number;
+
+    // Two-phase loading: true once phase-1 (above-fold) data is ready to show home
+    isPhase1Ready: boolean;
 }
 
 interface ContentActions {
@@ -150,6 +163,9 @@ interface ContentActions {
     clearError: () => void;
     resetContentState: (options?: { keepCacheLoaded?: boolean }) => void;
     createError: (code: string, message: string, category: AppError['category'], retryable: boolean, suggestion?: string) => AppError;
+
+    // Returns true once phase-1 data (above-fold) is in the store — safe to navigate to home
+    isReadyForHome: () => boolean;
 }
 
 type ContentStore = ContentState & ContentActions;
@@ -163,6 +179,21 @@ const CONTENT_CACHE_KEY = 'smartifly-content-cache-v1';
 const CONTENT_CACHE_VERSION = 1;
 const SEARCH_INDEX_CHUNK_SIZE = 1200;
 const REFRESH_CHECK_DEBOUNCE_MS = 1500;
+
+// Phase-1 limits — enough to fully populate every home screen section.
+// Network cost is unchanged (Xtream API always returns the full dataset regardless
+// of the limit param). We just keep more of what we already downloaded.
+//
+// Normal device home screen needs:
+//   Live:   260 (homePoolLimits.normal.live)
+//   Movies: 360 (homePoolLimits.normal.media)
+//   Series: 360 (homePoolLimits.normal.media)
+// Adding a buffer above those for high-tier devices (520/360).
+const PHASE1_LIVE_LIMIT = 400;    // covers high-tier (360) + buffer
+const PHASE1_MOVIE_LIMIT = 550;   // covers high-tier (520) + buffer
+const PHASE1_SERIES_LIMIT = 550;  // covers high-tier (520) + buffer
+// Images to warm — covers hero (12) + first visible row per domain (15)
+const PHASE1_IMAGE_WARM_COUNT = 15;
 
 const initialContent: CachedContent = {
     live: { categories: [], items: [], loaded: false },
@@ -468,6 +499,8 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
     cacheMaxAge: SIX_HOURS_MS,
 
+    isPhase1Ready: false,
+
     setCredentials: (credentials) => {
         cachedApi = null;
         set({ credentials });
@@ -497,6 +530,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
             retryCount: 0,
             isRetrying: false,
             contentCacheLoaded: false,
+            isPhase1Ready: false,
         });
     },
     prefetchAllContent: async () => {
@@ -549,7 +583,8 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
         set({
             isPrefetching: true,
-            prefetchProgress: { current: 0, total: 6, currentTask: 'Starting...' },
+            isPhase1Ready: false,
+            prefetchProgress: { current: 0, total: 4, currentTask: 'Starting...' },
             error: null,
             searchIndex: initialSearchIndex,
             categoryIndex: initialCategoryIndex,
@@ -565,7 +600,11 @@ const useContentStore = create<ContentStore>()((set, get) => ({
             }
             api.clearRuntimeCaches?.();
 
-            set({ prefetchProgress: { current: 1, total: 6, currentTask: 'Loading categories...' } });
+            // =========================================================
+            // STEP 1 — Categories (lightweight metadata, fast)
+            // =========================================================
+
+            set({ prefetchProgress: { current: 1, total: 4, currentTask: 'Loading categories...' } });
 
             const [liveCategoriesResult, vodCategoriesResult, seriesCategoriesResult] = await Promise.allSettled([
                 api.getLiveCategories(),
@@ -589,143 +628,115 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                 seriesCategories: seriesCategories.length,
             });
 
-            set({ prefetchProgress: { current: 3, total: 6, currentTask: 'Loading content...' } });
+            // =========================================================
+            // STEP 2 — Fetch all three domains in parallel.
+            //
+            // IMPORTANT: The Xtream API does not support real server-side
+            // pagination — it always returns the full dataset regardless of
+            // page/limit params. getLiveStreamsPage downloads everything from
+            // the server and slices locally. So we fetch once, keep a small
+            // above-fold slice for immediate rendering, and store the rest
+            // in memory. No phase-2 background fetch needed.
+            // =========================================================
 
-            logger.info('[Store] fetchContent: started (parallel)');
-            const [liveResult, vodResult, seriesResult] = await Promise.allSettled([
-                api.getLiveStreams(),
-                api.getVodStreams(),
-                api.getSeries(),
+            set({ prefetchProgress: { current: 2, total: 4, currentTask: 'Loading content...' } });
+
+            const [livePageResult, vodPageResult, seriesPageResult] = await Promise.allSettled([
+                api.getLiveStreamsPage({ page: 1, limit: PHASE1_LIVE_LIMIT }),
+                api.getVodStreamsPage({ page: 1, limit: PHASE1_MOVIE_LIMIT }),
+                api.getSeriesPage({ page: 1, limit: PHASE1_SERIES_LIMIT }),
             ]);
 
-            if (liveResult.status !== 'fulfilled' ||
-                vodResult.status !== 'fulfilled' ||
-                seriesResult.status !== 'fulfilled') {
-                if (liveResult.status === 'rejected') {
-                    logger.error('[Store] fetchLiveContent: failed', liveResult.reason);
-                }
-                if (vodResult.status === 'rejected') {
-                    logger.error('[Store] fetchVodContent: failed', vodResult.reason);
-                }
-                if (seriesResult.status === 'rejected') {
-                    logger.error('[Store] fetchSeriesContent: failed', seriesResult.reason);
-                }
-                throw new Error('One or more content fetches failed');
-            }
+            // XtreamPagedResponse has an `items` field (see types.ts)
+            const rawLiveItems: XtreamLiveStream[] = livePageResult.status === 'fulfilled'
+                ? (Array.isArray(livePageResult.value?.items) ? livePageResult.value.items : [])
+                : [];
+            const rawMovieItems: XtreamMovie[] = vodPageResult.status === 'fulfilled'
+                ? (Array.isArray(vodPageResult.value?.items) ? vodPageResult.value.items : [])
+                : [];
+            const rawSeriesItems: XtreamSeries[] = seriesPageResult.status === 'fulfilled'
+                ? (Array.isArray(seriesPageResult.value?.items) ? seriesPageResult.value.items : [])
+                : [];
 
-            const safeLiveStreams = Array.isArray(liveResult.value) ? liveResult.value : [];
-            const safeVodStreams = Array.isArray(vodResult.value) ? vodResult.value : [];
-            const safeSeriesList = Array.isArray(seriesResult.value) ? seriesResult.value : [];
+            logger.info(`Content loaded: ${rawLiveItems.length} channels, ${rawMovieItems.length} movies, ${rawSeriesItems.length} series`);
 
-            const useLightPrefetch = config.cache.prefetchMode === 'light';
-            const lightLimit = config.cache.lightPrefetchLimit;
+            const normalizedLiveCats = liveCategories.map((cat) => ({ ...cat, category_id: String(cat.category_id) }));
+            const normalizedVodCats = vodCategories.map((cat) => ({ ...cat, category_id: String(cat.category_id) }));
+            const normalizedSeriesCats = seriesCategories.map((cat) => ({ ...cat, category_id: String(cat.category_id) }));
 
-            const liveItems = useLightPrefetch ? safeLiveStreams.slice(0, lightLimit) : safeLiveStreams;
-            const movieItems = useLightPrefetch ? safeVodStreams.slice(0, lightLimit) : safeVodStreams;
-            const seriesItems = useLightPrefetch ? safeSeriesList.slice(0, lightLimit) : safeSeriesList;
+            const normLiveItems = rawLiveItems.map((item) => ({ ...item, category_id: String(item.category_id) }));
+            const normMovieItems = rawMovieItems.map((item) => ({ ...item, category_id: String(item.category_id) }));
+            const normSeriesItems = rawSeriesItems.map((item) => ({ ...item, category_id: String(item.category_id) }));
 
+            // All domains are partial — BrowseScreen loads more on demand when user visits each tab
             const partialFlags: ContentPartialFlags = {
-                live: useLightPrefetch && safeLiveStreams.length > liveItems.length,
-                movies: useLightPrefetch && safeVodStreams.length > movieItems.length,
-                series: useLightPrefetch && safeSeriesList.length > seriesItems.length,
+                live: true,
+                movies: true,
+                series: true,
             };
 
-            const normalizedLiveCategories = liveCategories.map((cat) => ({
-                ...cat,
-                category_id: String(cat.category_id),
-            }));
-            const normalizedVodCategories = vodCategories.map((cat) => ({
-                ...cat,
-                category_id: String(cat.category_id),
-            }));
-            const normalizedSeriesCategories = seriesCategories.map((cat) => ({
-                ...cat,
-                category_id: String(cat.category_id),
-            }));
+            // =========================================================
+            // STEP 3 — Warm above-fold images before navigating.
+            // Fire-and-forget — does not block navigation.
+            // =========================================================
 
-            const normalizedLiveItems = liveItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
-            const normalizedMovieItems = movieItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
-            const normalizedSeriesItems = seriesItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
+            const aboveFoldImages: string[] = [
+                ...normMovieItems.slice(0, PHASE1_IMAGE_WARM_COUNT)
+                    .map((m) => (m as any).stream_icon || (m as any).movie_image || (m as any).cover_big || ''),
+                ...normSeriesItems.slice(0, PHASE1_IMAGE_WARM_COUNT)
+                    .map((s) => (s as any).cover || (s as any).cover_big || ''),
+                ...normLiveItems.slice(0, PHASE1_IMAGE_WARM_COUNT)
+                    .map((ch) => (ch as any).stream_icon || ''),
+            ].filter(Boolean);
 
-            logger.info(`[Store] fetchLiveContent: completed, ${safeLiveStreams.length} channels`);
-            logger.info(`[Store] fetchVodContent: completed, ${safeVodStreams.length} movies`);
-            logger.info(`[Store] fetchSeriesContent: completed, ${safeSeriesList.length} series`);
+            prefetchImages(aboveFoldImages);
 
-            set((state) => ({
+            const heroSeed = credentials.username || 'default';
+            const heroCandidates = getHeroCandidates(
+                normMovieItems.slice(0, Math.max(PHASE1_MOVIE_LIMIT, 80)),
+                normSeriesItems.slice(0, Math.max(PHASE1_SERIES_LIMIT, 80)),
+                { seedKey: heroSeed, maxCandidates: 12, pickPoolSize: 4 }
+            );
+            const heroWarmUris = Array.from(new Set(
+                heroCandidates
+                    .slice(0, 2)
+                    .flatMap((pick) => [pick.backdrop, pick.poster])
+                    .filter((uri): uri is string => Boolean(uri && String(uri).startsWith('http')))
+            ));
+
+            if (heroWarmUris.length > 0) {
+                await Promise.race([
+                    prefetchImagesReady(heroWarmUris),
+                    new Promise((resolve) => setTimeout(resolve, 650)),
+                ]);
+            }
+
+            // =========================================================
+            // STEP 4 — Commit to store and signal home screen is ready.
+            // =========================================================
+
+            set({
                 content: {
-                    ...state.content,
-                    live: {
-                        categories: normalizedLiveCategories,
-                        items: normalizedLiveItems,
-                        loaded: true,
-                    },
+                    live: { categories: normalizedLiveCats, items: normLiveItems, loaded: true },
+                    movies: { categories: normalizedVodCats, items: normMovieItems, loaded: true },
+                    series: { categories: normalizedSeriesCats, items: normSeriesItems, loaded: true },
+                    lastFetchTime: Date.now(),
                 },
                 categoryIndex: {
-                    ...state.categoryIndex,
-                    live: buildCategoryIndex(normalizedLiveItems),
+                    live: buildCategoryIndex(normLiveItems),
+                    movies: buildCategoryIndex(normMovieItems),
+                    series: buildCategoryIndex(normSeriesItems),
                 },
-                prefetchProgress: { current: 4, total: 6, currentTask: 'Loading movies...' },
-            }));
-
-            set((state) => ({
-                content: {
-                    ...state.content,
-                    movies: {
-                        categories: normalizedVodCategories,
-                        items: normalizedMovieItems,
-                        loaded: true,
-                    },
-                },
-                categoryIndex: {
-                    ...state.categoryIndex,
-                    movies: buildCategoryIndex(normalizedMovieItems),
-                },
-                prefetchProgress: { current: 5, total: 6, currentTask: 'Loading series...' },
-            }));
-
-            set((state) => {
-                const updatedContent = {
-                    ...state.content,
-                    series: {
-                        categories: normalizedSeriesCategories,
-                        items: normalizedSeriesItems,
-                        loaded: true,
-                    },
-                };
-
-                const allLoaded = updatedContent.live.loaded &&
-                    updatedContent.movies.loaded &&
-                    updatedContent.series.loaded;
-
-                return {
-                    content: {
-                        ...updatedContent,
-                        lastFetchTime: allLoaded ? Date.now() : state.content.lastFetchTime,
-                    },
-                    categoryIndex: {
-                        ...state.categoryIndex,
-                        series: buildCategoryIndex(normalizedSeriesItems),
-                    },
-                    contentPartial: partialFlags,
-                    isPrefetching: false,
-                    prefetchProgress: { current: 6, total: 6, currentTask: 'Complete!' },
-                    retryCount: 0,
-                    isRetrying: false,
-                };
+                contentPartial: partialFlags,
+                isPhase1Ready: true,
+                isPrefetching: false,
+                prefetchProgress: { current: 4, total: 4, currentTask: 'Complete!' },
+                retryCount: 0,
+                isRetrying: false,
             });
 
-            logger.info(`Prefetch complete: ${safeLiveStreams.length} channels, ${safeVodStreams.length} movies, ${safeSeriesList.length} series`);
+            logger.info('Prefetch complete — home screen ready. Full content loads on demand per tab.');
             scheduleSearchIndexRebuild(set, get);
-
             persistContentCacheToDisk(get().content, partialFlags);
             return true;
         } catch (error: unknown) {
@@ -740,21 +751,18 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                 const delay = Math.pow(2, currentRetry) * 1000;
 
                 set({
-                    // Important: release in-flight flag so scheduled retry can actually run.
                     isPrefetching: false,
                     isRetrying: true,
                     retryCount: currentRetry + 1,
                     prefetchProgress: {
                         current: 0,
-                        total: 6,
+                        total: 4,
                         currentTask: `Retry ${currentRetry + 1}/${maxRetries} in ${delay / 1000}s...`,
                     },
                 });
 
                 logger.info(`Retrying prefetch (${currentRetry + 1}/${maxRetries}) after ${delay}ms...`);
-
                 await new Promise<void>((resolve) => setTimeout(resolve, delay));
-
                 return get().prefetchAllContent();
             }
 
@@ -768,7 +776,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                     true,
                     'Check your internet connection and try again'
                 ),
-                prefetchProgress: { current: 0, total: 6, currentTask: 'Failed' },
+                prefetchProgress: { current: 0, total: 4, currentTask: 'Failed' },
             });
             return false;
         }
@@ -850,6 +858,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                 },
                 contentPartial: payload.partial || initialContentPartial,
                 contentCacheLoaded: true,
+                isPhase1Ready: true,
             });
 
             scheduleSearchIndexRebuild(set, get);
@@ -1212,9 +1221,22 @@ const useContentStore = create<ContentStore>()((set, get) => ({
         if (!api) return;
         try {
             if (type === 'movie') {
-                await api.getVodInfo(Number(id));
+                const movieInfo = await api.getVodInfo(Number(id));
+                if (ENABLE_HOME_DETAIL_MEDIA_PREFETCH_V1) {
+                    const movie = get().content.movies.items.find((item) => String(item.stream_id) === String(id));
+                    const images = resolveMovieDetailImages(movie, movieInfo);
+                    const backdropCandidates = getMovieDetailBackdropCandidates(movie, movieInfo).slice(0, 3);
+                    prefetchImages([...backdropCandidates, images.cover]);
+                }
             } else if (type === 'series') {
-                await api.getSeriesInfo(Number(id));
+                const seriesInfo = await api.getSeriesInfo(Number(id));
+                if (ENABLE_HOME_DETAIL_MEDIA_PREFETCH_V1) {
+                    const series = get().content.series.items.find((item) => String(item.series_id) === String(id));
+                    const images = resolveSeriesDetailImages(series, seriesInfo);
+                    const backdropCandidates = getSeriesDetailBackdropCandidates(series, seriesInfo).slice(0, 3);
+                    const firstSeasonImages = getSeriesFirstSeasonImageUrls(series, seriesInfo);
+                    prefetchImages([...backdropCandidates, images.cover, ...firstSeasonImages]);
+                }
             }
         } catch {
             // Silently fail as this is a background optimization
@@ -1237,6 +1259,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
             error: null,
             retryCount: 0,
             isRetrying: false,
+            isPhase1Ready: false,
             contentCacheLoaded: options?.keepCacheLoaded ? get().contentCacheLoaded : false,
         });
     },
@@ -1250,6 +1273,18 @@ const useContentStore = create<ContentStore>()((set, get) => ({
             suggestion,
         }),
     }),
+
+    isReadyForHome: () => {
+        const { isPhase1Ready, content } = get();
+        // Phase-1 flag set by two-phase fetch, OR cache load already populated items
+        if (isPhase1Ready) return true;
+        // Fallback: if any domain has items (e.g. partial cache), allow navigation
+        return (
+            content.live.items.length > 0 ||
+            content.movies.items.length > 0 ||
+            content.series.items.length > 0
+        );
+    },
 }));
 
 export default useContentStore;

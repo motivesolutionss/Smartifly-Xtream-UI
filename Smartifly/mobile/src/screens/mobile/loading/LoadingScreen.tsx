@@ -49,6 +49,9 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     const isPrefetching = useContentStore((state) => state.isPrefetching);
     const prefetchProgress = useContentStore((state) => state.prefetchProgress);
     const getContentReady = useContentStore((state) => state.getContentReady);
+    const isReadyForHome = useContentStore((state) => state.isReadyForHome);
+    // Subscribe to isPhase1Ready as a reactive value so the navigation effect fires
+    const isPhase1Ready = useContentStore((state) => state.isPhase1Ready);
     const verifyFatherControl = useAppStatusStore((state) => state.verifyFatherControl);
     const error = useContentStore((state) => state.error);
     const getContentStats = useContentStore((state) => state.getContentStats);
@@ -66,8 +69,14 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
 
     const startPrefetch = useCallback(async () => {
         logger.info('Starting content prefetch...');
-        const prefetchPromise = prefetchAllContent();
-        const isLicenseOK = await verifyFatherControl();
+        // Run license check and content fetch in parallel — neither blocks the other.
+        // Navigation fires as soon as phase-1 data is ready (isPhase1Ready flips to true),
+        // regardless of whether the license check has finished yet.
+        const [isLicenseOK] = await Promise.all([
+            verifyFatherControl(),
+            prefetchAllContent(),
+        ]);
+
         if (!isLicenseOK) {
             const { fatherControl } = useAppStatusStore.getState();
             navigation.reset({
@@ -80,14 +89,8 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                     },
                 }],
             });
-            return;
         }
-        const success = await prefetchPromise;
-
-        if (!success && error) {
-            logger.error('Prefetch failed', error);
-        }
-    }, [prefetchAllContent, error, navigation, verifyFatherControl]);
+    }, [prefetchAllContent, navigation, verifyFatherControl]);
 
     const handleRetry = useCallback(async () => {
         // Reset guards to allow retry
@@ -168,19 +171,18 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
         ]).start();
     }, [fadeAnim, scaleAnim]);
 
-    // Navigate when complete (using dynamic getContentReady)
+    // Navigate as soon as phase-1 data is ready (above-fold slice loaded).
+    // Phase-2 (full dataset) continues loading in the background after navigation.
     useEffect(() => {
         if (hasNavigated.current) return;
 
-        // Use dynamic getter instead of stored value
-        const contentReady = getContentReady();
+        const readyForHome = isReadyForHome();
 
-        if (contentReady && !isPrefetching) {
+        if (readyForHome) {
             hasNavigated.current = true;
             const stats = getContentStats();
-            logger.info(`Content loaded: ${stats.live} channels, ${stats.movies} movies, ${stats.series} series`);
+            logger.info(`Phase-1 ready — navigating to home. Stats: ${stats.live} channels, ${stats.movies} movies, ${stats.series} series`);
 
-            // Celebrate with a small animation then navigate
             Animated.sequence([
                 Animated.timing(scaleAnim, {
                     toValue: 1.1,
@@ -201,7 +203,8 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                 }, 300);
             });
         }
-    }, [getContentReady, isPrefetching, getContentStats, navigation, scaleAnim]);
+    // isPhase1Ready is the reactive state value — this effect re-runs when it flips to true
+    }, [isPhase1Ready, isReadyForHome, getContentStats, navigation, scaleAnim]);
 
 
 
@@ -228,12 +231,10 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
     };
 
     const steps = [
-        { number: 1, label: 'Live TV', icon: 'television' },
-        { number: 2, label: 'Channels', icon: 'broadcast' },
-        { number: 3, label: 'Movies', icon: 'filmStrip' },
-        { number: 4, label: 'VOD', icon: 'playCircle' },
-        { number: 5, label: 'Series', icon: 'monitorPlay' },
-        { number: 6, label: 'Shows', icon: 'menu' },
+        { number: 1, label: 'Categories', icon: 'menu' },
+        { number: 2, label: 'Content', icon: 'television' },
+        { number: 3, label: 'Images', icon: 'filmStrip' },
+        { number: 4, label: 'Done', icon: 'check' },
     ];
 
     // =============================================================================
@@ -280,7 +281,9 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ navigation }) => {
                         ? 'Launching app...'
                         : isRetrying
                             ? `Attempt ${retryCount}/${maxRetries} - Auto-retry in progress`
-                            : 'This only happens once after login'
+                            : prefetchProgress.current >= 3
+                                ? 'Loading full library in background...'
+                                : 'Getting your content ready...'
                     }
                 </Text>
 

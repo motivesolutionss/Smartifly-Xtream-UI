@@ -37,9 +37,13 @@ export interface ContentRowProps {
     items: ContentItem[];
     onSeeAllPress?: () => void;
     onItemPress?: (item: ContentItem) => void;
+    onItemImageLoad?: (item: ContentItem, imageUri?: string) => void;
+    onItemImageError?: (item: ContentItem, imageUri?: string) => void;
+    onVisibleItemsChange?: (items: ContentItem[]) => void;
     isLoading?: boolean;
     showSeeAll?: boolean;
     maxItems?: number;
+    strictImageSource?: boolean;
     style?: ViewStyle;
     icon?: string;
     accentColor?: string;
@@ -185,9 +189,13 @@ const ContentRow: React.FC<ContentRowProps> = ({
     items, // mapped from items
     onSeeAllPress,
     onItemPress,
+    onItemImageLoad,
+    onItemImageError,
+    onVisibleItemsChange,
     isLoading = false,
     showSeeAll = true,
     maxItems = 15,
+    strictImageSource = false,
     style,
     icon,
     accentColor,
@@ -201,10 +209,26 @@ const ContentRow: React.FC<ContentRowProps> = ({
     const horizontalItemLength = useMemo(() => (
         type === 'live' ? 100 + spacing.sm : 110 + spacing.sm
     ), [type]);
+    const viewabilityConfig = useMemo(() => ({
+        itemVisiblePercentThreshold: 55,
+        minimumViewTime: 80,
+    }), []);
 
     const handleItemPress = useCallback((item: ContentItem) => {
         onItemPress?.(item);
     }, [onItemPress]);
+
+    const handleViewableItemsChanged = useCallback(({ viewableItems }: {
+        viewableItems: Array<{ item?: ContentItem | null }>;
+    }) => {
+        if (!onVisibleItemsChange) return;
+        const visibleItems = viewableItems
+            .map((entry) => entry.item)
+            .filter((item): item is ContentItem => Boolean(item));
+        if (visibleItems.length > 0) {
+            onVisibleItemsChange(visibleItems);
+        }
+    }, [onVisibleItemsChange]);
 
     // Render individual content card
     const renderItem = useCallback<ListRenderItem<ContentItem>>(
@@ -212,11 +236,14 @@ const ContentRow: React.FC<ContentRowProps> = ({
             <ContentCard
                 item={item}
                 onPress={handleItemPress}
+                onImageLoad={onItemImageLoad}
+                onImageError={onItemImageError}
                 variant={cardVariant}
                 showRating={type !== 'live'}
+                strictImageSource={strictImageSource}
             />
         ),
-        [cardVariant, handleItemPress, type]
+        [cardVariant, handleItemPress, onItemImageError, onItemImageLoad, strictImageSource, type]
     );
 
     // Key extractor
@@ -254,6 +281,8 @@ const ContentRow: React.FC<ContentRowProps> = ({
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     ItemSeparatorComponent={Separator}
+                    onViewableItemsChanged={handleViewableItemsChanged}
+                    viewabilityConfig={viewabilityConfig}
                     // Performance optimizations
                     removeClippedSubviews={false}
                     maxToRenderPerBatch={railPerf.maxToRenderPerBatch}

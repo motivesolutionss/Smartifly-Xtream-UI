@@ -113,6 +113,38 @@ export const prefetchImages = (uris: Array<string | undefined>) => {
 };
 
 /**
+ * Best-effort warmup that resolves when preload batches have had a chance to finish.
+ * Useful for short UI gates where we want to wait briefly for the first image chunk.
+ */
+export const prefetchImagesReady = async (uris: Array<string | undefined>) => {
+    const validUris = uris
+        .map((uri) => normalizeImageUri(uri))
+        .filter((uri) => uri && isRemoteImageUri(uri));
+
+    if (validUris.length === 0) return;
+
+    const uniqueUris = Array.from(new Set(validUris));
+    const batchSize = Math.max(PREFETCH_CONCURRENCY, 4);
+    const pending: Promise<unknown>[] = [];
+
+    for (let i = 0; i < uniqueUris.length; i += batchSize) {
+        const batch = uniqueUris.slice(i, i + batchSize);
+        const sources = batch.map((uri) => ({ uri }));
+        const preloadResult: any = FastImage.preload(sources);
+
+        if (preloadResult && typeof preloadResult.then === 'function') {
+            pending.push(preloadResult.catch(() => undefined));
+        } else {
+            pending.push(new Promise((resolve) => setTimeout(resolve, 180)));
+        }
+
+        batch.forEach((uri) => trackWarmUri(uri));
+    }
+
+    await Promise.all(pending);
+};
+
+/**
  * Marks a URI as already warm in memory/disk cache.
  * Call from image onLoad handlers to avoid future loader flashes.
  */

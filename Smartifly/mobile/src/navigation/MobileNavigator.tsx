@@ -215,6 +215,7 @@ const MobileNavigator: React.FC = () => {
       screenOptions={{
         headerShown: false,
         animation: 'fade',
+        orientation: 'portrait',
         freezeOnBlur: true,
         contentStyle: { backgroundColor: colors.background },
       }}

@@ -23,6 +23,15 @@ target 'SmartiflyApp' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # Optional iOS VLC path for MKV playback.
+  # Enable with: USE_IOS_VLC=1 pod install
+  if ENV['USE_IOS_VLC'] == '1'
+    Pod::UI.puts 'Enabling MobileVLCKit (USE_IOS_VLC=1)'.green
+    pod 'MobileVLCKit', '~> 3.6'
+  else
+    Pod::UI.puts 'MobileVLCKit disabled (USE_IOS_VLC not set)'.yellow
+  end
+
   post_install do |installer|
     react_native_post_install(
       installer,
@@ -30,5 +39,21 @@ target 'SmartiflyApp' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Patch for modern Xcode SDK compatibility.
+    # Fixes "consteval" errors in fmt/glog and related C++ pods.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++20'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+        unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?('FMT_USE_CONSTEVAL=0')
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_USE_CONSTEVAL=0'
+        end
+        unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?('FMT_STATIC_THOUSANDS_SEPARATOR=1')
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_STATIC_THOUSANDS_SEPARATOR=1'
+        end
+      end
+    end
   end
 end

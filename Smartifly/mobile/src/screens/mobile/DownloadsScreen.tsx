@@ -53,6 +53,39 @@ const DownloadsScreen: React.FC = () => {
         );
     }, [removeDownload]);
 
+    const handlePlay = useCallback((item: DownloadItem) => {
+        if (item.status !== 'completed' || !item.localPath) return;
+
+        const localUrl = `file://${item.localPath}`;
+        const extension = item.localPath.split('.').pop() || 'mp4';
+
+        if (item.type === 'movie') {
+            navigation.navigate('FullscreenPlayer', {
+                type: 'movie',
+                item: {
+                    ...(item.data || {}),
+                    stream_id: item.id,
+                    name: item.title,
+                    stream_icon: item.thumbnail,
+                    container_extension: extension,
+                    // localPath signals PlayerScreen to use file:// URL
+                    localPath: item.localPath,
+                },
+            });
+        } else if (item.type === 'series') {
+            navigation.navigate('FullscreenPlayer', {
+                type: 'series',
+                item: {
+                    ...(item.data || {}),
+                    name: item.title,
+                    stream_icon: item.thumbnail,
+                },
+                // episodeUrl with file:// plays the local file directly
+                episodeUrl: localUrl,
+            });
+        }
+    }, [navigation]);
+
     const handleClearAll = useCallback(() => {
         Alert.alert(
             'Clear All Downloads',
@@ -93,37 +126,54 @@ const DownloadsScreen: React.FC = () => {
         []
     );
 
-    const renderItem = useCallback(({ item }: { item: DownloadItem }) => (
-        <View style={styles.itemCard}>
-            {item.thumbnail ? (
-                <FastImageComponent
-                    source={{ uri: item.thumbnail }}
-                    style={styles.thumbnail}
-                />
-            ) : (
-                <View style={[styles.thumbnail, styles.thumbnailFallback]}>
-                    <Icon name="downloadSimple" size={24} color={colors.textMuted} />
-                </View>
-            )}
-
-            <View style={styles.itemInfo}>
-                <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.itemMeta}>
-                    {item.quality.toUpperCase()} | {formatSize(item.downloadedSize || item.totalSize)}
-                </Text>
-                {item.status === 'downloading' && (
-                    <View style={styles.progressContainer}>
-                        <View style={[styles.progressBar, getProgressFillStyle(item.progress)]} />
-                        <Text style={styles.progressText}>{Math.round(item.progress * 100)}%</Text>
+    const renderItem = useCallback(({ item }: { item: DownloadItem }) => {
+        const isCompleted = item.status === 'completed';
+        return (
+            <TouchableOpacity
+                style={styles.itemCard}
+                onPress={() => isCompleted && handlePlay(item)}
+                activeOpacity={isCompleted ? 0.7 : 1}
+            >
+                {item.thumbnail ? (
+                    <FastImageComponent
+                        source={{ uri: item.thumbnail }}
+                        style={styles.thumbnail}
+                    />
+                ) : (
+                    <View style={[styles.thumbnail, styles.thumbnailFallback]}>
+                        <Icon name="downloadSimple" size={24} color={colors.textMuted} />
                     </View>
                 )}
-            </View>
 
-            <TouchableOpacity style={styles.removeButton} onPress={() => handleRemove(item)}>
-                <Icon name="trash" size={18} color={colors.error} />
+                {/* Play overlay on completed items */}
+                {isCompleted && (
+                    <View style={styles.playOverlay}>
+                        <Icon name="play" size={20} color={colors.textPrimary} weight="fill" />
+                    </View>
+                )}
+
+                <View style={styles.itemInfo}>
+                    <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.itemMeta}>
+                        {item.quality.toUpperCase()} | {formatSize(item.downloadedSize || item.totalSize)}
+                    </Text>
+                    {item.status === 'downloading' && (
+                        <View style={styles.progressContainer}>
+                            <View style={[styles.progressBar, getProgressFillStyle(item.progress)]} />
+                            <Text style={styles.progressText}>{Math.round(item.progress * 100)}%</Text>
+                        </View>
+                    )}
+                    {isCompleted && (
+                        <Text style={styles.readyLabel}>Ready to watch</Text>
+                    )}
+                </View>
+
+                <TouchableOpacity style={styles.removeButton} onPress={() => handleRemove(item)}>
+                    <Icon name="trash" size={18} color={colors.error} />
+                </TouchableOpacity>
             </TouchableOpacity>
-        </View>
-    ), [getProgressFillStyle, handleRemove]);
+        );
+    }, [getProgressFillStyle, handlePlay, handleRemove]);
 
     const keyExtractor = useCallback((item: DownloadItem) => item.id, []);
 
@@ -303,6 +353,22 @@ const styles = StyleSheet.create({
         backgroundColor: colors.backgroundInput,
         borderWidth: 1,
         borderColor: colors.border,
+    },
+    playOverlay: {
+        position: 'absolute',
+        left: spacing.sm,
+        width: 112,
+        height: 64,
+        borderRadius: borderRadius.md,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    readyLabel: {
+        color: colors.success,
+        fontSize: 11,
+        fontWeight: '600',
+        marginTop: 3,
     },
     itemInfo: {
         flex: 1,

@@ -122,25 +122,41 @@ export const config = {
  * Only logs in development mode
  */
 export const logger = {
+    // Prevent LogBox/dev console crashes on oversized tokenized URLs / payload blobs.
+    sanitize: (value: any, max = 1200): any => {
+        try {
+            if (typeof value === 'string') {
+                return value.length > max ? `${value.slice(0, max)}...(truncated:${value.length})` : value;
+            }
+            if (value == null) return value;
+            const json = JSON.stringify(value);
+            if (!json) return value;
+            if (json.length <= max) return value;
+            return `${json.slice(0, max)}...(truncated:${json.length})`;
+        } catch {
+            const fallback = String(value);
+            return fallback.length > max ? `${fallback.slice(0, max)}...(truncated:${fallback.length})` : fallback;
+        }
+    },
     debug: (message: string, ...args: any[]) => {
         if (config.logging.enabled && config.logging.level === 'debug') {
-            console.log(`[DEBUG] ${message}`, ...args);
+            console.log(`[DEBUG] ${message}`, ...args.map((a) => logger.sanitize(a)));
         }
     },
     info: (message: string, ...args: any[]) => {
         if (config.logging.enabled) {
-            console.log(`[INFO] ${message}`, ...args);
+            console.log(`[INFO] ${message}`, ...args.map((a) => logger.sanitize(a)));
         }
     },
     warn: (message: string, ...args: any[]) => {
         if (config.logging.enabled) {
-            console.warn(`[WARN] ${message}`, ...args);
+            console.warn(`[WARN] ${message}`, ...args.map((a) => logger.sanitize(a)));
         }
     },
     error: (message: string, ...args: any[]) => {
         // Errors are always logged, but could be sent to error tracking service
         if (config.logging.enabled) {
-            console.error(`[ERROR] ${message}`, ...args);
+            console.error(`[ERROR] ${message}`, ...args.map((a) => logger.sanitize(a)));
         }
         // TODO: In production, send to error tracking service (Sentry, Bugsnag, etc.)
     },
