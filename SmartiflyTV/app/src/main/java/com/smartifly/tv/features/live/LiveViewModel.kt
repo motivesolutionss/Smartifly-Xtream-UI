@@ -7,7 +7,8 @@ import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.remote.models.XtreamLiveStream
-import com.smartifly.tv.data.repository.XtreamRepository
+import com.smartifly.tv.data.repository.LiveDataSource
+import com.smartifly.tv.data.hero.HeroImageResolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,13 +17,14 @@ import kotlinx.coroutines.launch
 
 private const val ALL_CATEGORY_ID = "all"
 private const val PAGE_SIZE = 120
+private const val INITIAL_PAGE_SIZE = 60
 private const val CATEGORY_TTL_MS = 3 * 60 * 1000L
 private const val EPG_TTL_MS = 60 * 1000L
 private const val STUCK_LOADING_TIMEOUT_MS = 15_000L
-private const val LIVE_DEBUG_TRACE = true
+private val LIVE_DEBUG_TRACE = BuildConfig.LIVE_DEBUG_TRACE
 
 class LiveViewModel(
-    private val repository: XtreamRepository
+    private val repository: LiveDataSource
 ) : ViewModel() {
     companion object {
         private data class PortalCapability(
@@ -63,6 +65,7 @@ class LiveViewModel(
     private var focusedChannelId: String? = null
     private var requestSequence: Long = 0L
     private val activeRequestByCategory = mutableMapOf<String, Long>()
+    private var startupCategorySelected = false
 
     init {
         cleanupExpiredPortalCapability()
@@ -85,24 +88,47 @@ class LiveViewModel(
                         }
 
                         // First successful category snapshot selects once.
-                        val allState = pagesByCategory[ALL_CATEGORY_ID]
-                        val now = System.currentTimeMillis()
-                        val loadingStuck = allState?.loading == true &&
-                            allState.loadingStartedAtMs > 0L &&
-                            (now - allState.loadingStartedAtMs) > STUCK_LOADING_TIMEOUT_MS
-                        if (
-                            selectedCategoryId == ALL_CATEGORY_ID &&
-                            (
-                                allState?.initialized != true &&
-                                    (allState?.loading != true || loadingStuck)
-                                )
-                        ) {
-                            if (loadingStuck) {
-                                logLive("startup_recover", "stale loading detected for ALL; forcing reload")
-                            }
-                            loadCategoryPage(categoryId = ALL_CATEGORY_ID, page = 1, replace = true, forceRefresh = true)
+                        if (!startupCategorySelected) {
+                            startupCategorySelected = true
+                            val firstRealCategory = backend.firstOrNull()?.id ?: ALL_CATEGORY_ID
+                            selectedCategoryId = firstRealCategory
+                            logLive("startup_category", "selected=$selectedCategoryId")
+                            loadCategoryPage(
+                                categoryId = selectedCategoryId,
+                                page = 1,
+                                replace = true,
+                                forceRefresh = true
+                            )
                         } else {
-                            emitSuccess()
+                            if (selectedCategoryId == ALL_CATEGORY_ID && backend.isNotEmpty()) {
+                                val allState = pagesByCategory[ALL_CATEGORY_ID]
+                                val allInitialized = allState?.initialized == true
+                                if (!allInitialized) {
+                                    selectedCategoryId = backend.first().id
+                                    logLive("startup_retarget", "all-not-ready -> selected=$selectedCategoryId")
+                                }
+                            }
+                            val currentState = pagesByCategory[selectedCategoryId]
+                            val now = System.currentTimeMillis()
+                            val loadingStuck = currentState?.loading == true &&
+                                currentState.loadingStartedAtMs > 0L &&
+                                (now - currentState.loadingStartedAtMs) > STUCK_LOADING_TIMEOUT_MS
+                            if (
+                                currentState?.initialized != true &&
+                                (currentState?.loading != true || loadingStuck)
+                            ) {
+                                if (loadingStuck) {
+                                    logLive("startup_recover", "stale loading detected; forcing reload for $selectedCategoryId")
+                                }
+                                loadCategoryPage(
+                                    categoryId = selectedCategoryId,
+                                    page = 1,
+                                    replace = true,
+                                    forceRefresh = true
+                                )
+                            } else {
+                                emitSuccess()
+                            }
                         }
                     }
                     is NetworkResult.Error -> {
@@ -186,10 +212,15 @@ class LiveViewModel(
         loadJob = viewModelScope.launch {
             portalKey = runCatching { repository.getPortalCapabilityKey() }.getOrDefault(portalKey)
             val portalModeForRequest = getPortalPaginationMode()
+            val requestedPageSize = if (page == 1 && !effectiveExisting.initialized) {
+                INITIAL_PAGE_SIZE
+            } else {
+                PAGE_SIZE
+            }
             repository.getLiveStreams(
                 categoryId = if (categoryId == ALL_CATEGORY_ID) null else categoryId,
                 page = page,
-                pageSize = PAGE_SIZE
+                pageSize = requestedPageSize
             ).collect { result ->
                 if (activeRequestByCategory[categoryId] != requestId) {
                     logLive("request_drop", "category=$categoryId page=$page requestId=$requestId reason=stale")
@@ -208,12 +239,12 @@ class LiveViewModel(
                             false
                         } else {
                             // If server doesn't paginate correctly, avoid endless load-more loops.
-                            val serverLooksPaginated = result.data.size <= PAGE_SIZE
-                            if (!serverLooksPaginated && page > 1) false else result.data.size >= PAGE_SIZE
+                            val serverLooksPaginated = result.data.size <= requestedPageSize
+                            if (!serverLooksPaginated && page > 1) false else result.data.size >= requestedPageSize
                         }
 
                         val likelySnapshotMode = when {
-                            page == 1 && result.data.size > PAGE_SIZE -> true
+                            page == 1 && result.data.size > requestedPageSize -> true
                             page > 1 && mapped.isNotEmpty() && effectiveExisting.items.isNotEmpty() &&
                                 mapped.all { next -> effectiveExisting.items.any { it.id == next.id } } -> true
                             else -> false
@@ -237,10 +268,6 @@ class LiveViewModel(
                             fetchedAtMs = System.currentTimeMillis(),
                             paginationMode = mode
                         )
-
-                        if (selectedCategoryId == categoryId && merged.isNotEmpty() && (replace || forceRefresh)) {
-                            onChannelFocused(merged.first())
-                        }
 
                         emitSuccess()
                     }
@@ -356,16 +383,18 @@ class LiveViewModel(
         epgCache.clear()
         focusedChannelId = null
         selectedCategoryId = ALL_CATEGORY_ID
+        startupCategorySelected = false
         _uiState.value = LiveUiState.Loading
         logLive("lifecycle", "LiveViewModel disposed for screen exit")
     }
 }
 
 private fun XtreamLiveStream.toDomainLive(): LiveStream {
+    val normalizedLogo = HeroImageResolver.normalizeImageUrl(streamIcon) ?: ""
     return LiveStream(
         id = streamId.toString(),
         name = name,
-        logoUrl = streamIcon ?: "",
+        logoUrl = normalizedLogo,
         categoryId = categoryId,
         streamType = streamType ?: "live",
         archiveAvailable = tvArchive == 1,

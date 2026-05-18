@@ -8,11 +8,11 @@ import kotlin.math.max
  * Session-stable: once a hero is selected for a profile, it remains preferred
  * until it becomes unavailable in the next candidate set.
  */
-class HeroRepository {
+class HeroRepository : HomeHeroSelector {
 
     private val lockedHeroByProfile = mutableMapOf<String, String>()
 
-    fun selectHomeHero(
+    override fun selectHomeHero(
         profileId: String,
         continueWatching: List<MovieMetadata>,
         movies: List<MovieMetadata>,

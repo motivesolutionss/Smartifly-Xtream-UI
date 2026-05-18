@@ -18,6 +18,7 @@ data class ProviderHealthEventDto(
 )
 
 data class ProviderHealthIngestRequest(
+    val schemaVersion: Int = 1,
     val events: List<ProviderHealthEventDto>
 )
 
@@ -26,4 +27,3 @@ data class ProviderHealthIngestResponse(
     val accepted: Int = 0,
     val rejected: Int = 0
 )
-

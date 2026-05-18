@@ -4,7 +4,6 @@ import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.performance.lowend.LowEndModeManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -56,7 +55,7 @@ fun SmartiflyTheme(
     profileColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val performanceConfig = remember { LowEndModeManager.getConfig() }
+    val performanceConfig = LowEndModeManager.getConfig()
     
     val remoteTheme by RemoteThemeManager.currentConfig.collectAsState()
     

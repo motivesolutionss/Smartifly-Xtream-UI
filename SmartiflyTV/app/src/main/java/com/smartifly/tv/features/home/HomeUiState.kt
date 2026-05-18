@@ -6,7 +6,8 @@ sealed class HomeUiState {
     object Loading : HomeUiState()
     data class Success(
         val heroMovie: MovieMetadata? = null,
-        val sections: List<HomeSection>
+        val sections: List<HomeSection>,
+        val isDegraded: Boolean = false
     ) : HomeUiState()
     data class Error(val message: String) : HomeUiState()
     object Empty : HomeUiState()

@@ -26,7 +26,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.PlaybackException
 import androidx.media3.ui.PlayerView
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.ResumeWatchingRepository
@@ -40,6 +39,7 @@ import com.smartifly.tv.data.repository.AnalyticsRepository
 import com.smartifly.tv.player.pip.PipManager
 import com.smartifly.tv.ui.theme.SmartiflyTheme
 import com.smartifly.tv.ui.components.player.AutoPlayOverlay
+import com.smartifly.tv.ui.components.base.SmartiflyLoader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -76,7 +76,7 @@ fun PlayerScreen(
 
     if (isResolving) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            SmartiflyLoader()
         }
         return
     }
@@ -144,6 +144,14 @@ fun PlayerScreen(
                 override fun onPlayerError(error: PlaybackException) {
                     com.smartifly.tv.analytics.TelemetryManager.logError("Playback Error: ${error.message}", error)
                     com.smartifly.tv.analytics.TelemetryManager.trackEvent("video_error", mapOf("content_id" to info.id, "error" to (error.message ?: "unknown")))
+                    val nextFallback = streamInfo?.fallbackUrls?.firstOrNull()
+                    if (!nextFallback.isNullOrBlank()) {
+                        val current = streamInfo ?: return
+                        streamInfo = current.copy(
+                            url = nextFallback,
+                            fallbackUrls = current.fallbackUrls.drop(1)
+                        )
+                    }
                 }
             }
             exoPlayer.addListener(listener)
@@ -218,7 +226,7 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                if (isLoading) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                if (isLoading) SmartiflyLoader(modifier = Modifier.align(Alignment.Center))
 
                 if (!isInPipMode) {
                     val isLive = movie.type == "live"

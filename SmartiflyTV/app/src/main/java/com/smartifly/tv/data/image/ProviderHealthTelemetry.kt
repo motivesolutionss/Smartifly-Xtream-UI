@@ -9,14 +9,19 @@ import com.smartifly.tv.data.remote.dto.ProviderHealthEventDto
 import com.smartifly.tv.data.remote.dto.ProviderHealthIngestRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import java.io.IOException
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 object ProviderHealthTelemetry {
     private const val MAX_QUEUE = 1000
@@ -25,9 +30,11 @@ object ProviderHealthTelemetry {
     private const val MAX_BACKOFF_MS = 120_000L
 
     private val queue = ConcurrentLinkedQueue<ProviderHealthEventDto>()
+    private val queueCount = AtomicInteger(0)
     private val started = AtomicBoolean(false)
     private val flushInFlight = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var flushJob: Job? = null
 
     @Volatile
     private var appContext: Context? = null
@@ -39,12 +46,19 @@ object ProviderHealthTelemetry {
         appContext = context.applicationContext
         if (!started.compareAndSet(false, true)) return
 
-        scope.launch {
-            while (true) {
+        flushJob = scope.launch {
+            while (isActive) {
                 delay(FLUSH_INTERVAL_MS)
                 flushNow()
             }
         }
+    }
+
+    fun shutdown() {
+        started.set(false)
+        flushJob?.cancel()
+        flushJob = null
+        scope.cancel()
     }
 
     fun recordEvent(
@@ -84,11 +98,15 @@ object ProviderHealthTelemetry {
             )
 
             queue.offer(event)
-            while (queue.size > MAX_QUEUE) {
-                queue.poll() ?: break
+            val currentCount = queueCount.incrementAndGet()
+            if (currentCount > MAX_QUEUE) {
+                while (queueCount.get() > MAX_QUEUE) {
+                    queue.poll() ?: break
+                    queueCount.decrementAndGet()
+                }
             }
 
-            if (queue.size >= FLUSH_BATCH_SIZE) {
+            if (queueCount.get() >= FLUSH_BATCH_SIZE) {
                 flushNow()
             }
         }
@@ -98,15 +116,18 @@ object ProviderHealthTelemetry {
         if (appContext == null) return
         if (!flushInFlight.compareAndSet(false, true)) return
 
+        var batch = emptyList<ProviderHealthEventDto>()
         try {
-            if (queue.isEmpty()) return
+            if (queueCount.get() <= 0) return
 
-            val batch = ArrayList<ProviderHealthEventDto>(FLUSH_BATCH_SIZE)
-            while (batch.size < FLUSH_BATCH_SIZE) {
+            val nextBatch = ArrayList<ProviderHealthEventDto>(FLUSH_BATCH_SIZE)
+            while (nextBatch.size < FLUSH_BATCH_SIZE) {
                 val item = queue.poll() ?: break
-                batch.add(item)
+                nextBatch.add(item)
+                queueCount.decrementAndGet()
             }
-            if (batch.isEmpty()) return
+            if (nextBatch.isEmpty()) return
+            batch = nextBatch
 
             val response = ApiClient.api.ingestProviderHealth(ProviderHealthIngestRequest(events = batch))
             if (response.success) {
@@ -114,11 +135,28 @@ object ProviderHealthTelemetry {
                 return
             }
 
-            batch.forEach { queue.offer(it) }
+            batch.forEach {
+                queue.offer(it)
+                queueCount.incrementAndGet()
+            }
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
-        } catch (_: Exception) {
-            // Requeue best-effort on network/server failure.
+        } catch (_: IOException) {
+            if (batch.isNotEmpty()) {
+                batch.forEach {
+                    queue.offer(it)
+                    queueCount.incrementAndGet()
+                }
+            }
+            delay(backoffMs)
+            backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
+        } catch (_: RuntimeException) {
+            if (batch.isNotEmpty()) {
+                batch.forEach {
+                    queue.offer(it)
+                    queueCount.incrementAndGet()
+                }
+            }
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
         } finally {

@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
     id("com.google.devtools.ksp")
@@ -13,7 +14,7 @@ fun Project.apiBaseUrlFor(propertyName: String, fallback: String): String {
 
 android {
     namespace = "com.smartifly.tv"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.smartifly.tv"
@@ -40,6 +41,8 @@ android {
                 project.apiBaseUrlFor("SMARTIFLY_API_BASE_URL", "https://api.smartifly.tv/v1/")
             )
             buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
+            buildConfigField("boolean", "LIVE_DEBUG_TRACE", "false")
+            buildConfigField("boolean", "STARTUP_WARMUP_V2", "true")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -52,6 +55,10 @@ android {
                 project.apiBaseUrlFor("SMARTIFLY_API_BASE_URL", "https://api.smartifly.tv/v1/")
             )
             buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
+            val debugLiveTraceEnabled = (findProperty("SMARTIFLY_LIVE_DEBUG_TRACE") as String?)?.trim()?.toBooleanStrictOrNull() ?: false
+            buildConfigField("boolean", "LIVE_DEBUG_TRACE", debugLiveTraceEnabled.toString())
+            val debugWarmupV2Enabled = (findProperty("SMARTIFLY_STARTUP_WARMUP_V2") as String?)?.trim()?.toBooleanStrictOrNull() ?: true
+            buildConfigField("boolean", "STARTUP_WARMUP_V2", debugWarmupV2Enabled.toString())
         }
         create("staging") {
             initWith(getByName("debug"))
@@ -61,6 +68,8 @@ android {
                 project.apiBaseUrlFor("SMARTIFLY_API_BASE_URL", "https://api.smartifly.tv/v1/")
             )
             buildConfigField("String", "API_BASE_URL", "\"$stagingApiBaseUrl\"")
+            buildConfigField("boolean", "LIVE_DEBUG_TRACE", "false")
+            buildConfigField("boolean", "STARTUP_WARMUP_V2", "true")
         }
     }
     compileOptions {
@@ -74,18 +83,20 @@ android {
         compose = true
         buildConfig = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.01.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
+    val tvFoundationVersion = "1.0.0-alpha10"
+    val tvMaterialVersion = "1.0.0-alpha10"
+    val media3Version = "1.6.1"
+    val securityCryptoVersion = "1.1.0-beta01"
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.12.0")
@@ -93,8 +104,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     
     // Jetpack Compose for TV
-    implementation("androidx.tv:tv-foundation:1.0.0-alpha10")
-    implementation("androidx.tv:tv-material:1.0.0-alpha10")
+    implementation("androidx.tv:tv-foundation:$tvFoundationVersion")
+    implementation("androidx.tv:tv-material:$tvMaterialVersion")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -112,6 +123,7 @@ dependencies {
     // DataStore & Gson
     implementation("androidx.datastore:datastore:1.0.0")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+    implementation("androidx.security:security-crypto:$securityCryptoVersion")
     implementation("com.google.code.gson:gson:2.10.1")
 
     // Retrofit
@@ -120,10 +132,10 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // Media3
-    implementation("androidx.media3:media3-exoplayer:1.2.0")
-    implementation("androidx.media3:media3-ui:1.2.0")
-    implementation("androidx.media3:media3-common:1.2.0")
-    implementation("androidx.media3:media3-session:1.2.0")
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-common:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
@@ -145,4 +157,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito:mockito-inline:5.2.0")
 }

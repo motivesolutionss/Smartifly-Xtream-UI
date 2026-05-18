@@ -5,6 +5,7 @@ import { prisma } from '../../config/prisma';
 import { getOpsState } from '../../storage/adminOps.store';
 import { listPackages } from '../../storage/adminContent.store';
 import { listTickets } from '../../storage/adminTickets.store';
+import { assertProviderHealthSchemaReady } from '../../startup/providerHealthSchemaCheck';
 
 function parseDateRange(req: Request): { start?: Date; end?: Date } {
   const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
@@ -39,6 +40,19 @@ function buildDateSeries(start: Date, end: Date): string[] {
 export const AdminDashboardController = {
   async metrics(_req: Request, res: Response) {
     try {
+      const readiness = await (async () => {
+        try {
+          await prisma.$queryRaw`SELECT 1`;
+          await assertProviderHealthSchemaReady();
+          return { ready: true, message: 'System ready' };
+        } catch (error) {
+          return {
+            ready: false,
+            message: error instanceof Error ? error.message : 'System readiness check failed',
+          };
+        }
+      })();
+
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -94,6 +108,7 @@ export const AdminDashboardController = {
 
       return res.json({
         success: true,
+        readiness,
         stats: {
           activeLicenses,
           expiredLicenses,

@@ -4,12 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartifly.tv.data.mapper.toDomain
 import com.smartifly.tv.data.remote.NetworkResult
-import com.smartifly.tv.data.repository.XtreamRepository
+import com.smartifly.tv.data.repository.ContentDetailsDataSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+
+private fun Any?.toStringAnyMapOrNull(): Map<String, Any>? {
+    val raw = this as? Map<*, *> ?: return null
+    return raw.entries.mapNotNull { (k, v) ->
+        val key = k as? String ?: return@mapNotNull null
+        val value = v ?: return@mapNotNull null
+        key to value
+    }.toMap()
+}
 
 /**
  * Enterprise-grade ViewModel for Content Details.
@@ -18,20 +27,23 @@ import kotlinx.coroutines.launch
  * Features type-safe loading and professional state management.
  */
 class ContentDetailsViewModel(
-    private val repository: XtreamRepository,
+    private val repository: ContentDetailsDataSource,
     private val contentId: String,
     private val contentType: String, // "movie" or "series"
-    private val categoryId: String? = null
-) : ViewModel() {
-    private fun Any?.asStringAnyMapOrNull(): Map<String, Any>? {
-        val raw = this as? Map<*, *> ?: return null
-        return raw.entries.mapNotNull { (k, v) ->
-            val key = k as? String ?: return@mapNotNull null
-            val value = v ?: return@mapNotNull null
-            key to value
-        }.toMap()
+    private val categoryId: String? = null,
+    private val metadataEnricher: suspend (id: String, title: String, type: String) -> Map<String, Any>? = { id, title, type ->
+        try {
+            val response = com.smartifly.tv.data.remote.ApiClient.api.fetchEnrichedMetadata(
+                id = id,
+                title = title,
+                type = type
+            )
+            if (response["success"] == true) response["data"].toStringAnyMapOrNull() else null
+        } catch (_: Exception) {
+            null
+        }
     }
-
+) : ViewModel() {
     private val _uiState = MutableStateFlow<ContentDetailsUiState>(ContentDetailsUiState.Loading)
     val uiState: StateFlow<ContentDetailsUiState> = _uiState.asStateFlow()
 
@@ -65,15 +77,8 @@ class ContentDetailsViewModel(
                     // Trigger similar content fetch
                     val similar = fetchSimilarContent(categoryId)
                     
-                    // Fetch TMDB Enrichment
-                    val enriched = try {
-                        val response = com.smartifly.tv.data.remote.ApiClient.api.fetchEnrichedMetadata(
-                            id = contentId,
-                            title = domainDetails.title,
-                            type = contentType
-                        )
-                        if (response["success"] == true) response["data"].asStringAnyMapOrNull() else null
-                    } catch (e: Exception) { null }
+                    // Fetch optional enrichment without blocking deterministic state flow.
+                    val enriched = metadataEnricher(contentId, domainDetails.title, contentType)
                     
                     _uiState.value = ContentDetailsUiState.Success(domainDetails, similar, enriched)
                 }

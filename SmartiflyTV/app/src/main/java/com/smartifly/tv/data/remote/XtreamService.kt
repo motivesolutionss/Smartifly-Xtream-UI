@@ -136,6 +136,14 @@ interface XtreamService {
     ): XtreamSeriesInfo
 
     @GET("player_api.php")
+    suspend fun getSeriesInfoCompat(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_series_info",
+        @Query("series") series: Int
+    ): XtreamSeriesInfo
+
+    @GET("player_api.php")
     suspend fun getShortEpg(
         @Query("username") user: String,
         @Query("password") pass: String,

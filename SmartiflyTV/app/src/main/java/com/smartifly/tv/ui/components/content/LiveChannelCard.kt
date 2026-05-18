@@ -25,10 +25,12 @@ import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.PrimaryRed
 import com.smartifly.tv.ui.theme.TextPrimary
 import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImageErrorClassifier
 import com.smartifly.tv.data.image.ImagePolicyEngine
 import com.smartifly.tv.data.image.ImageQualityMonitor
 import com.smartifly.tv.data.image.ProviderHealthTelemetry
 import com.smartifly.tv.data.hero.HeroImageResolver
+import com.smartifly.tv.performance.PerformanceKpiMonitor
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -43,11 +45,13 @@ fun LiveChannelCard(
     contentType: String = "live"
 ) {
     var showFallback by remember(contentId, logoUrl) { mutableStateOf(false) }
+    var candidateIndex by remember(contentId, logoUrl) { mutableStateOf(0) }
     val normalizedLogo = HeroImageResolver.normalizeImageUrl(logoUrl)
-    val policyResolvedLogo = ImagePolicyEngine.resolveFirstUsable(logoUrl)
-    val resolvedLogo = policyResolvedLogo ?: logoUrl
+    val candidates = remember(logoUrl) { ImagePolicyEngine.resolveCandidates(logoUrl) }
+    val resolvedLogo = candidates.getOrNull(candidateIndex)
+    val imageLoadStartedAt = remember(resolvedLogo) { System.currentTimeMillis() }
     val hasPolicyRejectedUrl = !logoUrl.isNullOrBlank() && normalizedLogo.isNullOrBlank()
-    val suppressedByBadMemory = !normalizedLogo.isNullOrBlank() && policyResolvedLogo.isNullOrBlank()
+    val suppressedByBadMemory = !normalizedLogo.isNullOrBlank() && candidates.isEmpty()
 
     LaunchedEffect(hasPolicyRejectedUrl, suppressedByBadMemory, logoUrl, profileId, contentType, contentId) {
         if (hasPolicyRejectedUrl) {
@@ -73,6 +77,9 @@ fun LiveChannelCard(
             )
         }
     }
+    LaunchedEffect(candidateIndex, candidates.size) {
+        if (candidateIndex < candidates.size) showFallback = false
+    }
 
     BaseFocusableCard(
         onClick = onClick,
@@ -92,6 +99,7 @@ fun LiveChannelCard(
                     modifier = Modifier.size(80.dp).padding(12.dp),
                     contentScale = ContentScale.Fit,
                     onSuccess = {
+                        ImageFailureMemory.markHostSuccess(resolvedLogo)
                         ImageQualityMonitor.recordSuccess(
                             url = resolvedLogo,
                             context = ImageQualityMonitor.Context.LIVE_CARD,
@@ -99,16 +107,36 @@ fun LiveChannelCard(
                             contentType = contentType,
                             contentId = contentId
                         )
+                        PerformanceKpiMonitor.recordImageLoad(
+                            context = ImageQualityMonitor.Context.LIVE_CARD,
+                            durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                            success = true
+                        )
                     },
                     onError = {
-                        ImageFailureMemory.markBad(resolvedLogo)
-                        showFallback = true
+                        val classification = ImageErrorClassifier.classify(it.result.throwable)
+                        val temporaryTtl = classification.temporaryTtlMs
+                        if (temporaryTtl != null) {
+                            ImageFailureMemory.markTemporarilyBad(resolvedLogo, ttlMs = temporaryTtl)
+                        } else {
+                            ImageFailureMemory.markBad(resolvedLogo, ttlMs = 60_000L)
+                        }
+                        if (candidateIndex + 1 < candidates.size) {
+                            candidateIndex += 1
+                        } else {
+                            showFallback = true
+                        }
                         ImageQualityMonitor.recordFailure(
                             url = resolvedLogo,
                             context = ImageQualityMonitor.Context.LIVE_CARD,
                             profileId = profileId,
                             contentType = contentType,
                             contentId = contentId
+                        )
+                        PerformanceKpiMonitor.recordImageLoad(
+                            context = ImageQualityMonitor.Context.LIVE_CARD,
+                            durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                            success = false
                         )
                     }
                 )

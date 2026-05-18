@@ -102,9 +102,26 @@ fun HomeScreen(
                     }
                 }
                 is HomeUiState.Success -> {
+                    LaunchedEffect(state.sections, config.tier) {
+                        val (criticalRails, criticalItems, nearItems, warmItems) = when (config.tier) {
+                            DeviceTier.LOW -> listOf(1, 4, 6, 8)
+                            DeviceTier.MEDIUM -> listOf(2, 8, 14, 18)
+                            DeviceTier.HIGH -> listOf(2, 10, 18, 24)
+                        }
+                        prefetchManager.primeHomeAboveFold(
+                            sections = state.sections.map { it.items },
+                            maxRails = 3,
+                            itemsPerRail = nearItems,
+                            criticalRails = criticalRails,
+                            criticalItemsPerRail = criticalItems,
+                            warmItemsPerRail = warmItems,
+                            debugTag = "home_above_fold"
+                        )
+                    }
                     HomeContent(
                         heroMovie = state.heroMovie,
                         sections = state.sections,
+                        isDegraded = state.isDegraded,
                         profileId = profileId,
                         prefetchManager = prefetchManager,
                         onMovieClick = onMovieClick,
@@ -137,6 +154,7 @@ fun HomeScreen(
 fun HomeContent(
     heroMovie: MovieMetadata?,
     sections: List<HomeSection>,
+    isDegraded: Boolean,
     profileId: String,
     prefetchManager: RowPrefetchManager,
     onMovieClick: (MovieMetadata) -> Unit,
@@ -145,6 +163,11 @@ fun HomeContent(
 ) {
     var isBrowsingRails by remember { mutableStateOf(false) }
     val config = LocalPerformanceConfig.current
+    val (focusForwardPrefetch, focusBackPrefetch) = when (config.tier) {
+        DeviceTier.LOW -> 4 to 1
+        DeviceTier.MEDIUM -> 10 to 3
+        DeviceTier.HIGH -> 14 to 4
+    }
     val resolvedHero = remember(heroMovie, sections) {
         val candidate = heroMovie ?: sections.firstOrNull()?.items?.firstOrNull()
         candidate?.let { movie ->
@@ -168,14 +191,20 @@ fun HomeContent(
         label = "heroDim"
     )
 
-    // Stable Hero Logic: We use the heroMovie from the Success state
-    // We only update focusedMovie for the atmosphere/metadata preview, NOT the hero banner image
-    var currentlySelectedMovie by remember { mutableStateOf<MovieMetadata?>(null) }
-
     TvLazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = Dimensions.RowSpacing * 2)
     ) {
+        if (isDegraded) {
+            item {
+                Text(
+                    text = "Some content is still loading. Results may be partial.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = Dimensions.PaddingExtraLarge, vertical = Dimensions.PaddingSmall)
+                )
+            }
+        }
         item {
             resolvedHero?.let { movie ->
                 HeroBanner(
@@ -205,9 +234,13 @@ fun HomeContent(
                 profileId = profileId,
                 onMovieClick = onMovieClick,
                 onMovieFocused = { movie, index -> 
-                    currentlySelectedMovie = movie
                     isBrowsingRails = true
-                    prefetchManager.onCardFocused(index, section.items)
+                    prefetchManager.onCardFocused(
+                        currentIndex = index,
+                        items = section.items,
+                        prefetchCount = focusForwardPrefetch,
+                        backwardBufferCount = focusBackPrefetch
+                    )
                     
                     if (config.tier != DeviceTier.LOW) {
                         // Update atmosphere based on movie genre/vibe

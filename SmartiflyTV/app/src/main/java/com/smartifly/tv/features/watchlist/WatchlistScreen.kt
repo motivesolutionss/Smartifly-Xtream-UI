@@ -46,7 +46,7 @@ fun WatchlistScreen(
                     is WatchlistUiState.Success -> {
                         PosterGrid(
                             items = state.items,
-                            onItemFocused = { },
+                            onItemFocused = { _, _ -> },
                             onItemClick = onItemClick
                         )
                     }

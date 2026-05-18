@@ -11,7 +11,6 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.models.MediaCategory
-import com.smartifly.tv.data.repository.XtreamRepository
 import com.smartifly.tv.ui.theme.SmartiflyTheme
 import com.smartifly.tv.ui.components.dialogs.PinEntryDialog
 import com.smartifly.tv.data.repository.ParentalControlManager
@@ -21,15 +20,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun LiveScreen(
-    repository: XtreamRepository,
+    viewModel: LiveViewModel,
     profileId: String,
     parentalControlManager: ParentalControlManager,
     onChannelClick: (LiveStream) -> Unit
 ) {
-    val viewModel = remember(repository) { LiveViewModel(repository) }
-    DisposableEffect(viewModel) {
-        onDispose { viewModel.disposeForScreenExit() }
-    }
     val uiState by viewModel.uiState.collectAsState()
 
     SmartiflyTheme {

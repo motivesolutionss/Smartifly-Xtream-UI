@@ -15,7 +15,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SmartiflyTV"
         android:banner="@drawable/app_banner"
-        android:usesCleartextTraffic="true"> <!-- ✅ ALLOWS HTTP FOR LOCAL BACKEND -->
+        android:usesCleartextTraffic="true"> <!-- Allows HTTP for local backend -->
 
         <activity
             android:name=".MainActivity"
@@ -43,3 +43,4 @@
     </application>
 
 </manifest>
+

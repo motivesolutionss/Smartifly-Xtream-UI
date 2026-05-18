@@ -5,10 +5,13 @@ import android.os.Bundle
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 object TelemetryManager {
     private var firebaseAnalytics: FirebaseAnalytics? = null
     private var crashlytics: FirebaseCrashlytics? = null
+    private val cacheCounters = ConcurrentHashMap<String, AtomicLong>()
 
     fun initialize(context: Context) {
         val firebaseReady = runCatching { FirebaseApp.initializeApp(context) }.getOrNull() != null
@@ -69,5 +72,32 @@ object TelemetryManager {
             putString(FirebaseAnalytics.Param.SCREEN_CLASS, screenClass)
         }
         firebaseAnalytics?.logEvent(FirebaseAnalytics.Event.SCREEN_VIEW, params)
+    }
+
+    fun trackTiming(eventName: String, durationMs: Long, extra: Map<String, String> = emptyMap()) {
+        val params = extra.toMutableMap()
+        params["duration_ms"] = durationMs.coerceAtLeast(0L).toString()
+        trackEvent(eventName, params)
+    }
+
+    fun trackCacheProbe(domain: String, hit: Boolean) {
+        val keyBase = domain.lowercase()
+        val total = cacheCounters.computeIfAbsent("${keyBase}_total") { AtomicLong(0L) }.incrementAndGet()
+        val hits = if (hit) {
+            cacheCounters.computeIfAbsent("${keyBase}_hit") { AtomicLong(0L) }.incrementAndGet()
+        } else {
+            cacheCounters.computeIfAbsent("${keyBase}_hit") { AtomicLong(0L) }.get()
+        }
+        if (total % 20L == 0L) {
+            val ratioPct = if (total > 0L) ((hits * 100.0) / total).toInt() else 0
+            trackEvent(
+                "cache_hit_ratio_${keyBase}",
+                mapOf(
+                    "hits" to hits.toString(),
+                    "total" to total.toString(),
+                    "ratio_pct" to ratioPct.toString()
+                )
+            )
+        }
     }
 }

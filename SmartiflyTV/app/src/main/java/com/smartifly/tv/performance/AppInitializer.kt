@@ -15,10 +15,12 @@ object AppInitializer {
         // Critical startup tasks (Blocking/Main thread)
         // Initialize Settings early for theme
         SettingsManager(context)
+        com.smartifly.tv.performance.lowend.LowEndModeManager.initialize(context)
         
         // Initialize Analytics & Stability monitoring
         com.smartifly.tv.analytics.TelemetryManager.initialize(context)
         com.smartifly.tv.data.image.ProviderHealthTelemetry.initialize(context)
+        com.smartifly.tv.data.image.ImageHostPolicy.initialize(context)
         val perfConfig = com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig()
         com.smartifly.tv.analytics.TelemetryManager.setDeviceContext(
             deviceId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown",

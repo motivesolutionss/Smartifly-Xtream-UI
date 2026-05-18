@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.IOException
 
 data class WatchProgress(
     val contentId: String,
@@ -26,13 +26,13 @@ data class WatchProgress(
 class ResumeWatchingRepository(
     private val context: Context,
     private val api: SmartiflyApi
-) {
+) : ResumeWatchingDataSource {
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private fun getProgressKey(profileId: String) = stringPreferencesKey("resume_watching_$profileId")
 
-    fun getAllWatchProgress(profileId: String): Flow<List<WatchProgress>> {
+    override fun getAllWatchProgress(profileId: String): Flow<List<WatchProgress>> {
         return context.dataStore.data.map { preferences ->
             val json = preferences[getProgressKey(profileId)] ?: "[]"
             val type = object : TypeToken<List<WatchProgress>>() {}.type
@@ -47,6 +47,7 @@ class ResumeWatchingRepository(
     }
 
     suspend fun saveProgress(profileId: String, progress: WatchProgress) {
+        var syncPayload: List<WatchProgress>? = null
         context.dataStore.edit { preferences ->
             val key = getProgressKey(profileId)
             val currentJson = preferences[key] ?: "[]"
@@ -54,7 +55,11 @@ class ResumeWatchingRepository(
             val currentList: MutableList<WatchProgress> = gson.fromJson(currentJson, type)
 
             // Remove 95% watched content
-            val progressPercent = progress.positionMs.toFloat() / progress.durationMs.toFloat()
+            val progressPercent = if (progress.durationMs <= 0L) {
+                0f
+            } else {
+                progress.positionMs.toFloat() / progress.durationMs.toFloat()
+            }
             if (progressPercent > 0.95f) {
                 currentList.removeAll { it.contentId == progress.contentId }
             } else {
@@ -64,17 +69,25 @@ class ResumeWatchingRepository(
 
             val updatedJson = gson.toJson(currentList)
             preferences[key] = updatedJson
-            
-            // Enterprise Sync: Fire and forget to Smartifly Cloud
-            scope.launch {
-                try {
-                    api.syncResumeWatching(mapOf(
+            syncPayload = currentList.toList()
+        }
+
+        // Cloud sync must stay outside DataStore transaction boundaries.
+        val payload = syncPayload ?: return
+        scope.launch {
+            try {
+                api.syncResumeWatching(
+                    mapOf(
                         "profileId" to profileId,
-                        "progressList" to currentList
-                    ))
-                } catch (e: Exception) {
-                    android.util.Log.e("SmartiflySync", "Failed to sync resume to cloud: ${e.message}")
-                }
+                        "progressList" to payload
+                    )
+                )
+            } catch (io: IOException) {
+                android.util.Log.e("SmartiflySync", "Failed to sync resume to cloud (io): ${io.message}")
+            } catch (se: SecurityException) {
+                android.util.Log.e("SmartiflySync", "Failed to sync resume to cloud (security): ${se.message}")
+            } catch (re: RuntimeException) {
+                android.util.Log.e("SmartiflySync", "Failed to sync resume to cloud (runtime): ${re.message}")
             }
         }
     }
@@ -106,8 +119,12 @@ class ResumeWatchingRepository(
                 }
                 android.util.Log.d("SmartiflySync", "Cloud Resume SYNCED for profile $profileId")
             }
-        } catch (e: Exception) {
-            android.util.Log.e("SmartiflySync", "Failed to fetch resume from cloud: ${e.message}")
+        } catch (io: IOException) {
+            android.util.Log.e("SmartiflySync", "Failed to fetch resume from cloud (io): ${io.message}")
+        } catch (se: SecurityException) {
+            android.util.Log.e("SmartiflySync", "Failed to fetch resume from cloud (security): ${se.message}")
+        } catch (re: RuntimeException) {
+            android.util.Log.e("SmartiflySync", "Failed to fetch resume from cloud (runtime): ${re.message}")
         }
     }
 }

@@ -33,8 +33,8 @@ class TvLauncherSyncWorker(
             // 1. Ensure channel exists
             channelManager.createOrUpdateChannel()
             
-            // 2. Fetch trending content (using '0' for all movies as a proxy for trending)
-            val moviesResult = repository.getMovies("0").firstOrNull()
+            // 2. Fetch catalog content for launcher ranking (omit category for full listing)
+            val moviesResult = repository.getMovies().firstOrNull()
             
             if (moviesResult is NetworkResult.Success) {
                 val domainMovies = moviesResult.data.map { it.toDomain() }

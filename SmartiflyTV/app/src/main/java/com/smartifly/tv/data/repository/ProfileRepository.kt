@@ -4,6 +4,8 @@ import com.smartifly.tv.data.models.UserProfile
 import com.smartifly.tv.data.remote.SmartiflyApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.IOException
+import retrofit2.HttpException
 
 class ProfileRepository(
     private val api: com.smartifly.tv.data.remote.SmartiflyApi,
@@ -56,26 +58,39 @@ class ProfileRepository(
                     )
                 }.filter { it.id.isNotBlank() }
             } else emptyList()
-        } catch (_: Exception) { emptyList() }
+        } catch (e: IOException) {
+            android.util.Log.w("SmartiflyProfile", "Profiles network issue: ${e.message}")
+            emptyList()
+        } catch (e: HttpException) {
+            android.util.Log.w("SmartiflyProfile", "Profiles HTTP ${e.code()}")
+            emptyList()
+        } catch (e: RuntimeException) {
+            android.util.Log.e("SmartiflyProfile", "Profiles unexpected error: ${e.message}")
+            emptyList()
+        }
     }
 
     suspend fun selectProfile(profile: UserProfile) {
         _selectedProfile.value = profile
         try {
             api.selectProfile(mapOf("profileId" to profile.id))
-        } catch (_: Exception) {}
+        } catch (e: IOException) {
+            android.util.Log.w("SmartiflyProfile", "Select profile network issue: ${e.message}")
+        } catch (e: HttpException) {
+            android.util.Log.w("SmartiflyProfile", "Select profile HTTP ${e.code()}")
+        } catch (e: RuntimeException) {
+            android.util.Log.e("SmartiflyProfile", "Select profile unexpected error: ${e.message}")
+        }
     }
 
     suspend fun updateProfile(profileId: String, name: String, avatarUrl: String, pin: String?) {
-        try {
-            api.updateProfile(mapOf(
+        api.updateProfile(
+            mapOf(
                 "profileId" to profileId,
                 "name" to name,
                 "avatarUrl" to avatarUrl,
                 "pin" to pin
-            ))
-        } catch (e: Exception) {
-            throw e
-        }
+            )
+        )
     }
 }

@@ -1,5 +1,6 @@
 package com.smartifly.tv.navigation
 
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,21 +12,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.smartifly.tv.data.ResumeWatchingRepository
-import com.smartifly.tv.data.SettingsManager
 import com.smartifly.tv.data.models.MovieMetadata
-import com.smartifly.tv.data.remote.ApiClient
-import com.smartifly.tv.data.repository.*
-import com.smartifly.tv.data.hero.HeroEnrichmentService
-import com.smartifly.tv.data.hero.HeroRepository
 import com.smartifly.tv.data.onboarding.DeviceStatus
 import com.smartifly.tv.features.onboarding.OnboardingUiState
 import com.smartifly.tv.features.details.ContentDetailsScreen
 import com.smartifly.tv.features.home.HomeScreen
-import com.smartifly.tv.features.home.HomeViewModel
 import com.smartifly.tv.features.live.epg.EpgGridScreen
 import com.smartifly.tv.features.live.epg.EpgViewModel
 import com.smartifly.tv.features.movies.MoviesScreen
@@ -36,11 +29,11 @@ import com.smartifly.tv.features.settings.SettingsScreen
 import com.smartifly.tv.features.profiles.ProfileSelectionScreen
 import com.smartifly.tv.features.profiles.ProfilesViewModel
 import com.smartifly.tv.features.search.SearchScreen
-import com.smartifly.tv.features.search.SearchViewModel
 import com.smartifly.tv.features.watchlist.WatchlistScreen
-import com.smartifly.tv.features.watchlist.WatchlistViewModel
 import com.smartifly.tv.performance.AppInitializer
 import com.smartifly.tv.performance.MemoryTrimHandler
+import com.smartifly.tv.data.warmup.CatalogWarmupOrchestrator
+import com.smartifly.tv.features.home.HomeFeedSnapshotCache
 import com.smartifly.tv.ui.theme.ThemeMode
 import com.smartifly.tv.ui.theme.SmartiflyTheme
 import com.smartifly.tv.ui.theme.fromHex
@@ -50,69 +43,58 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SmartiflyNavGraph(
+    appContext: Context,
+    appGraph: AppGraph,
     isInPipMode: Boolean = false
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
-    // Core Managers
-    val sessionManager = ApiClient.sessionManager
-    val settingsManager = remember { SettingsManager(context) }
-    
-    // Repositories
-    val cloudWatchlistRepo = remember { com.smartifly.tv.data.cloud.CloudWatchlistRepository() }
-    val profileRepository = remember { ProfileRepository(ApiClient.api, sessionManager) }
-    val watchlistRepository = remember { WatchlistRepository(context, cloudWatchlistRepo) }
-    val resumeRepository = remember { ResumeWatchingRepository(context, ApiClient.api) }
-    val parentalControlManager = remember { com.smartifly.tv.data.repository.ParentalControlManager(ApiClient.api) }
-    val database = remember { com.smartifly.tv.data.local.SmartiflyDatabase.getInstance(context) }
-    val xtreamRepository = remember {
-        com.smartifly.tv.data.repository.XtreamRepository(
-            com.smartifly.tv.data.remote.XtreamApiFactory,
-            sessionManager,
-            database
-        )
-    }
-    val epgRepository = remember { com.smartifly.tv.data.epg.EpgRepository(sessionManager) }
-    val epgSearchRepository = remember { com.smartifly.tv.data.epg.EpgSearchRepository(epgRepository) }
-    val searchRepository = remember { SearchRepository(xtreamRepository) }
-    val analyticsRepository = remember { AnalyticsRepository(ApiClient.api) }
-    val heroRepository = remember { HeroRepository() }
-    val heroEnrichmentService = remember { HeroEnrichmentService(xtreamRepository) }
-    
-    val onboardingRepository = remember { 
-        com.smartifly.tv.data.onboarding.OnboardingRepository(
-            ApiClient.api,
-            sessionManager
-        ) 
-    }
-    val activationManager = remember { com.smartifly.tv.data.onboarding.ActivationStateManager(context) }
-    val remoteControlManager = remember { 
-        com.smartifly.tv.data.onboarding.RemoteDeviceControlManager(onboardingRepository, activationManager, scope) 
-    }
+    val sessionManager = appGraph.sessionManager
+    val settingsManager = appGraph.settingsManager
+    val profileRepository = appGraph.profileRepository
+    val watchlistRepository = appGraph.watchlistRepository
+    val resumeRepository = appGraph.resumeRepository
+    val parentalControlManager = appGraph.parentalControlManager
+    val xtreamRepository = appGraph.xtreamRepository
+    val onboardingRepository = appGraph.onboardingRepository
+    val activationManager = appGraph.activationManager
+    val remoteControlManager = appGraph.remoteControlManager
     
     val onboardingViewModel = remember { com.smartifly.tv.features.onboarding.OnboardingViewModel(onboardingRepository) }
     val profilesViewModel = remember { ProfilesViewModel(profileRepository) }
     val selectedProfile by profileRepository.selectedProfile.collectAsState()
+    val warmupOrchestrator = remember { CatalogWarmupOrchestrator(appGraph.xtreamRepository) }
+    var previousProfileId by remember { mutableStateOf<String?>(null) }
 
     // Effects & Lifecycle
     LaunchedEffect(Unit) { 
-        com.smartifly.tv.performance.lowend.LowEndModeManager.initialize(context)
-        AppInitializer.initialize(context, scope) 
+        AppInitializer.initialize(appContext, scope)
+        com.smartifly.tv.performance.lowend.LowEndModeManager.initialize(appContext)
     }
     
-    val perfConfig = remember { com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig() }
+    val perfConfig = com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig()
 
     LaunchedEffect(selectedProfile) {
+        val currentProfileId = selectedProfile?.id
+        if (previousProfileId != null && previousProfileId != currentProfileId) {
+            HomeFeedSnapshotCache.remove(previousProfileId!!)
+        }
+        if (currentProfileId == null) {
+            HomeFeedSnapshotCache.clearAll()
+        }
+        previousProfileId = currentProfileId
+
         parentalControlManager.setUserId(sessionManager.getBoundUserId())
         selectedProfile?.let { profile ->
             watchlistRepository.syncFromCloud(profile.id)
             resumeRepository.syncFromCloud(profile.id)
             scope.launch { parentalControlManager.loadConfig() }
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                warmupOrchestrator.runBackgroundWarmup()
+            }
         }
     }
 
-    val memoryHandler = remember { MemoryTrimHandler(context) }
+    val memoryHandler = remember { MemoryTrimHandler(appContext) }
     DisposableEffect(Unit) {
         memoryHandler.register()
         onDispose { memoryHandler.unregister() }
@@ -147,6 +129,7 @@ fun SmartiflyNavGraph(
                     deviceId = metadata["deviceId"] ?: "unknown",
                     repository = onboardingRepository,
                     activationManager = activationManager,
+                    warmupOrchestrator = warmupOrchestrator,
                     onInitializationComplete = { _ -> isInitialized = true }
                 )
             } else if (activationStatus == DeviceStatus.BLOCKED) {
@@ -201,22 +184,33 @@ fun SmartiflyNavGraph(
             } else {
                 val profile = selectedProfile!!
                 val profileId = profile.id
-                val watchlistViewModel = remember(profileId) { WatchlistViewModel(watchlistRepository, profileId) }
                 val homeViewModel = remember(profileId) {
-                    HomeViewModel(
-                        repository = xtreamRepository,
-                        resumeRepository = resumeRepository,
-                        analyticsRepository = analyticsRepository,
-                        heroRepository = heroRepository,
-                        heroEnrichmentService = heroEnrichmentService,
+                    com.smartifly.tv.features.home.HomeViewModel(
+                        repository = appGraph.xtreamRepository,
+                        resumeRepository = appGraph.resumeRepository,
+                        analyticsRepository = appGraph.analyticsRepository,
+                        heroRepository = appGraph.heroRepository,
+                        heroEnrichmentService = appGraph.heroEnrichmentService,
                         performanceConfig = perfConfig,
                         profileId = profileId
                     )
                 }
-                val searchViewModel = remember(profileId) {
-                    SearchViewModel(searchRepository, analyticsRepository, epgSearchRepository, profile)
-                }
+                val moviesViewModel = remember(profileId) { com.smartifly.tv.features.movies.MoviesViewModel(appGraph.xtreamRepository) }
+                val seriesViewModel = remember(profileId) { com.smartifly.tv.features.series.SeriesViewModel(appGraph.xtreamRepository) }
 
+                var watchlistViewModel by remember(profileId) { mutableStateOf<com.smartifly.tv.features.watchlist.WatchlistViewModel?>(null) }
+                val liveViewModel = remember(profileId) { com.smartifly.tv.features.live.LiveViewModel(appGraph.xtreamRepository) }
+                var searchViewModel by remember(profileId) { mutableStateOf<com.smartifly.tv.features.search.SearchViewModel?>(null) }
+
+                DisposableEffect(profileId) {
+                    onDispose {
+                        liveViewModel.disposeForScreenExit()
+                        moviesViewModel.disposeForScreenExit()
+                        seriesViewModel.disposeForScreenExit()
+                        watchlistViewModel = null
+                        searchViewModel = null
+                    }
+                }
                 if (currentDestination == Destination.Player && selectedMovie != null && !isInPipMode) {
                     PlayerScreen(
                         movie = selectedMovie!!,
@@ -253,7 +247,7 @@ fun SmartiflyNavGraph(
                                 )
                                 Destination.Movies -> MoviesScreen(
                                     profile = profile,
-                                    repository = xtreamRepository,
+                                    viewModel = moviesViewModel,
                                     parentalControlManager = parentalControlManager,
                                     onMovieClick = {
                                         selectedMovie = it
@@ -262,7 +256,7 @@ fun SmartiflyNavGraph(
                                 )
                                 Destination.Series -> SeriesScreen(
                                     profile = profile,
-                                    repository = xtreamRepository,
+                                    viewModel = seriesViewModel,
                                     parentalControlManager = parentalControlManager,
                                     onSeriesClick = {
                                         selectedMovie = it
@@ -270,7 +264,7 @@ fun SmartiflyNavGraph(
                                     }
                                 )
                                 Destination.Live -> LiveScreen(
-                                    repository = xtreamRepository,
+                                    viewModel = liveViewModel,
                                     profileId = profileId,
                                     parentalControlManager = parentalControlManager,
                                     onChannelClick = { channel ->
@@ -289,7 +283,12 @@ fun SmartiflyNavGraph(
                                     }
                                 )
                                 Destination.Search -> SearchScreen(
-                                    viewModel = searchViewModel,
+                                    viewModel = (searchViewModel ?: com.smartifly.tv.features.search.SearchViewModel(
+                                        appGraph.searchRepository,
+                                        appGraph.analyticsRepository,
+                                        appGraph.epgSearchRepository,
+                                        profile
+                                    ).also { searchViewModel = it }),
                                     profileId = profileId,
                                     onMovieClick = {
                                         selectedMovie = it
@@ -297,7 +296,10 @@ fun SmartiflyNavGraph(
                                     }
                                 )
                                 Destination.Watchlist -> WatchlistScreen(
-                                    viewModel = watchlistViewModel,
+                                    viewModel = (watchlistViewModel ?: com.smartifly.tv.features.watchlist.WatchlistViewModel(
+                                        appGraph.watchlistRepository,
+                                        profileId
+                                    ).also { watchlistViewModel = it }),
                                     onItemClick = {
                                         selectedMovie = it
                                         currentDestination = Destination.Details

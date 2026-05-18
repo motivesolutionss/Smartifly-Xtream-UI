@@ -46,6 +46,7 @@ import com.smartifly.tv.ui.theme.SmartiflyIcons
 import com.smartifly.tv.ui.components.base.Badge
 import com.smartifly.tv.ui.components.base.DotSeparator
 import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImageErrorClassifier
 import com.smartifly.tv.data.image.ImagePolicyEngine
 import com.smartifly.tv.data.image.ImageQualityMonitor
 
@@ -94,7 +95,13 @@ fun HeroBanner(
                 contentScale = ContentScale.Crop,
                 onError = {
                     if (!url.isNullOrBlank()) {
-                        ImageFailureMemory.markBad(url)
+                        val classification = ImageErrorClassifier.classify(it.result.throwable)
+                        val ttl = classification.temporaryTtlMs
+                        if (ttl != null) {
+                            ImageFailureMemory.markTemporarilyBad(url, ttl)
+                        } else {
+                            ImageFailureMemory.markBad(url)
+                        }
                         ImageQualityMonitor.recordFailure(
                             url = url,
                             context = ImageQualityMonitor.Context.HOME_HERO,
@@ -105,6 +112,7 @@ fun HeroBanner(
                 },
                 onSuccess = {
                     if (!url.isNullOrBlank()) {
+                        ImageFailureMemory.markHostSuccess(url)
                         ImageQualityMonitor.recordSuccess(
                             url = url,
                             context = ImageQualityMonitor.Context.HOME_HERO,

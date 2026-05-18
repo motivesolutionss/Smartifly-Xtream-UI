@@ -11,9 +11,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class HeroEnrichmentService(
     private val xtreamRepository: XtreamRepository
-) {
+) : HomeHeroEnricher {
 
-    suspend fun enrich(base: MovieMetadata, timeoutMs: Long = 3500L): MovieMetadata? {
+    override suspend fun enrich(base: MovieMetadata, timeoutMs: Long): MovieMetadata? {
         val id = base.id.toIntOrNull() ?: return null
 
         android.util.Log.d(

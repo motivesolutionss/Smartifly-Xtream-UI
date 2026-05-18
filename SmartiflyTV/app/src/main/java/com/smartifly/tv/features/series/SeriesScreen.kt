@@ -13,11 +13,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.platform.LocalContext
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.models.UserProfile
+import com.smartifly.tv.performance.ImagePreloader
+import com.smartifly.tv.performance.RowPrefetchManager
+import com.smartifly.tv.performance.lowend.DeviceTier
+import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.ui.components.base.ContentDetailsPanel
 import com.smartifly.tv.ui.components.base.PosterGrid
 import com.smartifly.tv.ui.components.base.SideCategoryRail
@@ -27,16 +31,16 @@ import com.smartifly.tv.data.repository.ParentalControlManager
 import androidx.compose.runtime.rememberCoroutineScope
 import com.smartifly.tv.features.profiles.ContentRestrictionManager
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SeriesScreen(
     profile: UserProfile,
-    repository: com.smartifly.tv.data.repository.XtreamRepository,
+    viewModel: SeriesViewModel,
     parentalControlManager: ParentalControlManager,
     onSeriesClick: (MovieMetadata) -> Unit
 ) {
-    val viewModel = remember(profile.id) { SeriesViewModel(repository) }
     val uiState by viewModel.uiState.collectAsState()
 
     SmartiflyTheme {
@@ -58,7 +62,9 @@ fun SeriesScreen(
                 }
 
                 SeriesContent(
+                    profileId = profile.id,
                     categories = state.categories,
+                    selectedCategory = state.selectedCategory,
                     seriesList = filteredSeries,
                     onCategorySelected = { category ->
                         if (parentalControlManager.isCategoryLocked(category) && !isUnlocked) {
@@ -110,20 +116,41 @@ fun SeriesScreen(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SeriesContent(
+    profileId: String? = null,
     categories: List<String>,
+    selectedCategory: String,
     seriesList: List<MovieMetadata>,
     onCategorySelected: (String) -> Unit,
     onSeriesClick: (MovieMetadata) -> Unit
 ) {
-    var selectedCategory by remember { mutableStateOf(if (categories.isNotEmpty()) categories.first() else "") }
-    var focusedSeries by remember { mutableStateOf(seriesList.firstOrNull()) }
+    var focusedSeries by remember(seriesList) { mutableStateOf(seriesList.firstOrNull()) }
+    val context = LocalContext.current
+    val preloader = remember { ImagePreloader(context) }
+    val prefetchManager = remember { RowPrefetchManager(preloader) }
+    val config = LocalPerformanceConfig.current
+    val (criticalItems, nearItems, warmItems, focusForward, focusBack) = when (config.tier) {
+        DeviceTier.LOW -> listOf(6, 12, 14, 6, 2)
+        DeviceTier.MEDIUM -> listOf(8, 18, 22, 10, 3)
+        DeviceTier.HIGH -> listOf(10, 24, 28, 14, 4)
+    }
+
+    LaunchedEffect(seriesList) {
+        prefetchManager.primeHomeAboveFold(
+            sections = listOf(seriesList),
+            maxRails = 1,
+            itemsPerRail = nearItems,
+            criticalRails = 1,
+            criticalItemsPerRail = criticalItems,
+            warmItemsPerRail = warmItems,
+            debugTag = "series_first_viewport"
+        )
+    }
 
     Row(modifier = Modifier.fillMaxSize()) {
         SideCategoryRail(
             categories = categories,
             selectedCategory = selectedCategory,
             onCategorySelected = { 
-                selectedCategory = it
                 onCategorySelected(it)
             }
         )
@@ -135,7 +162,16 @@ fun SeriesContent(
             
             PosterGrid(
                 items = seriesList,
-                onItemFocused = { focusedSeries = it },
+                profileId = profileId,
+                onItemFocused = { series, index ->
+                    focusedSeries = series
+                    prefetchManager.onCardFocused(
+                        currentIndex = index,
+                        items = seriesList,
+                        prefetchCount = focusForward,
+                        backwardBufferCount = focusBack
+                    )
+                },
                 onItemClick = onSeriesClick
             )
         }
