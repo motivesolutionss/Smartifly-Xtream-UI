@@ -58,6 +58,8 @@ class XtreamRepository(
     private val networkRetryMaxDelayMs = 1_200L
     private val categorySyncTtlMs = 10 * 60 * 1000L
     private val streamSyncTtlMs = 5 * 60 * 1000L
+    private val syncFailureCooldownMs = 60 * 1000L
+    private val emptyResponsePreserveThreshold = 2
     private val livePagingSupportByPortal = Collections.synchronizedMap(mutableMapOf<String, Boolean>())
 
     /**
@@ -405,6 +407,27 @@ class XtreamRepository(
             }
 
             if (entities.isEmpty() && (previous?.itemCount ?: 0) > 0) {
+                val consecutiveEmptyResponses = extractPreservedEmptyCount(previous?.lastError) + 1
+                if (consecutiveEmptyResponses <= emptyResponsePreserveThreshold) {
+                    syncStateDao.upsert(
+                        SyncStateEntity(
+                            providerKey = providerKey,
+                            domain = "STREAM",
+                            type = type,
+                            categoryId = categoryId,
+                            lastAttemptAtMs = attemptAt,
+                            lastSuccessAtMs = previous?.lastSuccessAtMs ?: 0L,
+                            itemCount = previous?.itemCount ?: 0,
+                            lastError = "empty_response_preserved_cache:count=$consecutiveEmptyResponses"
+                        )
+                    )
+                    android.util.Log.w(
+                        "SmartiflyData",
+                        "$type Streams EMPTY response for category=$categoryId; preserving existing cache (${previous?.itemCount ?: 0} items) streak=$consecutiveEmptyResponses"
+                    )
+                    return
+                }
+
                 syncStateDao.upsert(
                     SyncStateEntity(
                         providerKey = providerKey,
@@ -412,16 +435,15 @@ class XtreamRepository(
                         type = type,
                         categoryId = categoryId,
                         lastAttemptAtMs = attemptAt,
-                        lastSuccessAtMs = previous?.lastSuccessAtMs ?: 0L,
-                        itemCount = previous?.itemCount ?: 0,
-                        lastError = "empty_response_preserved_cache"
+                        lastSuccessAtMs = System.currentTimeMillis(),
+                        itemCount = 0,
+                        lastError = null
                     )
                 )
-                android.util.Log.w(
+                android.util.Log.i(
                     "SmartiflyData",
-                    "$type Streams EMPTY response for category=$categoryId; preserving existing cache (${previous?.itemCount ?: 0} items)"
+                    "$type Streams EMPTY response accepted for category=$categoryId after streak=$consecutiveEmptyResponses; clearing stale cache"
                 )
-                return
             }
 
             streamDao.clearStreamsByCategory(providerKey, streamTypeFor(type), categoryId)
@@ -682,8 +704,20 @@ class XtreamRepository(
         ttlMs: Long
     ): Boolean {
         val state = syncStateDao.getState(providerKey, domain, type, categoryId) ?: return true
+        val now = System.currentTimeMillis()
+        if (!state.lastError.isNullOrBlank() && state.lastAttemptAtMs > 0L) {
+            val withinFailureCooldown = now - state.lastAttemptAtMs < syncFailureCooldownMs
+            if (withinFailureCooldown) return false
+        }
         if (state.lastSuccessAtMs <= 0L) return true
-        return System.currentTimeMillis() - state.lastSuccessAtMs > ttlMs
+        return now - state.lastSuccessAtMs > ttlMs
+    }
+
+    private fun extractPreservedEmptyCount(lastError: String?): Int {
+        if (lastError.isNullOrBlank()) return 0
+        if (!lastError.startsWith("empty_response_preserved_cache")) return 0
+        val countPart = lastError.substringAfter("count=", "")
+        return countPart.toIntOrNull() ?: 1
     }
 
     suspend fun recordWarmupDomainState(

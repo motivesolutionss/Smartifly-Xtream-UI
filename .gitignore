@@ -79,11 +79,6 @@ SmartiflyLG*
 !.yarn/sdks
 !.yarn/versions
 
-# Environment and secrets
-.env
-.env.*
-!.env.example
-!.env.vps.example
 
 # Deployment/runtime artifacts
 *.sql

@@ -34,6 +34,7 @@ import com.smartifly.tv.performance.AppInitializer
 import com.smartifly.tv.performance.MemoryTrimHandler
 import com.smartifly.tv.data.warmup.CatalogWarmupOrchestrator
 import com.smartifly.tv.features.home.HomeFeedSnapshotCache
+import com.smartifly.tv.data.cache.SessionCacheCoordinator
 import com.smartifly.tv.ui.theme.ThemeMode
 import com.smartifly.tv.ui.theme.SmartiflyTheme
 import com.smartifly.tv.ui.theme.fromHex
@@ -79,7 +80,7 @@ fun SmartiflyNavGraph(
             HomeFeedSnapshotCache.remove(previousProfileId!!)
         }
         if (currentProfileId == null) {
-            HomeFeedSnapshotCache.clearAll()
+            SessionCacheCoordinator.clearSessionCaches(appGraph.searchRepository)
         }
         previousProfileId = currentProfileId
 

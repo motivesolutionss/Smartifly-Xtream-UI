@@ -88,4 +88,9 @@ object ImageFailureMemory {
     private fun extractHost(url: String): String? {
         return runCatching { URI(url).host?.lowercase() }.getOrNull()
     }
+
+    fun clearAll() {
+        badUrlUntilEpochMs.clear()
+        hostFailureState.clear()
+    }
 }
