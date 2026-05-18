@@ -1,13 +1,12 @@
 package com.smartifly.tv.tvlauncher
 
 import android.content.Context
+import android.content.ContentValues
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.tvprovider.media.tv.Channel
 import androidx.tvprovider.media.tv.ChannelLogoUtils
-import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
-import androidx.tvprovider.media.tv.WatchNextProgram
 import com.smartifly.tv.R
 import com.smartifly.tv.data.models.MovieMetadata
 
@@ -16,6 +15,9 @@ class ChannelManager(private val context: Context) {
     companion object {
         private const val CHANNEL_NAME = "Smartifly Trending"
         private const val CHANNEL_ID_PREF = "launcher_channel_id"
+        private const val TYPE_MOVIE = 0
+        private const val WATCH_NEXT_TYPE_CONTINUE = 0
+        private const val COLUMN_INTERNAL_PROVIDER_ID = "internal_provider_id"
     }
 
     private val prefs = context.getSharedPreferences("launcher_prefs", Context.MODE_PRIVATE)
@@ -67,18 +69,18 @@ class ChannelManager(private val context: Context) {
 
         // Add new programs
         movies.take(10).forEach { movie ->
-            val program = PreviewProgram.Builder()
-                .setChannelId(channelId)
-                .setTitle(movie.title)
-                .setDescription(movie.description)
-                .setPosterArtUri(Uri.parse(movie.posterUrl))
-                .setIntentUri(Uri.parse("smartifly://video/${movie.id}?type=${movie.type}"))
-                .setType(TvContractCompat.PreviewPrograms.TYPE_MOVIE)
-                .build()
+            val programValues = ContentValues().apply {
+                put("channel_id", channelId)
+                put("title", movie.title)
+                put("description", movie.description)
+                put("poster_art_uri", movie.posterUrl)
+                put("intent_uri", "smartifly://video/${movie.id}?type=${movie.type}")
+                put("type", TYPE_MOVIE)
+            }
 
             context.contentResolver.insert(
                 TvContractCompat.PreviewPrograms.CONTENT_URI,
-                program.toContentValues()
+                programValues
             )
         }
     }
@@ -87,29 +89,44 @@ class ChannelManager(private val context: Context) {
      * Adds or updates a program in the system "Watch Next" row.
      */
     fun updateWatchNext(movie: MovieMetadata, positionMs: Long, durationMs: Long) {
-        // Delete any existing watch next entries for this content
-        context.contentResolver.delete(
-            TvContractCompat.WatchNextPrograms.CONTENT_URI,
-            "${TvContractCompat.WatchNextPrograms.COLUMN_INTERNAL_PROVIDER_ID} = ?",
-            arrayOf(movie.id)
-        )
+        val resolver = context.contentResolver
+        try {
+            // Delete any existing watch next entries for this content
+            resolver.delete(
+                TvContractCompat.WatchNextPrograms.CONTENT_URI,
+                "$COLUMN_INTERNAL_PROVIDER_ID = ?",
+                arrayOf(movie.id)
+            )
+        } catch (se: SecurityException) {
+            android.util.Log.w("SmartiflyLauncher", "Watch Next delete blocked by provider policy: ${se.message}")
+            return
+        } catch (t: Throwable) {
+            android.util.Log.w("SmartiflyLauncher", "Watch Next delete failed: ${t.message}")
+            return
+        }
 
-        val program = WatchNextProgram.Builder()
-            .setType(TvContractCompat.WatchNextPrograms.TYPE_MOVIE)
-            .setWatchNextType(TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_CONTINUE)
-            .setLastEngagementTimeUtcMillis(System.currentTimeMillis())
-            .setLastPlaybackPositionMillis(positionMs.toInt())
-            .setDurationMillis(durationMs.toInt())
-            .setTitle(movie.title)
-            .setDescription(movie.description)
-            .setPosterArtUri(Uri.parse(movie.posterUrl))
-            .setIntentUri(Uri.parse("smartifly://video/${movie.id}?type=${movie.type}"))
-            .setInternalProviderId(movie.id)
-            .build()
+        val programValues = ContentValues().apply {
+            put("type", TYPE_MOVIE)
+            put("watch_next_type", WATCH_NEXT_TYPE_CONTINUE)
+            put("last_engagement_time_utc_millis", System.currentTimeMillis())
+            put("last_playback_position_millis", positionMs.toInt())
+            put("duration_millis", durationMs.toInt())
+            put("title", movie.title)
+            put("description", movie.description)
+            put("poster_art_uri", movie.posterUrl)
+            put("intent_uri", "smartifly://video/${movie.id}?type=${movie.type}")
+            put(COLUMN_INTERNAL_PROVIDER_ID, movie.id)
+        }
 
-        context.contentResolver.insert(
-            TvContractCompat.WatchNextPrograms.CONTENT_URI,
-            program.toContentValues()
-        )
+        try {
+            resolver.insert(
+                TvContractCompat.WatchNextPrograms.CONTENT_URI,
+                programValues
+            )
+        } catch (se: SecurityException) {
+            android.util.Log.w("SmartiflyLauncher", "Watch Next insert blocked by provider policy: ${se.message}")
+        } catch (t: Throwable) {
+            android.util.Log.w("SmartiflyLauncher", "Watch Next insert failed: ${t.message}")
+        }
     }
 }

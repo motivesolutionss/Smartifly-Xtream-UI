@@ -2,9 +2,10 @@ package com.smartifly.tv.features.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smartifly.tv.data.epg.EpgSearchDataSource
 import com.smartifly.tv.data.remote.NetworkErrorMapper
-import com.smartifly.tv.data.repository.AnalyticsRepository
-import com.smartifly.tv.data.repository.SearchRepository
+import com.smartifly.tv.data.repository.SearchDataSource
+import com.smartifly.tv.data.repository.SearchSuggestionsDataSource
 import com.smartifly.tv.features.profiles.ContentRestrictionManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import java.io.IOException
+import retrofit2.HttpException
 
 /**
  * Enterprise-grade ViewModel for Global Search.
@@ -21,9 +25,9 @@ import kotlinx.coroutines.launch
  * and profile-based content filtering.
  */
 class SearchViewModel(
-    private val repository: SearchRepository,
-    private val analyticsRepository: AnalyticsRepository,
-    private val epgSearchRepository: com.smartifly.tv.data.epg.EpgSearchRepository,
+    private val repository: SearchDataSource,
+    private val analyticsRepository: SearchSuggestionsDataSource,
+    private val epgSearchRepository: EpgSearchDataSource,
     private val activeProfile: com.smartifly.tv.data.models.UserProfile
 ) : ViewModel() {
 
@@ -78,7 +82,13 @@ class SearchViewModel(
                         epgPrograms = programs
                     )
                 }
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                _uiState.value = SearchUiState.Error(NetworkErrorMapper.toUserMessage(e))
+            } catch (e: HttpException) {
+                _uiState.value = SearchUiState.Error(NetworkErrorMapper.toUserMessage(e))
+            } catch (e: RuntimeException) {
                 _uiState.value = SearchUiState.Error(NetworkErrorMapper.toUserMessage(e))
             }
         }

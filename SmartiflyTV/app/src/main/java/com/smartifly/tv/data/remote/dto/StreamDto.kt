@@ -8,6 +8,7 @@ data class StreamDto(
     @SerializedName("type") val type: String, // HLS, DASH, LIVE
     @SerializedName("title") val title: String,
     @SerializedName("backdrop_url") val backdropUrl: String,
+    @SerializedName("fallback_urls") val fallbackUrls: List<String> = emptyList(),
     @SerializedName("intro_start") val introStart: Long? = null,
     @SerializedName("intro_end") val introEnd: Long? = null,
     

@@ -31,8 +31,8 @@ class RecommendationRepository(
             )
         }
 
-        // Fetch some base content for recommendations
-        val allMoviesResult = xtreamRepository.getMovies("0").firstOrNull()
+        // Fetch global movie catalog (category omitted => provider decides all-catalog behavior)
+        val allMoviesResult = xtreamRepository.getMovies().firstOrNull()
         val allMovies = if (allMoviesResult is com.smartifly.tv.data.remote.NetworkResult.Success) {
             allMoviesResult.data.map { it.toDomain() }
         } else emptyList()

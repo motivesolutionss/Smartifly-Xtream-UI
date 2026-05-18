@@ -6,10 +6,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Icon
 import androidx.tv.material3.*
+import com.smartifly.tv.BuildConfig
 
 import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.ThemeMode
@@ -23,8 +25,14 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import android.provider.Settings
+import java.net.URI
 import com.smartifly.tv.ui.theme.SmartiflyIcons
+import com.smartifly.tv.data.image.ImageHostPolicy
 import com.smartifly.tv.data.image.ImageQualityMonitor
+import com.smartifly.tv.performance.PerformanceKpiMonitor
+import com.smartifly.tv.performance.PreloadBackpressure
+import com.smartifly.tv.data.warmup.CatalogWarmupRuntime
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -161,13 +169,20 @@ fun ParentalControlsSettings() {
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun AccountSettings() {
+    val context = LocalContext.current
+    val deviceId = remember {
+        Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            ?.takeLast(8)
+            ?.ifBlank { "Unavailable" }
+            ?: "Unavailable"
+    }
     Column {
         Text(text = "Account", style = MaterialTheme.typography.displaySmall, color = TextPrimary)
         Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
         
-        SettingItem(title = "Current Plan", value = "Enterprise Elite", icon = SmartiflyIcons.Star)
-        SettingItem(title = "Expiry Date", value = "Dec 2026", icon = SmartiflyIcons.Info)
-        SettingItem(title = "Device ID", value = "SF-4492-XT", icon = SmartiflyIcons.Settings)
+        SettingItem(title = "Current Plan", value = "From provider account", icon = SmartiflyIcons.Star)
+        SettingItem(title = "Expiry Date", value = "Managed by operator", icon = SmartiflyIcons.Info)
+        SettingItem(title = "Device ID", value = "TV-$deviceId", icon = SmartiflyIcons.Settings)
     }
 }
 
@@ -175,14 +190,21 @@ fun AccountSettings() {
 @Composable
 fun NetworkSystemSettings() {
     var hostHealth by remember { mutableStateOf(ImageQualityMonitor.snapshot()) }
+    var kpiSnapshot by remember { mutableStateOf(PerformanceKpiMonitor.snapshot()) }
+    val context = LocalContext.current
+    val apiHost = remember {
+        runCatching { URI(BuildConfig.API_BASE_URL).host ?: "Unavailable" }.getOrElse { "Unavailable" }
+    }
+    var hostPolicyLabel by remember { mutableStateOf("Default") }
+    val warmupState by CatalogWarmupRuntime.state.collectAsState()
 
     Column {
         Text(text = "Network & System", style = MaterialTheme.typography.displaySmall, color = TextPrimary)
         Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
         
-        SettingItem(title = "Connection", value = "Fiber - 500Mbps", icon = SmartiflyIcons.Live)
-        SettingItem(title = "IP Address", value = "192.168.1.45", icon = SmartiflyIcons.Info)
-        SettingItem(title = "Version", value = "1.0.2-Stable", icon = SmartiflyIcons.Settings)
+        SettingItem(title = "Connection", value = "Auto-detected", icon = SmartiflyIcons.Live)
+        SettingItem(title = "API Host", value = apiHost, icon = SmartiflyIcons.Info)
+        SettingItem(title = "Version", value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", icon = SmartiflyIcons.Settings)
 
         Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -193,7 +215,10 @@ fun NetworkSystemSettings() {
             )
             Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
             Button(
-                onClick = { hostHealth = ImageQualityMonitor.snapshot() },
+                onClick = {
+                    hostHealth = ImageQualityMonitor.snapshot()
+                    kpiSnapshot = PerformanceKpiMonitor.snapshot()
+                },
                 colors = ButtonDefaults.colors(
                     containerColor = Color.White.copy(alpha = 0.1f),
                     focusedContainerColor = Color.White,
@@ -220,12 +245,156 @@ fun NetworkSystemSettings() {
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
+        Text(
+            text = "Image Performance KPIs",
+            style = MaterialTheme.typography.titleLarge,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(Dimensions.PaddingSmall))
+        val pressure = PreloadBackpressure.snapshot()
+        SettingItem(
+            title = "Image Success Rate",
+            value = "${kpiSnapshot.imageSuccessRatePct}% (${kpiSnapshot.imageSamples} samples)",
+            icon = SmartiflyIcons.Check,
+            valueColor = when {
+                kpiSnapshot.imageSuccessRatePct >= 92 -> Color(0xFF4CAF50)
+                kpiSnapshot.imageSuccessRatePct >= 80 -> Color(0xFFFFC107)
+                else -> Color(0xFFF44336)
+            }
+        )
+        SettingItem(
+            title = "Image Load Latency",
+            value = "p50 ${kpiSnapshot.imageP50Ms}ms | p95 ${kpiSnapshot.imageP95Ms}ms",
+            icon = SmartiflyIcons.Info,
+            valueColor = when {
+                kpiSnapshot.imageP95Ms in 1..900L -> Color(0xFF4CAF50)
+                kpiSnapshot.imageP95Ms in 901..1700L -> Color(0xFFFFC107)
+                else -> Color(0xFFF44336)
+            }
+        )
+        SettingItem(
+            title = "Prefetch Health",
+            value = "avg ${kpiSnapshot.prefetchAvgBatchMs}ms | fail ${kpiSnapshot.prefetchAvgFailRatePct}% (${kpiSnapshot.prefetchSamples} batches)",
+            icon = SmartiflyIcons.Live,
+            valueColor = when {
+                kpiSnapshot.prefetchAvgFailRatePct <= 18 -> Color(0xFF4CAF50)
+                kpiSnapshot.prefetchAvgFailRatePct <= 35 -> Color(0xFFFFC107)
+                else -> Color(0xFFF44336)
+            }
+        )
+        SettingItem(
+            title = "Preload Backpressure",
+            value = "${pressure.mode} | fail ${(pressure.failRate * 100).toInt()}% | item ${pressure.avgDurationMs}ms",
+            icon = SmartiflyIcons.Settings,
+            valueColor = if (pressure.mode == com.smartifly.tv.performance.PreloadBackpressure.Mode.NORMAL) {
+                Color(0xFF4CAF50)
+            } else {
+                Color(0xFFFFC107)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
+        Text(
+            text = "Startup Warmup (Debug)",
+            style = MaterialTheme.typography.titleLarge,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(Dimensions.PaddingSmall))
+        SettingItem(
+            title = "Live Warmup",
+            value = "${warmupState.live.status} | ${warmupState.live.itemsLoaded} items | ${warmupState.live.durationMs}ms",
+            icon = SmartiflyIcons.Live
+        )
+        SettingItem(
+            title = "Movies Warmup",
+            value = "${warmupState.movies.status} | ${warmupState.movies.itemsLoaded} items | ${warmupState.movies.durationMs}ms",
+            icon = SmartiflyIcons.Star
+        )
+        SettingItem(
+            title = "Series Warmup",
+            value = "${warmupState.series.status} | ${warmupState.series.itemsLoaded} items | ${warmupState.series.durationMs}ms",
+            icon = SmartiflyIcons.Info
+        )
+
+        if (BuildConfig.DEBUG) {
+            Spacer(modifier = Modifier.height(Dimensions.PaddingExtraLarge))
+            Text(
+                text = "Image Host Policy (Debug)",
+                style = MaterialTheme.typography.titleLarge,
+                color = TextSecondary
+            )
+            Spacer(modifier = Modifier.height(Dimensions.PaddingSmall))
+            Text(
+                text = "Current: $hostPolicyLabel",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            Spacer(modifier = Modifier.height(Dimensions.PaddingMedium))
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimensions.ItemSpacing)) {
+                Button(
+                    onClick = {
+                        ImageHostPolicy.overrideLowTrustHosts(context, "starshare.live,webhop.live")
+                        hostPolicyLabel = "Default"
+                    },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        focusedContainerColor = Color.White,
+                        focusedContentColor = Color.Black
+                    )
+                ) { Text("Default") }
+
+                Button(
+                    onClick = {
+                        ImageHostPolicy.overrideLowTrustHosts(
+                            context,
+                            "starshare.live,webhop.live,encrypted-tbn0.gstatic.com,imdb.com,www.imdb.com"
+                        )
+                        hostPolicyLabel = "Strict"
+                    },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        focusedContainerColor = Color.White,
+                        focusedContentColor = Color.Black
+                    )
+                ) { Text("Strict") }
+
+                Button(
+                    onClick = {
+                        ImageHostPolicy.overrideLowTrustHosts(context, "webhop.live")
+                        hostPolicyLabel = "Allow Starshare"
+                    },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        focusedContainerColor = Color.White,
+                        focusedContentColor = Color.Black
+                    )
+                ) { Text("Allow Starshare") }
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SettingItem(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    SettingItem(
+        title = title,
+        value = value,
+        icon = icon,
+        valueColor = TextSecondary
+    )
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun SettingItem(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    valueColor: Color
+) {
     Surface(
         onClick = {},
         modifier = Modifier
@@ -246,7 +415,7 @@ fun SettingItem(title: String, value: String, icon: androidx.compose.ui.graphics
             Spacer(modifier = Modifier.width(Dimensions.PaddingMedium))
             Text(text = title, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.weight(1f))
-            Text(text = value, style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+            Text(text = value, style = MaterialTheme.typography.labelLarge, color = valueColor)
         }
     }
 }

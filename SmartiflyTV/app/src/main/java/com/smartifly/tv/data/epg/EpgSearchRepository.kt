@@ -4,9 +4,9 @@ import com.smartifly.tv.features.live.epg.EpgProgram
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class EpgSearchRepository(private val epgRepository: EpgRepository) {
+class EpgSearchRepository(private val epgRepository: EpgRepository) : EpgSearchDataSource {
     
-    suspend fun searchPrograms(query: String): List<EpgProgram> = withContext(Dispatchers.IO) {
+    override suspend fun searchPrograms(query: String): List<EpgProgram> = withContext(Dispatchers.IO) {
         if (query.length < 2) return@withContext emptyList()
         
         // In a real app, this would query a local SQLite database or a specialized search API

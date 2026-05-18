@@ -17,6 +17,7 @@ import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.PrimaryRed
 import com.smartifly.tv.ui.theme.TextPrimary
 import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImageErrorClassifier
 import com.smartifly.tv.data.image.ImagePolicyEngine
 import com.smartifly.tv.data.image.ImageQualityMonitor
 
@@ -51,6 +52,7 @@ fun ContinueWatchingCard(
                     contentScale = ContentScale.Crop,
                     onSuccess = {
                         if (resolvedImage.isNotBlank()) {
+                            ImageFailureMemory.markHostSuccess(resolvedImage)
                             ImageQualityMonitor.recordSuccess(
                                 url = resolvedImage,
                                 context = ImageQualityMonitor.Context.CONTINUE_WATCHING,
@@ -62,7 +64,13 @@ fun ContinueWatchingCard(
                     },
                     onError = {
                         if (resolvedImage.isNotBlank()) {
-                            ImageFailureMemory.markBad(resolvedImage)
+                            val classification = ImageErrorClassifier.classify(it.result.throwable)
+                            val ttl = classification.temporaryTtlMs
+                            if (ttl != null) {
+                                ImageFailureMemory.markTemporarilyBad(resolvedImage, ttl)
+                            } else {
+                                ImageFailureMemory.markBad(resolvedImage)
+                            }
                             ImageQualityMonitor.recordFailure(
                                 url = resolvedImage,
                                 context = ImageQualityMonitor.Context.CONTINUE_WATCHING,

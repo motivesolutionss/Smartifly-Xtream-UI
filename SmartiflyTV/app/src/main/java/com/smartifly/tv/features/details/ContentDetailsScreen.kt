@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import com.smartifly.tv.ui.components.base.PreviewPlayer
 import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImageErrorClassifier
 import com.smartifly.tv.data.image.ImagePolicyEngine
 import com.smartifly.tv.data.image.ImageQualityMonitor
 
@@ -174,7 +175,13 @@ private fun ContentDetailsContent(
             contentScale = ContentScale.Crop,
             onError = {
                 if (resolvedBackdrop.isNotBlank()) {
-                    ImageFailureMemory.markBad(resolvedBackdrop)
+                    val classification = ImageErrorClassifier.classify(it.result.throwable)
+                    val ttl = classification.temporaryTtlMs
+                    if (ttl != null) {
+                        ImageFailureMemory.markTemporarilyBad(resolvedBackdrop, ttl)
+                    } else {
+                        ImageFailureMemory.markBad(resolvedBackdrop)
+                    }
                     ImageQualityMonitor.recordFailure(
                         url = resolvedBackdrop,
                         context = ImageQualityMonitor.Context.DETAILS,
@@ -186,6 +193,7 @@ private fun ContentDetailsContent(
             },
             onSuccess = {
                 if (resolvedBackdrop.isNotBlank()) {
+                    ImageFailureMemory.markHostSuccess(resolvedBackdrop)
                     ImageQualityMonitor.recordSuccess(
                         url = resolvedBackdrop,
                         context = ImageQualityMonitor.Context.DETAILS,
@@ -213,7 +221,13 @@ private fun ContentDetailsContent(
                         contentScale = ContentScale.Crop,
                         onError = {
                             if (resolvedPoster.isNotBlank()) {
-                                ImageFailureMemory.markBad(resolvedPoster)
+                                val classification = ImageErrorClassifier.classify(it.result.throwable)
+                                val ttl = classification.temporaryTtlMs
+                                if (ttl != null) {
+                                    ImageFailureMemory.markTemporarilyBad(resolvedPoster, ttl)
+                                } else {
+                                    ImageFailureMemory.markBad(resolvedPoster)
+                                }
                                 ImageQualityMonitor.recordFailure(
                                     url = resolvedPoster,
                                     context = ImageQualityMonitor.Context.DETAILS,
@@ -225,6 +239,7 @@ private fun ContentDetailsContent(
                         },
                         onSuccess = {
                             if (resolvedPoster.isNotBlank()) {
+                                ImageFailureMemory.markHostSuccess(resolvedPoster)
                                 ImageQualityMonitor.recordSuccess(
                                     url = resolvedPoster,
                                     context = ImageQualityMonitor.Context.DETAILS,
@@ -266,7 +281,7 @@ private fun ContentDetailsContent(
                                 onClick = onWatchlistToggle,
                                 colors = ButtonDefaults.colors(containerColor = if (isInWatchlist) PrimaryRed.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f))
                             ) {
-                                Text(if (isInWatchlist) "✓ In Watchlist" else "➕ Add to Watchlist")
+                                Text(if (isInWatchlist) "In Watchlist" else "Add to Watchlist")
                             }
                         }
                     }

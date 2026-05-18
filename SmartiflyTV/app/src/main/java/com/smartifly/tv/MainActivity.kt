@@ -5,20 +5,27 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
+import com.smartifly.tv.navigation.AppContainer
 import com.smartifly.tv.navigation.SmartiflyNavGraph
 import com.smartifly.tv.player.pip.PipManager
 
 class MainActivity : ComponentActivity() {
     private val isInPipMode = mutableStateOf(false)
+    private lateinit var appContainer: AppContainer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         // Initialize global dependencies
         com.smartifly.tv.data.remote.ApiClient.init(this)
+        appContainer = AppContainer(applicationContext)
 
         setContent {
-            SmartiflyNavGraph(isInPipMode = isInPipMode.value)
+            SmartiflyNavGraph(
+                appContext = applicationContext,
+                appGraph = appContainer.appGraph,
+                isInPipMode = isInPipMode.value
+            )
         }
     }
 
@@ -35,5 +42,12 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode.value = isInPictureInPictureMode
+    }
+
+    override fun onDestroy() {
+        if (::appContainer.isInitialized) {
+            appContainer.close()
+        }
+        super.onDestroy()
     }
 }

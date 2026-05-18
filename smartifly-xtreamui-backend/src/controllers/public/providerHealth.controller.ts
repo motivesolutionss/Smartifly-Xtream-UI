@@ -1,9 +1,16 @@
 import type { Request, Response } from 'express';
 
+import {
+  type ProviderHealthContextType,
+  type ProviderHealthEventType,
+  PROVIDER_HEALTH_CONTEXT_TYPES,
+  PROVIDER_HEALTH_EVENT_TYPES,
+  PROVIDER_HEALTH_SCHEMA_VERSION,
+} from '../../constants/providerHealthTelemetry';
 import { ingestProviderHealthEvents, type ProviderHealthEventInput } from '../../services/providerHealth.service';
 
-const EVENT_TYPES = new Set(['IMAGE_SUCCESS', 'IMAGE_FAILURE', 'URL_REJECTED', 'RAIL_EMPTY', 'DUPLICATE_COLLISION']);
-const CONTEXT_TYPES = new Set(['HOME_HERO', 'HOME_POSTER', 'CONTINUE_WATCHING', 'DETAILS', 'LIVE_CARD', 'SEARCH']);
+const EVENT_TYPES = new Set(PROVIDER_HEALTH_EVENT_TYPES);
+const CONTEXT_TYPES = new Set(PROVIDER_HEALTH_CONTEXT_TYPES);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -26,7 +33,7 @@ function parseEvent(raw: unknown): ProviderHealthEventInput | null {
   if (!eventId || !deviceId || !portalIdentity || !portalBaseUrl || !host || !occurredAt || !appVersion || !platform) {
     return null;
   }
-  if (!EVENT_TYPES.has(eventType) || !CONTEXT_TYPES.has(context)) {
+  if (!EVENT_TYPES.has(eventType as ProviderHealthEventType) || !CONTEXT_TYPES.has(context as ProviderHealthContextType)) {
     return null;
   }
 
@@ -56,6 +63,14 @@ function parseEvent(raw: unknown): ProviderHealthEventInput | null {
 export const ProviderHealthPublicController = {
   async ingest(req: Request, res: Response) {
     try {
+      const schemaVersion = req.body?.schemaVersion;
+      if (schemaVersion !== PROVIDER_HEALTH_SCHEMA_VERSION) {
+        return res.status(400).json({
+          success: false,
+          message: `Unsupported schemaVersion. Expected ${PROVIDER_HEALTH_SCHEMA_VERSION}.`,
+        });
+      }
+
       const eventsRaw = req.body?.events;
       if (!Array.isArray(eventsRaw)) {
         return res.status(400).json({ success: false, message: 'events array is required' });
@@ -87,4 +102,3 @@ export const ProviderHealthPublicController = {
     }
   },
 };
-

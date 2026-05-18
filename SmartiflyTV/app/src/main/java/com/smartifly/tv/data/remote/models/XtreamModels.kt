@@ -114,7 +114,7 @@ data class XtreamSeries(
     val cast: String? = null,
     val director: String? = null,
     val genre: String? = null,
-    val releaseDate: String? = null,
+    @SerializedName(value = "releaseDate", alternate = ["release_date", "releasedate"]) val releaseDate: String? = null,
     @SerializedName("last_modified") val lastModified: String? = null,
     val rating: String? = null,
     @SerializedName("rating_5based") val rating5Based: Double = 0.0,
@@ -190,7 +190,7 @@ data class XtreamSeriesDetails(
     val cast: String? = null,
     val director: String? = null,
     val genre: String? = null,
-    val releaseDate: String? = null,
+    @SerializedName(value = "releaseDate", alternate = ["release_date", "releasedate"]) val releaseDate: String? = null,
     val rating: String? = null,
     @SerializedName("backdrop_path") val backdropPath: List<String> = emptyList(),
     @SerializedName("youtube_trailer") val youtubeTrailer: String? = null

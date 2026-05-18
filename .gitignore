@@ -27,6 +27,7 @@ DerivedData
 build/
 .idea
 .gradle
+.gradle-home-verify/
 local.properties
 *.iml
 *.hprof
@@ -34,12 +35,15 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
+captures/
 
 # node.js
 #
 node_modules/
 npm-debug.log
 yarn-error.log
+yarn-debug.log*
+pnpm-debug.log*
 .npm-cache/
 
 # fastlane
@@ -94,5 +98,14 @@ customer-portal/release.tar.gz
 
 # Local IDE/workspace files
 *.code-workspace
+.vscode/
 smartifly_tv_datastore.preferences_pb
 emulator_prefs.pb
+
+# Generic logs/temp/cache
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+Thumbs.db

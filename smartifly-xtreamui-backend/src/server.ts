@@ -5,12 +5,15 @@ import http from "http";
 import { createApp } from "./app";
 import { setupSwagger } from "./config/swagger";
 import { initSocket } from "./socket";
+import { assertProviderHealthSchemaReady } from "./startup/providerHealthSchemaCheck";
 // import { processCSVTasks } from "./workers/csvWorker";
 
 
 const PORT = process.env.PORT || 4000;
 
 async function bootstrap(): Promise<void> {
+  await assertProviderHealthSchemaReady();
+
   const app = createApp();
 
   // ---------------------------

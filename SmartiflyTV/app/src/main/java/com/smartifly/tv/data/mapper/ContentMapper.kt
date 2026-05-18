@@ -12,6 +12,12 @@ import com.smartifly.tv.data.hero.HeroImageSources
  * used by the UI layer (Compose).
  */
 
+private fun safeBackdropPaths(raw: List<String>?): List<String> {
+    return raw.orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+}
+
 fun XtreamMovie.toDomain(): MovieMetadata {
     val poster = HeroImageResolver.normalizeImageUrl(streamIcon)
         ?: HeroImageResolver.normalizeImageUrl(cover)
@@ -19,7 +25,7 @@ fun XtreamMovie.toDomain(): MovieMetadata {
         ?: ""
     val backdrop = HeroImageResolver.resolveForMovie(
         HeroImageSources(
-            backdropPaths = backdropPath,
+            backdropPaths = safeBackdropPaths(backdropPath),
             coverBig = coverBig,
             cover = cover,
             streamIcon = streamIcon
@@ -46,7 +52,7 @@ fun XtreamSeries.toDomain(): MovieMetadata {
         ?: ""
     val backdrop = HeroImageResolver.resolveForSeries(
         HeroImageSources(
-            backdropPaths = backdropPath,
+            backdropPaths = safeBackdropPaths(backdropPath),
             coverBig = coverBig,
             cover = cover
         )
@@ -67,10 +73,11 @@ fun XtreamSeries.toDomain(): MovieMetadata {
 }
 
 fun XtreamLiveStream.toDomainLive(): LiveStream {
+    val normalizedLogo = HeroImageResolver.normalizeImageUrl(streamIcon) ?: ""
     return LiveStream(
         id = streamId.toString(),
         name = name,
-        logoUrl = streamIcon ?: "",
+        logoUrl = normalizedLogo,
         categoryId = categoryId,
         archiveAvailable = tvArchive == 1,
         archiveDuration = tvArchiveDuration
@@ -90,7 +97,7 @@ fun XtreamMovieInfo.toDomain(): ContentDetails {
     val poster = HeroImageResolver.normalizeImageUrl(movie?.movieImage) ?: ""
     val backdrop = HeroImageResolver.resolveForMovie(
         HeroImageSources(
-            backdropPaths = movie?.backdropPath ?: emptyList(),
+            backdropPaths = safeBackdropPaths(movie?.backdropPath),
             movieImage = movie?.movieImage
         )
     )?.url ?: poster
@@ -116,7 +123,7 @@ fun XtreamSeriesInfo.toDomain(): ContentDetails {
     val poster = HeroImageResolver.normalizeImageUrl(series?.cover) ?: ""
     val backdrop = HeroImageResolver.resolveForSeries(
         HeroImageSources(
-            backdropPaths = series?.backdropPath ?: emptyList(),
+            backdropPaths = safeBackdropPaths(series?.backdropPath),
             cover = series?.cover
         )
     )?.url ?: poster
@@ -157,8 +164,12 @@ fun XtreamSeriesInfo.toDomain(): ContentDetails {
 // DATABASE ENTITY MAPPERS
 // ==========================================
 
-fun XtreamCategory.toEntity(type: String): com.smartifly.tv.data.local.entities.CategoryEntity {
+fun XtreamCategory.toEntity(
+    providerKey: String,
+    type: String
+): com.smartifly.tv.data.local.entities.CategoryEntity {
     return com.smartifly.tv.data.local.entities.CategoryEntity(
+        providerKey = providerKey,
         categoryId = categoryId,
         categoryName = categoryName,
         parentId = parentId.toString(),
@@ -174,8 +185,9 @@ fun com.smartifly.tv.data.local.entities.CategoryEntity.toDomain(): MediaCategor
     )
 }
 
-fun XtreamLiveStream.toEntity(): com.smartifly.tv.data.local.entities.StreamEntity {
+fun XtreamLiveStream.toEntity(providerKey: String): com.smartifly.tv.data.local.entities.StreamEntity {
     return com.smartifly.tv.data.local.entities.StreamEntity(
+        providerKey = providerKey,
         streamId = streamId,
         name = name,
         streamType = "live",
@@ -186,8 +198,9 @@ fun XtreamLiveStream.toEntity(): com.smartifly.tv.data.local.entities.StreamEnti
     )
 }
 
-fun XtreamMovie.toEntity(): com.smartifly.tv.data.local.entities.StreamEntity {
+fun XtreamMovie.toEntity(providerKey: String): com.smartifly.tv.data.local.entities.StreamEntity {
     return com.smartifly.tv.data.local.entities.StreamEntity(
+        providerKey = providerKey,
         streamId = streamId,
         name = name,
         streamType = "movie",
@@ -198,8 +211,9 @@ fun XtreamMovie.toEntity(): com.smartifly.tv.data.local.entities.StreamEntity {
     )
 }
 
-fun XtreamSeries.toEntity(): com.smartifly.tv.data.local.entities.StreamEntity {
+fun XtreamSeries.toEntity(providerKey: String): com.smartifly.tv.data.local.entities.StreamEntity {
     return com.smartifly.tv.data.local.entities.StreamEntity(
+        providerKey = providerKey,
         streamId = seriesId,
         name = name,
         streamType = "series",
@@ -211,10 +225,11 @@ fun XtreamSeries.toEntity(): com.smartifly.tv.data.local.entities.StreamEntity {
 }
 
 fun com.smartifly.tv.data.local.entities.StreamEntity.toDomainLive(): LiveStream {
+    val normalizedLogo = HeroImageResolver.normalizeImageUrl(streamIcon) ?: ""
     return LiveStream(
         id = streamId.toString(),
         name = name,
-        logoUrl = streamIcon ?: "",
+        logoUrl = normalizedLogo,
         categoryId = categoryId,
         archiveAvailable = false,
         archiveDuration = 0
@@ -222,6 +237,8 @@ fun com.smartifly.tv.data.local.entities.StreamEntity.toDomainLive(): LiveStream
 }
 
 fun com.smartifly.tv.data.local.entities.StreamEntity.toDomainMovie(): MovieMetadata {
+    val normalizedPoster = HeroImageResolver.normalizeImageUrl(streamIcon) ?: ""
+    val normalizedBackdrop = normalizedPoster
     return MovieMetadata(
         id = streamId.toString(),
         title = name,
@@ -229,8 +246,8 @@ fun com.smartifly.tv.data.local.entities.StreamEntity.toDomainMovie(): MovieMeta
         year = added?.take(4) ?: "",
         rating = rating ?: "0.0",
         duration = "",
-        posterUrl = streamIcon ?: "",
-        backdropUrl = "",
+        posterUrl = normalizedPoster,
+        backdropUrl = normalizedBackdrop,
         type = streamType,
         categoryId = categoryId
     )

@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import retrofit2.HttpException
+import java.io.IOException
+import java.net.URISyntaxException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -39,7 +42,7 @@ class OnboardingRepository(
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
                 .writeTimeout(15, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
+                .retryOnConnectionFailure(false)
                 .build()
         }
     }
@@ -57,7 +60,17 @@ class OnboardingRepository(
             )
             api.registerDevice(request)
             DeviceRegistrationResult.Success
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            DeviceRegistrationResult.Error(
+                message = "Device registration network error: ${e.message ?: "Unknown error"}",
+                retryable = true
+            )
+        } catch (e: HttpException) {
+            DeviceRegistrationResult.Error(
+                message = "Device registration HTTP ${e.code()}",
+                retryable = e.code() >= 500
+            )
+        } catch (e: RuntimeException) {
             DeviceRegistrationResult.Error(
                 message = "Device registration failed: ${e.message ?: "Unknown error"}",
                 retryable = true
@@ -93,7 +106,17 @@ class OnboardingRepository(
                     )
                 )
             }
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            ActivationSessionResult.Error(
+                message = "Activation service network error: ${e.message ?: "Unknown error"}",
+                retryable = true
+            )
+        } catch (e: HttpException) {
+            ActivationSessionResult.Error(
+                message = "Activation service HTTP ${e.code()}",
+                retryable = e.code() >= 500
+            )
+        } catch (e: RuntimeException) {
             ActivationSessionResult.Error(
                 message = "Activation service unavailable: ${e.message ?: "Unknown error"}",
                 retryable = true
@@ -147,7 +170,19 @@ class OnboardingRepository(
                 reason = response.reason ?: "No reason provided",
                 source = ActivationStatusSource.REMOTE
             )
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            ActivationStatusResult(
+                status = DeviceStatus.PENDING,
+                reason = "Status check network error: ${e.message ?: "Unknown error"}",
+                source = ActivationStatusSource.LOCAL_FALLBACK
+            )
+        } catch (e: HttpException) {
+            ActivationStatusResult(
+                status = DeviceStatus.PENDING,
+                reason = "Status check HTTP ${e.code()}",
+                source = ActivationStatusSource.LOCAL_FALLBACK
+            )
+        } catch (e: RuntimeException) {
             ActivationStatusResult(
                 status = DeviceStatus.PENDING,
                 reason = "Status check failed: ${e.message ?: "Unknown error"}",
@@ -198,7 +233,7 @@ class OnboardingRepository(
                 val fullUrl = "$normalizedBaseUrl/player_api.php"
                 android.util.Log.d(
                     "SmartiflyHandshake",
-                    "FULL URL: $fullUrl?username=$normalizedUsername&password=*** (uLen=${normalizedUsername.length}, pLen=${normalizedPassword.length})"
+                    "Auth target: $fullUrl (uLen=${normalizedUsername.length}, pLen=${normalizedPassword.length})"
                 )
                 
                 val raw = executeAuthHandshake(
@@ -237,7 +272,7 @@ class OnboardingRepository(
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             android.util.Log.e("SmartiflyHandshake", "Handshake TIMEOUT after 15s")
             XtreamLoginResult.Error("Connection timeout while contacting Xtream server", retryable = true)
-        } catch (e: Exception) {
+        } catch (e: RuntimeException) {
             android.util.Log.e("SmartiflyHandshake", "Handshake CRITICAL ERROR: ${e::class.java.simpleName}: ${e.message}", e)
             XtreamLoginResult.Error(
                 message = "Failed to connect to Xtream server: ${e.message ?: e::class.java.simpleName}",
@@ -283,7 +318,9 @@ class OnboardingRepository(
             val auth = userInfo?.get("auth")?.asInt ?: root.get("auth")?.asInt ?: 0
             val message = userInfo?.get("message")?.takeIf { !it.isJsonNull }?.asString
             return AuthParseResult(auth = auth, message = message)
-        } catch (_: Exception) {
+        } catch (_: IllegalStateException) {
+            // Fallback for malformed payloads.
+        } catch (_: UnsupportedOperationException) {
             // Fallback for malformed payloads.
         }
 
@@ -310,7 +347,7 @@ class OnboardingRepository(
 
         val uri = try {
             java.net.URI(value)
-        } catch (_: Exception) {
+        } catch (_: URISyntaxException) {
             return value.trimEnd('/')
         }
 
@@ -374,7 +411,17 @@ class OnboardingRepository(
             } else {
                 PortalValidationResult.Error(response.message ?: "Invalid or inactive Server Identity code", retryable = false)
             }
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            PortalValidationResult.Error(
+                message = "Server identity validation network error: ${e.message ?: "Unknown error"}",
+                retryable = true
+            )
+        } catch (e: HttpException) {
+            PortalValidationResult.Error(
+                message = "Server identity validation HTTP ${e.code()}",
+                retryable = e.code() >= 500
+            )
+        } catch (e: RuntimeException) {
             PortalValidationResult.Error(
                 message = "Server identity validation failed: ${e.message ?: "Unknown error"}",
                 retryable = true

@@ -2,12 +2,18 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "851e3cabebe37d98a0546e2869894924",
+    "identityHash": "6f2665f99b9dddc12d85c1ea6ed2bf20",
     "entities": [
       {
         "tableName": "categories",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`categoryId` TEXT NOT NULL, `categoryName` TEXT NOT NULL, `parentId` TEXT NOT NULL, `type` TEXT NOT NULL, PRIMARY KEY(`categoryId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`providerKey` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `categoryName` TEXT NOT NULL, `parentId` TEXT NOT NULL, `type` TEXT NOT NULL, PRIMARY KEY(`providerKey`, `type`, `categoryId`))",
         "fields": [
+          {
+            "fieldPath": "providerKey",
+            "columnName": "providerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "categoryId",
             "columnName": "categoryId",
@@ -36,16 +42,46 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "providerKey",
+            "type",
             "categoryId"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_categories_providerKey_type",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_categories_providerKey_type` ON `${TABLE_NAME}` (`providerKey`, `type`)"
+          },
+          {
+            "name": "index_categories_providerKey_type_categoryName",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "type",
+              "categoryName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_categories_providerKey_type_categoryName` ON `${TABLE_NAME}` (`providerKey`, `type`, `categoryName`)"
+          }
+        ],
         "foreignKeys": []
       },
       {
         "tableName": "streams",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`streamId` INTEGER NOT NULL, `name` TEXT NOT NULL, `streamType` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `streamIcon` TEXT, `rating` TEXT, `added` TEXT, `backdropUrl` TEXT, `isFavorite` INTEGER NOT NULL, `lastWatched` INTEGER NOT NULL, PRIMARY KEY(`streamId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`providerKey` TEXT NOT NULL, `streamId` INTEGER NOT NULL, `name` TEXT NOT NULL, `streamType` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `streamIcon` TEXT, `rating` TEXT, `added` TEXT, `isFavorite` INTEGER NOT NULL, `lastWatched` INTEGER NOT NULL, PRIMARY KEY(`providerKey`, `streamType`, `streamId`))",
         "fields": [
+          {
+            "fieldPath": "providerKey",
+            "columnName": "providerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "streamId",
             "columnName": "streamId",
@@ -89,12 +125,6 @@
             "notNull": false
           },
           {
-            "fieldPath": "backdropUrl",
-            "columnName": "backdropUrl",
-            "affinity": "TEXT",
-            "notNull": false
-          },
-          {
             "fieldPath": "isFavorite",
             "columnName": "isFavorite",
             "affinity": "INTEGER",
@@ -110,10 +140,34 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "providerKey",
+            "streamType",
             "streamId"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_streams_providerKey_streamType_categoryId",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "streamType",
+              "categoryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_streams_providerKey_streamType_categoryId` ON `${TABLE_NAME}` (`providerKey`, `streamType`, `categoryId`)"
+          },
+          {
+            "name": "index_streams_providerKey_isFavorite",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "isFavorite"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_streams_providerKey_isFavorite` ON `${TABLE_NAME}` (`providerKey`, `isFavorite`)"
+          }
+        ],
         "foreignKeys": []
       },
       {
@@ -176,7 +230,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '851e3cabebe37d98a0546e2869894924')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6f2665f99b9dddc12d85c1ea6ed2bf20')"
     ]
   }
 }

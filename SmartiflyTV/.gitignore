@@ -1,3 +1,14 @@
 .gradle/
 build/
 *.hprof
+.kotlin/
+.idea/
+*.iml
+*.log
+*.apk
+*.keystore
+*.jks
+*.dex
+*.class
+*.jar  
+.gradle-home-verify*

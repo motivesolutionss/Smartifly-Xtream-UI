@@ -1,6 +1,7 @@
 package com.smartifly.tv.data.repository
 
 import com.smartifly.tv.data.SessionManager
+import com.smartifly.tv.analytics.TelemetryManager
 import com.smartifly.tv.data.onboarding.XtreamCredentials
 import com.smartifly.tv.data.mapper.toEntity
 import com.smartifly.tv.data.mapper.toDomain
@@ -10,21 +11,26 @@ import com.smartifly.tv.data.remote.NetworkErrorMapper
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.remote.XtreamApiFactory
 import com.smartifly.tv.data.remote.XtreamService
+import com.smartifly.tv.data.local.entities.SyncStateEntity
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.remote.models.*
-import com.google.gson.Gson
 import com.google.gson.JsonElement
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.Collections
+import javax.net.ssl.SSLException
 
 /**
  * Enterprise-grade Repository for Xtream UI Content.
@@ -36,14 +42,23 @@ class XtreamRepository(
     private val apiFactory: XtreamApiFactory,
     private val sessionManager: SessionManager,
     private val database: com.smartifly.tv.data.local.SmartiflyDatabase
-) {
-    private val gson = Gson()
+) : LiveDataSource, MoviesDataSource, ContentDetailsDataSource, HomeDataSource {
     private val categoryDao = database.categoryDao()
     private val streamDao = database.streamDao()
     private val accountDao = database.accountDao()
+    private val syncStateDao = database.syncStateDao()
 
     private var cachedService: XtreamService? = null
     private var lastUsedCredentials: XtreamCredentials? = null
+    private val inFlightSyncKeys = Collections.synchronizedSet(mutableSetOf<String>())
+    private var lastCredentialMissingLogAtMs: Long = 0L
+    private val credentialMissingLogThrottleMs = 15_000L
+    private val networkRetryAttempts = 3
+    private val networkRetryInitialDelayMs = 250L
+    private val networkRetryMaxDelayMs = 1_200L
+    private val categorySyncTtlMs = 10 * 60 * 1000L
+    private val streamSyncTtlMs = 5 * 60 * 1000L
+    private val livePagingSupportByPortal = Collections.synchronizedMap(mutableMapOf<String, Boolean>())
 
     /**
      * Obtains a thread-safe instance of the XtreamService.
@@ -67,13 +82,13 @@ class XtreamRepository(
             if (creds != null) return creds
             
             attempts++
-            android.util.Log.w("SmartiflyData", "Credentials missing, retrying... (Attempt $attempts)")
+            logCredentialMissing(attempts)
             kotlinx.coroutines.delay(500L) // Wait for DataStore sync
         }
         throw IllegalStateException("Credentials missing after 3 retries. User not authenticated.")
     }
 
-    suspend fun getPortalCapabilityKey(): String {
+    override suspend fun getPortalCapabilityKey(): String {
         val creds = getCreds()
         val operatorId = creds.operatorId.trim().uppercase().ifBlank { "unknown-op" }
         val baseUrl = creds.baseUrl.trim().removeSuffix("/").lowercase().ifBlank { "unknown-host" }
@@ -84,77 +99,128 @@ class XtreamRepository(
     // CORE DATA FETCHING (OFFLINE-FIRST)
     // ==========================================
 
-    fun getLiveCategories(): Flow<NetworkResult<List<MediaCategory>>> = flow {
+    override fun getLiveCategories(): Flow<NetworkResult<List<MediaCategory>>> = flow {
         emit(NetworkResult.Loading)
-
-        // Trigger background sync (fire-and-forget within the IO dispatcher)
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                syncCategories("LIVE")
-            } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "LIVE sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncError = runCatching {
+            if (shouldSync(providerKey, "CATEGORY", "LIVE", "__ALL__", categorySyncTtlMs)) {
+                syncCategories(providerKey, "LIVE")
             }
         }
-
-        // Observe local database — UI auto-updates when sync writes new data
-        emitAll(categoryDao.getCategoriesByType("LIVE").map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomain() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("LIVE sync failed", it) }
+        emitAll(categoryDao.getCategoriesByType(providerKey, "LIVE").map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomain() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    fun getVodCategories(): Flow<NetworkResult<List<MediaCategory>>> = flow {
+    override fun getVodCategories(): Flow<NetworkResult<List<MediaCategory>>> = flow {
         emit(NetworkResult.Loading)
-        CoroutineScope(Dispatchers.IO).launch {
-            try { syncCategories("VOD") } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "VOD sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncError = runCatching {
+            if (shouldSync(providerKey, "CATEGORY", "VOD", "__ALL__", categorySyncTtlMs)) {
+                syncCategories(providerKey, "VOD")
             }
         }
-        emitAll(categoryDao.getCategoriesByType("VOD").map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomain() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("VOD sync failed", it) }
+        emitAll(categoryDao.getCategoriesByType(providerKey, "VOD").map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomain() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    fun getSeriesCategoriesCached(): Flow<NetworkResult<List<MediaCategory>>> = flow {
+    override fun getSeriesCategoriesCached(): Flow<NetworkResult<List<MediaCategory>>> = flow {
         emit(NetworkResult.Loading)
-        CoroutineScope(Dispatchers.IO).launch {
-            try { syncCategories("SERIES") } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "SERIES sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncError = runCatching {
+            if (shouldSync(providerKey, "CATEGORY", "SERIES", "__ALL__", categorySyncTtlMs)) {
+                syncCategories(providerKey, "SERIES")
             }
         }
-        emitAll(categoryDao.getCategoriesByType("SERIES").map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomain() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("SERIES sync failed", it) }
+        emitAll(categoryDao.getCategoriesByType(providerKey, "SERIES").map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomain() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    private suspend fun syncCategories(type: String) {
-        val creds = getCreds()
-        val service = getService()
-        val rawCategories = when (type) {
-            "LIVE" -> parseXtreamList(
-                service.getLiveCategories(creds.username, creds.password),
-                XtreamCategory::class.java,
-                listOf("categories", "live_categories")
-            )
-            "VOD" -> parseXtreamList(
-                service.getMovieCategories(creds.username, creds.password),
-                XtreamCategory::class.java,
-                listOf("categories", "vod_categories")
-            )
-            "SERIES" -> parseXtreamList(
-                service.getSeriesCategories(creds.username, creds.password),
-                XtreamCategory::class.java,
-                listOf("categories", "series_categories")
-            )
-            else -> emptyList()
+    private suspend fun syncCategories(providerKey: String, type: String) {
+        val syncKey = "CAT:$providerKey:$type"
+        if (!tryAcquireSync(syncKey)) {
+            android.util.Log.d("SmartiflyData", "Skipping duplicate category sync for $type")
+            return
         }
-        val entities = rawCategories.map { it.toEntity(type) }
+        val attemptAt = System.currentTimeMillis()
+        try {
+            val creds = getCreds()
+            val service = getService()
+            val rawCategories = executeWithRetry("syncCategories:$type") {
+                when (type) {
+                "LIVE" -> parseXtreamList(
+                    service.getLiveCategories(creds.username, creds.password),
+                    XtreamCategory::class.java,
+                    listOf("categories", "live_categories")
+                )
+                "VOD" -> parseXtreamList(
+                    service.getMovieCategories(creds.username, creds.password),
+                    XtreamCategory::class.java,
+                    listOf("categories", "vod_categories")
+                )
+                "SERIES" -> parseXtreamList(
+                    service.getSeriesCategories(creds.username, creds.password),
+                    XtreamCategory::class.java,
+                    listOf("categories", "series_categories")
+                )
+                else -> emptyList()
+                }
+            }
+            val entities = rawCategories.map { it.toEntity(providerKey = providerKey, type = type) }
 
-        categoryDao.clearCategoriesByType(type)
-        categoryDao.insertCategories(entities)
-        android.util.Log.d("SmartiflyData", "$type Categories SYNCED to Room (${entities.size} items)")
+            categoryDao.clearCategoriesByType(providerKey, type)
+            categoryDao.insertCategories(entities)
+            syncStateDao.upsert(
+                SyncStateEntity(
+                    providerKey = providerKey,
+                    domain = "CATEGORY",
+                    type = type,
+                    categoryId = "__ALL__",
+                    lastAttemptAtMs = attemptAt,
+                    lastSuccessAtMs = System.currentTimeMillis(),
+                    itemCount = entities.size,
+                    lastError = null
+                )
+            )
+            android.util.Log.d("SmartiflyData", "$type Categories SYNCED to Room (${entities.size} items)")
+        } catch (e: Throwable) {
+            val previous = syncStateDao.getState(providerKey, "CATEGORY", type, "__ALL__")
+            syncStateDao.upsert(
+                SyncStateEntity(
+                    providerKey = providerKey,
+                    domain = "CATEGORY",
+                    type = type,
+                    categoryId = "__ALL__",
+                    lastAttemptAtMs = attemptAt,
+                    lastSuccessAtMs = previous?.lastSuccessAtMs ?: 0L,
+                    itemCount = previous?.itemCount ?: 0,
+                    lastError = e.message
+                )
+            )
+            throw e
+        } finally {
+            releaseSync(syncKey)
+        }
     }
 
     // ==========================================
@@ -164,46 +230,72 @@ class XtreamRepository(
     /**
      * Fetches live streams for a category (with offline-first support).
      */
-    fun getLiveStreamsCached(categoryId: String): Flow<NetworkResult<List<LiveStream>>> = flow {
+    override fun getLiveStreamsCached(categoryId: String): Flow<NetworkResult<List<LiveStream>>> = flow {
         emit(NetworkResult.Loading)
-        
-        CoroutineScope(Dispatchers.IO).launch {
-            try { syncStreams(categoryId, "LIVE") } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "LIVE streams sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncNeeded = shouldSync(providerKey, "STREAM", "LIVE", categoryId, streamSyncTtlMs)
+        TelemetryManager.trackCacheProbe("live", hit = !syncNeeded)
+        val syncError = runCatching {
+            if (syncNeeded) {
+                syncStreams(providerKey, categoryId, "LIVE")
             }
         }
-
-        emitAll(streamDao.getStreamsByCategory(categoryId).map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomainLive() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("LIVE streams sync failed", it) }
+        emitAll(streamDao.getStreamsByCategory(providerKey, "live", categoryId).map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomainLive() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    fun getLiveStreams(
-        categoryId: String? = null,
-        page: Int? = null,
-        pageSize: Int = 120
+    override fun getLiveStreams(
+        categoryId: String?,
+        page: Int?,
+        pageSize: Int
     ): Flow<NetworkResult<List<XtreamLiveStream>>> = networkFlow {
         val creds = getCreds()
         val service = getService()
-        val raw = if (page != null) {
+        val providerKey = getPortalCapabilityKey()
+        if (page == null) {
+            val raw = service.getLiveStreams(creds.username, creds.password, categoryId = categoryId)
+            parseXtreamList(raw, XtreamLiveStream::class.java, listOf("live_streams", "channels", "streams"))
+        } else {
             val safePage = page.coerceAtLeast(1)
             val safePageSize = pageSize.coerceIn(20, 500)
-            val offset = (safePage - 1) * safePageSize
-            service.getLiveStreamsPage(
-                creds.username,
-                creds.password,
-                categoryId = categoryId,
-                page = safePage,
-                limit = safePageSize,
-                perPage = safePageSize,
-                offset = offset,
-                start = offset
-            )
-        } else {
-            service.getLiveStreams(creds.username, creds.password, categoryId = categoryId)
+            val supportsPaging = livePagingSupportByPortal[providerKey]
+            if (supportsPaging == false) {
+                val snapshotRaw = service.getLiveStreams(creds.username, creds.password, categoryId = categoryId)
+                val all = parseXtreamList(snapshotRaw, XtreamLiveStream::class.java, listOf("live_streams", "channels", "streams"))
+                slicePage(all, safePage, safePageSize)
+            } else {
+                val offset = (safePage - 1) * safePageSize
+                val pagedRaw = service.getLiveStreamsPage(
+                    creds.username,
+                    creds.password,
+                    categoryId = categoryId,
+                    page = safePage,
+                    limit = safePageSize,
+                    perPage = safePageSize,
+                    offset = offset,
+                    start = offset
+                )
+                val paged = parseXtreamList(pagedRaw, XtreamLiveStream::class.java, listOf("live_streams", "channels", "streams"))
+                val likelySnapshot = when {
+                    safePage == 1 && paged.size > safePageSize -> true
+                    else -> false
+                }
+                if (likelySnapshot) {
+                    livePagingSupportByPortal[providerKey] = false
+                    slicePage(paged, safePage, safePageSize)
+                } else {
+                    livePagingSupportByPortal[providerKey] = true
+                    paged
+                }
+            }
         }
-        parseXtreamList(raw, XtreamLiveStream::class.java, listOf("live_streams", "channels", "streams"))
     }
 
     /**
@@ -221,22 +313,28 @@ class XtreamRepository(
     /**
      * Fetches movies for a category (with offline-first support).
      */
-    fun getMoviesCached(categoryId: String): Flow<NetworkResult<List<MovieMetadata>>> = flow {
+    override fun getMoviesCached(categoryId: String): Flow<NetworkResult<List<MovieMetadata>>> = flow {
         emit(NetworkResult.Loading)
-        
-        CoroutineScope(Dispatchers.IO).launch {
-            try { syncStreams(categoryId, "VOD") } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "VOD streams sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncNeeded = shouldSync(providerKey, "STREAM", "VOD", categoryId, streamSyncTtlMs)
+        TelemetryManager.trackCacheProbe("movies", hit = !syncNeeded)
+        val syncError = runCatching {
+            if (syncNeeded) {
+                syncStreams(providerKey, categoryId, "VOD")
             }
         }
-
-        emitAll(streamDao.getStreamsByCategory(categoryId).map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomainMovie() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("VOD streams sync failed", it) }
+        emitAll(streamDao.getStreamsByCategory(providerKey, "movie", categoryId).map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomainMovie() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    fun getMovies(categoryId: String? = null, page: Int? = null): Flow<NetworkResult<List<XtreamMovie>>> = networkFlow {
+    override fun getMovies(categoryId: String?, page: Int?): Flow<NetworkResult<List<XtreamMovie>>> = networkFlow {
         val creds = getCreds()
         val service = getService()
         val raw = if (page != null) {
@@ -247,67 +345,124 @@ class XtreamRepository(
         parseXtreamList(raw, XtreamMovie::class.java, listOf("vod_streams", "movies", "vod"))
     }
 
+    fun getMovies(): Flow<NetworkResult<List<XtreamMovie>>> = getMovies(categoryId = null, page = null)
+    fun getMovies(categoryId: String?): Flow<NetworkResult<List<XtreamMovie>>> = getMovies(categoryId = categoryId, page = null)
+
     /**
      * Fetches series for a category (with offline-first support).
      */
-    fun getSeriesCached(categoryId: String): Flow<NetworkResult<List<MovieMetadata>>> = flow {
+    override fun getSeriesCached(categoryId: String): Flow<NetworkResult<List<MovieMetadata>>> = flow {
         emit(NetworkResult.Loading)
-        
-        CoroutineScope(Dispatchers.IO).launch {
-            try { syncStreams(categoryId, "SERIES") } catch (e: Exception) {
-                android.util.Log.e("SmartiflyData", "SERIES streams sync failed: ${e.message}")
+        val providerKey = getPortalCapabilityKey()
+        val syncNeeded = shouldSync(providerKey, "STREAM", "SERIES", categoryId, streamSyncTtlMs)
+        TelemetryManager.trackCacheProbe("series", hit = !syncNeeded)
+        val syncError = runCatching {
+            if (syncNeeded) {
+                syncStreams(providerKey, categoryId, "SERIES")
             }
         }
-
-        emitAll(streamDao.getStreamsByCategory(categoryId).map { entities ->
-            if (entities.isEmpty()) NetworkResult.Loading
-            else NetworkResult.Success(entities.map { it.toDomainMovie() })
+            .exceptionOrNull()
+            ?.also { if (it is RuntimeException) logSyncFailure("SERIES streams sync failed", it) }
+        emitAll(streamDao.getStreamsByCategory(providerKey, "series", categoryId).map { entities ->
+            if (entities.isEmpty()) {
+                syncError?.let { NetworkResult.Error(NetworkErrorMapper.toUserMessage(it), it) } ?: NetworkResult.Loading
+            } else {
+                NetworkResult.Success(entities.map { it.toDomainMovie() })
+            }
         })
     }.flowOn(Dispatchers.IO)
 
-    private suspend fun syncStreams(categoryId: String, type: String) {
-        val creds = getCreds()
-        val service = getService()
-        
-        val entities = when (type) {
-            "LIVE" -> parseXtreamList(
-                service.getLiveStreams(creds.username, creds.password, categoryId = categoryId),
-                XtreamLiveStream::class.java,
-                listOf("live_streams", "channels", "streams")
-            ).map { it.toEntity() }
-            "VOD" -> parseXtreamList(
-                service.getMovies(creds.username, creds.password, categoryId = categoryId),
-                XtreamMovie::class.java,
-                listOf("vod_streams", "movies", "vod")
-            ).map { it.toEntity() }
-            "SERIES" -> parseXtreamList(
-                service.getSeries(creds.username, creds.password, categoryId = categoryId),
-                XtreamSeries::class.java,
-                listOf("series", "series_list")
-            ).map { it.toEntity() }
-            else -> emptyList()
+    private suspend fun syncStreams(providerKey: String, categoryId: String, type: String) {
+        val syncKey = "STREAM:$providerKey:$type:$categoryId"
+        if (!tryAcquireSync(syncKey)) {
+            android.util.Log.d("SmartiflyData", "Skipping duplicate stream sync for $type category=$categoryId")
+            return
         }
+        val attemptAt = System.currentTimeMillis()
+        try {
+            val previous = syncStateDao.getState(providerKey, "STREAM", type, categoryId)
+            val creds = getCreds()
+            val service = getService()
+            val entities = executeWithRetry("syncStreams:$type:$categoryId") {
+                when (type) {
+                    "LIVE" -> parseXtreamList(
+                        service.getLiveStreams(creds.username, creds.password, categoryId = categoryId),
+                        XtreamLiveStream::class.java,
+                        listOf("live_streams", "channels", "streams")
+                    ).map { it.toEntity(providerKey) }
+                    "VOD" -> parseXtreamList(
+                        service.getMovies(creds.username, creds.password, categoryId = categoryId),
+                        XtreamMovie::class.java,
+                        listOf("vod_streams", "movies", "vod")
+                    ).map { it.toEntity(providerKey) }
+                    "SERIES" -> parseXtreamList(
+                        service.getSeries(creds.username, creds.password, categoryId = categoryId),
+                        XtreamSeries::class.java,
+                        listOf("series", "series_list")
+                    ).map { it.toEntity(providerKey) }
+                    else -> emptyList()
+                }
+            }
 
-        if (entities.isNotEmpty()) {
-            streamDao.clearStreamsByCategory(categoryId)
+            if (entities.isEmpty() && (previous?.itemCount ?: 0) > 0) {
+                syncStateDao.upsert(
+                    SyncStateEntity(
+                        providerKey = providerKey,
+                        domain = "STREAM",
+                        type = type,
+                        categoryId = categoryId,
+                        lastAttemptAtMs = attemptAt,
+                        lastSuccessAtMs = previous?.lastSuccessAtMs ?: 0L,
+                        itemCount = previous?.itemCount ?: 0,
+                        lastError = "empty_response_preserved_cache"
+                    )
+                )
+                android.util.Log.w(
+                    "SmartiflyData",
+                    "$type Streams EMPTY response for category=$categoryId; preserving existing cache (${previous?.itemCount ?: 0} items)"
+                )
+                return
+            }
+
+            streamDao.clearStreamsByCategory(providerKey, streamTypeFor(type), categoryId)
             streamDao.insertStreams(entities)
-            android.util.Log.d("SmartiflyData", "$type Streams for category $categoryId SYNCED to Room")
+            syncStateDao.upsert(
+                SyncStateEntity(
+                    providerKey = providerKey,
+                    domain = "STREAM",
+                    type = type,
+                    categoryId = categoryId,
+                    lastAttemptAtMs = attemptAt,
+                    lastSuccessAtMs = System.currentTimeMillis(),
+                    itemCount = entities.size,
+                    lastError = null
+                )
+            )
+            android.util.Log.d("SmartiflyData", "$type Streams SYNCED to Room category=$categoryId (${entities.size} items)")
+        } catch (e: Throwable) {
+            val previous = syncStateDao.getState(providerKey, "STREAM", type, categoryId)
+            syncStateDao.upsert(
+                SyncStateEntity(
+                    providerKey = providerKey,
+                    domain = "STREAM",
+                    type = type,
+                    categoryId = categoryId,
+                    lastAttemptAtMs = attemptAt,
+                    lastSuccessAtMs = previous?.lastSuccessAtMs ?: 0L,
+                    itemCount = previous?.itemCount ?: 0,
+                    lastError = e.message
+                )
+            )
+            throw e
+        } finally {
+            releaseSync(syncKey)
         }
-    }
-
-    fun getSeriesCategories(): Flow<NetworkResult<List<XtreamCategory>>> = networkFlow {
-        val creds = getCreds()
-        parseXtreamList(
-            getService().getSeriesCategories(creds.username, creds.password),
-            XtreamCategory::class.java,
-            listOf("categories", "series_categories")
-        )
     }
 
     /**
      * Fetches short EPG for a specific stream.
      */
-    fun getShortEpg(streamId: Int): Flow<NetworkResult<List<com.smartifly.tv.features.live.epg.EpgProgram>>> = networkFlow {
+    override fun getShortEpg(streamId: Int): Flow<NetworkResult<List<com.smartifly.tv.features.live.epg.EpgProgram>>> = networkFlow {
         val creds = getCreds()
         val response = getService().getShortEpg(creds.username, creds.password, streamId = streamId)
         
@@ -330,7 +485,7 @@ class XtreamRepository(
     /**
      * Fetches series for a category.
      */
-    fun getSeries(categoryId: String? = null, page: Int? = null): Flow<NetworkResult<List<XtreamSeries>>> = networkFlow {
+    override fun getSeries(categoryId: String?, page: Int?): Flow<NetworkResult<List<XtreamSeries>>> = networkFlow {
         val creds = getCreds()
         val service = getService()
         val raw = if (page != null) {
@@ -341,6 +496,9 @@ class XtreamRepository(
         parseXtreamList(raw, XtreamSeries::class.java, listOf("series", "series_list"))
     }
 
+    fun getSeries(): Flow<NetworkResult<List<XtreamSeries>>> = getSeries(categoryId = null, page = null)
+    fun getSeries(categoryId: String?): Flow<NetworkResult<List<XtreamSeries>>> = getSeries(categoryId = categoryId, page = null)
+
     // ==========================================
     // DETAILED INFO
     // ==========================================
@@ -348,7 +506,7 @@ class XtreamRepository(
     /**
      * Fetches detailed information for a VOD movie.
      */
-    suspend fun getMovieInfo(vodId: Int): NetworkResult<XtreamMovieInfo> = safeApiCall {
+    override suspend fun getMovieInfo(vodId: Int): NetworkResult<XtreamMovieInfo> = safeApiCall {
         val creds = getCreds()
         getService().getMovieInfo(creds.username, creds.password, vodId = vodId)
     }
@@ -356,9 +514,14 @@ class XtreamRepository(
     /**
      * Fetches detailed info and episodes for a TV series.
      */
-    suspend fun getSeriesInfo(seriesId: Int): NetworkResult<XtreamSeriesInfo> = safeApiCall {
+    override suspend fun getSeriesInfo(seriesId: Int): NetworkResult<XtreamSeriesInfo> = safeApiCall {
         val creds = getCreds()
-        getService().getSeriesInfo(creds.username, creds.password, seriesId = seriesId)
+        val service = getService()
+        try {
+            service.getSeriesInfo(creds.username, creds.password, seriesId = seriesId)
+        } catch (e: RuntimeException) {
+            service.getSeriesInfoCompat(creds.username, creds.password, series = seriesId)
+        }
     }
 
     // ==========================================
@@ -371,10 +534,12 @@ class XtreamRepository(
     private suspend fun <T> safeApiCall(apiCall: suspend () -> T): NetworkResult<T> {
         return withContext(Dispatchers.IO) {
             try {
-                val result = apiCall()
+                val result = executeWithRetry("safeApiCall") { apiCall() }
                 android.util.Log.d("SmartiflyData", "API Call SUCCESS")
                 NetworkResult.Success(result)
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
                 android.util.Log.e("SmartiflyData", "API Call ERROR: ${e.message}")
                 NetworkResult.Error(NetworkErrorMapper.toUserMessage(e), e)
             }
@@ -387,59 +552,168 @@ class XtreamRepository(
     private fun <T> networkFlow(apiCall: suspend () -> T): Flow<NetworkResult<T>> = flow {
         emit(NetworkResult.Loading)
         try {
-            val result = apiCall()
+            val result = executeWithRetry("networkFlow") { apiCall() }
             android.util.Log.d("SmartiflyData", "Flow Fetch SUCCESS")
             emit(NetworkResult.Success(result))
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            // Expected when collector is cancelled (screen switch / first{} short-circuit).
+            throw e
+        } catch (e: RuntimeException) {
             android.util.Log.e("SmartiflyData", "Flow Fetch ERROR: ${e.message}")
             emit(NetworkResult.Error(NetworkErrorMapper.toUserMessage(e), e))
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun tryAcquireSync(key: String): Boolean {
+        synchronized(inFlightSyncKeys) {
+            if (inFlightSyncKeys.contains(key)) return false
+            inFlightSyncKeys.add(key)
+            return true
+        }
+    }
+
+    private fun releaseSync(key: String) {
+        synchronized(inFlightSyncKeys) {
+            inFlightSyncKeys.remove(key)
+        }
+    }
+
+    private fun logCredentialMissing(attempt: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastCredentialMissingLogAtMs >= credentialMissingLogThrottleMs || attempt >= 3) {
+            lastCredentialMissingLogAtMs = now
+            android.util.Log.w("SmartiflyData", "Credentials missing, retrying... (Attempt $attempt)")
+        }
+    }
+
+    private fun logSyncFailure(prefix: String, error: Throwable) {
+        val message = error.message ?: error::class.java.simpleName
+        if (error is CancellationException || isExpectedAbortMessage(message)) {
+            android.util.Log.d("SmartiflyData", "$prefix: $message")
+        } else {
+            android.util.Log.e("SmartiflyData", "$prefix: $message")
+        }
+    }
+
+    private fun isExpectedAbortMessage(message: String): Boolean {
+        val lowered = message.lowercase()
+        return lowered.contains("flow was aborted") || lowered.contains("standalonecoroutine was cancelled")
+    }
+
+    private suspend fun <T> executeWithRetry(
+        operation: String,
+        block: suspend () -> T
+    ): T {
+        var attempt = 0
+        var backoffMs = networkRetryInitialDelayMs
+        var lastError: Throwable? = null
+        while (attempt < networkRetryAttempts) {
+            try {
+                return block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                lastError = e
+                val isRetryable = isRetryableNetworkError(e)
+                val isLastAttempt = attempt == networkRetryAttempts - 1
+                if (!isRetryable || isLastAttempt) {
+                    throw e
+                }
+                android.util.Log.w(
+                    "SmartiflyData",
+                    "retrying op=$operation attempt=${attempt + 1}/$networkRetryAttempts wait_ms=$backoffMs reason=${e.message}"
+                )
+                delay(backoffMs)
+                backoffMs = (backoffMs * 2).coerceAtMost(networkRetryMaxDelayMs)
+                attempt++
+            }
+        }
+        throw lastError ?: IllegalStateException("Retry loop exited unexpectedly for $operation")
+    }
+
+    private fun isRetryableNetworkError(error: Throwable): Boolean {
+        val message = error.message?.lowercase().orEmpty()
+        return when (error) {
+            is SocketTimeoutException,
+            is UnknownHostException,
+            is SSLException,
+            is IOException -> true
+            else -> {
+                message.contains("timeout") ||
+                    message.contains("timed out") ||
+                    message.contains("429") ||
+                    message.contains("too many requests") ||
+                    message.contains("reset") ||
+                    message.contains("refused") ||
+                    message.contains("temporarily unavailable")
+            }
+        }
+    }
 
     private fun <T> parseXtreamList(
         raw: JsonElement?,
         clazz: Class<T>,
         possibleKeys: List<String> = emptyList()
     ): List<T> {
-        if (raw == null || raw.isJsonNull) return emptyList()
+        return XtreamListParser.parse(raw, clazz, possibleKeys)
+    }
 
-        if (raw.isJsonArray) {
-            return raw.asJsonArray.mapNotNull { element ->
-                runCatching { gson.fromJson(element, clazz) }.getOrNull()
-            }
+    private fun streamTypeFor(contentType: String): String {
+        return when (contentType) {
+            "LIVE" -> "live"
+            "VOD" -> "movie"
+            "SERIES" -> "series"
+            else -> contentType.lowercase()
         }
+    }
 
-        if (!raw.isJsonObject) return emptyList()
-        val obj = raw.asJsonObject
+    private fun <T> slicePage(items: List<T>, page: Int, pageSize: Int): List<T> {
+        val fromIndex = ((page - 1) * pageSize).coerceAtLeast(0)
+        if (fromIndex >= items.size) return emptyList()
+        val toIndex = (fromIndex + pageSize).coerceAtMost(items.size)
+        return items.subList(fromIndex, toIndex)
+    }
 
-        // Auth/error responses instead of content payloads.
-        if (obj.has("user_info") && obj.has("server_info")) return emptyList()
-        if ((obj.get("auth")?.asInt ?: -1) == 0) return emptyList()
-        if (obj.getAsJsonObject("user_info")?.get("auth")?.asInt == 0) return emptyList()
-        if (obj.has("error") || obj.has("Error") || obj.has("ERROR")) return emptyList()
+    private suspend fun shouldSync(
+        providerKey: String,
+        domain: String,
+        type: String,
+        categoryId: String,
+        ttlMs: Long
+    ): Boolean {
+        val state = syncStateDao.getState(providerKey, domain, type, categoryId) ?: return true
+        if (state.lastSuccessAtMs <= 0L) return true
+        return System.currentTimeMillis() - state.lastSuccessAtMs > ttlMs
+    }
 
-        val keys = (possibleKeys + listOf(
-            "data", "items", "list", "streams", "channels", "live_streams",
-            "vod_streams", "series", "movies", "result", "results"
-        )).distinct()
-
-        for (key in keys) {
-            val candidate = obj.get(key)
-            if (candidate != null && candidate.isJsonArray) {
-                return candidate.asJsonArray.mapNotNull { element ->
-                    runCatching { gson.fromJson(element, clazz) }.getOrNull()
-                }
-            }
-        }
-
-        // Numeric-keyed object format: {"0": {...}, "1": {...}}
-        val entries = obj.entrySet().toList()
-        if (entries.isNotEmpty() && entries.all { (k, _) -> k.toIntOrNull() != null }) {
-            return entries.sortedBy { it.key.toInt() }.mapNotNull { (_, value) ->
-                runCatching { gson.fromJson(value, clazz) }.getOrNull()
-            }
-        }
-
-        return emptyList()
+    suspend fun recordWarmupDomainState(
+        domain: String,
+        status: String,
+        itemCount: Int,
+        durationMs: Long,
+        error: String?
+    ) {
+        val providerKey = getPortalCapabilityKey()
+        val now = System.currentTimeMillis()
+        val previous = syncStateDao.getState(providerKey, "WARMUP", domain, "__ALL__")
+        val success = status.equals("SUCCESS", ignoreCase = true) || status.equals("PARTIAL", ignoreCase = true)
+        syncStateDao.upsert(
+            SyncStateEntity(
+                providerKey = providerKey,
+                domain = "WARMUP",
+                type = domain.uppercase(),
+                categoryId = "__ALL__",
+                lastAttemptAtMs = now,
+                lastSuccessAtMs = if (success) now else (previous?.lastSuccessAtMs ?: 0L),
+                itemCount = itemCount,
+                lastError = if (success) null else (error ?: "warmup_failed")
+            )
+        )
+        TelemetryManager.trackTiming(
+            eventName = "warmup_${domain.lowercase()}_ms",
+            durationMs = durationMs,
+            extra = mapOf("status" to status, "items" to itemCount.toString())
+        )
     }
 }
+

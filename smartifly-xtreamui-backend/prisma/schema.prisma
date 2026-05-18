@@ -357,3 +357,27 @@ model TmdbMetadata {
   @@index([contentId])
   @@map("tmdb_metadata")
 }
+
+model ProviderHealthEvent {
+  id            BigInt   @id @default(autoincrement())
+  eventId       String   @unique(map: "uq_provider_health_event_id") @map("event_id") @db.VarChar(100)
+  deviceId      String   @map("device_id") @db.VarChar(255)
+  profileId     String?  @map("profile_id") @db.VarChar(255)
+  portalIdentity String  @map("portal_identity") @db.VarChar(100)
+  portalBaseUrl String   @map("portal_base_url") @db.VarChar(500)
+  host          String   @db.VarChar(255)
+  eventType     String   @map("event_type") @db.VarChar(50)
+  context       String   @db.VarChar(50)
+  contentType   String?  @map("content_type") @db.VarChar(50)
+  contentId     String?  @map("content_id") @db.VarChar(255)
+  metadataJson  Json?    @map("metadata_json")
+  occurredAt    DateTime @map("occurred_at") @db.DateTime(3)
+  appVersion    String   @map("app_version") @db.VarChar(50)
+  platform      String   @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  @@index([occurredAt], map: "idx_provider_health_event_occurred")
+  @@index([portalIdentity], map: "idx_provider_health_event_portal")
+  @@index([host], map: "idx_provider_health_event_host")
+  @@map("provider_health_event")
+}

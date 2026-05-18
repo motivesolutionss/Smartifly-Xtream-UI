@@ -2,49 +2,69 @@ package com.smartifly.tv.features.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.smartifly.tv.data.hero.HeroEnrichmentService
-import com.smartifly.tv.data.ResumeWatchingRepository
-import com.smartifly.tv.data.hero.HeroRepository
+import com.smartifly.tv.BuildConfig
+import com.smartifly.tv.data.hero.HomeHeroEnricher
+import com.smartifly.tv.data.ResumeWatchingDataSource
+import com.smartifly.tv.data.hero.HomeHeroSelector
 import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.image.ContentIdentity
 import com.smartifly.tv.data.remote.NetworkResult
-import com.smartifly.tv.data.repository.AnalyticsRepository
-import com.smartifly.tv.data.repository.XtreamRepository
+import com.smartifly.tv.data.repository.HomeAnalyticsDataSource
+import com.smartifly.tv.data.repository.HomeDataSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CancellationException
+import java.io.IOException
 import com.smartifly.tv.performance.lowend.PerformanceConfig
 
 /**
  * Enterprise-grade ViewModel for the TV Home Screen.
  */
 class HomeViewModel(
-    private val repository: XtreamRepository,
-    private val resumeRepository: ResumeWatchingRepository,
-    private val analyticsRepository: AnalyticsRepository,
-    private val heroRepository: HeroRepository,
-    private val heroEnrichmentService: HeroEnrichmentService,
+    private val repository: HomeDataSource,
+    private val resumeRepository: ResumeWatchingDataSource,
+    private val analyticsRepository: HomeAnalyticsDataSource,
+    private val heroRepository: HomeHeroSelector,
+    private val heroEnrichmentService: HomeHeroEnricher,
     private val performanceConfig: PerformanceConfig,
-    private val profileId: String
+    private val profileId: String,
+    private val logger: HomeLogger = AndroidHomeLogger
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     private var loadGeneration: Int = 0
+    private var loadJob: Job? = null
 
     init {
         loadHomeContent()
     }
 
     private fun loadHomeContent() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val currentGeneration = ++loadGeneration
-            _uiState.value = HomeUiState.Loading
+            val nowMs = System.currentTimeMillis()
+            val snapshot = HomeFeedSnapshotCache.getFresh(profileId = profileId, nowMs = nowMs)
+            if (snapshot != null) {
+                if (currentGeneration != loadGeneration) return@launch
+                _uiState.value = HomeUiState.Success(
+                    heroMovie = snapshot.heroMovie,
+                    sections = snapshot.sections,
+                    isDegraded = false
+                )
+            } else {
+                if (currentGeneration != loadGeneration) return@launch
+                _uiState.value = HomeUiState.Loading
+            }
 
             try {
                 val sections = mutableListOf<HomeSection>()
@@ -66,10 +86,23 @@ class HomeViewModel(
                 val vodCategories = awaitListResult(repository.getVodCategories())
                 val seriesCategories = awaitListResult(repository.getSeriesCategoriesCached())
                 val liveCategories = awaitListResult(repository.getLiveCategories())
-                val estimatedCatalogSize = estimateCatalogSize(vodCategories, seriesCategories, liveCategories)
+                val estimatedCatalogSize = estimateCatalogSize(
+                    vodCategories = vodCategories,
+                    seriesCategories = seriesCategories,
+                    liveCategories = liveCategories,
+                    sampleMoviesPerCategory = sampleCategoryDensity(vodCategories) { category ->
+                        awaitListResult(repository.getMoviesCached(category.id), timeoutMs = 2500L)
+                    },
+                    sampleSeriesPerCategory = sampleCategoryDensity(seriesCategories) { category ->
+                        awaitListResult(repository.getSeriesCached(category.id), timeoutMs = 2500L)
+                    },
+                    sampleLivePerCategory = sampleCategoryDensity(liveCategories) { category ->
+                        awaitListResult(repository.getLiveStreamsCached(category.id), timeoutMs = 2500L)
+                    }
+                )
                 val policy = HomeRailPolicyResolver.resolve(performanceConfig.tier, estimatedCatalogSize)
 
-                android.util.Log.i(
+                logger.i(
                     "SmartiflyRails",
                     "rails_policy profile=$profileId tier=${performanceConfig.tier} estimated_catalog=$estimatedCatalogSize cap=${policy.totalRailsCap}"
                 )
@@ -78,6 +111,11 @@ class HomeViewModel(
                 val moviePoolByCategory = loadMoviePools(vodCategories, policy)
                 val seriesPoolByCategory = loadSeriesPools(seriesCategories, policy)
                 val livePoolByCategory = loadLivePools(liveCategories, policy)
+                val isDegraded = listOf(
+                    vodCategories.isNotEmpty() && moviePoolByCategory.isEmpty(),
+                    seriesCategories.isNotEmpty() && seriesPoolByCategory.isEmpty(),
+                    liveCategories.isNotEmpty() && livePoolByCategory.isEmpty()
+                ).any { it }
                 val movieItems = moviePoolByCategory.values.flatten()
                 val seriesItems = seriesPoolByCategory.values.flatten()
                 
@@ -205,24 +243,57 @@ class HomeViewModel(
                     maxItems = policy.itemsPerRail
                 )
 
-                // Final cap for performance.
-                val cappedSections = sections.take(policy.totalRailsCap)
+                // Final rail ranking/order for premium dynamic feel.
+                val rankResult = HomeRailRanker.rankWithDiagnostics(
+                    sections = sections,
+                    profileId = profileId,
+                    policy = policy
+                )
+                val rankedSections = rankResult.sections
+                logger.i(
+                    "SmartiflyRails",
+                    "rail_rank_debug profile=$profileId top=${
+                        rankResult.debugTopRails.joinToString(" || ") {
+                            "${it.title}:total=${"%.1f".format(it.totalScore)}(a=${"%.1f".format(it.anchorScore)},s=${"%.1f".format(it.sizeScore)},i=${"%.1f".format(it.imageScore)},f=${"%.1f".format(it.freshnessScore)})"
+                        }
+                    }"
+                )
 
-                if (cappedSections.isEmpty()) {
+                if (rankedSections.isEmpty()) {
+                    if (currentGeneration != loadGeneration) return@launch
                     _uiState.value = HomeUiState.Empty
                     return@launch
                 }
 
+                if (currentGeneration != loadGeneration) return@launch
                 _uiState.value = HomeUiState.Success(
                     heroMovie = hero,
-                    sections = cappedSections
+                    sections = rankedSections,
+                    isDegraded = isDegraded
+                )
+                HomeFeedSnapshotCache.put(
+                    profileId = profileId,
+                    snapshot = HomeFeedSnapshot(
+                        heroMovie = hero,
+                        sections = rankedSections,
+                        storedAtMs = System.currentTimeMillis()
+                    )
                 )
 
                 if (hero != null) {
                     enrichHeroInBackground(baseHero = hero, generation = currentGeneration)
                 }
-            } catch (e: Exception) {
-                _uiState.value = HomeUiState.Error(e.message ?: "Failed to load home content")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (io: IOException) {
+                if (currentGeneration != loadGeneration) return@launch
+                _uiState.value = HomeUiState.Error(io.message ?: "Failed to load home content")
+            } catch (se: SecurityException) {
+                if (currentGeneration != loadGeneration) return@launch
+                _uiState.value = HomeUiState.Error(se.message ?: "Failed to load home content")
+            } catch (re: RuntimeException) {
+                if (currentGeneration != loadGeneration) return@launch
+                _uiState.value = HomeUiState.Error(re.message ?: "Failed to load home content")
             }
         }
     }
@@ -251,11 +322,35 @@ class HomeViewModel(
     private fun estimateCatalogSize(
         vodCategories: List<MediaCategory>,
         seriesCategories: List<MediaCategory>,
-        liveCategories: List<MediaCategory>
+        liveCategories: List<MediaCategory>,
+        sampleMoviesPerCategory: Int,
+        sampleSeriesPerCategory: Int,
+        sampleLivePerCategory: Int
     ): Int {
-        // Conservative heuristic; we avoid expensive full-count scans on TV startup.
-        val categoryTotal = vodCategories.size + seriesCategories.size + liveCategories.size
-        return categoryTotal * 800
+        val vodEstimate = vodCategories.size * sampleMoviesPerCategory
+        val seriesEstimate = seriesCategories.size * sampleSeriesPerCategory
+        val liveEstimate = liveCategories.size * sampleLivePerCategory
+        val combined = vodEstimate + seriesEstimate + liveEstimate
+        // Keep stable lower-bound so policy doesn't collapse on sparse/slow probes.
+        return combined.coerceIn(1_000, 300_000)
+    }
+
+    private suspend fun sampleCategoryDensity(
+        categories: List<MediaCategory>,
+        fetch: suspend (MediaCategory) -> List<*>
+    ): Int {
+        if (categories.isEmpty()) return 0
+        val sample = categories
+            .take(2)
+            .mapNotNull { category ->
+                runCatching { fetch(category).size }
+                    .onFailure { error ->
+                        logger.i("SmartiflyRails", "category_sample_error profile=$profileId category=${category.id} message=${error.message}")
+                    }
+                    .getOrNull()
+            }
+        if (sample.isEmpty()) return 24
+        return sample.average().toInt().coerceAtLeast(12)
     }
 
     private suspend fun loadMoviePools(
@@ -312,11 +407,28 @@ class HomeViewModel(
             withTimeout(timeoutMs) {
                 when (val result = flow.first { it !is NetworkResult.Loading }) {
                     is NetworkResult.Success -> result.data
-                    is NetworkResult.Error -> emptyList()
+                    is NetworkResult.Error -> {
+                        logger.i(
+                            "SmartiflyRails",
+                            "await_list_result_network_error profile=$profileId message=${result.message}"
+                        )
+                        emptyList()
+                    }
                     is NetworkResult.Loading -> emptyList()
                 }
             }
-        } catch (_: Exception) {
+        } catch (_: TimeoutCancellationException) {
+            emptyList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (io: IOException) {
+            logger.i("SmartiflyRails", "await_list_result_io_error profile=$profileId message=${io.message}")
+            emptyList()
+        } catch (se: SecurityException) {
+            logger.i("SmartiflyRails", "await_list_result_security_error profile=$profileId message=${se.message}")
+            emptyList()
+        } catch (re: RuntimeException) {
+            logger.i("SmartiflyRails", "await_list_result_runtime_error profile=$profileId message=${re.message}")
             emptyList()
         }
     }
@@ -387,5 +499,22 @@ class HomeViewModel(
 
     fun refreshAll() {
         loadHomeContent()
+    }
+
+    override fun onCleared() {
+        loadJob?.cancel()
+        super.onCleared()
+    }
+}
+
+interface HomeLogger {
+    fun i(tag: String, message: String)
+}
+
+object AndroidHomeLogger : HomeLogger {
+    override fun i(tag: String, message: String) {
+        if (BuildConfig.LIVE_DEBUG_TRACE) {
+            android.util.Log.i(tag, message)
+        }
     }
 }

@@ -3,6 +3,8 @@ package com.smartifly.tv.data.repository
 import com.smartifly.tv.data.remote.SmartiflyApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.IOException
+import retrofit2.HttpException
 
 class ParentalControlManager(private val api: SmartiflyApi) {
     
@@ -26,7 +28,11 @@ class ParentalControlManager(private val api: SmartiflyApi) {
             @Suppress("UNCHECKED_CAST")
             lockedCategories = (response["lockedCategories"] as? List<String>) ?: emptyList()
             isConfigLoaded = true
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            android.util.Log.e("ParentalControl", "Failed to load config (network): ${e.message}")
+        } catch (e: HttpException) {
+            android.util.Log.e("ParentalControl", "Failed to load config (http ${e.code()})")
+        } catch (e: RuntimeException) {
             android.util.Log.e("ParentalControl", "Failed to load config: ${e.message}")
         }
     }
@@ -44,7 +50,11 @@ class ParentalControlManager(private val api: SmartiflyApi) {
                 _isUnlocked.value = true
             }
             success
-        } catch (e: Exception) {
+        } catch (_: IOException) {
+            false
+        } catch (_: HttpException) {
+            false
+        } catch (_: RuntimeException) {
             false
         }
     }

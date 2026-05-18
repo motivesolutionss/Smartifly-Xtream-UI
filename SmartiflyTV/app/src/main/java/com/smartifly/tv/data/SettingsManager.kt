@@ -22,7 +22,7 @@ class SettingsManager(private val context: Context) {
         val themeName = preferences[THEME_KEY] ?: ThemeMode.Metallic.name
         try {
             ThemeMode.valueOf(themeName)
-        } catch (e: Exception) {
+        } catch (_: IllegalArgumentException) {
             ThemeMode.Metallic
         }
     }

@@ -6,18 +6,23 @@ import java.io.IOException
 
 class RetryInterceptor(
     private val maxRetries: Int = 3,
-    private val initialBackoffMs: Long = 400L
+    @Suppress("unused") private val initialBackoffMs: Long = 250L,
+    @Suppress("unused") private val maxBackoffMs: Long = 1200L
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
+        if (maxRetries <= 0) {
+            return chain.proceed(chain.request())
+        }
         val request = chain.request()
         var attempt = 0
-        var backoffMs = initialBackoffMs
         var lastException: IOException? = null
 
         while (attempt <= maxRetries) {
             try {
                 val response = chain.proceed(request)
-                if (response.isSuccessful || request.method != "GET" || attempt == maxRetries) {
+                val code = response.code
+                val retryableHttp = code == 408 || code == 429 || code == 503 || code == 504
+                if (response.isSuccessful || request.method != "GET" || !retryableHttp || attempt == maxRetries) {
                     return response
                 }
                 response.close()
@@ -28,13 +33,6 @@ class RetryInterceptor(
                 }
             }
 
-            try {
-                Thread.sleep(backoffMs)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                break
-            }
-            backoffMs *= 2
             attempt++
         }
 

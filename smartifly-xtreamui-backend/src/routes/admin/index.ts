@@ -15,6 +15,7 @@ import serverRoutes from './server.routes'; // New for Xtream Servers
 import compatRoutes from './compat.routes';
 import userRoutes from './user.routes';
 import providerHealthRoutes from './providerHealth.routes';
+import systemRoutes from './system.routes';
 import { authMiddleware } from '../../middlewares/auth';
 import { requireRole } from '../../middlewares/requireRole';
 
@@ -31,6 +32,7 @@ router.use('/finance', financeRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/users', userRoutes);
 router.use('/provider-health', providerHealthRoutes);
+router.use('/system', systemRoutes);
 router.use('/servers', serverRoutes);
 router.use('/', compatRoutes);
 

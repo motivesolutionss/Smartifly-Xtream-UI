@@ -11,6 +11,10 @@ import java.util.concurrent.atomic.AtomicInteger
 object ImageQualityMonitor {
     private val successByHost = ConcurrentHashMap<String, AtomicInteger>()
     private val failureByHost = ConcurrentHashMap<String, AtomicInteger>()
+    private val successByContext = ConcurrentHashMap<String, AtomicInteger>()
+    private val failureByContext = ConcurrentHashMap<String, AtomicInteger>()
+    private val eventCounter = AtomicInteger(0)
+    private const val SUMMARY_EVERY_EVENTS = 50
 
     data class HostHealth(
         val host: String,
@@ -38,6 +42,7 @@ object ImageQualityMonitor {
     ) {
         hostOf(url)?.let { host ->
             successByHost.computeIfAbsent(host) { AtomicInteger(0) }.incrementAndGet()
+            successByContext.computeIfAbsent(context) { AtomicInteger(0) }.incrementAndGet()
             ProviderHealthTelemetry.recordEvent(
                 eventType = "IMAGE_SUCCESS",
                 context = context,
@@ -46,6 +51,7 @@ object ImageQualityMonitor {
                 contentType = contentType,
                 contentId = contentId
             )
+            maybeLogSummary()
         }
     }
 
@@ -58,6 +64,7 @@ object ImageQualityMonitor {
     ) {
         hostOf(url)?.let { host ->
             val failures = failureByHost.computeIfAbsent(host) { AtomicInteger(0) }.incrementAndGet()
+            failureByContext.computeIfAbsent(context) { AtomicInteger(0) }.incrementAndGet()
             val successes = successByHost[host]?.get() ?: 0
             val total = successes + failures
             ProviderHealthTelemetry.recordEvent(
@@ -74,6 +81,7 @@ object ImageQualityMonitor {
                     "image_host_quality=degraded host=$host failures=$failures successes=$successes fail_rate_pct=${failures * 100 / total}"
                 )
             }
+            maybeLogSummary()
         }
     }
 
@@ -97,11 +105,51 @@ object ImageQualityMonitor {
         ).take(topN)
     }
 
+    fun runtimeScoreAdjustment(url: String): Int {
+        val host = hostOf(url) ?: return 0
+        val successes = successByHost[host]?.get() ?: 0
+        val failures = failureByHost[host]?.get() ?: 0
+        val total = successes + failures
+        if (total < 6) return 0
+
+        val successRate = successes.toFloat() / total.toFloat()
+        return when {
+            successRate >= 0.85f -> 16
+            successRate >= 0.70f -> 8
+            successRate <= 0.25f -> -24
+            successRate <= 0.40f -> -12
+            else -> 0
+        }
+    }
+
     private fun hostOf(url: String): String? {
         return try {
             URI(url).host?.lowercase()
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun maybeLogSummary() {
+        val events = eventCounter.incrementAndGet()
+        if (events % SUMMARY_EVERY_EVENTS != 0) return
+        val topContexts = (successByContext.keys + failureByContext.keys)
+            .toSet()
+            .map { ctx ->
+                val s = successByContext[ctx]?.get() ?: 0
+                val f = failureByContext[ctx]?.get() ?: 0
+                val t = s + f
+                val r = if (t == 0) 0 else (f * 100 / t)
+                "$ctx:$f/$t($r%)"
+            }
+            .sortedByDescending { entry ->
+                entry.substringAfter(':').substringBefore('/').toIntOrNull() ?: 0
+            }
+            .take(5)
+            .joinToString(" ")
+        android.util.Log.i(
+            "SmartiflyImage",
+            "image_kpi events=$events contexts=[$topContexts]"
+        )
     }
 }

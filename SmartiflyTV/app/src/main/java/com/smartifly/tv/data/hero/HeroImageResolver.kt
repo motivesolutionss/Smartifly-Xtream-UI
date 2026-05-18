@@ -10,6 +10,15 @@ package com.smartifly.tv.data.hero
  * 4) Reject malformed/non-http URLs.
  */
 object HeroImageResolver {
+    @Volatile
+    private var portalBaseUrl: String? = null
+
+    fun setPortalBaseUrl(baseUrl: String?) {
+        portalBaseUrl = baseUrl
+            ?.trim()
+            ?.removeSuffix("/")
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+    }
 
     fun resolveForMovie(sources: HeroImageSources): HeroResolvedAsset? {
         val ordered = listOf(
@@ -47,12 +56,20 @@ object HeroImageResolver {
     fun normalizeImageUrl(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
 
-        val cleaned = raw
+        var cleaned = raw
             .trim()
             .replace(Regex("[\\u0000-\\u001F]"), "")
             .replace(Regex("[\\u200B-\\u200D\\uFEFF]"), "")
 
         if (cleaned.isBlank()) return null
+
+        if (cleaned.startsWith("//")) {
+            cleaned = "https:$cleaned"
+        } else if (cleaned.startsWith("/")) {
+            val base = portalBaseUrl ?: return null
+            cleaned = "$base$cleaned"
+        }
+
         if (!cleaned.startsWith("http://", ignoreCase = true) &&
             !cleaned.startsWith("https://", ignoreCase = true)
         ) {

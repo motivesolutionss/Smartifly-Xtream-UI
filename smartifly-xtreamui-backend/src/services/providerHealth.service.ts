@@ -1,19 +1,5 @@
 import { prisma } from '../config/prisma';
-
-type ProviderHealthEventType =
-  | 'IMAGE_SUCCESS'
-  | 'IMAGE_FAILURE'
-  | 'URL_REJECTED'
-  | 'RAIL_EMPTY'
-  | 'DUPLICATE_COLLISION';
-
-type ProviderHealthContext =
-  | 'HOME_HERO'
-  | 'HOME_POSTER'
-  | 'CONTINUE_WATCHING'
-  | 'DETAILS'
-  | 'LIVE_CARD'
-  | 'SEARCH';
+import { type ProviderHealthContextType, type ProviderHealthEventType } from '../constants/providerHealthTelemetry';
 
 export interface ProviderHealthEventInput {
   eventId: string;
@@ -23,46 +9,13 @@ export interface ProviderHealthEventInput {
   portalBaseUrl: string;
   host: string;
   eventType: ProviderHealthEventType;
-  context: ProviderHealthContext;
+  context: ProviderHealthContextType;
   contentType?: string | null;
   contentId?: string | null;
   metadata?: Record<string, unknown> | null;
   occurredAt: string;
   appVersion: string;
   platform: string;
-}
-
-let tablesEnsured = false;
-
-async function ensureProviderHealthTables(): Promise<void> {
-  if (tablesEnsured) return;
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS provider_health_event (
-      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      event_id VARCHAR(100) NOT NULL,
-      device_id VARCHAR(255) NOT NULL,
-      profile_id VARCHAR(255) NULL,
-      portal_identity VARCHAR(100) NOT NULL,
-      portal_base_url VARCHAR(500) NOT NULL,
-      host VARCHAR(255) NOT NULL,
-      event_type VARCHAR(50) NOT NULL,
-      context VARCHAR(50) NOT NULL,
-      content_type VARCHAR(50) NULL,
-      content_id VARCHAR(255) NULL,
-      metadata_json JSON NULL,
-      occurred_at DATETIME(3) NOT NULL,
-      app_version VARCHAR(50) NOT NULL,
-      platform VARCHAR(50) NOT NULL,
-      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-      UNIQUE KEY uq_provider_health_event_id (event_id),
-      KEY idx_provider_health_event_occurred (occurred_at),
-      KEY idx_provider_health_event_portal (portal_identity),
-      KEY idx_provider_health_event_host (host)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-  `);
-
-  tablesEnsured = true;
 }
 
 function toDateOnly(value: Date): string {
@@ -76,8 +29,6 @@ function computeStatus(failureRate: number): 'HEALTHY' | 'DEGRADED' | 'CRITICAL'
 }
 
 export async function ingestProviderHealthEvents(events: ProviderHealthEventInput[]): Promise<{ accepted: number; rejected: number }> {
-  await ensureProviderHealthTables();
-
   let accepted = 0;
   let rejected = 0;
   const now = Date.now();
@@ -141,8 +92,6 @@ type PortalSummaryRow = {
 };
 
 export async function getProviderHealthSummary(from: Date, to: Date): Promise<PortalSummaryRow[]> {
-  await ensureProviderHealthTables();
-
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
     `
       SELECT
@@ -191,8 +140,6 @@ type HostRow = {
 };
 
 export async function getProviderHealthHosts(portalIdentity: string, from: Date, to: Date): Promise<HostRow[]> {
-  await ensureProviderHealthTables();
-
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
     `
       SELECT
@@ -242,8 +189,6 @@ type TimelineItem = {
 };
 
 export async function getProviderHealthTimeline(portalIdentity: string, days: number): Promise<TimelineItem[]> {
-  await ensureProviderHealthTables();
-
   const safeDays = Math.max(1, Math.min(days, 90));
   const to = new Date();
   const from = new Date();
