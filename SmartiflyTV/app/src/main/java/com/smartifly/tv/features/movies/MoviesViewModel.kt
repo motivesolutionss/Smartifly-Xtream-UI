@@ -6,7 +6,6 @@ import com.smartifly.tv.data.mapper.toDomain
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.remote.NetworkResult
-import com.smartifly.tv.data.repository.LiveDataSource
 import com.smartifly.tv.data.repository.MoviesDataSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
@@ -203,8 +202,7 @@ class MoviesViewModel(
     }
 
     private suspend fun ensurePortalScopedCache() {
-        val liveDataSource = repository as? LiveDataSource ?: return
-        val currentPortalKey = runCatching { liveDataSource.getPortalCapabilityKey() }.getOrNull() ?: return
+        val currentPortalKey = runCatching { repository.getPortalCapabilityKey() }.getOrNull() ?: return
         if (cachePortalKey != currentPortalKey) {
             cacheByCategoryKey.clear()
             selectedCategoryId = null
