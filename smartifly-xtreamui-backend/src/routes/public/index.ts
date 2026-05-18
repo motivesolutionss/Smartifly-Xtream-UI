@@ -1,21 +1,22 @@
 // ============================================================
 // src/routes/public/index.ts
-// SMARTIFLY XTREAM UI — ENTERPRISE PUBLIC ROUTES INDEX
+// SMARTIFLY XTREAM UI - ENTERPRISE PUBLIC ROUTES INDEX
 // ============================================================
 
 import { Router } from 'express';
 
+import analyticsRoutes from './analytics.routes';
+import contentRoutes from './content.routes';
 import deviceRoutes from './device.routes';
 import licenseRoutes from './license.routes';
-import corePublicRoutes from './public.routes';
-import qrRoutes from './qr.routes';
-import userRoutes from './user.routes';
 import portalRoutes from './portal.routes';
-import analyticsRoutes from './analytics.routes';
-import themeRoutes from './theme.routes';
-import contentRoutes from './content.routes';
 import profileRoutes from './profile.routes';
 import providerHealthRoutes from './providerHealth.routes';
+import corePublicRoutes from './public.routes';
+import qrRoutes from './qr.routes';
+import themeRoutes from './theme.routes';
+import userRoutes from './user.routes';
+import xtreamRoutes from './xtream.routes';
 
 const router = Router();
 
@@ -36,6 +37,9 @@ router.use('/me', userRoutes);
 
 // Portal & Server Handshake
 router.use('/portal', portalRoutes);
+
+// LG / webOS Xtream proxy
+router.use('/xtream', xtreamRoutes);
 
 // Intelligence & Tracking
 router.use('/analytics', analyticsRoutes);
