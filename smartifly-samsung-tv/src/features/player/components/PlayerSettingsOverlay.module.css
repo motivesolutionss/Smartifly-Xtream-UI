@@ -1,0 +1,215 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PlayerSettingsOverlay — Right-side settings panel
+   NO backdrop-filter — solid dark background for Tizen performance
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  /* Dim the video behind the panel */
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.panel {
+  width: 30rem;
+  height: 100%;
+  /* Solid dark — no backdrop-filter */
+  background: rgba(8, 11, 20, 0.97);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2.4rem 1.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: panelSlideIn 200ms ease-out forwards;
+}
+
+@keyframes panelSlideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 2rem;
+}
+
+.backIconButton {
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+
+.backIconButton:global(.focused) {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+/* ── Main menu items ─────────────────────────────────────────────────────── */
+
+.mainMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 1;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0.85rem;
+  padding: 1.1rem 1.2rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: #e8eeff;
+  transition: transform 150ms ease;
+}
+
+.menuItem:global(.focused) {
+  background: rgba(229, 9, 20, 0.14);
+  border-color: rgba(229, 9, 20, 0.45);
+  transform: translateX(-4px);
+}
+
+.menuLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.menuRight {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.menuStatus {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(200, 215, 240, 0.72);
+}
+
+.menuStatusMuted {
+  color: rgba(164, 178, 205, 0.5);
+}
+
+.menuItemDisabled {
+  opacity: 0.82;
+}
+
+.menuIcon {
+  color: rgba(200, 215, 240, 0.6);
+  flex-shrink: 0;
+}
+
+.menuItem:global(.focused) .menuIcon {
+  color: #e50914;
+}
+
+/* ── Track selector list ─────────────────────────────────────────────────── */
+
+.selectorList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 2px;
+  margin-bottom: 1rem;
+}
+
+.selectorList::-webkit-scrollbar { width: 4px; }
+.selectorList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0.85rem;
+  padding: 1rem 1.2rem;
+  color: rgba(200, 215, 240, 0.75);
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 1rem;
+  font-weight: 700;
+  transition: transform 150ms ease;
+}
+
+.optionRow:global(.focused) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  transform: translateX(-4px);
+}
+
+.optionSelected {
+  color: #e50914;
+  background: rgba(229, 9, 20, 0.1);
+  border-color: rgba(229, 9, 20, 0.3);
+}
+
+.optionSelected:global(.focused) {
+  background: rgba(229, 9, 20, 0.2);
+  border-color: rgba(229, 9, 20, 0.6);
+  color: #ffffff;
+}
+
+.emptyRow {
+  color: rgba(180, 195, 225, 0.45);
+  padding: 1rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* ── Close row ───────────────────────────────────────────────────────────── */
+
+.closeRow {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  border-radius: 0.85rem;
+  padding: 1rem 1.2rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(200, 215, 240, 0.65);
+  font-size: 1rem;
+  font-weight: 700;
+  transition: transform 150ms ease;
+}
+
+.closeRow:global(.focused) {
+  background: rgba(229, 9, 20, 0.12);
+  border-color: rgba(229, 9, 20, 0.4);
+  color: #ffffff;
+  transform: translateX(-4px);
+}

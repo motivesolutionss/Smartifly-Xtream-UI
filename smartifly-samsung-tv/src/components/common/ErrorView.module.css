@@ -1,0 +1,34 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  text-align: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+}
+
+.iconWrapper {
+  margin-bottom: var(--spacing-md);
+  opacity: 0.8;
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.retryBtn {
+  min-width: 200px;
+  justify-content: center;
+}
+
+.secondaryBtn {
+  min-width: 220px;
+  justify-content: center;
+}

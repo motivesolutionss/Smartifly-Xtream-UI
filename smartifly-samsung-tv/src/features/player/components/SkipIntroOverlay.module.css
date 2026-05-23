@@ -1,0 +1,44 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SkipIntroOverlay — Bottom-right skip button
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.container {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+.button {
+  position: absolute;
+  right: 3.5rem;
+  bottom: 9rem;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 3.4rem;
+  padding: 0 1.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: skipFadeIn 250ms ease-out forwards;
+  transition: transform 150ms ease;
+}
+
+.button:global(.focused) {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  transform: scale(1.06);
+}
+
+@keyframes skipFadeIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

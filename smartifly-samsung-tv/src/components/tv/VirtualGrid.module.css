@@ -1,0 +1,63 @@
+.viewport {
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 12px 0 40px 0; /* Keep 12px top safety margin; horizontal safety is handled inside the card layout */
+  /* Edge-feedback transition */
+  transition: outline 0.15s ease;
+}
+
+.viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.canvas {
+  width: 100%;
+  position: relative;
+}
+
+.itemWrapper {
+  position: absolute;
+  overflow: visible;
+}
+
+/* ── Edge feedback pulses ──────────────────────────────────────────────────── */
+/* A subtle inner-glow on the relevant edge when navigation hits a boundary.   */
+.edge_top {
+  animation: edgePulseTop 0.4s ease-out forwards;
+}
+
+.edge_bottom {
+  animation: edgePulseBottom 0.4s ease-out forwards;
+}
+
+.edge_left {
+  animation: edgePulseLeft 0.4s ease-out forwards;
+}
+
+.edge_right {
+  animation: edgePulseRight 0.4s ease-out forwards;
+}
+
+@keyframes edgePulseTop {
+  0%   { box-shadow: inset 0  8px 24px rgba(255, 255, 255, 0.12); }
+  100% { box-shadow: inset 0  8px 24px rgba(255, 255, 255, 0); }
+}
+
+@keyframes edgePulseBottom {
+  0%   { box-shadow: inset 0 -8px 24px rgba(255, 255, 255, 0.12); }
+  100% { box-shadow: inset 0 -8px 24px rgba(255, 255, 255, 0); }
+}
+
+@keyframes edgePulseLeft {
+  0%   { box-shadow: inset  8px 0 24px rgba(255, 255, 255, 0.12); }
+  100% { box-shadow: inset  8px 0 24px rgba(255, 255, 255, 0); }
+}
+
+@keyframes edgePulseRight {
+  0%   { box-shadow: inset -8px 0 24px rgba(255, 255, 255, 0.12); }
+  100% { box-shadow: inset -8px 0 24px rgba(255, 255, 255, 0); }
+}

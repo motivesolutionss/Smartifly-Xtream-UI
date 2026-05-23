@@ -1,0 +1,634 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VOD Movies Page — Full Layout
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.container {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 20rem minmax(0, 1fr);
+  transition: grid-template-columns 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  gap: 0;
+  padding: 0 0 0 8.5rem;
+  background: #07090f;
+  overflow: hidden;
+}
+
+.containerSearching {
+  grid-template-columns: 32rem minmax(0, 1fr);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  background: linear-gradient(
+    180deg,
+    #0c1019 0%,
+    #0a0d16 40%,
+    #080b12 100%
+  );
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1.6rem 0.75rem 1rem 1.1rem;
+  position: relative;
+}
+
+/* Soft inner glow along the right edge for depth separation */
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(var(--color-primary-rgb), 0.15) 30%,
+    rgba(var(--color-primary-rgb), 0.08) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+.sidebarSearching {
+  padding: 1.6rem 1.5rem 1rem 1.5rem;
+}
+
+.keyboardContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.keyboardHeader {
+  padding: 0 0.25rem 1.2rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+.keyboardHeader::after {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(229, 9, 20, 0.4) 0%,
+    rgba(255, 255, 255, 0.06) 60%,
+    transparent 100%
+  );
+}
+
+.keyboardTitle {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keyboardMeta {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.keyboardPreview {
+  height: 3.8rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  padding: 0 1.2rem;
+  margin-bottom: 1.2rem;
+  gap: 0.65rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.searchIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.searchIconActive {
+  color: #e50914 !important;
+}
+
+.keyboardPreviewText {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.keyboardPlaceholder {
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 500;
+  font-size: 1.15rem;
+}
+
+.keyboardCursor {
+  width: 2px;
+  height: 1.4rem;
+  background: #e50914;
+  animation: pulseCursor 0.8s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulseCursor {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+/* Custom virtual keyboard layout sizing overrides for sidebar placement */
+.customKeyboard {
+  width: 100% !important;
+}
+
+.customKeyboard :global([class*="key"]) {
+  height: 4.2rem !important; /* Perfect tall TV keyboard height */
+  border-radius: 12px !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  transition: transform 0.15s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              background-color 0.15s ease, 
+              border-color 0.15s ease, 
+              box-shadow 0.15s ease !important;
+  will-change: transform;
+}
+
+.customKeyboard :global([class*="key"] span) {
+  font-size: 1.45rem !important; /* Much larger and more legible alphabetical letters */
+  font-weight: 800 !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: color 0.15s ease !important;
+}
+
+/* Subtle styling contrast for special action controls */
+.customKeyboard :global([class*="specialKey"]) {
+  background: rgba(255, 255, 255, 0.015) !important;
+  border-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.customKeyboard :global([class*="specialKey"] span) {
+  font-size: 0.95rem !important; /* Elegant clean capitalized labels */
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  text-transform: uppercase !important;
+}
+
+.customKeyboard :global([class*="row"]) {
+  gap: 0.5rem !important; /* Spacious TV-friendly cell spacing */
+}
+
+.customKeyboard :global([class*="keyboard"]) {
+  gap: 0.5rem !important;
+}
+
+/* High contrast white-out focused key design with prominent active zoom */
+.customKeyboard :global([class*="key"].focused) {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  transform: scale(1.06) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9) !important;
+  z-index: 10 !important;
+}
+
+.customKeyboard :global([class*="key"].focused span) {
+  color: #000000 !important;
+  font-weight: 900 !important;
+  text-shadow: none !important;
+}
+
+/* Active red done button state with rich vibrant shadow glow */
+.customKeyboard :global([class*="primaryKey"]) {
+  background: rgba(229, 9, 20, 0.12) !important;
+  border-color: rgba(229, 9, 20, 0.35) !important;
+}
+
+.customKeyboard :global([class*="primaryKey"] span) {
+  color: #ff333f !important;
+}
+
+.customKeyboard :global([class*="primaryKey"].focused) {
+  background: linear-gradient(135deg, #e50914 0%, #b4050a 100%) !important;
+  border-color: #e50914 !important;
+  box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.92) !important;
+}
+
+.customKeyboard :global([class*="primaryKey"].focused span) {
+  color: #ffffff !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Suggestions Bar ─────────────────────────────────────────────────────── */
+
+.suggestionsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 1.25rem;
+  padding: 0 0.25rem;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.suggestionsTitle {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.suggestionsList {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.suggestionPill {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  transition: transform 0.15s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              background-color 0.15s ease, 
+              border-color 0.15s ease, 
+              color 0.15s ease !important;
+  box-sizing: border-box !important;
+  will-change: transform;
+}
+
+.suggestionPill :global([class*="content"]) {
+  padding: 0.4rem 1.05rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.suggestionPill:global(.focused) {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #000000 !important;
+  transform: scale(1.06) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 10px rgba(255, 255, 255, 0.15) !important;
+}
+
+.suggestionPill:global(.focused) :global([class*="content"]) {
+  color: #000000 !important;
+}
+
+.sidebarHeader {
+  padding: 0 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+/* Accent underline below header */
+.sidebarHeader::after {
+  content: '';
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--color-primary-rgb), 0.4) 0%,
+    rgba(255, 255, 255, 0.06) 60%,
+    transparent 100%
+  );
+}
+
+.sidebarTitle {
+  margin: 0;
+  font-size: 1.18rem;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebarMeta {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.86rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.sidebarScroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-right: 4px;
+}
+
+.sidebarScroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Category List Item ──────────────────────────────────────────────────── */
+
+.categoryItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 52px;
+  padding: 0;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.categoryItem > div {
+  justify-content: flex-start !important;
+  padding: 0 1.25rem !important;
+}
+
+.categoryItem:global(.focused) {
+  background: #ffffff;
+  color: #04070d;
+  transform: translateX(4px);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.categoryText {
+  font-size: 1.15rem;
+  font-weight: 800; /* Static weight prevents reflow */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.selected {
+  transition: all 0.2s ease;
+}
+
+/* Selected item when the sidebar has active focus */
+.sidebar:focus-within .selected {
+  background: rgba(var(--color-primary-rgb, 229, 9, 20), 0.15);
+  color: var(--color-primary, #e50914);
+}
+
+.sidebar:focus-within .selected:not(:global(.focused)) {
+  box-shadow: inset 0 0 0 1.5px var(--color-primary, #e50914);
+}
+
+/* Selected item when focus is outside the sidebar (browsing grid or header) */
+.sidebar:not(:focus-within) .selected {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none !important;
+}
+
+/* ── Content Area ────────────────────────────────────────────────────────── */
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2.2rem 3.5rem 0 3.5rem;
+  overflow: hidden;
+}
+
+.header {
+  margin-bottom: 1.8rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 2.35rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.subtitleContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  height: 2.6rem; /* Keep layout absolutely stable */
+  margin-top: 0.2rem;
+}
+
+.subtitleMovieName {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.badgeYear {
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  letter-spacing: 0.02em;
+}
+
+.badgeQuality {
+  font-size: 0.8rem;
+  font-weight: 800;
+  background: rgba(229, 9, 20, 0.15);
+  color: #e50914;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(229, 9, 20, 0.35);
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.subtitlePlaceholder {
+  height: 2.6rem;
+  display: block;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  padding-bottom: 0.3rem;
+}
+
+.searchFocusable {
+  padding: 0 1.2rem;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 26px;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  width: 320px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.searchFocusable:global(.focused) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: #e50914;
+  box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.88);
+  transform: scale(1.01);
+}
+
+.searchFocusable:global(.focused) .searchIcon {
+  color: #e50914;
+  transform: scale(1.1);
+}
+
+.searchIcon {
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.45);
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 500;
+  width: 100%;
+  outline: none;
+  letter-spacing: 0.01em;
+}
+
+.searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gridContainer {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.loadingContainer {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── pulsating skeletons ─────────────────────────────────────────────────── */
+
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 24px;
+  width: 100%;
+}
+
+.skeletonContainer {
+  display: flex;
+  flex-direction: column;
+  width: 93.5%;
+  margin: 0 auto;
+  gap: 0;
+}
+
+.skeletonCard {
+  width: 100%;
+  height: 330px;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.skeletonTitle {
+  margin-top: 12px;
+  width: 75%;
+  height: 16px;
+  align-self: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.skeletonCategory {
+  width: 90%;
+  height: 48px;
+  margin: 8px auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.skeletonPulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%   { opacity: 0.5; }
+  50%  { opacity: 1.0; }
+  100% { opacity: 0.5; }
+}
+
+/* ── Network banner ──────────────────────────────────────────────────────── */
+
+.networkBanner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.35rem 1rem;
+  pointer-events: none;
+  animation: bannerSlideDown 0.3s ease-out both;
+}
+
+@keyframes bannerSlideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+.networkBannerOffline  { background: rgba(180, 30, 30, 0.92);  color: #fff; }
+.networkBannerDegraded { background: rgba(160, 100, 0, 0.92);  color: #fff; }

@@ -1,0 +1,116 @@
+@import "./styles/variables.css";
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  /* Dynamic Scaling: 1rem = 16px at 1920px width */
+  font-size: calc(100vw / 120);
+}
+
+@media (max-aspect-ratio: 16/9) {
+  :root {
+    /* Scale based on height if the screen is narrower than 16:9 */
+    font-size: calc(100vh / 67.5);
+  }
+}
+
+html, body, #root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', 'Outfit', -apple-system, sans-serif;
+}
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:focus {
+  outline: none;
+}
+
+/* Typography System - SCALED with REM for Pixel Perfection */
+h1, .display-large {
+  font-size: 5.25rem; /* 84px */
+  line-height: 6rem; /* 96px */
+  font-weight: 800;
+  letter-spacing: -0.1rem;
+}
+
+h2, .display-medium {
+  font-size: 4rem; /* 64px */
+  line-height: 4.75rem; /* 76px */
+  font-weight: 700;
+}
+
+h3, .headline-large {
+  font-size: 3rem; /* 48px */
+  line-height: 3.5rem; /* 56px */
+  font-weight: 700;
+}
+
+.headline-medium {
+  font-size: 2.25rem; /* 36px */
+  line-height: 3rem; /* 48px */
+  font-weight: 600;
+}
+
+.title-large {
+  font-size: 2rem; /* 32px */
+  line-height: 2.5rem; /* 40px */
+  font-weight: 600;
+}
+
+.title-medium {
+  font-size: 1.75rem; /* 28px */
+  line-height: 2.25rem; /* 36px */
+  font-weight: 500;
+}
+
+.body-large {
+  font-size: 1.5rem; /* 24px */
+  line-height: 2.25rem; /* 36px */
+  font-weight: 400;
+}
+
+.body-medium {
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.75rem; /* 28px */
+  font-weight: 400;
+}
+
+.label-large {
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.75rem; /* 28px */
+  font-weight: 700;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+}
+
+.label-medium {
+  font-size: 1rem; /* 16px */
+  line-height: 1.5rem; /* 24px */
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.glass-panel {
+  background: rgba(13, 17, 23, 0.98);
+  border: 0.0625rem solid var(--color-border-subtle);
+}
+
+.sidebar-shadow {
+  box-shadow: 1.25rem 0 3.125rem rgba(0, 0, 0, 0.5);
+}

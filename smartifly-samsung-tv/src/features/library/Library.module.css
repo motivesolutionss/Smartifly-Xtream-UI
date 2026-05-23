@@ -1,0 +1,568 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Library Feature CSS Module — Premium Lightweight TV Visuals
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2.75rem 3.75rem 1.5rem 8.75rem;
+  gap: 1.35rem;
+  color: #fff;
+  background:
+    linear-gradient(115deg, rgba(12, 4, 6, 0.72) 0%, rgba(5, 8, 15, 0.98) 42%, rgba(4, 6, 12, 1) 100%),
+    linear-gradient(180deg, rgba(229, 9, 20, 0.1) 0%, transparent 34%),
+    #04060c;
+  overflow-y: auto;
+  /* overflow-x removed — it was clipping the first card's scale transform */
+}
+
+.container::-webkit-scrollbar {
+  width: 7px;
+}
+
+.container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 99px;
+}
+
+/* ── Header Area ─────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pageEyebrow {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #e50914;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 4rem;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: 0;
+  color: #f7f9ff;
+  /* text-shadow removed — software-rendered on Tizen */
+}
+
+/* ── Glassmorphic Tab Selector Bar ────────────────────────────────────────── */
+
+.tabBar {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(20, 26, 40, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.tabItem {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 13.5rem;
+  height: 3rem;
+  padding: 0 1.35rem;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(222, 231, 247, 0.6);
+  font-size: 1rem;
+  font-weight: 800;
+  /* Only transition compositable props */
+  transition: opacity 180ms ease, transform 180ms ease;
+  outline: none;
+  cursor: pointer;
+}
+
+.tabItem span {
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+}
+
+/* Tab - Active State (focused = false) */
+.activeTab {
+  color: #ffffff;
+  background: rgba(229, 9, 20, 0.16);
+  border: 1px solid rgba(229, 9, 20, 0.35);
+  box-shadow: inset 0 1px 2px rgba(229, 9, 20, 0.15);
+}
+
+/* Tab - Focus State (Focused but NOT Active) */
+.tabItem:global(.focused) {
+  background: #e50914;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05) translateY(-1px);
+  /* box-shadow removed — not compositable, causes repaint on focus */
+}
+
+/* Tab - Focus State AND Active */
+.tabItem.activeTab:global(.focused) {
+  background: #c4070f;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05) translateY(-1px);
+}
+
+/* ── Cinematic Details Peek Banner ───────────────────────────────────────── */
+/*
+ * Tizen performance notes:
+ * - NO filter/blur — Tizen WebKit paints CSS filter in software, kills framerate
+ * - NO will-change on non-compositable props
+ * - NO transform on the backdrop (forces extra layer)
+ * - Solid dark background + right-side image thumbnail instead of blurred backdrop
+ * - opacity-only fade-in (compositable, GPU-friendly)
+ */
+
+.peekSection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 1.25rem;
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.8rem;
+  overflow: hidden;
+  position: relative;
+  height: 9rem;
+  /* Single solid shadow — no spread radius to keep paint cheap */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+  /* opacity-only animation: compositable on Tizen, no layout/paint cost */
+  animation: peekFadeIn 200ms ease-out forwards;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  /* Static dark background — no blur, no filter */
+  background: linear-gradient(
+    100deg,
+    rgba(18, 22, 34, 0.98) 0%,
+    rgba(12, 16, 26, 0.98) 60%,
+    rgba(8, 10, 18, 0.98) 100%
+  );
+}
+
+@keyframes peekFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Subtle left accent stripe — cheap border trick, no extra element needed */
+.peekSection::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 1.25rem 0 0 1.25rem;
+  background: var(--peek-accent, #e50914);
+}
+
+/* Colour the accent stripe per content type via inline CSS var */
+.peekSection[data-type="live"]   { --peek-accent: #e50914; }
+.peekSection[data-type="vod"]    { --peek-accent: #2563eb; }
+.peekSection[data-type="series"] { --peek-accent: #7c3aed; }
+
+.peekLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  z-index: 2;
+  max-width: 68%;
+  min-width: 0;
+}
+
+/* Badge base */
+.peekBadge {
+  align-self: flex-start;
+  color: #ffffff;
+  padding: 0.22rem 0.7rem;
+  border-radius: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.05rem;
+}
+
+/* Per-type badge colours — solid fills, no box-shadow (paint cost) */
+.peekBadge_live   { background: #e50914; }
+.peekBadge_vod    { background: #2563eb; }
+.peekBadge_series { background: #7c3aed; }
+
+.peekTitle {
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.02em;
+  /* text-shadow removed — Tizen renders it in software */
+  line-height: 1.1;
+}
+
+.peekMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.1rem;
+}
+
+.peekMetaChip {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(222, 231, 247, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  letter-spacing: 0.01em;
+}
+
+.peekHint {
+  font-size: 0.8rem;
+  color: rgba(222, 231, 247, 0.38);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+/* Right artwork panel */
+.peekRight {
+  position: absolute;
+  right: 1.75rem;
+  top: 50%;
+  /* translateY is compositable — fine to keep */
+  transform: translateY(-50%);
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Poster artwork (movies / series) */
+.peekArtwork {
+  border-radius: 0.75rem;
+  object-fit: cover;
+  /* Single shadow, no spread */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  display: block;
+}
+
+.peekArtworkPoster {
+  width: 4.4rem;
+  height: 6.6rem;
+}
+
+/* Live channel logo (square, white bg) */
+.peekArtworkLive {
+  width: 6rem;
+  height: 4rem;
+  object-fit: contain;
+  background: #ffffff;
+  padding: 0.5rem;
+  box-sizing: border-box;
+  border-radius: 0.75rem;
+}
+
+/* Fallback when no image */
+.peekArtworkFallback {
+  width: 4.4rem;
+  height: 6.6rem;
+  border-radius: 0.75rem;
+  background: rgba(229, 9, 20, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Content Area ────────────────────────────────────────────────────────── */
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  flex-shrink: 0;
+}
+
+.sectionHeader h2 {
+  font-size: 1.7rem;
+  font-weight: 900;
+  color: #f7f9ff;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* Elegant Clear Button */
+.clearButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.85rem;
+  padding: 0 1.35rem;
+  border-radius: 0.85rem;
+  background: rgba(229, 9, 20, 0.1);
+  border: 1px solid rgba(229, 9, 20, 0.3);
+  color: rgba(255, 120, 120, 0.8);
+  font-size: 0.95rem;
+  font-weight: 800;
+  /* Only compositable props */
+  transition: opacity 180ms ease, transform 180ms ease;
+  outline: none;
+}
+
+.clearButton:global(.focused) {
+  border-color: #e50914;
+  background: #e50914;
+  color: #ffffff;
+  transform: scale(1.05) translateY(-1px);
+  /* box-shadow removed */
+}
+
+.clearButton[disabled] {
+  opacity: 0.2;
+  transform: none !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+
+/* ── Categorized Rails & Shelf Containment ──────────────────────────────── */
+
+.resultRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2.2rem;
+  overflow: visible;
+}
+
+.resultRow {
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 24, 38, 0.6);
+  padding: 1.4rem 0 2.4rem;          /* zero horizontal padding — rail owns its own padding */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  overflow: visible;
+}
+
+/* Row header still needs horizontal padding */
+.resultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 0 1.4rem;                 /* moved here from resultRow */
+}
+
+.resultHeader h3 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 950;
+  color: #f7f9ff;
+  letter-spacing: -0.01em;
+}
+
+.resultHeader span {
+  font-size: 0.78rem;
+  font-weight: 850;
+  color: rgba(222, 231, 247, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+}
+
+.liveRow {
+  border-left: 4px solid #e50914;
+}
+
+.moviesRow {
+  border-left: 4px solid #3b82f6;
+}
+
+.seriesRow {
+  border-left: 4px solid #a855f7;
+}
+
+/* ── Continue Watching Grid ──────────────────────────────────────────────── */
+
+.continueGridRow {
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 24, 38, 0.6);
+  /* No horizontal padding — grid owns its own padding */
+  padding: 1.4rem 0 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  overflow: visible;
+  border-left: 4px solid #10b981;
+  /* Constrain to parent width so grid doesn't overflow */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.continueGrid {
+  display: grid;
+  /* 4 equal columns that share available space */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.35rem;
+  /* Padding gives edge cards room for scale(1.04) without clipping */
+  padding: 0.85rem 1.4rem 2rem;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: visible;
+}
+
+/* Force every card inside the grid to fill its column cell.
+   Overrides the CSS-variable fixed widths on .continue / .landscape */
+.continueGrid > * {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-basis: auto !important;
+}
+
+/* Shimmer grid — same structure as the real grid */
+.continueShimmerGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.35rem;
+  padding: 0.85rem 1.4rem 2rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.resultRail {
+  /* Outer scroll container — only scrolls horizontally */
+  overflow-x: auto;
+  /* overflow-y must NOT be set here — setting overflow-x to auto forces
+     overflow-y to auto too (CSS spec), which clips scaled cards vertically.
+     Instead we use a negative-margin trick: the rail wrapper clips x,
+     and the inner flex row has padding that absorbs the scale transform. */
+  overflow-y: visible;
+  /* Negative vertical margin so the padding below doesn't add visual space */
+  margin-bottom: -0.75rem;
+}
+
+.resultRail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inner flex row — this is what actually lays out the cards */
+.resultRailInner {
+  display: flex;
+  gap: 1.35rem;
+  /* Generous padding on all sides so scale(1.04) never clips:
+     - left/right: aligns first card with header text, last card has room
+     - top/bottom: absorbs the vertical expansion of the scale transform */
+  padding: 0.85rem 1.4rem 2rem;
+  width: max-content;
+}
+
+/* Enforce specific sizes inside the Library results rails */
+.resultRailInner :global(.landscape) {
+  width: 22.5rem !important;
+  min-width: 22.5rem !important;
+  max-width: 22.5rem !important;
+  flex-basis: 22.5rem !important;
+}
+
+.resultRailInner :global(.poster) {
+  width: 14.5rem !important;
+  min-width: 14.5rem !important;
+  max-width: 14.5rem !important;
+  flex-basis: 14.5rem !important;
+}
+
+/* ── Shimmer Skeleton Loaders ────────────────────────────────────────────── */
+
+.shimmerCard {
+  border-radius: 0.8rem;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 25%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.02) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.shimmerCard.poster {
+  width: 14.5rem;
+  height: 25.8rem;
+}
+
+.shimmerCard.live {
+  width: 22.5rem;
+  height: 16.8rem;
+}
+
+/* Continue shimmer fills its grid column — no fixed width, use aspect-ratio */
+.shimmerCard.continue {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Empty & Error States ────────────────────────────────────────────────── */
+
+.emptyWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease-out;
+  padding: 4rem 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.scrollSpacer {
+  height: 16rem;
+  width: 100%;
+  pointer-events: none;
+}

@@ -1,0 +1,85 @@
+.sidebar {
+  width: 80px;
+  height: 100%;
+  padding: 24px 0;
+  background: rgba(13, 17, 23, 0.85);
+  transition: width var(--transition-normal);
+  overflow: hidden;
+}
+
+.sidebar:focus-within,
+.expanded {
+  width: 240px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+}
+
+.brandMark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-text-primary);
+  font-weight: 900;
+}
+
+.brandText {
+  color: var(--color-primary);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+
+.items {
+  display: grid;
+  gap: 12px;
+  margin-top: 48px;
+  padding: 0 16px;
+}
+
+.navItem {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+
+.sidebar:focus-within .navItem,
+.expanded .navItem {
+  width: 200px;
+}
+
+.selected {
+  color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.navItem:focus-visible {
+  color: #000;
+  background: #fff;
+  outline: none;
+  transform: scale(1.1);
+}
+
+.label {
+  color: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 800;
+  white-space: nowrap;
+}

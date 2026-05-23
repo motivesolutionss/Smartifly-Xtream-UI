@@ -1,0 +1,27 @@
+.badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge.primary {
+  background: var(--color-primary);
+  color: #FFFFFF;
+}
+
+.badge.secondary {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+.badge.glass {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}

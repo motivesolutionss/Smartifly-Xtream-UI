@@ -1,0 +1,397 @@
+/* ── Full-screen overlay ─────────────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: #04070d;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  color: white;
+  animation: fadeIn 0.25s ease-out both;
+  overflow: hidden;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header bar ──────────────────────────────────────────────────────────── */
+.header {
+  flex-shrink: 0;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #070b14;
+}
+
+.headerTitle {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+.closeBtn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.closeBtn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.closeBtn:global(.focused) {
+  background: #dc2626;
+  color: #fff;
+  transform: scale(1.1);
+}
+
+/* ── Main grid area (sidebar + timeline) ─────────────────────────────────── */
+.gridContainer {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Channel sidebar ─────────────────────────────────────────────────────── */
+.channelSidebar {
+  flex-shrink: 0;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;           /* outer container never scrolls */
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #060a12;
+}
+
+/* Spacer at top of sidebar to align with the time header row */
+.channelSidebarSpacer {
+  flex-shrink: 0;
+  height: 54px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0a0f1a;
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Scrollable channel list — vertical only, driven by JS sync */
+.channelSidebarScroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.channelSidebarScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.channelVirtualCanvas {
+  width: 100%;
+  position: relative;
+}
+
+.channelVirtualItem {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+/* ── Individual channel row ──────────────────────────────────────────────── */
+.channelItem {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 1.5rem;
+  height: 88px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+  position: relative;
+}
+
+.channelItem:global(.focused) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.activeChannel {
+  background: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.activeChannel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--color-primary);
+  border-radius: 0 3px 3px 0;
+}
+
+/* ── Channel logo ────────────────────────────────────────────────────────── */
+.logoWrap {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.logoFallback {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.channelName {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+/* ── Timeline column ─────────────────────────────────────────────────────── */
+.timelineWrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Sticky time header — clips horizontally, translated by JS */
+.timeHeader {
+  flex-shrink: 0;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0a0f1a;
+  overflow: hidden;
+}
+
+.timeHeaderInner {
+  display: flex;
+  height: 100%;
+  will-change: transform; /* GPU-accelerated translate for scroll sync */
+}
+
+.timeSlot {
+  flex-shrink: 0;
+  width: 220px;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  letter-spacing: 0.02em;
+}
+
+/* Scrollable programs area — both axes */
+.programsScrollArea {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* Ensure the inner canvas width is respected */
+  min-width: 0;
+}
+
+.programsScrollArea::-webkit-scrollbar {
+  display: none;
+}
+
+/* Canvas that holds all program rows — explicit size set inline */
+.programsCanvas {
+  position: relative;
+  /* width and height set inline from JS constants */
+}
+
+/* One row per channel — height must match CHANNEL_ROW_HEIGHT */
+.programRow {
+  display: flex;
+  align-items: stretch;
+  height: 88px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* ── Program block ───────────────────────────────────────────────────────── */
+.programItem {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+  transition: all 0.15s ease-out;
+  min-width: 130px;
+}
+
+/* Highlight the row whose channel is selected */
+.programRow.activeRow .programItem {
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+/* "Now" indicator — current program gets a left accent */
+.programItem.nowPlaying {
+  background: rgba(var(--color-primary-rgb), 0.16);
+  border-left: 3px solid var(--color-primary);
+  box-shadow: inset 3px 0 10px rgba(var(--color-primary-rgb), 0.15);
+}
+
+.progTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+  max-height: 2.5em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.progTime {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+/* ── Empty / loading states ──────────────────────────────────────────────── */
+.loader,
+.noData {
+  height: 100%;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* ── Details panel ───────────────────────────────────────────────────────── */
+.detailsPanel {
+  flex-shrink: 0;
+  height: 160px;   /* fixed — matches DETAILS_PANEL_HEIGHT constant in EpgGrid.tsx */
+  background: #060a12;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.5rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Glowing primary-color border on the left edge */
+.detailsPanel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(to bottom, var(--color-primary), #00d2ff);
+}
+
+.detailsTitle {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 900;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.detailsDesc {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 2.9em;
+}
+
+.detailsNext {
+  margin: 0;
+  font-size: 1.0rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detailsEmpty {
+  margin: 0;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+}

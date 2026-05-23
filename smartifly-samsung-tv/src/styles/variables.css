@@ -1,0 +1,67 @@
+:root {
+  /* Brand Colors */
+  --color-primary: #E50914; 
+  --color-primary-rgb: 229, 9, 20;
+  --color-primary-glow: #FF3232;
+  --color-primary-glow-rgb: 255, 50, 50;
+  --color-gold: #FFD700;
+  --color-cyan: #00F3FF;
+  
+  /* Semantic Surfaces */
+  --color-bg: #040507; 
+  --color-surface-ultra-dark: #080C14;
+  --color-surface-dark: #121826;
+  --color-surface: #121826;
+  --color-surface-medium: #1C222B;
+  --color-surface-medium-rgb: 28, 34, 43;
+  --color-surface-variant: #2A313C;
+  --color-surface-overlay: rgba(13, 17, 23, 0.8);
+  
+  /* Text Hierarchy */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #E7ECF4;
+  --color-text-tertiary: #B6C0D1;
+  --color-text-muted: #8D9AAF;
+  
+  /* Borders */
+  --color-border-subtle: rgba(170, 189, 214, 0.16);
+  --color-border-medium: rgba(170, 189, 214, 0.32);
+  --color-border: rgba(170, 189, 214, 0.32);
+  --color-error: #E50914;
+  
+  /* Dimensions - Converted to REM for Pixel Perfection */
+  --spacing-sm: 0.5rem;   /* 8px */
+  --spacing-md: 1rem;     /* 16px */
+  --spacing-lg: 1.5rem;   /* 24px */
+  --spacing-xl: 2rem;     /* 32px */
+  --spacing-xxl: 5rem;    /* 80px */
+  
+  --radius-sm: 0.5rem;    /* 8px */
+  --radius-md: 0.75rem;   /* 12px */
+  --radius-lg: 1.5rem;    /* 24px */
+  
+  /* Card Dimensions - Upscaled Cinematic Grid */
+  --poster-width: 18.5rem;            /* Enlarge poster width from 15rem */
+  --poster-height: 27.75rem;         /* Perfectly scaled 2:3 aspect ratio (18.5 * 1.5) */
+  --continue-watching-width: 35rem;  /* Enlarge continue watching width from 31.5rem */
+  --continue-watching-height: 19.7rem; /* Perfectly scaled 16:9 aspect ratio */
+  --live-channel-width: 29.5rem;      /* Enlarge live channel width from 25.875rem */
+  --live-channel-height: 16.6rem;     /* Perfectly scaled 16:9 aspect ratio */
+  
+  --item-spacing: 1rem;            
+  --row-spacing: 3.5rem;             
+  
+  --focus-scale: 1.05;
+  --focus-border-width: 0.09375rem; /* 1.5px */
+  
+  /* Transitions */
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  
+  /* Z-Index */
+  --z-focus: 10;
+  --z-sidebar: 100;
+  --z-topbar: 90;
+  --z-overlay: 200;
+  --z-modal: 300;
+}

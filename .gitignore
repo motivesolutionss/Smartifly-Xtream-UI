@@ -79,6 +79,20 @@ pnpm-debug.log*
 !.yarn/sdks
 !.yarn/versions
 
+# Environment and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+!**/.env.production.example
+
+# Local runtime artifacts
+backend/backups/
+backend/dist/
+backend/uploads/
+backend/*.sql
 
 # Deployment/runtime artifacts
 *.sql
@@ -86,7 +100,6 @@ pnpm-debug.log*
 *.zip
 *.tar.gz
 *.tgz
-backend/uploads/
 customer-portal/videos.zip
 customer-portal/release.zip
 customer-portal/release.tar.gz

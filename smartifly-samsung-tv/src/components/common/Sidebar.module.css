@@ -1,0 +1,186 @@
+.sidebar {
+  position: fixed;
+  left: 2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5.5rem; /* Slightly wider for better icon spacing */
+  height: auto;
+  max-height: 90vh;
+  background: rgba(10, 14, 23, 0.98); 
+  display: flex;
+  flex-direction: column;
+  padding: 2.5rem 0;
+  z-index: var(--z-sidebar);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2.8rem;
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.75);
+}
+
+/* Hide sidebar when a full-screen modal (EPG) is open */
+:global(.epg-open) .sidebar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-120%);
+}
+
+.sidebar.expanded {
+  width: 14.5rem; /* Room for both icon + label with clean margins */
+}
+
+.logoSection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+  height: 4rem;
+}
+
+.logo {
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 0.8rem;
+  object-fit: contain;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.35);
+}
+
+.sidebar.expanded .logo {
+  transform: scale(1.05);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0 0.85rem;
+}
+
+.navItem {
+  width: 3.8rem; 
+  height: 3.8rem;
+  border-radius: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.45);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  position: relative;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.navItem > div:first-child {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.sidebar.expanded .navItem {
+  width: 12.8rem; 
+  height: 3.8rem;
+  border-radius: 1.9rem;
+}
+
+.sidebar.expanded .navItem > div:first-child {
+  justify-content: flex-start !important;
+  padding-left: 1.35rem !important;
+}
+
+/* Premium Left Vertical Active Indicator */
+.navItem::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 4px;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, var(--color-primary), var(--color-primary-glow));
+  border-radius: 0 4px 4px 0;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  box-shadow: 0 0 12px rgba(var(--color-primary-glow-rgb), 0.7);
+  opacity: 0;
+}
+
+.sidebar.expanded .navItem.active::before {
+  transform: translateY(-50%) scaleY(1);
+  opacity: 1;
+}
+
+/* Active State Styles (Not Focused) */
+.navItem.active {
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.05);
+}
+
+.navItem.active .icon {
+  color: var(--color-primary);
+}
+
+.sidebar.expanded .navItem.active {
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+/* Focused State Styles (Vibrant Brand Gradient with Neon Shadow) */
+.navItem:global(.focused) {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%) !important;
+  color: #FFFFFF !important;
+  transform: scale(1.08) translateY(-1px);
+  box-shadow: 
+    0 12px 28px rgba(var(--color-primary-rgb), 0.45),
+    0 0 15px rgba(var(--color-primary-rgb), 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 10;
+}
+
+.sidebar.expanded .navItem:global(.focused) {
+  transform: scale(1.04) translateY(-1px);
+  box-shadow: 
+    0 14px 32px rgba(var(--color-primary-rgb), 0.5),
+    0 0 18px rgba(var(--color-primary-rgb), 0.3);
+}
+
+.navItem:global(.focused) .icon {
+  color: #FFFFFF !important;
+}
+
+.navItem:global(.focused) .label {
+  opacity: 1 !important;
+  color: #FFFFFF !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Icon & Label Styles */
+.icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.label {
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: opacity 0.3s ease, max-width 0.3s ease, margin 0.3s ease;
+  margin-left: 0;
+  color: inherit;
+}
+
+.sidebar.expanded .label {
+  opacity: 0.85;
+  max-width: 8rem;
+  margin-left: 1.1rem;
+}
+
+.navItem.active .label {
+  color: var(--color-primary);
+  opacity: 1;
+}

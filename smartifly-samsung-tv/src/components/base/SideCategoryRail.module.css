@@ -1,0 +1,35 @@
+.rail {
+  width: 280px;
+  height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 24px 16px;
+  background: rgba(13, 17, 23, 0.85);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.item {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.selected {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.item:focus-visible {
+  color: #000;
+  background: #fff;
+}

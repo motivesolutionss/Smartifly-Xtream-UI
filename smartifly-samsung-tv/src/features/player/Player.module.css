@@ -1,0 +1,488 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Player — Full-screen Samsung TV player container
+   NO backdrop-filter anywhere — software-rendered on Tizen
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  z-index: var(--z-modal);
+}
+
+.videoSurface {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* ── Loading overlay ─────────────────────────────────────────────────────── */
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.8rem;
+  /* Solid dark overlay — no backdrop-filter (Tizen GPU killer) */
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 10;
+}
+
+.loadingLabel {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.04em;
+}
+
+/* ── Error overlay ───────────────────────────────────────────────────────── */
+
+.errorOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  background: rgba(0, 0, 0, 0.82);
+  z-index: 10;
+  padding: 4rem;
+  text-align: center;
+}
+
+.errorIcon {
+  color: #e50914;
+  margin-bottom: 0.5rem;
+}
+
+.errorTitle {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.errorMessage {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: rgba(220, 230, 250, 0.7);
+  max-width: 42rem;
+  line-height: 1.5;
+}
+
+.errorActions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.retryBtn {
+  height: 3.6rem;
+  padding: 0 2.2rem;
+  border-radius: 999px;
+  background: #e50914;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.retryBtn:global(.focused) {
+  transform: scale(1.06);
+}
+
+.backBtn {
+  height: 3.6rem;
+  padding: 0 2.2rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.backBtn:global(.focused) {
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.06);
+}
+
+/* ── Parental overlay ────────────────────────────────────────────────────── */
+
+.parentalOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.parentalError {
+  position: absolute;
+  bottom: 7rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(229, 9, 20, 0.5);
+  background: rgba(229, 9, 20, 0.18);
+  color: #ffe6e8;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.6rem 1.4rem;
+  white-space: nowrap;
+}
+
+/* ── Channel info overlay (bottom-left, shown when controls hidden) ───────── */
+
+.infoOverlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 6rem 5rem 4rem;
+  /* Smoother, richer cinematic fade gradient */
+  background: linear-gradient(
+    0deg,
+    rgba(6, 8, 12, 0.98) 0%,
+    rgba(6, 8, 12, 0.85) 30%,
+    rgba(6, 8, 12, 0.4) 65%,
+    rgba(6, 8, 12, 0) 100%
+  );
+  z-index: 5;
+  pointer-events: none;
+  transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 280ms ease;
+}
+
+.infoOverlayHidden {
+  opacity: 0;
+  transform: translateY(15px);
+}
+
+.infoOverlayVisible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.infoOverlayShifted {
+  transform: translateY(-11.5rem);
+}
+
+.channelInfo {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.logo {
+  width: 7.5rem;
+  height: 7.5rem;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 0.95rem;
+  padding: 0.75rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.placeholder {
+  width: 7.5rem;
+  height: 7.5rem;
+  border-radius: 0.95rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+
+.channelMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.badgeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+.contentTypeBadge {
+  font-size: 0.7rem;
+  font-weight: 900;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
+  padding: 0.25rem 0.85rem;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 0 10px rgba(var(--color-primary-rgb), 0.4);
+}
+
+.episodeBadge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.22rem 0.8rem;
+  border-radius: 999px;
+}
+
+.qualityBadge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.18rem 0.55rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.audioBadge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.18rem 0.55rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.channelTitle {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+
+.channelSubtitle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: rgba(220, 230, 250, 0.85);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+}
+
+.programMetaRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.programInfoChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(248, 251, 255, 0.92);
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.programInfoText {
+  color: rgba(214, 227, 246, 0.82);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.epgProgressBar {
+  width: 24rem;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 0.6rem;
+  overflow: hidden;
+}
+
+.epgProgressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-glow));
+  box-shadow: 0 0 8px rgba(var(--color-primary-rgb), 0.55);
+}
+
+.nextProgramRow {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  max-width: 42rem;
+}
+
+.nextProgramLabel {
+  color: rgba(189, 206, 233, 0.62);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nextProgramTitle {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 1rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nextProgramTime {
+  color: rgba(203, 219, 242, 0.74);
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.quickHintRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.quickHint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(205, 220, 245, 0.72);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+/* ── Zapping overlay (channel switch pill) ───────────────────────────────── */
+
+.zappingOverlay {
+  position: absolute;
+  top: 4rem;
+  right: 4.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.4rem 0.85rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  /* Solid bg — no backdrop-filter */
+  background: rgba(8, 12, 22, 0.92);
+  z-index: 16;
+  animation: zappingIn 180ms ease-out forwards;
+}
+
+@keyframes zappingIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.zappingLogoWrap {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.zappingLogo {
+  width: 2.4rem;
+  height: 2.4rem;
+  object-fit: contain;
+}
+
+.zappingPlaceholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.zappingMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-width: 20rem;
+}
+
+.zappingLabel {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: rgba(200, 215, 240, 0.5);
+}
+
+.zappingTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zappingChannelNumber {
+  color: rgba(208, 223, 247, 0.74);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

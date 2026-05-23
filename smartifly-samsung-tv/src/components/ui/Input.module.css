@@ -1,0 +1,53 @@
+.inputContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.label {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin-left: 4px;
+  text-transform: uppercase;
+}
+
+.focusableWrapper {
+  width: 100%;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease-out;
+}
+
+.focusableWrapper:global(.focused) {
+  background: rgba(var(--color-surface-medium-rgb), 0.35);
+  border: 2px solid #fff;
+  transform: none;
+  box-shadow: none;
+}
+
+.input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 500;
+  outline: none;
+  padding: 0;
+}
+
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}

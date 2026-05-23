@@ -1,0 +1,131 @@
+.focusable {
+  position: relative;
+  outline: none;
+  transition: transform var(--transition-spring);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  overflow: visible;
+  display: flex;
+}
+
+.pill {
+  border-radius: 999px;
+}
+
+.pill .content {
+  border-radius: 999px !important;
+}
+
+.pill .focusBorder {
+  border-radius: 999px;
+  border-width: 2px;
+}
+
+.pill .glowEffect {
+  border-radius: 999px;
+  box-shadow:
+    0 0 0.85rem rgba(var(--color-primary-rgb), 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+}
+
+.none {
+  /* No default scale or anything, purely for containers */
+  transform: none !important;
+}
+
+.none.focused {
+  transform: none !important;
+}
+
+/* For "none" variant wrappers (e.g., virtualized grid cards), allow child
+   focus rings/glows to render outside their own bounds. */
+.none .content {
+  overflow: visible !important;
+}
+
+.content {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.focused {
+  transform: scale(var(--focus-scale));
+  z-index: var(--z-focus);
+}
+
+/* Specular Highlight */
+.specularHighlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Spotlight Shine (Sweep effect) */
+.shineSweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 100%
+  );
+  transform: skewX(-20deg) translateX(-150%);
+  animation: shine 0.6s forwards;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes shine {
+  0% { transform: skewX(-20deg) translateX(-150%); }
+  100% { transform: skewX(-20deg) translateX(150%); }
+}
+
+/* Adaptive Professional Border */
+.focusBorder {
+  position: absolute;
+  inset: 0;
+  border: var(--focus-border-width) solid #FFFFFF;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Suble Glow Effect */
+.glowEffect {
+  position: absolute;
+  inset: 0;
+  box-shadow: 0 0 1.25rem rgba(var(--color-primary-rgb), 0.3);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: default;
+  filter: grayscale(0.5);
+}

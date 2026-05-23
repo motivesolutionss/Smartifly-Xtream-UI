@@ -1,0 +1,104 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  width: 93.5%;
+  margin: 0 auto;
+  height: 392px;
+  gap: 0;
+  overflow: visible;
+}
+
+.focusShell {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  height: 330px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  height: 330px;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #0f131a;
+  border: 1.5px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    transform 0.14s ease-out,
+    border-color 0.14s ease-out,
+    box-shadow 0.14s ease-out;
+  will-change: transform;
+}
+
+.cardFocused {
+  transform: translateY(-3px) scale(1.026);
+  border-color: var(--color-primary, #e50914);
+  border-width: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb, 229, 9, 20), 0.9);
+  z-index: 10;
+}
+
+.poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.14s ease-out;
+  pointer-events: none;
+}
+
+.posterFocused {
+  transform: scale(1.03);
+}
+
+.placeholder {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.04em;
+  border-radius: inherit;
+  user-select: none;
+}
+
+.title {
+  flex-shrink: 0;
+  height: 62px;
+  padding-top: 8px;
+  font-size: 1.22rem;
+  font-weight: 700; /* Static weight prevents layout reflow */
+  color: rgba(255, 255, 255, 0.62);
+  text-align: center;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  width: 100%;
+  transition: color 0.18s ease;
+  padding-left: 4px;
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+.titleFocused {
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+}
