@@ -233,7 +233,7 @@ const EpisodeCard = memo(({
 
 export const SeriesDetails: React.FC<SeriesDetailsProps> = ({ seriesId, categoryName, onBack }) => {
   const { data: series, isLoading, isError, error, refetch } = useSeriesDetails(seriesId);
-  const { setActivePlaybackItem } = usePlayerStore();
+  const setActivePlaybackItem = usePlayerStore((state) => state.setActivePlaybackItem);
   const { setFocus } = useFocus();
   const [seasonSelection, setSeasonSelection] = useState<{ seriesId: string; index: number } | null>(null);
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({});

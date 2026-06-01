@@ -1,11 +1,13 @@
-import { useCallback, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "../../../services";
 import type { AppCategory, AppSeries, AppSeriesDetails } from "../../../types/appModels";
 import { getUserFriendlyErrorMessage } from "../../../utils/errorMapper";
 
 const EMPTY_CATEGORIES: AppCategory[] = [];
 const EMPTY_SERIES: AppSeries[] = [];
+const MAX_CONCURRENT_PREFETCHES = 2;
+const PREFETCH_DEBOUNCE_MS = 300;
 
 export const useSeriesContent = (selectedCategoryId?: string) => {
   const categoriesQuery = useQuery<AppCategory[]>({
@@ -25,7 +27,49 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     staleTime: 60 * 60 * 1000, // 1 hour
     gcTime: 2 * 60 * 60 * 1000, // 2 hours
   });
+  const queryClient = useQueryClient();
   const error = categoriesQuery.error ?? seriesQuery.error;
+  const activePrefetchesRef = useRef(0);
+  const prefetchTimersRef = useRef<Map<string, number>>(new Map());
+
+  const prefetchCategory = useCallback(
+    (categoryId?: string) => {
+      if (!categoryId) return;
+
+      const existing = prefetchTimersRef.current.get(categoryId);
+      if (existing !== undefined) {
+        window.clearTimeout(existing);
+      }
+
+      const timerId = window.setTimeout(() => {
+        prefetchTimersRef.current.delete(categoryId);
+
+        if (activePrefetchesRef.current >= MAX_CONCURRENT_PREFETCHES) return;
+
+        activePrefetchesRef.current += 1;
+        void queryClient
+          .prefetchQuery({
+            queryKey: ["series-list", categoryId],
+            queryFn: () => services.content.getSeries(categoryId),
+            staleTime: 60 * 60 * 1000,
+          })
+          .finally(() => {
+            activePrefetchesRef.current = Math.max(0, activePrefetchesRef.current - 1);
+          });
+      }, PREFETCH_DEBOUNCE_MS);
+
+      prefetchTimersRef.current.set(categoryId, timerId);
+    },
+    [queryClient]
+  );
+
+  useEffect(() => {
+    const timers = prefetchTimersRef.current;
+    return () => {
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+      timers.clear();
+    };
+  }, []);
 
   const refetch = useCallback(() => {
     void categoriesQuery.refetch();
@@ -39,6 +83,7 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     isFetchingSeries: seriesQuery.isFetching,
     isError: categoriesQuery.isError || seriesQuery.isError,
     errorMessage: error ? getUserFriendlyErrorMessage(error) : null,
+    prefetchCategory,
     refetch,
   }), [
     categoriesQuery.data,
@@ -49,6 +94,7 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     seriesQuery.isFetching,
     seriesQuery.isError,
     error,
+    prefetchCategory,
     refetch,
   ]);
 };

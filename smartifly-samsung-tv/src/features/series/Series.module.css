@@ -150,13 +150,7 @@
   width: 2px;
   height: 1.4rem;
   background: #e50914;
-  animation: pulseCursor 0.8s infinite;
   flex-shrink: 0;
-}
-
-@keyframes pulseCursor {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
 }
 
 /* Custom virtual keyboard layout overrides */
@@ -173,7 +167,6 @@
               background-color 0.15s ease, 
               border-color 0.15s ease, 
               box-shadow 0.15s ease !important;
-  will-change: transform;
 }
 
 .customKeyboard :global([class*="key"] span) {
@@ -279,7 +272,6 @@
               border-color 0.15s ease, 
               color 0.15s ease !important;
   box-sizing: border-box !important;
-  will-change: transform;
 }
 
 .suggestionPill :global([class*="content"]) {
@@ -293,8 +285,8 @@
   background: #ffffff !important;
   border-color: #ffffff !important;
   color: #000000 !important;
-  transform: scale(1.06) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 10px rgba(255, 255, 255, 0.15) !important;
+  transform: scale(1.03) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.82) !important;
 }
 
 .suggestionPill:global(.focused) :global([class*="content"]) {
@@ -364,7 +356,10 @@
   border-radius: 12px;
   color: rgba(255, 255, 255, 0.5);
   background: transparent;
-  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.16s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
   box-sizing: border-box;
 }
 
@@ -390,7 +385,7 @@
 }
 
 .selected {
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 /* Selected item when the sidebar has active focus */
@@ -502,7 +497,10 @@
   border: 1.5px solid rgba(255, 255, 255, 0.08);
   border-radius: 26px;
   width: 320px;
-  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
   box-sizing: border-box;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -627,4 +625,18 @@
 @keyframes slideDown {
   from { transform: translateY(-100%); }
   to { transform: translateY(0); }
+}
+
+:global(.perf-reduced) .customKeyboard :global([class*="key"]),
+:global(.perf-reduced) .suggestionPill,
+:global(.perf-reduced) .categoryItem,
+:global(.perf-reduced) .selected,
+:global(.perf-reduced) .searchFocusable {
+  transition: none !important;
+}
+
+:global(.perf-reduced) .customKeyboard :global([class*="key"].focused),
+:global(.perf-reduced) .suggestionPill:global(.focused),
+:global(.perf-reduced) .searchFocusable:global(.focused) {
+  transform: none !important;
 }

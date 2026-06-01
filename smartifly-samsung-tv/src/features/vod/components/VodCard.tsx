@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../../components/tv/Focusable";
 import { useFocus } from "../../../providers/useFocus";
 import { imageFailureMemory } from "../../../utils/imageFailureMemory";
+import { imageWarmMemory } from "../../../utils/imageWarmMemory";
+import { perfMetrics } from "../../../utils/perfMetrics";
 import type { AppMovie } from "../../../types/appModels";
 import styles from "./VodCard.module.css";
 
@@ -26,7 +28,65 @@ interface VodCardProps {
   onFocus?: (movieId: string) => void;
   columns: number;
   isSearching: boolean;
+  shouldLoadPoster: boolean;
 }
+
+type VodCardVisualProps = {
+  isFocused: boolean;
+  placeholderBackground: string;
+  placeholderInitials: string;
+  posterUrl?: string;
+  showPoster: boolean;
+  onPosterError: () => void;
+  onPosterLoad: () => void;
+};
+
+const VodCardVisual = memo(
+  function VodCardVisual({
+    isFocused,
+    placeholderBackground,
+    placeholderInitials,
+    posterUrl,
+    showPoster,
+    onPosterError,
+    onPosterLoad,
+  }: VodCardVisualProps) {
+    useEffect(() => {
+      perfMetrics.increment("vod_card_visual_render_count");
+    });
+
+    return (
+      <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
+        {showPoster ? (
+          <img
+            src={posterUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className={`${styles.poster} ${isFocused ? styles.posterFocused : ""}`}
+            onLoad={onPosterLoad}
+            onError={onPosterError}
+          />
+        ) : (
+          <div
+            className={styles.placeholder}
+            style={{ background: placeholderBackground }}
+          >
+            {placeholderInitials}
+          </div>
+        )}
+      </div>
+    );
+  },
+  (previousProps, nextProps) =>
+    previousProps.isFocused === nextProps.isFocused &&
+    previousProps.placeholderBackground === nextProps.placeholderBackground &&
+    previousProps.placeholderInitials === nextProps.placeholderInitials &&
+    previousProps.posterUrl === nextProps.posterUrl &&
+    previousProps.showPoster === nextProps.showPoster
+);
+
+VodCardVisual.displayName = "VodCardVisual";
 
 export const VodCard: React.FC<VodCardProps> = ({
   movie,
@@ -41,75 +101,90 @@ export const VodCard: React.FC<VodCardProps> = ({
   onFocus,
   columns,
   isSearching,
+  shouldLoadPoster,
 }) => {
   const focusId = `card-vod-${movie.id}`;
   const { focusedId, setFocus } = useFocus();
   const isFocused = focusedId === focusId;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    const focusSearchInput = () => {
-      setFocus("vod-search-input-wrapper");
-      window.requestAnimationFrame(() => {
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const focusSearchInput = () => {
         setFocus("vod-search-input-wrapper");
-      });
-    };
+        window.requestAnimationFrame(() => {
+          setFocus("vod-search-input-wrapper");
+        });
+      };
 
-    if (e.key === "ArrowLeft") {
-      const isLeftmost = index % columns === 0;
-      if (isLeftmost) {
-        e.preventDefault();
-        if (isSearching) {
-          setFocus("tvkb-key-2-9"); // Focus the middle rightmost key on virtual keyboard
-        } else {
-          if (selectedCategoryFocusId) {
+      if (e.key === "ArrowLeft") {
+        const isLeftmost = index % columns === 0;
+        if (isLeftmost) {
+          e.preventDefault();
+          if (isSearching) {
+            setFocus("tvkb-key-2-9");
+          } else if (selectedCategoryFocusId) {
             setFocus(`vod-cat-${selectedCategoryFocusId}`);
           }
+        } else if (prevMovieId) {
+          e.preventDefault();
+          setFocus(`card-vod-${prevMovieId}`);
         }
-      } else if (prevMovieId) {
+      } else if (e.key === "ArrowRight") {
+        const isRightmost =
+          index % columns === columns - 1 || index === totalMovies - 1;
+        if (isRightmost) {
+          e.preventDefault();
+        }
+      } else if (e.key === "ArrowDown") {
+        if (nextRowMovieId) {
+          e.preventDefault();
+          setFocus(`card-vod-${nextRowMovieId}`);
+        } else {
+          e.preventDefault();
+          const lastRowStartIndex =
+            Math.floor((totalMovies - 1) / columns) * columns;
+          if (index < lastRowStartIndex && lastMovieId) {
+            setFocus(`card-vod-${lastMovieId}`);
+          }
+        }
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setFocus(`card-vod-${prevMovieId}`);
-      }
-    } else if (e.key === "ArrowRight") {
-      const isRightmost = index % columns === columns - 1 || index === totalMovies - 1;
-      if (isRightmost) {
-        e.preventDefault();
-      }
-    } else if (e.key === "ArrowDown") {
-      if (nextRowMovieId) {
-        e.preventDefault();
-        setFocus(`card-vod-${nextRowMovieId}`);
-      } else {
-        e.preventDefault();
-        const lastRowStartIndex = Math.floor((totalMovies - 1) / columns) * columns;
-        if (index < lastRowStartIndex && lastMovieId) {
-          // Direct fallback to the very last movie in the grid
-          setFocus(`card-vod-${lastMovieId}`);
+        if (prevRowMovieId) {
+          setFocus(`card-vod-${prevRowMovieId}`);
+        } else {
+          focusSearchInput();
         }
       }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (prevRowMovieId) {
-        setFocus(`card-vod-${prevRowMovieId}`);
-      } else {
-        focusSearchInput();
-      }
-    }
-  };
+    },
+    [
+      columns,
+      index,
+      isSearching,
+      lastMovieId,
+      nextRowMovieId,
+      prevMovieId,
+      prevRowMovieId,
+      selectedCategoryFocusId,
+      setFocus,
+      totalMovies,
+    ]
+  );
 
-  const [failedUrls, setFailedUrls] = useState<Record<string, true>>({});
+  const [failedPosterUrl, setFailedPosterUrl] = useState<string | null>(null);
+  const imageLoadStartedAtRef = useRef<number | null>(null);
 
   const showPoster = useMemo(() => {
     if (!movie.posterUrl) return false;
+    if (!shouldLoadPoster && !imageWarmMemory.hasWarm(movie.posterUrl)) return false;
     if (imageFailureMemory.hasFailed(movie.posterUrl)) return false;
-    return !failedUrls[movie.posterUrl];
-  }, [movie.posterUrl, failedUrls]);
+    return failedPosterUrl !== movie.posterUrl;
+  }, [failedPosterUrl, movie.posterUrl, shouldLoadPoster]);
 
-  const placeholderStyle = useMemo(
-    () => ({
-      background: `linear-gradient(135deg,
+  const placeholderBackground = useMemo(
+    () =>
+      `linear-gradient(135deg,
         hsl(${Math.abs(hashString(movie.title)) % 360}, 42%, 22%),
         hsl(${(Math.abs(hashString(movie.title)) + 60) % 360}, 32%, 14%))`,
-    }),
     [movie.title]
   );
 
@@ -118,6 +193,47 @@ export const VodCard: React.FC<VodCardProps> = ({
     return cleanLetters.substring(0, 2).toUpperCase() || "MV";
   }, [movie.title]);
 
+  const handleEnter = useCallback(() => onClick(movie), [movie, onClick]);
+  const handleFocus = useCallback(() => onFocus?.(movie.id), [movie.id, onFocus]);
+  useEffect(() => {
+    if (showPoster && movie.posterUrl) {
+      imageLoadStartedAtRef.current = performance.now();
+      return;
+    }
+
+    imageLoadStartedAtRef.current = null;
+  }, [movie.posterUrl, showPoster]);
+
+  const handlePosterLoad = useCallback(() => {
+    if (movie.posterUrl) {
+      imageFailureMemory.markLoaded(movie.posterUrl);
+      imageWarmMemory.markWarm(movie.posterUrl);
+    }
+    perfMetrics.increment("vod_card_poster_load_success_count");
+    if (imageLoadStartedAtRef.current !== null) {
+      perfMetrics.recordDuration(
+        "vod_card_poster_load_ms",
+        performance.now() - imageLoadStartedAtRef.current,
+        { slowAboveMs: 300, data: { movieId: movie.id }, logSlowEvent: false }
+      );
+    }
+    imageLoadStartedAtRef.current = null;
+  }, [movie.id, movie.posterUrl]);
+  const handlePosterError = useCallback(() => {
+    if (!movie.posterUrl) return;
+    perfMetrics.increment("vod_card_poster_load_error_count");
+    if (imageLoadStartedAtRef.current !== null) {
+      perfMetrics.recordDuration(
+        "vod_card_poster_error_ms",
+        performance.now() - imageLoadStartedAtRef.current,
+        { slowAboveMs: 300, data: { movieId: movie.id }, logSlowEvent: false }
+      );
+    }
+    imageLoadStartedAtRef.current = null;
+    imageFailureMemory.markFailed(movie.posterUrl);
+    setFailedPosterUrl(movie.posterUrl);
+  }, [movie.id, movie.posterUrl]);
+
   return (
     <div className={styles.container}>
       <Focusable
@@ -125,34 +241,22 @@ export const VodCard: React.FC<VodCardProps> = ({
         variant="none"
         disableFocusEffects
         disableAutoScroll
-        onEnter={() => onClick(movie)}
-        onFocus={() => onFocus?.(movie.id)}
+        onEnter={handleEnter}
+        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         className={styles.focusShell}
       >
-        <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
-          {showPoster ? (
-            <img
-              src={movie.posterUrl}
-              alt={movie.title}
-              loading="lazy"
-              decoding="async"
-              className={`${styles.poster} ${isFocused ? styles.posterFocused : ""}`}
-              onError={() => {
-                if (!movie.posterUrl) return;
-                imageFailureMemory.markFailed(movie.posterUrl);
-                setFailedUrls((prev) => ({ ...prev, [movie.posterUrl!]: true }));
-              }}
-            />
-          ) : (
-            <div className={styles.placeholder} style={placeholderStyle}>
-              {placeholderInitials}
-            </div>
-          )}
-        </div>
+        <VodCardVisual
+          isFocused={isFocused}
+          placeholderBackground={placeholderBackground}
+          placeholderInitials={placeholderInitials}
+          posterUrl={movie.posterUrl}
+          showPoster={showPoster}
+          onPosterLoad={handlePosterLoad}
+          onPosterError={handlePosterError}
+        />
       </Focusable>
 
-      {/* Title sits outside Focusable so it never clips during focused zoom state */}
       <div className={`${styles.title} ${isFocused ? styles.titleFocused : ""}`}>
         {movie.title}
       </div>

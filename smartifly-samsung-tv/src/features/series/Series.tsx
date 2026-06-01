@@ -13,6 +13,14 @@ import { TvKeyboard } from "../../components/ui/TvKeyboard";
 import { useTvBack } from "../../hooks/useTvBack";
 import { searchStorage } from "../../storage/searchStorage";
 import { contentCategoryStorage } from "../../storage/contentCategoryStorage";
+import { logger } from "../../utils/logger";
+import { perfMetrics } from "../../utils/perfMetrics";
+import {
+  getGridAnchorScrollTop,
+  getGridPreloadRange,
+  sliceImagePreloadUrls,
+  useBudgetedImagePreload,
+} from "../../hooks/useBudgetedImagePreload";
 import styles from "./Series.module.css";
 
 const CATEGORY_ROW_HEIGHT = 66;
@@ -22,7 +30,9 @@ const GRID_GAP = 24;
 const GRID_COLUMNS_BROWSE = 5;
 const GRID_COLUMNS_SEARCH = 4;
 const GRID_ROW_STRIDE = GRID_ITEM_HEIGHT + GRID_GAP;
-const POSTER_PRELOAD_LIMIT = 6;
+const GRID_IMAGE_PRELOAD_OVERSCAN_ROWS = 0;
+const CATEGORY_SCROLL_THRESHOLD = 10;
+const CATEGORY_SCROLL_INSET = 14;
 
 const SeriesSkeleton: React.FC = () => {
   return (
@@ -64,6 +74,26 @@ const parseSeriesTitle = (title: string) => {
   return { cleanTitle, year, resolution };
 };
 
+const getCategoryScrollTarget = (
+  currentScrollTop: number,
+  viewportHeight: number,
+  itemIndex: number
+) => {
+  const itemTop = itemIndex * CATEGORY_ROW_HEIGHT;
+  const itemBottom = itemTop + CATEGORY_ROW_HEIGHT;
+  const viewBottom = currentScrollTop + viewportHeight;
+
+  if (itemTop < currentScrollTop + CATEGORY_SCROLL_THRESHOLD) {
+    return Math.max(0, itemTop - CATEGORY_SCROLL_INSET);
+  }
+
+  if (itemBottom > viewBottom - CATEGORY_SCROLL_THRESHOLD) {
+    return Math.max(0, itemBottom - viewportHeight + CATEGORY_SCROLL_INSET);
+  }
+
+  return null;
+};
+
 export const Series: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(
     () => contentCategoryStorage.getSeriesLastCategoryId() ?? undefined
@@ -75,11 +105,9 @@ export const Series: React.FC = () => {
   const [focusedSeriesId, setFocusedSeriesId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-
-  useEffect(() => {
-    setRecentSearches(searchStorage.getRecentSearches());
-  }, []);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() =>
+    searchStorage.getRecentSearches()
+  );
 
   const suggestions = useMemo(() => {
     const combined = [...recentSearches];
@@ -100,6 +128,7 @@ export const Series: React.FC = () => {
     isFetchingSeries,
     isError,
     errorMessage,
+    prefetchCategory,
     refetch,
   } = useSeriesContent(selectedCategoryId);
 
@@ -115,12 +144,34 @@ export const Series: React.FC = () => {
     }
   }, isSearching || Boolean(searchQuery));
   const { status: networkStatus } = useNetworkStatus();
+  const savedCategoryId = contentCategoryStorage.getSeriesLastCategoryId() ?? undefined;
+  const effectiveSelectedCategoryId = useMemo(() => {
+    if (categories.length === 0) {
+      return selectedCategoryId ?? savedCategoryId;
+    }
+    if (selectedCategoryId && categories.some((cat) => cat.id === selectedCategoryId)) {
+      return selectedCategoryId;
+    }
+    if (savedCategoryId && categories.some((cat) => cat.id === savedCategoryId)) {
+      return savedCategoryId;
+    }
+    return categories[0]?.id;
+  }, [categories, savedCategoryId, selectedCategoryId]);
+  const effectiveFocusedCategoryId = useMemo(() => {
+    if (categories.length === 0) {
+      return focusedCategoryId ?? effectiveSelectedCategoryId;
+    }
+    if (focusedCategoryId && categories.some((cat) => cat.id === focusedCategoryId)) {
+      return focusedCategoryId;
+    }
+    return effectiveSelectedCategoryId;
+  }, [categories, effectiveSelectedCategoryId, focusedCategoryId]);
 
   const activeCategoryName = useMemo(() => {
-    const targetId = selectedCategoryId;
+    const targetId = effectiveSelectedCategoryId;
     if (!targetId) return categories[0]?.name ?? "Series";
     return categories.find((c) => c.id === targetId)?.name ?? "Series";
-  }, [selectedCategoryId, categories]);
+  }, [effectiveSelectedCategoryId, categories]);
 
   const focusedSeries = useMemo(() => {
     return series.find((s) => s.id === focusedSeriesId);
@@ -142,13 +193,15 @@ export const Series: React.FC = () => {
   const sidebarFocusedRef = useRef(true);
   const lastClickedSeriesIdRef = useRef<string | null>(null);
   const pendingGridFocusRef = useRef(false);
-  const gridScrollByCategoryRef = useRef<Record<string, number>>({});
+  const categorySwitchStartRef = useRef<number | null>(null);
+  const firstGridRenderStartRef = useRef<number>(0);
+  const [gridScrollMemory] = useState(() => new Map<string, number>());
 
   const categoryOptions = useMemo(() => categories, [categories]);
 
   const activeCategoryKey = useMemo(
-    () => `${selectedCategoryId ?? "__none__"}|${isSearching ? "search" : "browse"}`,
-    [selectedCategoryId, isSearching]
+    () => `${effectiveSelectedCategoryId ?? "__none__"}|${isSearching ? "search" : "browse"}`,
+    [effectiveSelectedCategoryId, isSearching]
   );
 
   const resolveGridFocusSeriesId = useCallback(
@@ -160,7 +213,7 @@ export const Series: React.FC = () => {
       }
 
       const scrollKey = `${categoryId ?? "__none__"}|${isSearching ? "search" : "browse"}`;
-      const scrollTop = gridScrollByCategoryRef.current[scrollKey] ?? 0;
+      const scrollTop = gridScrollMemory.get(scrollKey) ?? 0;
       const firstVisibleRow = Math.max(0, Math.floor(scrollTop / GRID_ROW_STRIDE));
       const firstVisibleIndex = Math.min(
         filteredSeries.length - 1,
@@ -169,51 +222,44 @@ export const Series: React.FC = () => {
 
       return filteredSeries[firstVisibleIndex]?.id ?? filteredSeries[0].id;
     },
-    [filteredSeries, focusedSeriesId, gridColumns, isSearching]
+    [filteredSeries, focusedSeriesId, gridColumns, gridScrollMemory, isSearching]
   );
 
   useEffect(() => {
-    if (categories.length === 0) {
-      setSelectedCategoryId(undefined);
-      setFocusedCategoryId(undefined);
-      return;
-    }
-
-    const savedCategoryId = contentCategoryStorage.getSeriesLastCategoryId();
-    const hasSavedCategory = !!savedCategoryId && categories.some((cat) => cat.id === savedCategoryId);
-    const hasSelectedCategory =
-      !!selectedCategoryId && categories.some((cat) => cat.id === selectedCategoryId);
-
-    const resolvedCategoryId =
-      (hasSavedCategory ? savedCategoryId : undefined) ||
-      (hasSelectedCategory ? selectedCategoryId : undefined) ||
-      categories[0].id;
-
-    if (resolvedCategoryId && selectedCategoryId !== resolvedCategoryId) {
-      setSelectedCategoryId(resolvedCategoryId);
-    }
-
-    if (
-      resolvedCategoryId &&
-      (!focusedCategoryId || !categories.some((cat) => cat.id === focusedCategoryId))
-    ) {
-      setFocusedCategoryId(resolvedCategoryId);
-    }
-
-    if (resolvedCategoryId && savedCategoryId !== resolvedCategoryId) {
-      contentCategoryStorage.setSeriesLastCategoryId(resolvedCategoryId);
-    }
-  }, [categories, focusedCategoryId, selectedCategoryId]);
+    if (!effectiveSelectedCategoryId) return;
+    if (savedCategoryId === effectiveSelectedCategoryId) return;
+    contentCategoryStorage.setSeriesLastCategoryId(effectiveSelectedCategoryId);
+  }, [effectiveSelectedCategoryId, savedCategoryId]);
 
   // ── Dynamic Resolution-Independent Viewport Measurements ───────────────────
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [gridHeight, setGridHeight] = useState(window.innerHeight - 140);
   const [sidebarHeight, setSidebarHeight] = useState(800);
+  const [categoryScrollTop, setCategoryScrollTop] = useState(0);
+  const visibleCategoryStartIndex = useMemo(
+    () => Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3),
+    [categoryScrollTop]
+  );
+  const visibleCategoryEndIndex = useMemo(
+    () =>
+      Math.min(
+        categoryOptions.length,
+        Math.ceil((categoryScrollTop + sidebarHeight) / CATEGORY_ROW_HEIGHT) + 3
+      ),
+    [categoryOptions.length, categoryScrollTop, sidebarHeight]
+  );
+  const categoryListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (firstGridRenderStartRef.current === 0) {
+      firstGridRenderStartRef.current = performance.now();
+    }
+  }, []);
 
   useEffect(() => {
     if (!gridContainerRef.current) return;
     const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
+      for (const entry of entries) {
         setGridHeight(Math.max(200, entry.contentRect.height));
       }
     });
@@ -224,7 +270,7 @@ export const Series: React.FC = () => {
   useEffect(() => {
     if (!categoryListRef.current) return;
     const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
+      for (const entry of entries) {
         setSidebarHeight(Math.max(300, entry.contentRect.height));
       }
     });
@@ -236,23 +282,47 @@ export const Series: React.FC = () => {
   useEffect(() => {
     if (!categoryListRef.current || isSearching) return;
     categoryListRef.current.scrollTop = categoryScrollTop;
-  }, [isSearching]);
+  }, [categoryScrollTop, isSearching]);
+
+  useEffect(() => {
+    if (firstGridRenderStartRef.current === Number.POSITIVE_INFINITY) return;
+    if (isLoading || isFetchingSeries) return;
+
+    const durationMs = Math.max(
+      1,
+      Math.round(performance.now() - firstGridRenderStartRef.current)
+    );
+    logger.info(`Series grid first render in ${durationMs}ms`, {
+      seriesCount: filteredSeries.length,
+    });
+    perfMetrics.recordDuration("series_grid_first_render_ms", durationMs, {
+      slowAboveMs: 400,
+      data: { seriesCount: filteredSeries.length },
+    });
+    firstGridRenderStartRef.current = Number.POSITIVE_INFINITY;
+  }, [filteredSeries.length, isFetchingSeries, isLoading]);
+
+  useEffect(() => {
+    if (!effectiveSelectedCategoryId) return;
+    if (categorySwitchStartRef.current === null) return;
+    if (isFetchingSeries) return;
+
+    const switchDuration = Math.round(performance.now() - categorySwitchStartRef.current);
+    logger.debug(`Series category switch completed in ${switchDuration}ms`, {
+      categoryId: effectiveSelectedCategoryId,
+      seriesCount: filteredSeries.length,
+    });
+    perfMetrics.recordDuration("series_category_switch_ms", switchDuration, {
+      slowAboveMs: 250,
+      data: {
+        categoryId: effectiveSelectedCategoryId,
+        seriesCount: filteredSeries.length,
+      },
+    });
+    categorySwitchStartRef.current = null;
+  }, [effectiveSelectedCategoryId, filteredSeries.length, isFetchingSeries]);
 
   // ── Eagerly preload top 12 series poster images to prevent visually jarring pops ──
-  useEffect(() => {
-    if (networkStatus !== "online") return;
-    if (series.length === 0) return;
-    if (isSearching) return;
-    const targets = series
-      .slice(0, POSTER_PRELOAD_LIMIT)
-      .map((s) => s.posterUrl)
-      .filter((url): url is string => Boolean(url));
-    targets.forEach((url) => {
-      const img = new Image();
-      img.decoding = "async";
-      img.src = url;
-    });
-  }, [series, networkStatus, isSearching]);
 
   // ── Restore focus when returning from SeriesDetails ──────────────────────────
   useEffect(() => {
@@ -263,7 +333,7 @@ export const Series: React.FC = () => {
     const targetId =
       rememberedId && filteredSeries.some((s) => s.id === rememberedId)
         ? rememberedId
-        : resolveGridFocusSeriesId(selectedCategoryId);
+        : resolveGridFocusSeriesId(effectiveSelectedCategoryId);
 
     if (!targetId) {
       lastClickedSeriesIdRef.current = null;
@@ -285,13 +355,13 @@ export const Series: React.FC = () => {
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
-  }, [selectedSeriesId, filteredSeries, selectedCategoryId, resolveGridFocusSeriesId, setFocus]);
+  }, [effectiveSelectedCategoryId, selectedSeriesId, filteredSeries, resolveGridFocusSeriesId, setFocus]);
 
   // ── Trigger auto focus into grid when categories load after Enter click ──
   useEffect(() => {
     if (pendingGridFocusRef.current && filteredSeries.length > 0) {
       pendingGridFocusRef.current = false;
-      const targetSeriesId = resolveGridFocusSeriesId(selectedCategoryId);
+      const targetSeriesId = resolveGridFocusSeriesId(effectiveSelectedCategoryId);
       if (!targetSeriesId) return;
 
       sidebarFocusedRef.current = false;
@@ -300,12 +370,9 @@ export const Series: React.FC = () => {
       });
       return () => window.cancelAnimationFrame(frameId);
     }
-  }, [filteredSeries, selectedCategoryId, resolveGridFocusSeriesId, setFocus]);
+  }, [effectiveSelectedCategoryId, filteredSeries, resolveGridFocusSeriesId, setFocus]);
 
   // ── Category Sidebar Virtualization state & refs ────────────────────────────
-  const [categoryScrollTop, setCategoryScrollTop] = useState(0);
-  const categoryListRef = useRef<HTMLDivElement>(null);
-
   const handleCategoryListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setCategoryScrollTop(e.currentTarget.scrollTop);
   }, []);
@@ -315,25 +382,21 @@ export const Series: React.FC = () => {
     if (!categoryListRef.current || categoryOptions.length === 0) return;
     const focusedCatId = focusedId?.startsWith("series-cat-")
       ? focusedId.replace("series-cat-", "")
-      : (focusedCategoryId || categoryOptions[0]?.id);
+      : (effectiveSelectedCategoryId || effectiveFocusedCategoryId || categoryOptions[0]?.id);
     if (!focusedCatId) return;
     const idx = categoryOptions.findIndex((c) => c.id === focusedCatId);
     if (idx < 0) return;
 
-    const itemTop = idx * CATEGORY_ROW_HEIGHT;
-    const itemBottom = itemTop + CATEGORY_ROW_HEIGHT;
-    const viewTop = categoryListRef.current.scrollTop;
-    const viewBottom = viewTop + categoryListRef.current.clientHeight;
+    const nextScrollTop = getCategoryScrollTarget(
+      categoryListRef.current.scrollTop,
+      categoryListRef.current.clientHeight,
+      idx
+    );
 
-    if (itemTop < viewTop + 10) {
-      categoryListRef.current.scrollTo({ top: Math.max(0, itemTop - 14), behavior: "auto" });
-    } else if (itemBottom > viewBottom - 10) {
-      categoryListRef.current.scrollTo({
-        top: itemBottom - categoryListRef.current.clientHeight + 14,
-        behavior: "auto",
-      });
+    if (nextScrollTop !== null && categoryListRef.current.scrollTop !== nextScrollTop) {
+      categoryListRef.current.scrollTop = nextScrollTop;
     }
-  }, [categoryOptions, focusedId, focusedCategoryId, isSearching]);
+  }, [categoryOptions, effectiveFocusedCategoryId, effectiveSelectedCategoryId, focusedId, isSearching]);
 
   // ── Initial Focus ───────────────────────────────────────────────────────────
   const hasInitializedFocusRef = useRef(false);
@@ -343,34 +406,36 @@ export const Series: React.FC = () => {
     hasInitializedFocusRef.current = true;
 
     const frameId = window.requestAnimationFrame(() => {
-      const initialCategoryId = selectedCategoryId || categoryOptions[0]?.id;
+      const initialCategoryId = effectiveSelectedCategoryId || categoryOptions[0]?.id;
       if (initialCategoryId) {
         setFocus(`series-cat-${initialCategoryId}`);
       }
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [categories, categoryOptions, selectedCategoryId, setFocus]);
+  }, [categories, categoryOptions, effectiveSelectedCategoryId, setFocus]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleCategoryFocus = useCallback(
     (categoryId: string | undefined) => {
+      prefetchCategory(categoryId);
       setFocusedCategoryId(categoryId);
 
       if (sidebarFocusedRef.current) return;
       sidebarFocusedRef.current = true;
 
-      const targetId = selectedCategoryId || categoryOptions[0]?.id;
+      const targetId = effectiveSelectedCategoryId || categoryOptions[0]?.id;
       if (categoryId && targetId && categoryId !== targetId) {
         window.requestAnimationFrame(() => {
           setFocus(`series-cat-${targetId}`);
         });
       }
     },
-    [categoryOptions, selectedCategoryId, setFocus]
+    [categoryOptions, effectiveSelectedCategoryId, prefetchCategory, setFocus]
   );
 
   const handleCategoryEnter = useCallback((categoryId: string | undefined) => {
-    if (selectedCategoryId !== categoryId) {
+    if (effectiveSelectedCategoryId !== categoryId) {
+      categorySwitchStartRef.current = performance.now();
       pendingGridFocusRef.current = true;
       setFocusedSeriesId(null);
       setSelectedCategoryId(categoryId);
@@ -385,7 +450,7 @@ export const Series: React.FC = () => {
       if (!targetSeriesId) return;
       setFocus(`card-series-${targetSeriesId}`);
     }
-  }, [selectedCategoryId, filteredSeries, resolveGridFocusSeriesId, setFocus]);
+  }, [effectiveSelectedCategoryId, filteredSeries, resolveGridFocusSeriesId, setFocus]);
 
   const handleCategoryKeyDown = useCallback(
     (e: React.KeyboardEvent, categoryId: string | undefined, categoryIndex: number) => {
@@ -397,23 +462,19 @@ export const Series: React.FC = () => {
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
 
-        if (selectedCategoryId !== categoryId) {
-          pendingGridFocusRef.current = true;
-          setSelectedCategoryId(categoryId);
-          setFocusedCategoryId(categoryId);
-          contentCategoryStorage.setSeriesLastCategoryId(categoryId ?? null);
-        } else {
-          if (filteredSeries.length > 0) {
-            sidebarFocusedRef.current = false;
-            const targetSeriesId = resolveGridFocusSeriesId(categoryId);
-            if (!targetSeriesId) return;
-            setFocusedSeriesId(targetSeriesId);
-            setFocus(`card-series-${targetSeriesId}`);
-          }
+        const targetCategoryId = effectiveSelectedCategoryId ?? categoryId ?? categoryOptions[0]?.id;
+        if (!targetCategoryId || filteredSeries.length === 0) {
+          return;
         }
+
+        sidebarFocusedRef.current = false;
+        const targetSeriesId = resolveGridFocusSeriesId(targetCategoryId);
+        if (!targetSeriesId) return;
+        setFocusedSeriesId(targetSeriesId);
+        setFocus(`card-series-${targetSeriesId}`);
       }
     },
-    [filteredSeries, selectedCategoryId, resolveGridFocusSeriesId, setFocus]
+    [categoryOptions, effectiveSelectedCategoryId, filteredSeries, resolveGridFocusSeriesId, setFocus]
   );
 
   const handleSeriesFocus = useCallback((seriesId: string) => {
@@ -431,7 +492,44 @@ export const Series: React.FC = () => {
     [filteredSeries, focusedSeriesId]
   );
 
-  const initialGridScrollTop = gridScrollByCategoryRef.current[activeCategoryKey] ?? 0;
+  const initialGridScrollTop = gridScrollMemory.get(activeCategoryKey) ?? 0;
+  const imagePreloadAnchorScrollTop = getGridAnchorScrollTop({
+    focusedIndex: focusedGridIndex,
+    columns: gridColumns,
+    rowStride: GRID_ROW_STRIDE,
+    fallbackScrollTop: initialGridScrollTop,
+  });
+  const imagePreloadRange = getGridPreloadRange({
+    itemCount: filteredSeries.length,
+    columns: gridColumns,
+    rowStride: GRID_ROW_STRIDE,
+    viewportHeight: gridHeight,
+    anchorScrollTop: imagePreloadAnchorScrollTop,
+    overscanRows: GRID_IMAGE_PRELOAD_OVERSCAN_ROWS,
+  });
+  const visiblePosterPreloadUrls = useMemo(
+    () =>
+      sliceImagePreloadUrls(
+        filteredSeries,
+        (seriesItem) => seriesItem.posterUrl,
+        imagePreloadRange.startIndex,
+        imagePreloadRange.endIndex
+      ),
+    [
+      filteredSeries,
+      imagePreloadRange.endIndex,
+      imagePreloadRange.startIndex,
+    ]
+  );
+
+  useBudgetedImagePreload(
+    visiblePosterPreloadUrls,
+    {
+      enabled: networkStatus === "online" && !isSearching,
+      maxConcurrent: 1,
+      maxUrls: 6,
+    }
+  );
 
   if (selectedSeriesId) {
     return (
@@ -620,13 +718,9 @@ export const Series: React.FC = () => {
                   }}
                 >
                   {categoryOptions
-                    .slice(
-                      Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3),
-                      Math.min(categoryOptions.length, Math.ceil((categoryScrollTop + sidebarHeight) / CATEGORY_ROW_HEIGHT) + 3)
-                    )
+                    .slice(visibleCategoryStartIndex, visibleCategoryEndIndex)
                     .map((category, index) => {
-                      const absIndex =
-                        Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3) + index;
+                      const absIndex = visibleCategoryStartIndex + index;
                       const categoryId = category.id;
 
                       return (
@@ -640,7 +734,7 @@ export const Series: React.FC = () => {
                             height: 64,
                             display: "flex",
                             alignItems: "center",
-                            zIndex: focusedId === `series-cat-${category.id}` ? 10 : (selectedCategoryId === categoryId ? 2 : 1),
+                            zIndex: focusedId === `series-cat-${category.id}` ? 10 : (effectiveSelectedCategoryId === categoryId ? 2 : 1),
                           }}
                         >
                           <Focusable
@@ -648,7 +742,7 @@ export const Series: React.FC = () => {
                             variant="pill"
                             disableFocusEffects
                             className={`${styles.categoryItem} ${
-                              selectedCategoryId === categoryId ? styles.selected : ""
+                              effectiveSelectedCategoryId === categoryId ? styles.selected : ""
                             }`}
                             onFocus={() => handleCategoryFocus(categoryId)}
                             onEnter={() => handleCategoryEnter(categoryId)}
@@ -701,7 +795,7 @@ export const Series: React.FC = () => {
                   }
                 } else if (e.key === "ArrowLeft") {
                   e.preventDefault();
-                  const targetCategoryId = selectedCategoryId || categoryOptions[0]?.id;
+                  const targetCategoryId = effectiveSelectedCategoryId || categoryOptions[0]?.id;
                   if (targetCategoryId) {
                     setFocus(`series-cat-${targetCategoryId}`);
                   }
@@ -753,7 +847,7 @@ export const Series: React.FC = () => {
             />
           ) : (
             <VirtualGrid
-              key={`series-grid-${selectedCategoryId ?? "none"}-${isSearching ? "search" : "browse"}`}
+              key={`series-grid-${effectiveSelectedCategoryId ?? "none"}-${isSearching ? "search" : "browse"}`}
               items={filteredSeries}
               itemHeight={GRID_ITEM_HEIGHT}
               itemWidth={GRID_ITEM_WIDTH}
@@ -762,7 +856,7 @@ export const Series: React.FC = () => {
               containerHeight={gridHeight}
               initialScrollTop={initialGridScrollTop}
               onScrollTopChange={(nextTop) => {
-                gridScrollByCategoryRef.current[activeCategoryKey] = nextTop;
+                gridScrollMemory.set(activeCategoryKey, nextTop);
               }}
               focusedIndex={focusedId?.startsWith("card-series-") && focusedGridIndex >= 0 ? focusedGridIndex : undefined}
               renderItem={(seriesItem, index) => {
@@ -776,11 +870,15 @@ export const Series: React.FC = () => {
                     prevRowSeriesId={index - gridColumns >= 0 ? filteredSeries[index - gridColumns]?.id : undefined}
                     totalSeries={filteredSeries.length}
                     lastSeriesId={filteredSeries[filteredSeries.length - 1]?.id}
-                    selectedCategoryFocusId={selectedCategoryId || categoryOptions[0]?.id}
+                    selectedCategoryFocusId={effectiveSelectedCategoryId || categoryOptions[0]?.id}
                     onClick={handleSeriesClick}
                     onFocus={handleSeriesFocus}
                     columns={gridColumns}
                     isSearching={isSearching}
+                    shouldLoadPoster={
+                      index >= imagePreloadRange.startIndex &&
+                      index < imagePreloadRange.endIndex
+                    }
                   />
                 );
               }}
