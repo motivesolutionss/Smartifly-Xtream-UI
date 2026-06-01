@@ -1,6 +1,12 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { services } from "../../../services";
-import type { AppChannel, AppMovie, AppSeries } from "../../../types/appModels";
+import type {
+  AppCategory,
+  AppChannel,
+  AppMovie,
+  AppSeries,
+} from "../../../types/appModels";
 
 export interface SearchResults {
   live: AppChannel[];
@@ -8,137 +14,245 @@ export interface SearchResults {
   series: AppSeries[];
 }
 
+type SearchCorpus = {
+  live: AppChannel[];
+  vod: AppMovie[];
+  series: AppSeries[];
+  liveCats: AppCategory[];
+  vodCats: AppCategory[];
+  seriesCats: AppCategory[];
+};
+
+type SearchableItem = AppChannel | AppMovie | AppSeries;
+
+type SearchIndexEntry<T extends SearchableItem> = {
+  item: T;
+  titleLower: string;
+};
+
+type SearchIndex = {
+  live: SearchIndexEntry<AppChannel>[];
+  vod: SearchIndexEntry<AppMovie>[];
+  series: SearchIndexEntry<AppSeries>[];
+};
+
+const EMPTY_RESULTS: SearchResults = {
+  live: [],
+  vod: [],
+  series: [],
+};
+
+const SEARCH_RESULT_LIMITS = {
+  live: 24,
+  vod: 30,
+  series: 30,
+} as const;
+
+const SEARCH_CORPUS_STALE_TIME_MS = 15 * 60 * 1000;
+const SEARCH_CORPUS_GC_TIME_MS = 30 * 60 * 1000;
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const GENERIC_QUERY_TOKENS = new Set([
+  "vod",
+  "live",
+  "series",
+  "show",
+  "shows",
+  "movie",
+  "movies",
+  "channel",
+  "channels",
+  "pick",
+  "picks",
+]);
+
+const buildIndex = <T extends SearchableItem>(items: T[]): SearchIndexEntry<T>[] =>
+  items.map((item) => ({
+    item,
+    titleLower: item.title.toLowerCase(),
+  }));
+
+const matchCategory = (categoryName: string, lowerQuery: string) => {
+  const nameLower = categoryName.toLowerCase();
+
+  if (nameLower.includes(lowerQuery) || lowerQuery.includes(nameLower)) {
+    return true;
+  }
+
+  const queryTokens = lowerQuery.split(/\s+/).filter((token) => token.length >= 3);
+
+  for (const token of queryTokens) {
+    if (GENERIC_QUERY_TOKENS.has(token) && nameLower !== token) {
+      continue;
+    }
+
+    if (nameLower.includes(token)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const getMatchingCategoryIds = (
+  categories: AppCategory[],
+  lowerQuery: string
+) =>
+  new Set(
+    categories
+      .filter((category) => matchCategory(category.name, lowerQuery))
+      .map((category) => category.id)
+  );
+
+const calculateRelevanceScore = (
+  titleLower: string,
+  item: SearchableItem,
+  lowerQuery: string,
+  matchingCategoryIds: Set<string>
+) => {
+  if (titleLower === lowerQuery) return 100;
+  if (titleLower.startsWith(lowerQuery)) return 80;
+
+  try {
+    const escapedQuery = escapeRegExp(lowerQuery);
+    const wordRegex = new RegExp(`\\b${escapedQuery}\\b`, "i");
+    if (wordRegex.test(titleLower)) return 60;
+  } catch {
+    // Ignore invalid regex construction and fall through to safer checks.
+  }
+
+  if (titleLower.includes(lowerQuery)) return 40;
+  if (item.categoryId && matchingCategoryIds.has(item.categoryId)) return 20;
+
+  return 0;
+};
+
+const rankMatches = <T extends SearchableItem>(
+  entries: SearchIndexEntry<T>[],
+  lowerQuery: string,
+  matchingCategoryIds: Set<string>,
+  limit: number
+) =>
+  entries
+    .map((entry) => ({
+      item: entry.item,
+      score: calculateRelevanceScore(
+        entry.titleLower,
+        entry.item,
+        lowerQuery,
+        matchingCategoryIds
+      ),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.item);
+
+const fetchSearchCorpus = async (): Promise<SearchCorpus> => {
+  const results = await Promise.allSettled([
+    services.content.getLiveStreams(),
+    services.content.getVodStreams(),
+    services.content.getSeries(),
+    services.content.getLiveCategories(),
+    services.content.getVodCategories(),
+    services.content.getSeriesCategories(),
+  ]);
+
+  const live = results[0].status === "fulfilled" ? results[0].value : [];
+  const vod = results[1].status === "fulfilled" ? results[1].value : [];
+  const series = results[2].status === "fulfilled" ? results[2].value : [];
+  const liveCats = results[3].status === "fulfilled" ? results[3].value : [];
+  const vodCats = results[4].status === "fulfilled" ? results[4].value : [];
+  const seriesCats = results[5].status === "fulfilled" ? results[5].value : [];
+
+  if (
+    results[0].status === "rejected" &&
+    results[1].status === "rejected" &&
+    results[2].status === "rejected"
+  ) {
+    throw results[0].reason;
+  }
+
+  return {
+    live,
+    vod,
+    series,
+    liveCats,
+    vodCats,
+    seriesCats,
+  };
+};
+
 export const useSearch = (query: string) => {
-  return useQuery<SearchResults>({
-    queryKey: ["search", query],
-    queryFn: async () => {
-      if (!query || query.length < 3) return { live: [], vod: [], series: [] };
+  const shouldSearch = query.length >= 3;
 
-      // 1. Fetch all streams and categories in parallel
-      const results = await Promise.allSettled([
-        services.content.getLiveStreams(),
-        services.content.getVodStreams(),
-        services.content.getSeries(),
-        services.content.getLiveCategories(),
-        services.content.getVodCategories(),
-        services.content.getSeriesCategories(),
-      ]);
-
-      const live = results[0].status === "fulfilled" ? results[0].value : [];
-      const vod = results[1].status === "fulfilled" ? results[1].value : [];
-      const series = results[2].status === "fulfilled" ? results[2].value : [];
-      
-      const liveCats = results[3].status === "fulfilled" ? results[3].value : [];
-      const vodCats = results[4].status === "fulfilled" ? results[4].value : [];
-      const seriesCats = results[5].status === "fulfilled" ? results[5].value : [];
-
-      if (
-        results[0].status === "rejected" &&
-        results[1].status === "rejected" &&
-        results[2].status === "rejected"
-      ) {
-        throw results[0].reason;
-      }
-
-      const lowerQuery = query.toLowerCase();
-
-      // Escape special characters for safe regular expression checks
-      const escapeRegExp = (str: string) => {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      };
-
-      // 2. Enterprise-Grade Hybrid Query Matcher for Categories
-      const matchCategory = (catName: string) => {
-        const nameLower = catName.toLowerCase();
-        
-        // Direct substring check
-        if (nameLower.includes(lowerQuery) || lowerQuery.includes(nameLower)) {
-          return true;
-        }
-
-        // Tokenized matching for multi-word queries
-        const queryTokens = lowerQuery.split(/\s+/).filter(t => t.length >= 3);
-        for (const token of queryTokens) {
-          const isGenericToken = [
-            "vod", "live", "series", "show", "shows", 
-            "movie", "movies", "channel", "channels", "pick", "picks"
-          ].includes(token);
-
-          if (isGenericToken && nameLower !== token) {
-            continue;
-          }
-
-          if (nameLower.includes(token)) {
-            return true;
-          }
-        }
-        return false;
-      };
-
-      // 3. Collect matching category IDs
-      const matchingLiveCatIds = new Set(liveCats.filter(c => matchCategory(c.name)).map(c => c.id));
-      const matchingVodCatIds = new Set(vodCats.filter(c => matchCategory(c.name)).map(c => c.id));
-      const matchingSeriesCatIds = new Set(seriesCats.filter(c => matchCategory(c.name)).map(c => c.id));
-
-      // 4. Relevance Ranking Engine
-      const calculateRelevanceScore = (
-        item: AppChannel | AppMovie | AppSeries, 
-        matchingCatIds: Set<string>
-      ) => {
-        const titleLower = item.title.toLowerCase();
-
-        // Rank 1: Exact Match (Score 100)
-        if (titleLower === lowerQuery) return 100;
-
-        // Rank 2: Prefix Match (Score 80)
-        if (titleLower.startsWith(lowerQuery)) return 80;
-
-        // Rank 3: Word Boundary Match (Score 60)
-        try {
-          const escaped = escapeRegExp(lowerQuery);
-          const wordRegex = new RegExp(`\\b${escaped}\\b`, "i");
-          if (wordRegex.test(titleLower)) return 60;
-        } catch {
-          // Fallback if RegExp generation fails for any reason
-        }
-
-        // Rank 4: Substring Match (Score 40)
-        if (titleLower.includes(lowerQuery)) return 40;
-
-        // Rank 5: Category Match (Score 20)
-        if (item.categoryId && matchingCatIds.has(item.categoryId)) return 20;
-
-        return 0;
-      };
-
-      // 5. Filter, Score, Sort, and Map results
-      const scoredLive = live
-        .map(item => ({ item, score: calculateRelevanceScore(item, matchingLiveCatIds) }))
-        .filter(entry => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(entry => entry.item);
-
-      const scoredVod = vod
-        .map(item => ({ item, score: calculateRelevanceScore(item, matchingVodCatIds) }))
-        .filter(entry => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(entry => entry.item);
-
-      const scoredSeries = series
-        .map(item => ({ item, score: calculateRelevanceScore(item, matchingSeriesCatIds) }))
-        .filter(entry => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(entry => entry.item);
-
-      // 6. Return top 50 items per rail
-      return {
-        live: scoredLive.slice(0, 50),
-        vod: scoredVod.slice(0, 50),
-        series: scoredSeries.slice(0, 50)
-      };
-    },
-    enabled: query.length >= 3,
+  const corpusQuery = useQuery<SearchCorpus>({
+    queryKey: ["search-corpus"],
+    queryFn: fetchSearchCorpus,
+    enabled: shouldSearch,
     retry: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: SEARCH_CORPUS_STALE_TIME_MS,
+    gcTime: SEARCH_CORPUS_GC_TIME_MS,
   });
+
+  const searchIndex = useMemo<SearchIndex | null>(() => {
+    if (!corpusQuery.data) return null;
+
+    return {
+      live: buildIndex(corpusQuery.data.live),
+      vod: buildIndex(corpusQuery.data.vod),
+      series: buildIndex(corpusQuery.data.series),
+    };
+  }, [corpusQuery.data]);
+
+  const data = useMemo<SearchResults>(() => {
+    if (!shouldSearch || !corpusQuery.data || !searchIndex) {
+      return EMPTY_RESULTS;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const matchingLiveCategoryIds = getMatchingCategoryIds(
+      corpusQuery.data.liveCats,
+      lowerQuery
+    );
+    const matchingVodCategoryIds = getMatchingCategoryIds(
+      corpusQuery.data.vodCats,
+      lowerQuery
+    );
+    const matchingSeriesCategoryIds = getMatchingCategoryIds(
+      corpusQuery.data.seriesCats,
+      lowerQuery
+    );
+
+    return {
+      live: rankMatches(
+        searchIndex.live,
+        lowerQuery,
+        matchingLiveCategoryIds,
+        SEARCH_RESULT_LIMITS.live
+      ),
+      vod: rankMatches(
+        searchIndex.vod,
+        lowerQuery,
+        matchingVodCategoryIds,
+        SEARCH_RESULT_LIMITS.vod
+      ),
+      series: rankMatches(
+        searchIndex.series,
+        lowerQuery,
+        matchingSeriesCategoryIds,
+        SEARCH_RESULT_LIMITS.series
+      ),
+    };
+  }, [corpusQuery.data, query, searchIndex, shouldSearch]);
+
+  return {
+    data,
+    isLoading: shouldSearch ? corpusQuery.isLoading : false,
+    isError: corpusQuery.isError,
+    error: corpusQuery.error,
+    refetch: corpusQuery.refetch,
+  };
 };

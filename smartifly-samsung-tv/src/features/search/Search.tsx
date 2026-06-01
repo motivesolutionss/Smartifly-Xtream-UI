@@ -24,6 +24,13 @@ import { SeriesDetails } from "../series/SeriesDetails";
 
 type RowType = "live" | "movies" | "series";
 
+type ResultWindowCounts = Record<RowType, number>;
+
+type ResultWindowState = {
+  query: string;
+  counts: ResultWindowCounts;
+};
+
 type SuggestionConfig = {
   text: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -46,8 +53,44 @@ const KEYBOARD_ROWS: string[][] = [
 
 const ACTION_KEYS = ["DELETE", "SPACE", "CLEAR"] as const;
 
+const INITIAL_RESULT_WINDOW: ResultWindowCounts = {
+  live: 8,
+  movies: 10,
+  series: 10,
+};
+
+const RESULT_WINDOW_BATCH: ResultWindowCounts = {
+  live: 6,
+  movies: 8,
+  series: 8,
+};
+
 const getActionFocusId = (index: number) => `search-key-action-${index}`;
 const getLetterFocusId = (row: number, col: number) => `search-key-${row}-${col}`;
+
+const getOffsetTopWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
+  let offsetTop = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== ancestor) {
+    offsetTop += current.offsetTop;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return offsetTop;
+};
+
+const getOffsetLeftWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
+  let offsetLeft = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== ancestor) {
+    offsetLeft += current.offsetLeft;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return offsetLeft;
+};
 
 export const Search: React.FC = () => {
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -58,18 +101,24 @@ export const Search: React.FC = () => {
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [voiceTelemetry, setVoiceTelemetry] = useState("");
+  const [resultWindowState, setResultWindowState] = useState<ResultWindowState>({
+    query: "",
+    counts: INITIAL_RESULT_WINDOW,
+  });
   const listeningTimeoutRef = useRef<number | null>(null);
   const telemetryIntervalRef = useRef<number | null>(null);
   const lastFocusedIdRef = useRef<string>("search-input");
   const wasInDetailsRef = useRef(false);
+  const focusScrollRafRef = useRef<number | null>(null);
+  const pendingFocusIdRef = useRef<string | null>(null);
 
   const { data: results, isLoading, isError, error, refetch } = useSearch(debouncedQuery);
-  const { setActivePlaybackItem } = usePlayerStore();
+  const setActivePlaybackItem = usePlayerStore((state) => state.setActivePlaybackItem);
   const { setFocus, focusedId } = useFocus();
 
   useTvBack(
     () => {
-      setFocus("nav-SEARCH");
+      setFocus("search-input");
     },
     !selectedMovieId && !selectedSeriesId && !isListening
   );
@@ -79,55 +128,105 @@ export const Search: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
 
+  const resultWindowCounts =
+    resultWindowState.query === debouncedQuery
+      ? resultWindowState.counts
+      : INITIAL_RESULT_WINDOW;
+
   useEffect(() => {
     if (!pageRef.current) return;
     if (!debouncedQuery) {
-      pageRef.current.scrollTo({ top: 0, behavior: "auto" });
+      pageRef.current.scrollTop = 0;
     }
   }, [debouncedQuery]);
 
   useEffect(() => {
     if (!focusedId) return;
-    const focusedEl = document.getElementById(focusedId);
-    if (!focusedEl) return;
+    pendingFocusIdRef.current = focusedId;
 
-    if (focusedId.startsWith("search-result-")) {
-      // 1. Decoupled Horizontal Scroll: Align card exactly 64px from the left edge of the rail
-      const cardContainer = focusedEl.parentElement;
-      const railEl = focusedEl.closest(`.${styles.resultRail}`) as HTMLDivElement;
-      if (cardContainer && railEl) {
-        const cardLeft = cardContainer.offsetLeft;
-        const leftOffset = 64; // Perfectly aligns with the margin of headers
-        const scrollTarget = Math.max(0, cardLeft - leftOffset);
-        railEl.scrollTo({
-          left: scrollTarget,
-          behavior: "auto",
-        });
-      }
-
-      // 2. Decoupled Vertical Scroll: Instantly center the active row vertically in the TV viewport
-      const rowEl = focusedEl.closest(`.${styles.resultRow}`) as HTMLDivElement;
-      if (rowEl && pageRef.current) {
-        const rowRect = rowEl.getBoundingClientRect();
-        const containerRect = pageRef.current.getBoundingClientRect();
-        const absoluteRowTop = rowRect.top - containerRect.top + pageRef.current.scrollTop;
-        const rowHeight = rowRect.height;
-        const containerHeight = pageRef.current.clientHeight;
-        const verticalTarget = Math.max(0, absoluteRowTop - (containerHeight / 2) + (rowHeight / 2));
-        pageRef.current.scrollTo({
-          top: verticalTarget,
-          behavior: "auto",
-        });
-      }
-    } else if (
-      focusedId === "search-input" ||
-      focusedId === "search-mic" ||
-      focusedId.startsWith("search-suggest-") ||
-      focusedId.startsWith("search-key-")
-    ) {
-      pageRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    if (focusScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(focusScrollRafRef.current);
     }
+
+    focusScrollRafRef.current = window.requestAnimationFrame(() => {
+      focusScrollRafRef.current = null;
+      const targetFocusId = pendingFocusIdRef.current;
+      if (!targetFocusId) return;
+
+      const focusedEl = document.getElementById(targetFocusId);
+      if (!focusedEl) return;
+
+      if (targetFocusId.startsWith("search-result-")) {
+        // Keep the focused card visible without forcing left-edge anchoring each move.
+        const cardContainer = focusedEl.parentElement;
+        const railEl = focusedEl.closest(`.${styles.resultRail}`) as HTMLDivElement | null;
+        if (cardContainer && railEl) {
+          const focusedIndex = Number.parseInt(
+            targetFocusId.slice(targetFocusId.lastIndexOf("-") + 1),
+            10
+          );
+
+          if (Number.isFinite(focusedIndex) && focusedIndex === 0) {
+            if (railEl.scrollLeft !== 0) {
+              railEl.scrollLeft = 0;
+            }
+          } else {
+            const cardLeft = getOffsetLeftWithinAncestor(cardContainer as HTMLElement, railEl);
+            const cardWidth = (cardContainer as HTMLElement).offsetWidth;
+            const currentScrollLeft = railEl.scrollLeft;
+            const viewportWidth = railEl.clientWidth;
+            const railStyles = window.getComputedStyle(railEl);
+            const leftInset = parseFloat(railStyles.paddingLeft) || 24;
+            const rightInset = parseFloat(railStyles.paddingRight) || 24;
+
+            if (cardLeft < currentScrollLeft + leftInset) {
+              const nextLeft = Math.max(0, cardLeft - leftInset);
+              if (Math.abs(currentScrollLeft - nextLeft) > 1) {
+                railEl.scrollLeft = nextLeft;
+              }
+            } else if (cardLeft + cardWidth > currentScrollLeft + viewportWidth - rightInset) {
+              const nextLeft = cardLeft + cardWidth - viewportWidth + rightInset;
+              if (Math.abs(currentScrollLeft - nextLeft) > 1) {
+                railEl.scrollLeft = nextLeft;
+              }
+            }
+          }
+        }
+
+        // Instantly center the active row vertically in the TV viewport.
+        const rowEl = focusedEl.closest(`.${styles.resultRow}`) as HTMLDivElement | null;
+        if (rowEl && pageRef.current) {
+          const absoluteRowTop = getOffsetTopWithinAncestor(rowEl, pageRef.current);
+          const rowHeight = rowEl.offsetHeight;
+          const containerHeight = pageRef.current.clientHeight;
+          const verticalTarget = Math.max(
+            0,
+            absoluteRowTop - containerHeight / 2 + rowHeight / 2
+          );
+          if (Math.abs(pageRef.current.scrollTop - verticalTarget) > 1) {
+            pageRef.current.scrollTop = verticalTarget;
+          }
+        }
+      } else if (
+        targetFocusId === "search-input" ||
+        targetFocusId === "search-mic" ||
+        targetFocusId.startsWith("search-suggest-") ||
+        targetFocusId.startsWith("search-key-")
+      ) {
+        if (pageRef.current && pageRef.current.scrollTop !== 0) {
+          pageRef.current.scrollTop = 0;
+        }
+      }
+    });
   }, [focusedId]);
+
+  useEffect(() => {
+    return () => {
+      if (focusScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(focusScrollRafRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -161,22 +260,66 @@ export const Search: React.FC = () => {
     results && (results.live.length > 0 || results.vod.length > 0 || results.series.length > 0)
   );
 
+  const visibleResults = useMemo(() => {
+    if (!results) {
+      return {
+        live: [],
+        vod: [],
+        series: [],
+      };
+    }
+
+    return {
+      live: results.live.slice(0, resultWindowCounts.live),
+      vod: results.vod.slice(0, resultWindowCounts.movies),
+      series: results.series.slice(0, resultWindowCounts.series),
+    };
+  }, [resultWindowCounts, results]);
+
   const totalResults = useMemo(() => {
     if (!results) return 0;
     return results.live.length + results.vod.length + results.series.length;
   }, [results]);
 
   const firstResultId = useMemo(() => {
-    if (!results) return null;
-    if (results.live.length > 0) return "search-result-live-0";
-    if (results.vod.length > 0) return "search-result-movies-0";
-    if (results.series.length > 0) return "search-result-series-0";
+    if (visibleResults.live.length > 0) return "search-result-live-0";
+    if (visibleResults.vod.length > 0) return "search-result-movies-0";
+    if (visibleResults.series.length > 0) return "search-result-series-0";
     return null;
-  }, [results]);
+  }, [visibleResults]);
 
 
   const rememberFocus = (id: string) => {
     lastFocusedIdRef.current = id;
+  };
+
+  const expandResultWindow = (rowType: RowType) => {
+    if (!results) return false;
+
+    const totalByRow = {
+      live: results.live.length,
+      movies: results.vod.length,
+      series: results.series.length,
+    };
+
+    const nextCount = Math.min(
+      totalByRow[rowType],
+      resultWindowCounts[rowType] + RESULT_WINDOW_BATCH[rowType]
+    );
+
+    if (nextCount <= resultWindowCounts[rowType]) {
+      return false;
+    }
+
+    setResultWindowState({
+      query: debouncedQuery,
+      counts: {
+        ...resultWindowCounts,
+        [rowType]: nextCount,
+      },
+    });
+
+    return true;
   };
 
   const triggerVoiceSearch = () => {
@@ -402,7 +545,11 @@ export const Search: React.FC = () => {
 
     if (e.key === "ArrowRight") {
       if (index === rowLength - 1) {
-        e.preventDefault(); // Stop at the end of the rail
+        e.preventDefault();
+        if (expandResultWindow(rowType)) {
+          const nextId = `search-result-${rowType}-${index + 1}`;
+          window.requestAnimationFrame(() => setFocus(nextId));
+        }
       } else {
         e.preventDefault();
         setFocus(`search-result-${rowType}-${index + 1}`);
@@ -616,14 +763,14 @@ export const Search: React.FC = () => {
         {hasResults && results && (
           <div className={styles.resultRows}>
             {/* Live TV Shelf */}
-            {results.live.length > 0 && (
+            {visibleResults.live.length > 0 && (
               <div className={`${styles.resultRow} ${styles.liveRow}`}>
                 <div className={styles.resultHeader}>
                   <h3>Live Channels</h3>
                   <span>{results.live.length} Channels</span>
                 </div>
                 <div className={styles.resultRail}>
-                  {results.live.map((item, index) => (
+                  {visibleResults.live.map((item, index) => (
                     <LibraryCard
                       key={`live-${item.id}`}
                       id={`search-result-live-${index}`}
@@ -643,7 +790,7 @@ export const Search: React.FC = () => {
                       }
                       onFocus={() => rememberFocus(`search-result-live-${index}`)}
                       onKeyDown={(e) =>
-                        handleCardKeyDown(e, "live", index, results.live.length)
+                        handleCardKeyDown(e, "live", index, visibleResults.live.length)
                       }
                     />
                   ))}
@@ -652,14 +799,14 @@ export const Search: React.FC = () => {
             )}
 
             {/* Movies Shelf */}
-            {results.vod.length > 0 && (
+            {visibleResults.vod.length > 0 && (
               <div className={`${styles.resultRow} ${styles.moviesRow}`}>
                 <div className={styles.resultHeader}>
                   <h3>Movies</h3>
                   <span>{results.vod.length} Movies</span>
                 </div>
                 <div className={styles.resultRail}>
-                  {results.vod.map((item, index) => (
+                  {visibleResults.vod.map((item, index) => (
                     <LibraryCard
                       key={`movie-${item.id}`}
                       id={`search-result-movies-${index}`}
@@ -672,7 +819,7 @@ export const Search: React.FC = () => {
                       onClick={() => setSelectedMovieId(item.id)}
                       onFocus={() => rememberFocus(`search-result-movies-${index}`)}
                       onKeyDown={(e) =>
-                        handleCardKeyDown(e, "movies", index, results.vod.length)
+                        handleCardKeyDown(e, "movies", index, visibleResults.vod.length)
                       }
                     />
                   ))}
@@ -681,14 +828,14 @@ export const Search: React.FC = () => {
             )}
 
             {/* Series Shelf */}
-            {results.series.length > 0 && (
+            {visibleResults.series.length > 0 && (
               <div className={`${styles.resultRow} ${styles.seriesRow}`}>
                 <div className={styles.resultHeader}>
                   <h3>TV Series</h3>
                   <span>{results.series.length} Series</span>
                 </div>
                 <div className={styles.resultRail}>
-                  {results.series.map((item, index) => (
+                  {visibleResults.series.map((item, index) => (
                     <LibraryCard
                       key={`series-${item.id}`}
                       id={`search-result-series-${index}`}
@@ -701,7 +848,7 @@ export const Search: React.FC = () => {
                       onClick={() => setSelectedSeriesId(item.id)}
                       onFocus={() => rememberFocus(`search-result-series-${index}`)}
                       onKeyDown={(e) =>
-                        handleCardKeyDown(e, "series", index, results.series.length)
+                        handleCardKeyDown(e, "series", index, visibleResults.series.length)
                       }
                     />
                   ))}

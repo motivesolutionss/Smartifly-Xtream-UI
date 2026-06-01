@@ -30,19 +30,33 @@ type LibraryData = {
   history: RecentlyWatchedItem[];
 };
 
+const getOffsetLeftWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
+  let offsetLeft = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== ancestor) {
+    offsetLeft += current.offsetLeft;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return offsetLeft;
+};
+
 export const Library: React.FC = () => {
   const [activeTab, setActiveTab] = useState<LibraryTabId>("FAVORITES");
   const [focusedTab, setFocusedTab] = useState<LibraryTabId>("FAVORITES");
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [focusedItem, setFocusedItem] = useState<FavoriteItem | RecentlyWatchedItem | null>(null);
-  const { setActivePlaybackItem } = usePlayerStore();
+  const setActivePlaybackItem = usePlayerStore((state) => state.setActivePlaybackItem);
   const { setFocus, focusedId } = useFocus();
 
   const lastFocusedCardIdRef = useRef<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(false);
   const wasInDetailsRef = useRef(false);
+  const focusScrollRafRef = useRef<number | null>(null);
+  const pendingFocusIdRef = useRef<string | null>(null);
   const activePlaylistId = playlistStorage.getActivePlaylistId();
   const activeProfileId = profileStorage.getActiveProfileId();
 
@@ -165,7 +179,12 @@ export const Library: React.FC = () => {
 
   // Escape to global sidebar on Back key press
   useTvBack(() => {
-    setFocus("nav-LIBRARY");
+    const rememberedId = lastFocusedCardIdRef.current;
+    const targetId =
+      rememberedId && currentCardIds.includes(rememberedId)
+        ? rememberedId
+        : firstCardId ?? `library-tab-${activeTab}`;
+    setFocus(targetId);
   }, !selectedMovieId && !selectedSeriesId);
 
   // Restore Focus or set initial focus when returning to main Library screen
@@ -215,61 +234,105 @@ export const Library: React.FC = () => {
   // Auto-scroll: keep focused card visible in its rail or grid
   useEffect(() => {
     if (!focusedId || !pageRef.current) return;
-    const focusedEl = document.getElementById(focusedId);
-    if (!focusedEl) return;
+    pendingFocusIdRef.current = focusedId;
+
+    if (focusScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(focusScrollRafRef.current);
+    }
+
+    focusScrollRafRef.current = window.requestAnimationFrame(() => {
+      focusScrollRafRef.current = null;
+      const targetFocusId = pendingFocusIdRef.current;
+      if (!targetFocusId || !pageRef.current) return;
+
+      const focusedEl = document.getElementById(targetFocusId);
+      if (!focusedEl) return;
+
+      const pageElement = pageRef.current;
 
     if (
-      focusedId.startsWith("library-live-") ||
-      focusedId.startsWith("library-movies-") ||
-      focusedId.startsWith("library-series-")
+      targetFocusId.startsWith("library-live-") ||
+      targetFocusId.startsWith("library-movies-") ||
+      targetFocusId.startsWith("library-series-")
     ) {
-      // Horizontal rail scroll — use getBoundingClientRect for reliable positioning
+      // Horizontal rail scroll — offset math avoids repeated viewport rect reads.
       const railEl = focusedEl.closest(`.${styles.resultRail}`) as HTMLDivElement | null;
-      if (railEl) {
-        const cardRect = focusedEl.getBoundingClientRect();
-        const railRect = railEl.getBoundingClientRect();
-        // Current scroll position + card's left edge relative to rail's left edge
-        // Subtract a small inset so the card isn't flush against the edge
-        const inset = 22;
-        const scrollTarget = Math.max(
-          0,
-          railEl.scrollLeft + (cardRect.left - railRect.left) - inset
+      const cardContainer = focusedEl.parentElement as HTMLElement | null;
+      if (railEl && cardContainer) {
+        const focusedIndex = Number.parseInt(
+          targetFocusId.slice(targetFocusId.lastIndexOf("-") + 1),
+          10
         );
-        railEl.scrollLeft = scrollTarget;
+        const leftInset = 24;
+        const rightInset = 24;
+        const cardLeft = getOffsetLeftWithinAncestor(cardContainer, railEl);
+        const cardWidth = cardContainer.offsetWidth;
+        const currentScrollLeft = railEl.scrollLeft;
+        const viewportWidth = railEl.clientWidth;
+
+        if (Number.isFinite(focusedIndex) && focusedIndex === 0) {
+          if (currentScrollLeft !== 0) {
+            railEl.scrollLeft = 0;
+          }
+        } else if (cardLeft < currentScrollLeft + leftInset) {
+          const nextLeft = Math.max(0, cardLeft - leftInset);
+          if (Math.abs(currentScrollLeft - nextLeft) > 1) {
+            railEl.scrollLeft = nextLeft;
+          }
+        } else if (
+          cardLeft + cardWidth >
+          currentScrollLeft + viewportWidth - rightInset
+        ) {
+          const nextLeft = cardLeft + cardWidth - viewportWidth + rightInset;
+          if (Math.abs(currentScrollLeft - nextLeft) > 1) {
+            railEl.scrollLeft = nextLeft;
+          }
+        }
       }
 
-      // Vertical page scroll — center the active row
+      // Vertical page scroll — center the active row using layout offsets.
       const rowEl = focusedEl.closest(`.${styles.resultRow}`) as HTMLDivElement | null;
-      if (rowEl && pageRef.current) {
-        const rowRect = rowEl.getBoundingClientRect();
-        const containerRect = pageRef.current.getBoundingClientRect();
-        const absoluteRowTop = rowRect.top - containerRect.top + pageRef.current.scrollTop;
+      if (rowEl) {
+        const absoluteRowTop = rowEl.offsetTop;
         const verticalTarget = Math.max(
           0,
-          absoluteRowTop - (pageRef.current.clientHeight / 2) + (rowRect.height / 2)
+          absoluteRowTop - (pageElement.clientHeight / 2) + (rowEl.offsetHeight / 2)
         );
-        pageRef.current.scrollTop = verticalTarget;
+        if (Math.abs(pageElement.scrollTop - verticalTarget) > 1) {
+          pageElement.scrollTop = verticalTarget;
+        }
       }
-    } else if (focusedId.startsWith("library-continue-")) {
-      // Grid card — only vertical scroll, center the focused card on screen
+    } else if (targetFocusId.startsWith("library-continue-")) {
+      // Grid card — only vertical scroll, center the focused card on screen.
       const cardWrapper = focusedEl.parentElement;
-      if (cardWrapper && pageRef.current) {
-        const cardRect = cardWrapper.getBoundingClientRect();
-        const containerRect = pageRef.current.getBoundingClientRect();
-        const absoluteCardTop = cardRect.top - containerRect.top + pageRef.current.scrollTop;
+      if (cardWrapper) {
+        const absoluteCardTop = cardWrapper.offsetTop;
         const verticalTarget = Math.max(
           0,
-          absoluteCardTop - (pageRef.current.clientHeight / 2) + (cardRect.height / 2)
+          absoluteCardTop - (pageElement.clientHeight / 2) + (cardWrapper.offsetHeight / 2)
         );
-        pageRef.current.scrollTop = verticalTarget;
+        if (Math.abs(pageElement.scrollTop - verticalTarget) > 1) {
+          pageElement.scrollTop = verticalTarget;
+        }
       }
     } else if (
-      focusedId.startsWith("library-tab-") ||
-      focusedId === "library-clear"
+      targetFocusId.startsWith("library-tab-") ||
+      targetFocusId === "library-clear"
     ) {
-      pageRef.current.scrollTop = 0;
+      if (pageElement.scrollTop !== 0) {
+        pageElement.scrollTop = 0;
+      }
     }
+    });
   }, [focusedId]);
+
+  useEffect(() => {
+    return () => {
+      if (focusScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(focusScrollRafRef.current);
+      }
+    };
+  }, []);
 
   // ── All callbacks must be declared BEFORE any early returns ──────────────
   // React requires hooks to be called in the same order on every render.

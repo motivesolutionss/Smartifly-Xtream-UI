@@ -106,7 +106,7 @@
   background: #e50914;
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.2);
-  transform: scale(1.05) translateY(-1px);
+  transform: scale(1.03) translateY(-1px);
   /* box-shadow removed — not compositable, causes repaint on focus */
 }
 
@@ -115,7 +115,7 @@
   background: #c4070f;
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.25);
-  transform: scale(1.05) translateY(-1px);
+  transform: scale(1.03) translateY(-1px);
 }
 
 /* ── Cinematic Details Peek Banner ───────────────────────────────────────── */
@@ -351,7 +351,7 @@
   border-color: #e50914;
   background: #e50914;
   color: #ffffff;
-  transform: scale(1.05) translateY(-1px);
+  transform: scale(1.03) translateY(-1px);
   /* box-shadow removed */
 }
 
@@ -559,6 +559,12 @@
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+
+:global(.perf-reduced) .shimmerCard,
+:global(.perf-reduced) .emptyWrap,
+:global(.perf-reduced) .peekSection {
+  animation: none !important;
 }
 
 .scrollSpacer {

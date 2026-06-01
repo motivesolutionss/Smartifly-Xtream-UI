@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Smile,
   Tv,
@@ -180,9 +180,9 @@ export const Profiles: React.FC<ProfilesProps> = ({ onSelectProfile }) => {
   };
 
   // Clean ambient vibe matching profile color
-  const updateVibeColor = (color: string) => {
-    setAtmosphereColor(color);
-  };
+  const updateVibeColor = useCallback((color: string) => {
+    setAtmosphereColor((current) => (current === color ? current : color));
+  }, []);
 
   return (
     <div 

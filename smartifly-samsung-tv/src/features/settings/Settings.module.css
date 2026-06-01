@@ -282,7 +282,7 @@
 .pill:global(.focused) {
   border-color: #e50914;
   color: #ffffff;
-  transform: scale(1.07);
+  transform: scale(1.05);
 }
 
 .pillActive {
@@ -321,7 +321,7 @@
 .toggle:global(.focused) {
   border-color: #e50914;
   color: #ffffff;
-  transform: scale(1.05);
+  transform: scale(1.03);
 }
 
 .toggleOn {
@@ -493,7 +493,7 @@
 .playlistBtn:global(.focused) {
   border-color: #e50914;
   color: #ffffff;
-  transform: scale(1.07);
+  transform: scale(1.05);
 }
 
 .playlistBtnActive {

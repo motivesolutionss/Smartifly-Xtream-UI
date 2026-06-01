@@ -58,6 +58,23 @@ const formatDate = (value?: string) => {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 };
 
+const getFirstFocusIdForSection = (
+  section: SectionId,
+  playlistCount: number
+): string => {
+  const firstFocusMap: Record<SectionId, string> = {
+    account: "settings-nav-account",
+    playback: "settings-live-ext-ts",
+    security: "settings-parental-lock",
+    playlists: playlistCount > 0 ? "settings-playlist-switch-0" : "settings-add-playlist",
+    profiles: "settings-switch-profile",
+    data: "settings-clear-data",
+    session: "settings-logout",
+  };
+
+  return firstFocusMap[section];
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const Settings: React.FC = () => {
@@ -109,23 +126,14 @@ export const Settings: React.FC = () => {
 
   // When section changes, focus the first interactive element in that section
   useEffect(() => {
-    const firstFocusMap: Record<SectionId, string> = {
-      account:   "settings-nav-account",
-      playback:  "settings-live-ext-ts",
-      security:  "settings-parental-lock",
-      playlists: playlists.length > 0 ? "settings-playlist-switch-0" : "settings-add-playlist",
-      profiles:  "settings-switch-profile",
-      data:      "settings-clear-data",
-      session:   "settings-logout",
-    };
     const frame = window.requestAnimationFrame(() => {
-      setFocus(firstFocusMap[activeSection]);
+      setFocus(getFirstFocusIdForSection(activeSection, playlists.length));
     });
     return () => window.cancelAnimationFrame(frame);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]);
 
-  useTvBack(() => setFocus("nav-SETTINGS"));
+  useTvBack(() => setFocus(getFirstFocusIdForSection(activeSection, playlists.length)));
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
