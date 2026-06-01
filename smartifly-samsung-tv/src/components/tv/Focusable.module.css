@@ -21,13 +21,6 @@
   border-width: 2px;
 }
 
-.pill .glowEffect {
-  border-radius: 999px;
-  box-shadow:
-    0 0 0.85rem rgba(var(--color-primary-rgb), 0.28),
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
-}
-
 .none {
   /* No default scale or anything, purely for containers */
   transform: none !important;
@@ -60,67 +53,15 @@
   z-index: var(--z-focus);
 }
 
-/* Specular Highlight */
-.specularHighlight {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.15) 0%,
-    rgba(255, 255, 255, 0) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  border-radius: var(--radius-md);
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Spotlight Shine (Sweep effect) */
-.shineSweep {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.2) 50%,
-    transparent 100%
-  );
-  transform: skewX(-20deg) translateX(-150%);
-  animation: shine 0.6s forwards;
-  pointer-events: none;
-  z-index: 3;
-}
-
-@keyframes shine {
-  0% { transform: skewX(-20deg) translateX(-150%); }
-  100% { transform: skewX(-20deg) translateX(150%); }
-}
-
 /* Adaptive Professional Border */
 .focusBorder {
   position: absolute;
   inset: 0;
-  border: var(--focus-border-width) solid #FFFFFF;
+  border: var(--focus-border-width) solid rgba(255, 255, 255, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.14);
   border-radius: var(--radius-md);
   pointer-events: none;
-  z-index: 4;
-}
-
-/* Suble Glow Effect */
-.glowEffect {
-  position: absolute;
-  inset: 0;
-  box-shadow: 0 0 1.25rem rgba(var(--color-primary-rgb), 0.3);
-  border-radius: var(--radius-md);
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.5;
+  z-index: 2;
 }
 
 .disabled {

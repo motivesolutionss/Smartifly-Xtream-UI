@@ -63,6 +63,8 @@ export function VirtualGrid<T>({
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const edgeTimerRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef(0);
   const prevFocusedIndexRef = useRef<number | undefined>(undefined);
   const lastScrollRequestRef = useRef<number>(0);
 
@@ -90,8 +92,18 @@ export function VirtualGrid<T>({
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const next = e.currentTarget.scrollTop;
-    setScrollTop(next);
+    pendingScrollTopRef.current = next;
     onScrollTopChange?.(next);
+    if (scrollRafRef.current !== null) return;
+
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      setScrollTop((current) =>
+        Math.abs(current - pendingScrollTopRef.current) < 1
+          ? current
+          : pendingScrollTopRef.current
+      );
+    });
   }, [onScrollTopChange]);
 
   // Restore scroll position on mount only.
@@ -100,6 +112,7 @@ export function VirtualGrid<T>({
     if (!viewport) return;
     if (Math.abs(viewport.scrollTop - initialScrollTop) < 1) return;
     viewport.scrollTop = initialScrollTop;
+    pendingScrollTopRef.current = initialScrollTop;
     setScrollTop(initialScrollTop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -179,6 +192,7 @@ export function VirtualGrid<T>({
   useEffect(() => {
     return () => {
       if (edgeTimerRef.current !== null) window.clearTimeout(edgeTimerRef.current);
+      if (scrollRafRef.current !== null) window.cancelAnimationFrame(scrollRafRef.current);
     };
   }, []);
 

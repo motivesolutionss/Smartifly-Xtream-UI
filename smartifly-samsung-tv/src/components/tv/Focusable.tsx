@@ -114,19 +114,10 @@ export const Focusable: React.FC<FocusableProps> = ({
     >
       <div className={styles.content}>
         {children}
-        {isFocused && !disableFocusEffects && variant === "default" && (
-          <>
-            <div className={styles.specularHighlight} />
-            <div className={styles.shineSweep} />
-          </>
-        )}
       </div>
 
       {isFocused && !disableFocusEffects && variant !== "none" && (
-        <>
-          <div className={styles.focusBorder} />
-          <div className={styles.glowEffect} />
-        </>
+        <div className={styles.focusBorder} />
       )}
     </div>
   );

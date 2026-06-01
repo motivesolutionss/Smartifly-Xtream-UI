@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { FocusContext } from "./focusContext";
+import { perfMetrics } from "../utils/perfMetrics";
 
 export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -113,7 +114,11 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const scrollPositions: Array<{ el: HTMLElement; top: number; left: number }> = [];
         let parent = element.parentElement;
         while (parent) {
-          scrollPositions.push({ el: parent, top: parent.scrollTop, left: parent.scrollLeft });
+          const isVerticallyScrollable = parent.scrollHeight > parent.clientHeight;
+          const isHorizontallyScrollable = parent.scrollWidth > parent.clientWidth;
+          if (isVerticallyScrollable || isHorizontallyScrollable) {
+            scrollPositions.push({ el: parent, top: parent.scrollTop, left: parent.scrollLeft });
+          }
           parent = parent.parentElement;
         }
         const bodyTop = document.body.scrollTop;
@@ -123,7 +128,7 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         try {
           element.focus({ preventScroll: true });
-        } catch (e) {
+        } catch {
           element.focus();
         }
 
@@ -141,19 +146,59 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [focusedId]);
 
   const moveFocus = useCallback((direction: "up" | "down" | "left" | "right") => {
+    const perfEnabled = perfMetrics.enabled;
+    const startTime = perfEnabled ? performance.now() : 0;
+    let measuredRectCount = 0;
+    let directionalCandidateCount = 0;
+
+    const finalizeMetrics = (matched: boolean) => {
+      if (!perfEnabled) return;
+      const durationMs = performance.now() - startTime;
+      perfMetrics.increment("focus_move_count");
+      perfMetrics.increment("focus_move_rect_measure_count", measuredRectCount);
+      perfMetrics.increment("focus_move_directional_candidate_count", directionalCandidateCount);
+      if (!matched) {
+        perfMetrics.increment("focus_move_no_match_count");
+      }
+      perfMetrics.recordDuration("focus_move_duration_ms", durationMs, {
+        slowAboveMs: 16,
+        data: {
+          direction,
+          matched,
+          measuredRectCount,
+          directionalCandidateCount,
+        },
+      });
+    };
+
     const currentId = focusedIdRef.current;
-    if (!currentId) return;
+    if (!currentId) {
+      finalizeMetrics(false);
+      return;
+    }
 
     const currentElem = elements.current.get(currentId);
+    const rectCache = new Map<HTMLElement, DOMRect>();
+    const getRect = (element: HTMLElement) => {
+      const cached = rectCache.get(element);
+      if (cached) return cached;
+      measuredRectCount += 1;
+      const rect = element.getBoundingClientRect();
+      rectCache.set(element, rect);
+      return rect;
+    };
 
     // ── Ghost focus: element is temporarily unmounted (virtualized) ──────────
     // Use the last known rect so navigation still works during key-hold while
     // the card is outside the virtual window.
     const currentRect: DOMRect | null = currentElem
-      ? currentElem.getBoundingClientRect()
+      ? getRect(currentElem)
       : lastKnownRectRef.current;
 
-    if (!currentRect) return;
+    if (!currentRect) {
+      finalizeMetrics(false);
+      return;
+    }
 
     // Update lastKnownRect if element is live.
     if (currentElem) {
@@ -171,6 +216,10 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         : currentRect.right;
 
     const isInLiveGrid = currentId.startsWith("card-live-");
+    const currentIsNav = currentId.startsWith("nav-");
+    const currentIsCard = currentId.startsWith("card-");
+    const limitRightMoveToCurrentRail =
+      direction === "right" && currentRailId && currentIsCard;
 
     let bestMatch: string | null = null;
     let minDistance = Infinity;
@@ -179,47 +228,56 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (id === currentId) return;
       if (!isIdAllowed(id)) return;
 
+      const candidateIsNav = id.startsWith("nav-");
+      const candidateIsCard = id.startsWith("card-");
+      const candidateIsLiveCategory = id.startsWith("live-cat-");
+      const candidateIsLiveGuide = id === "live-open-epg";
+      const candidateIsTopBar = id.startsWith("top-");
+
+      if ((direction === "up" || direction === "down") && candidateIsNav && !currentIsNav) {
+        return;
+      }
+
+      if (isInLiveGrid && direction === "left" && candidateIsNav) {
+        return;
+      }
+
+      if (isInLiveGrid) {
+        if (
+          direction === "up" &&
+          (candidateIsLiveGuide || candidateIsLiveCategory || candidateIsTopBar)
+        ) {
+          return;
+        }
+
+        if (direction === "down" && (candidateIsLiveCategory || candidateIsLiveGuide)) {
+          return;
+        }
+      }
+
+      // Fast pre-check: skip elements that are not currently mounted or are hidden.
+      if (!elem.isConnected || elem.offsetWidth === 0) return;
+
       // Rail containment: right moves from card- stay within same rail.
-      if (direction === "right" && currentRailId && currentId.startsWith("card-")) {
+      if (limitRightMoveToCurrentRail) {
+        if (!candidateIsCard) return;
         const candidateRailContainer = elem.closest("[id^='rail-']") as HTMLElement | null;
         if (candidateRailContainer?.id !== currentRailId) return;
       }
 
-      // Fast pre-check: skip elements that are not currently mounted or are hidden
-      if (!elem.isConnected || elem.offsetWidth === 0) return;
-
-      const rect = elem.getBoundingClientRect();
+      const rect = getRect(elem);
       let isCandidate = false;
       const threshold = 10;
 
       switch (direction) {
         case "up":
           isCandidate = rect.bottom <= currentRect.top + threshold;
-          if (isCandidate && id.startsWith("nav-") && !currentId.startsWith("nav-")) {
-            isCandidate = false;
-          }
-          if (isInLiveGrid && isCandidate) {
-            if (id === "live-open-epg" || id.startsWith("live-cat-") || id.startsWith("top-")) {
-              isCandidate = false;
-            }
-          }
           break;
         case "down":
           isCandidate = rect.top >= currentRect.bottom - threshold;
-          if (isCandidate && id.startsWith("nav-") && !currentId.startsWith("nav-")) {
-            isCandidate = false;
-          }
-          if (isInLiveGrid && isCandidate) {
-            if (id.startsWith("live-cat-") || id === "live-open-epg") {
-              isCandidate = false;
-            }
-          }
           break;
         case "left":
           isCandidate = rect.right <= currentRect.left + threshold;
-          if (isInLiveGrid && isCandidate && id.startsWith("nav-")) {
-            isCandidate = false;
-          }
           break;
         case "right":
           isCandidate = rect.left >= navigationEscapeRight - threshold;
@@ -227,12 +285,13 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       if (isCandidate) {
+        directionalCandidateCount += 1;
         const dX = rect.left + rect.width / 2 - (currentRect.left + currentRect.width / 2);
         const dY = rect.top + rect.height / 2 - (currentRect.top + currentRect.height / 2);
         const weight = direction === "up" || direction === "down" ? 3 : 1;
 
         let navPenalty = 0;
-        if (id.startsWith("nav-") && !currentId.startsWith("nav-")) {
+        if (candidateIsNav && !currentIsNav) {
           navPenalty = direction === "left" ? 600 : 2000;
         }
 
@@ -248,13 +307,24 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    if (!bestMatch && direction === "right" && currentId.startsWith("nav-")) {
-      const nonNavCandidates = Array.from(elements.current.entries())
-        .filter(([id]) => !id.startsWith("nav-") && isIdAllowed(id))
-        .map(([id, element]) => ({ id, rect: element.getBoundingClientRect() }))
-        .filter(({ rect }) => rect.left >= navigationEscapeRight - 10);
-      nonNavCandidates.sort((a, b) => a.rect.left - b.rect.left);
-      bestMatch = nonNavCandidates[0]?.id ?? null;
+    if (!bestMatch && direction === "right" && currentIsNav) {
+      let closestRightId: string | null = null;
+      let closestRightLeft = Infinity;
+
+      elements.current.forEach((element, id) => {
+        if (id.startsWith("nav-") || !isIdAllowed(id)) return;
+        if (!element.isConnected || element.offsetWidth === 0) return;
+
+        const rect = getRect(element);
+        if (rect.left < navigationEscapeRight - 10) return;
+
+        if (rect.left < closestRightLeft) {
+          closestRightLeft = rect.left;
+          closestRightId = id;
+        }
+      });
+
+      bestMatch = closestRightId;
     }
 
     if (!bestMatch && direction === "up") {
@@ -274,11 +344,16 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }
 
-    if (!bestMatch && direction === "right" && currentId.startsWith("card-")) return;
+    if (!bestMatch && direction === "right" && currentIsCard) {
+      finalizeMetrics(false);
+      return;
+    }
 
     if (bestMatch) {
       setFocus(bestMatch);
     }
+
+    finalizeMetrics(Boolean(bestMatch));
   }, [isIdAllowed, setFocus]);
 
   useEffect(() => {
