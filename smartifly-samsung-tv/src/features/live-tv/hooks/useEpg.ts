@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { services } from "../../../services";
 import type { AppEpgItem } from "../../../types/appModels";
 import { parseTimestampToSeconds } from "../epgTime";
+import { getShortEpgQueryOptions } from "../epgQuery";
 
 // ─── Shared parsed program model ─────────────────────────────────────────────
 // Used by both the mini-guide strip in LiveTv.tsx and the EpgGrid modal.
@@ -43,16 +43,9 @@ const normalise = (items: AppEpgItem[]): NormalisedProgram[] => {
 };
 
 export const useEpg = (streamId: string) => {
-  const { data: epgList, isLoading } = useQuery<AppEpgItem[]>({
-    queryKey: ["epg", streamId],
-    queryFn: () => services.content.getShortEpg(streamId),
-    enabled: !!streamId,
-    retry: 1,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
-  });
+  const { data: epgList, isLoading } = useQuery<AppEpgItem[]>(
+    getShortEpgQueryOptions(streamId)
+  );
 
   // Update "now" every minute — use a ref-based approach to avoid stale closures.
   const [nowMs, setNowMs] = useState(() => Date.now());

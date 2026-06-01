@@ -9,11 +9,13 @@
  *     <div title>            ← OUTSIDE Focusable so it's never clipped
  *   </div>
  */
-import React, { useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../components/tv/Focusable";
 import { useFocus } from "../../providers/useFocus";
 import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import { perfMetrics } from "../../utils/perfMetrics";
 import type { AppChannel } from "../../types/appModels";
+import { cleanChannelTitle } from "./channelTitle";
 import styles from "./LiveTvCard.module.css";
 
 function hashString(str: string): number {
@@ -22,30 +24,6 @@ function hashString(str: string): number {
     hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
   }
   return hash;
-}
-
-export function cleanChannelTitle(title: string): string {
-  if (!title) return "";
-  
-  // Strip common category prefixes and delimiters like "CRIC || Willow 2 HD" -> "Willow 2 HD"
-  const delimiters = ["||", "|", " - ", " : "];
-  for (const delimiter of delimiters) {
-    if (title.includes(delimiter)) {
-      const parts = title.split(delimiter);
-      if (parts.length > 1 && parts[1].trim()) {
-        return parts[1].trim();
-      }
-    }
-  }
-
-  // Prefix pattern like "UK: Willow" -> "Willow"
-  const colonIndex = title.indexOf(":");
-  if (colonIndex > 0 && colonIndex < 8) {
-    const afterColon = title.substring(colonIndex + 1).trim();
-    if (afterColon) return afterColon;
-  }
-  
-  return title;
 }
 
 interface LiveTvCardProps {
@@ -61,7 +39,70 @@ interface LiveTvCardProps {
   prevRowChannelId?: string;
   totalChannels: number;
   lastChannelId?: string;
+  shouldLoadLogo: boolean;
 }
+
+type LiveTvCardVisualProps = {
+  isFocused: boolean;
+  logoUrl?: string;
+  placeholderBackground: string;
+  placeholderInitials: string;
+  showLogo: boolean;
+  onLogoError: () => void;
+  onLogoLoad: () => void;
+};
+
+const LiveTvCardVisual = memo(
+  function LiveTvCardVisual({
+    isFocused,
+    logoUrl,
+    placeholderBackground,
+    placeholderInitials,
+    showLogo,
+    onLogoError,
+    onLogoLoad,
+  }: LiveTvCardVisualProps) {
+    useEffect(() => {
+      perfMetrics.increment("live_card_visual_render_count");
+    });
+
+    return (
+      <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
+        {showLogo ? (
+          <img
+            src={logoUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className={`${styles.logo} ${isFocused ? styles.logoFocused : ""}`}
+            onLoad={onLogoLoad}
+            onError={onLogoError}
+          />
+        ) : (
+          <div
+            className={styles.placeholder}
+            style={{ background: placeholderBackground }}
+          >
+            {placeholderInitials}
+          </div>
+        )}
+
+        <div className={`${styles.badge} ${isFocused ? styles.badgeFocused : ""}`}>
+          <span className={styles.liveDot} />
+          LIVE
+        </div>
+      </div>
+    );
+  },
+  (previousProps, nextProps) =>
+    previousProps.isFocused === nextProps.isFocused &&
+    previousProps.logoUrl === nextProps.logoUrl &&
+    previousProps.placeholderBackground === nextProps.placeholderBackground &&
+    previousProps.placeholderInitials === nextProps.placeholderInitials &&
+    previousProps.showLogo === nextProps.showLogo
+);
+
+LiveTvCardVisual.displayName = "LiveTvCardVisual";
 
 export const LiveTvCard: React.FC<LiveTvCardProps> = ({
   channel,
@@ -76,67 +117,85 @@ export const LiveTvCard: React.FC<LiveTvCardProps> = ({
   prevRowChannelId,
   totalChannels,
   lastChannelId,
+  shouldLoadLogo,
 }) => {
   const focusId = `card-live-${channel.id}`;
   const { focusedId, setFocus } = useFocus();
   const isFocused = focusedId === focusId;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      const isLeftmost = index % columns === 0;
-      if (isLeftmost) {
-        e.preventDefault();
-        if (isSearching) {
-          setFocus("tvkb-key-2-9"); // Focus the middle rightmost key on virtual keyboard
-        } else if (activeCategoryId) {
-          setFocus(`live-cat-${activeCategoryId}`);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        const isLeftmost = index % columns === 0;
+        if (isLeftmost) {
+          e.preventDefault();
+          if (isSearching) {
+            setFocus("tvkb-key-2-9");
+          } else if (activeCategoryId) {
+            setFocus(`live-cat-${activeCategoryId}`);
+          }
+        } else if (prevChannelId) {
+          e.preventDefault();
+          setFocus(`card-live-${prevChannelId}`);
         }
-      } else if (prevChannelId) {
+      } else if (e.key === "ArrowRight") {
+        const isRightmost =
+          index % columns === columns - 1 || index === totalChannels - 1;
+        if (isRightmost) {
+          e.preventDefault();
+        }
+      } else if (e.key === "ArrowDown") {
+        if (nextRowChannelId) {
+          e.preventDefault();
+          setFocus(`card-live-${nextRowChannelId}`);
+        } else {
+          e.preventDefault();
+          const lastRowStartIndex =
+            Math.floor((totalChannels - 1) / columns) * columns;
+          if (index < lastRowStartIndex && lastChannelId) {
+            setFocus(`card-live-${lastChannelId}`);
+          }
+        }
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setFocus(`card-live-${prevChannelId}`);
-      }
-    } else if (e.key === "ArrowRight") {
-      const isRightmost = index % columns === columns - 1 || index === totalChannels - 1;
-      if (isRightmost) {
-        e.preventDefault();
-      }
-    } else if (e.key === "ArrowDown") {
-      if (nextRowChannelId) {
-        e.preventDefault();
-        setFocus(`card-live-${nextRowChannelId}`);
-      } else {
-        e.preventDefault();
-        const lastRowStartIndex = Math.floor((totalChannels - 1) / columns) * columns;
-        if (index < lastRowStartIndex && lastChannelId) {
-          setFocus(`card-live-${lastChannelId}`);
+        if (prevRowChannelId) {
+          setFocus(`card-live-${prevRowChannelId}`);
+        } else {
+          setFocus("live-search-input-wrapper");
         }
       }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (prevRowChannelId) {
-        setFocus(`card-live-${prevRowChannelId}`);
-      } else {
-        setFocus("live-search-input-wrapper");
-      }
-    }
-  };
+    },
+    [
+      activeCategoryId,
+      columns,
+      index,
+      isSearching,
+      lastChannelId,
+      nextRowChannelId,
+      prevChannelId,
+      prevRowChannelId,
+      setFocus,
+      totalChannels,
+    ]
+  );
 
-  const [failedUrls, setFailedUrls] = useState<Record<string, true>>({});
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
+  const imageLoadStartedAtRef = useRef<number | null>(null);
 
   const showLogo = useMemo(() => {
     if (!channel.logoUrl) return false;
+    if (!shouldLoadLogo) return false;
     if (imageFailureMemory.hasFailed(channel.logoUrl)) return false;
-    return !failedUrls[channel.logoUrl];
-  }, [channel.logoUrl, failedUrls]);
+    return failedLogoUrl !== channel.logoUrl;
+  }, [channel.logoUrl, failedLogoUrl, shouldLoadLogo]);
 
   const displayTitle = useMemo(() => cleanChannelTitle(channel.title), [channel.title]);
 
-  const placeholderStyle = useMemo(
-    () => ({
-      background: `linear-gradient(135deg,
+  const placeholderBackground = useMemo(
+    () =>
+      `linear-gradient(135deg,
         hsl(${Math.abs(hashString(displayTitle)) % 360}, 40%, 22%),
         hsl(${(Math.abs(hashString(displayTitle)) + 60) % 360}, 30%, 14%))`,
-    }),
     [displayTitle]
   );
 
@@ -144,6 +203,46 @@ export const LiveTvCard: React.FC<LiveTvCardProps> = ({
     const cleanLetters = displayTitle.replace(/[^a-zA-Z0-9]/g, "").trim();
     return cleanLetters.substring(0, 2).toUpperCase() || "TV";
   }, [displayTitle]);
+
+  const handleEnter = useCallback(() => onClick(channel), [channel, onClick]);
+  const handleFocus = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
+  useEffect(() => {
+    if (showLogo && channel.logoUrl) {
+      imageLoadStartedAtRef.current = performance.now();
+      return;
+    }
+
+    imageLoadStartedAtRef.current = null;
+  }, [channel.logoUrl, showLogo]);
+
+  const handleLogoLoad = useCallback(() => {
+    if (channel.logoUrl) {
+      imageFailureMemory.markLoaded(channel.logoUrl);
+    }
+    perfMetrics.increment("live_card_logo_load_success_count");
+    if (imageLoadStartedAtRef.current !== null) {
+      perfMetrics.recordDuration(
+        "live_card_logo_load_ms",
+        performance.now() - imageLoadStartedAtRef.current,
+        { slowAboveMs: 300, data: { channelId: channel.id }, logSlowEvent: false }
+      );
+    }
+    imageLoadStartedAtRef.current = null;
+  }, [channel.id, channel.logoUrl]);
+  const handleLogoError = useCallback(() => {
+    if (!channel.logoUrl) return;
+    perfMetrics.increment("live_card_logo_load_error_count");
+    if (imageLoadStartedAtRef.current !== null) {
+      perfMetrics.recordDuration(
+        "live_card_logo_error_ms",
+        performance.now() - imageLoadStartedAtRef.current,
+        { slowAboveMs: 300, data: { channelId: channel.id }, logSlowEvent: false }
+      );
+    }
+    imageLoadStartedAtRef.current = null;
+    imageFailureMemory.markFailed(channel.logoUrl);
+    setFailedLogoUrl(channel.logoUrl);
+  }, [channel.id, channel.logoUrl]);
 
   return (
     <div className={styles.container}>
@@ -154,40 +253,22 @@ export const LiveTvCard: React.FC<LiveTvCardProps> = ({
         variant="none"
         disableFocusEffects
         disableAutoScroll
-        onEnter={() => onClick(channel)}
-        onFocus={() => onFocus?.(channel.id)}
+        onEnter={handleEnter}
+        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         className={styles.focusShell}
       >
-        {/* Card image box — all visuals owned here */}
-        <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
-          {showLogo ? (
-            <img
-              src={channel.logoUrl}
-              alt={displayTitle}
-              loading="lazy"
-              decoding="async"
-              className={`${styles.logo} ${isFocused ? styles.logoFocused : ""}`}
-              onError={() => {
-                if (!channel.logoUrl) return;
-                imageFailureMemory.markFailed(channel.logoUrl);
-                setFailedUrls((prev) => ({ ...prev, [channel.logoUrl!]: true }));
-              }}
-            />
-          ) : (
-            <div className={styles.placeholder} style={placeholderStyle}>
-              {placeholderInitials}
-            </div>
-          )}
-
-          <div className={`${styles.badge} ${isFocused ? styles.badgeFocused : ""}`}>
-            <span className={styles.liveDot} />
-            LIVE
-          </div>
-        </div>
+        <LiveTvCardVisual
+          isFocused={isFocused}
+          logoUrl={channel.logoUrl}
+          placeholderBackground={placeholderBackground}
+          placeholderInitials={placeholderInitials}
+          showLogo={showLogo}
+          onLogoLoad={handleLogoLoad}
+          onLogoError={handleLogoError}
+        />
       </Focusable>
 
-      {/* Title is OUTSIDE Focusable so Focusable's overflow:hidden never clips it */}
       <div className={`${styles.title} ${isFocused ? styles.titleFocused : ""}`}>
         {displayTitle}
       </div>

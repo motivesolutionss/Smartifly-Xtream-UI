@@ -14,8 +14,8 @@ import { X } from "lucide-react";
 import { useFocus } from "../../providers/useFocus";
 import { useTvBack } from "../../hooks/useTvBack";
 import { formatEpgTime, parseTimestampToSeconds } from "./epgTime";
-import { services } from "../../services";
 import { useQueries } from "@tanstack/react-query";
+import { getShortEpgQueryOptions, sliceShortEpgToWindow } from "./epgQuery";
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 /** Must match .channelItem height in CSS */
@@ -181,6 +181,10 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
     Math.ceil((sidebarScrollTop + viewportHeight) / CHANNEL_ROW_HEIGHT) +
       SIDEBAR_OVERSCAN
   );
+  const visibleChannels = useMemo(
+    () => channels.slice(visibleStart, visibleEnd),
+    [channels, visibleEnd, visibleStart]
+  );
 
   // ── Time window ───────────────────────────────────────────────────────────
   const timeSlots = useMemo(() => {
@@ -196,26 +200,22 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
   const windowEndMs = timeSlots[NUM_SLOTS - 1].getTime() + 30 * 60 * 1000;
   const totalTimelineWidth = NUM_SLOTS * TIME_SLOT_WIDTH;
 
-  // ── Batch EPG fetch for all channels (useQueries — rules-of-hooks safe) ───
+  // ── Batch EPG fetch for only the visible channel window ────────────────────
   const epgQueries = useQueries({
-    queries: channels.map((ch, absIdx) => ({
-      queryKey: ["epg", ch.id],
-      queryFn: () => services.content.getShortEpg(ch.id),
-      // ONLY enable queries for channels currently visible in the scroll viewport to avoid network spikes
-      enabled: !!ch.id && absIdx >= visibleStart && absIdx <= visibleEnd,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 15 * 60 * 1000,
-      retry: 1,
+    queries: visibleChannels.map((ch) => ({
+      ...getShortEpgQueryOptions(ch.id),
+      select: (items: AppEpgItem[]) =>
+        sliceShortEpgToWindow(items, windowStartMs, windowEndMs),
     })),
   });
 
   const channelEpgMap = useMemo<Record<string, AppEpgItem[]>>(() => {
     const map: Record<string, AppEpgItem[]> = {};
-    channels.forEach((ch, i) => {
+    visibleChannels.forEach((ch, i) => {
       map[ch.id] = (epgQueries[i]?.data as AppEpgItem[] | undefined) ?? [];
     });
     return map;
-  }, [channels, epgQueries]);
+  }, [epgQueries, visibleChannels]);
 
   const nowMs = useSyncExternalStore(subscribeNow, getNowSnapshot, getNowSnapshot);
 
@@ -251,7 +251,7 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
               className={styles.channelVirtualCanvas}
               style={{ height: sidebarTotalHeight }}
             >
-              {channels.slice(visibleStart, visibleEnd).map((channel, i) => {
+              {visibleChannels.map((channel, i) => {
               const absIdx = visibleStart + i;
               return (
                 <div
@@ -337,7 +337,7 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
                 width: totalTimelineWidth,
               }}
             >
-              {channels.slice(visibleStart, visibleEnd).map((channel, i) => {
+              {visibleChannels.map((channel, i) => {
                 const absIdx = visibleStart + i;
                 const epgItems = channelEpgMap[channel.id] ?? [];
                 const isSelected = channel.id === selectedChannelId;

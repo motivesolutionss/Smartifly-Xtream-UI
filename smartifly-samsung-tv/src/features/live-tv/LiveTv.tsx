@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useLiveContent } from "./hooks/useLiveContent";
 import { usePlayerStore } from "../../store/playerStore";
 import { Focusable } from "../../components/tv/Focusable";
-import { LiveTvCard, cleanChannelTitle } from "./LiveTvCard";
+import { LiveTvCard } from "./LiveTvCard";
+import { cleanChannelTitle } from "./channelTitle";
 import { ErrorView } from "../../components/common/ErrorView";
 import { EmptyState } from "../../components/common/EmptyState";
 import { services } from "../../services";
@@ -15,14 +16,20 @@ import { useEpg } from "./hooks/useEpg";
 import { useLiveTvStore } from "../../store/liveTvStore";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { logger } from "../../utils/logger";
+import { perfMetrics } from "../../utils/perfMetrics";
 import { formatEpgTime } from "./epgTime";
 import { TvKeyboard } from "../../components/ui/TvKeyboard";
 import { searchStorage } from "../../storage/searchStorage";
+import {
+  getGridPreloadRange,
+  sliceImagePreloadUrls,
+  useBudgetedImagePreload,
+} from "../../hooks/useBudgetedImagePreload";
 import styles from "./LiveTv.module.css";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-/** Number of channel logos eagerly preloaded on channel list change. */
-const IMAGE_PRELOAD_LIMIT = 24;
+/** Number of overscan rows used for visible-first logo preloading. */
+const GRID_IMAGE_PRELOAD_OVERSCAN_ROWS = 1;
 /** Debounce delay (ms) before triggering expensive side effects during fast
  *  d-pad navigation (perf logs, EPG refresh hints, etc.). */
 const NAV_DEBOUNCE_MS = 120;
@@ -92,11 +99,9 @@ export const LiveTv: React.FC = () => {
   // ── Search & Suggestions state ──────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-
-  useEffect(() => {
-    setRecentSearches(searchStorage.getRecentSearches());
-  }, []);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() =>
+    searchStorage.getRecentSearches()
+  );
 
   const suggestions = useMemo(() => {
     const combined = [...recentSearches];
@@ -154,9 +159,12 @@ export const LiveTv: React.FC = () => {
 
   // Restore category list scroll position when keyboard/search closes
   useEffect(() => {
-    if (!categoryListRef.current || isSearching) return;
-    categoryListRef.current.scrollTop = categoryScrollTop;
-  }, [isSearching]);
+    if (!categoryListRef.current) return;
+    if (wasSearchingRef.current && !isSearching) {
+      categoryListRef.current.scrollTop = categoryScrollTop;
+    }
+    wasSearchingRef.current = isSearching;
+  }, [categoryScrollTop, isSearching]);
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showEpg, setShowEpg] = useState(false);
@@ -167,6 +175,7 @@ export const LiveTv: React.FC = () => {
   const hasInitializedFocusRef = useRef(false);
   /** True while focus is already inside the sidebar — prevents redirect loops. */
   const sidebarFocusedRef = useRef(true);
+  const wasSearchingRef = useRef(isSearching);
   const pendingGridFocusCategoryRef = useRef<string | null>(null);
   const categorySwitchStartRef = useRef<number | null>(null);
   const firstGridRenderStartRef = useRef<number>(0);
@@ -193,10 +202,10 @@ export const LiveTv: React.FC = () => {
   useEffect(() => {
     setLiveChannels(filteredChannels);
   }, [filteredChannels, setLiveChannels]);
-
-  // Start first-render timer after mount to avoid render-time impure calls.
   useEffect(() => {
-    firstGridRenderStartRef.current = performance.now();
+    if (firstGridRenderStartRef.current === 0) {
+      firstGridRenderStartRef.current = performance.now();
+    }
   }, []);
 
   // ── Persist selected category ───────────────────────────────────────────────
@@ -208,10 +217,17 @@ export const LiveTv: React.FC = () => {
   // ── Performance: first-render timing ───────────────────────────────────────
   useEffect(() => {
     if (filteredChannels.length === 0) return;
-    const durationMs = Math.round(performance.now() - firstGridRenderStartRef.current);
+    const durationMs = Math.max(
+      1,
+      Math.round(performance.now() - firstGridRenderStartRef.current)
+    );
     // Guard: only log once (set to Infinity after first log).
     if (firstGridRenderStartRef.current === Number.POSITIVE_INFINITY) return;
     logger.info(`Live grid first render in ${durationMs}ms`, { channelCount: filteredChannels.length });
+    perfMetrics.recordDuration("live_grid_first_render_ms", durationMs, {
+      slowAboveMs: 400,
+      data: { channelCount: filteredChannels.length },
+    });
     firstGridRenderStartRef.current = Number.POSITIVE_INFINITY;
   }, [filteredChannels.length]);
 
@@ -225,21 +241,17 @@ export const LiveTv: React.FC = () => {
       categoryId: activeCategoryId,
       channelCount: filteredChannels.length,
     });
+    perfMetrics.recordDuration("live_category_switch_ms", switchDuration, {
+      slowAboveMs: 250,
+      data: {
+        categoryId: activeCategoryId,
+        channelCount: filteredChannels.length,
+      },
+    });
     categorySwitchStartRef.current = null;
   }, [activeCategoryId, filteredChannels.length, isFetchingChannels]);
 
   // ── Image preload (bounded) ─────────────────────────────────────────────────
-  useEffect(() => {
-    const targets = filteredChannels
-      .slice(0, IMAGE_PRELOAD_LIMIT)
-      .map((ch) => ch.logoUrl)
-      .filter((url): url is string => Boolean(url));
-    targets.forEach((url) => {
-      const img = new Image();
-      img.decoding = "async";
-      img.src = url;
-    });
-  }, [filteredChannels]);
 
   // ── Measure grid container dimensions dynamically with a robust callback ref ─────
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -334,14 +346,45 @@ export const LiveTv: React.FC = () => {
     [activeCategoryId, categories]
   );
 
-  const initialGridScrollTop = useMemo(() => {
-    if (!activeCategoryId) return 0;
-    return useLiveTvStore.getState().gridScrollTopByCategory[activeCategoryId] ?? 0;
-  }, [activeCategoryId]);
+  const activeGridScrollTop = useLiveTvStore((state) =>
+    activeCategoryId
+      ? (state.gridScrollTopByCategory[activeCategoryId] ?? 0)
+      : 0
+  );
+  const initialGridScrollTop = activeGridScrollTop;
+  const gridRowStride = GRID_ITEM_HEIGHT + GRID_GAP;
+  const visibleGridRange = getGridPreloadRange({
+    itemCount: filteredChannels.length,
+    columns: cols,
+    rowStride: gridRowStride,
+    viewportHeight: gridHeight,
+    anchorScrollTop: activeGridScrollTop,
+    overscanRows: GRID_IMAGE_PRELOAD_OVERSCAN_ROWS,
+  });
 
   const focusedGridIndex = useMemo(
     () => filteredChannels.findIndex((c) => c.id === focusedChannelId),
     [filteredChannels, focusedChannelId]
+  );
+
+  const visibleLogoPreloadUrls = useMemo(
+    () =>
+      sliceImagePreloadUrls(
+        filteredChannels,
+        (channel) => channel.logoUrl,
+        visibleGridRange.startIndex,
+        visibleGridRange.endIndex
+      ),
+    [filteredChannels, visibleGridRange.endIndex, visibleGridRange.startIndex]
+  );
+
+  useBudgetedImagePreload(
+    visibleLogoPreloadUrls,
+    {
+      enabled: networkStatus === "online" && !isSearching,
+      maxConcurrent: 2,
+      maxUrls: 8,
+    }
   );
 
   const focusedChannel = useMemo(() => {
@@ -958,6 +1001,10 @@ export const LiveTv: React.FC = () => {
                     prevRowChannelId={index - cols >= 0 ? filteredChannels[index - cols]?.id : undefined}
                     totalChannels={filteredChannels.length}
                     lastChannelId={filteredChannels[filteredChannels.length - 1]?.id}
+                    shouldLoadLogo={
+                      index >= visibleGridRange.startIndex &&
+                      index < visibleGridRange.endIndex
+                    }
                   />
                 )}
               />

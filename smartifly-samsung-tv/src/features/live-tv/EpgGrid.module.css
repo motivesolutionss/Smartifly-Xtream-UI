@@ -47,7 +47,10 @@
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.85);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease,
+    color 0.2s ease;
   flex-shrink: 0;
 }
 
@@ -59,7 +62,7 @@
 .closeBtn:global(.focused) {
   background: #dc2626;
   color: #fff;
-  transform: scale(1.1);
+  transform: scale(1.04);
 }
 
 /* ── Main grid area (sidebar + timeline) ─────────────────────────────────── */
@@ -128,7 +131,7 @@
   padding: 0 1.5rem;
   height: 88px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  transition: all 0.15s ease-out;
+  transition: background-color 0.15s ease-out, color 0.15s ease-out;
   cursor: pointer;
   position: relative;
 }
@@ -220,7 +223,6 @@
 .timeHeaderInner {
   display: flex;
   height: 100%;
-  will-change: transform; /* GPU-accelerated translate for scroll sync */
 }
 
 .timeSlot {
@@ -276,7 +278,7 @@
   justify-content: center;
   gap: 5px;
   overflow: hidden;
-  transition: all 0.15s ease-out;
+  transition: background-color 0.15s ease-out, border-color 0.15s ease-out, box-shadow 0.15s ease-out;
   min-width: 130px;
 }
 
@@ -394,4 +396,15 @@
   font-size: 1.1rem;
   color: rgba(255, 255, 255, 0.35);
   font-weight: 600;
+}
+
+:global(.perf-reduced) .overlay,
+:global(.perf-reduced) .closeBtn,
+:global(.perf-reduced) .channelItem,
+:global(.perf-reduced) .programItem {
+  transition: none !important;
+}
+
+:global(.perf-reduced) .closeBtn:global(.focused) {
+  transform: none !important;
 }

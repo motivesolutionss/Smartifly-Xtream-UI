@@ -34,16 +34,14 @@
   border-radius: 1rem;
   overflow: hidden;
   background: #ffffff;
-  border: 1.5px solid rgba(255, 255, 255, 0.07);
+  border: 2px solid rgba(255, 255, 255, 0.07);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition:
     transform 0.14s ease-out,
-    box-shadow 0.14s ease-out,
     border-color 0.14s ease-out;
-  will-change: transform, box-shadow;
 }
 
 /* Subtle inner gradient for depth */
@@ -61,11 +59,10 @@
 }
 
 .cardFocused {
-  transform: translateY(-3px) scale(1.026);
+  transform: translateY(-2px) scale(1.02);
   border-color: var(--color-primary, #e50914);
-  border-width: 2px;
   /* Single-pass high-contrast outline glow, zero GPU composite overhead */
-  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb, 229, 9, 20), 0.9);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 229, 9, 20), 0.9);
   z-index: 10;
 }
 
@@ -84,7 +81,7 @@
 }
 
 .logoFocused {
-  transform: scale(1.03);
+  transform: scale(1.02);
 }
 
 /* ── Fallback placeholder ── */
@@ -144,7 +141,7 @@
 }
 
 .badgeFocused .liveDot {
-  animation: livePulse 1.4s ease-in-out infinite;
+  animation: none;
 }
 
 /* ── Channel title — outside Focusable, never clipped ── */
