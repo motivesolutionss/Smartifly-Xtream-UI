@@ -20,6 +20,15 @@
   opacity: 0.4; /* Dim background content for better focus */
 }
 
+.perf-reduced .main-content {
+  transition: opacity 0.15s linear;
+}
+
+.perf-reduced .sidebar-expanded .main-content {
+  transform: none;
+  opacity: 0.55;
+}
+
 .page-body {
   width: 100%;
   height: 100%;
@@ -74,7 +83,7 @@
   font-size: 32px;
   line-height: 1;
   font-weight: 900;
-  box-shadow: 0 0 36px rgba(var(--color-primary-rgb), 0.35);
+  box-shadow: 0 0 16px rgba(var(--color-primary-rgb), 0.18);
 }
 
 .brand-name {
@@ -173,8 +182,7 @@
 .playlist-form input:focus {
   border-color: var(--color-text-primary);
   box-shadow:
-    0 0 0 var(--focus-border-width) var(--color-text-primary),
-    0 0 20px rgba(var(--color-primary-rgb), 0.3);
+    0 0 0 var(--focus-border-width) var(--color-text-primary);
 }
 
 .primary-action {
@@ -193,7 +201,7 @@
 .primary-action:hover {
   color: #000;
   background: #fff;
-  transform: scale(1.03);
+  transform: scale(1.02);
 }
 
 .primary-action:disabled {

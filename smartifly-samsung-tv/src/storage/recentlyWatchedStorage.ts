@@ -2,6 +2,15 @@ import { localStorageService } from "./localStorageService";
 import { playlistStorage } from "./playlistStorage";
 import { profileStorage } from "./profileStorage";
 
+type RecentlyWatchedListener = () => void;
+const recentlyWatchedListeners = new Set<RecentlyWatchedListener>();
+let recentlyWatchedRevision = 0;
+
+const emitRecentlyWatchedChange = () => {
+  recentlyWatchedRevision += 1;
+  recentlyWatchedListeners.forEach((listener) => listener());
+};
+
 const getHistoryKey = (): string | null => {
   const playlistId = playlistStorage.getActivePlaylistId();
   const profileId = profileStorage.getActiveProfileId();
@@ -9,6 +18,7 @@ const getHistoryKey = (): string | null => {
   return `smartifly_history_${playlistId}_${profileId}`;
 };
 const MAX_HISTORY = 50;
+const HISTORY_WRITE_DELAY_MS = 800;
 
 export type PlaybackContentType = "live" | "vod" | "series";
 
@@ -123,7 +133,12 @@ export const recentlyWatchedStorage = {
 
     const key = getHistoryKey();
     if (!key) return;
-    localStorageService.set(key, [merged, ...filteredHistory].slice(0, MAX_HISTORY));
+    localStorageService.setDeferred(
+      key,
+      [merged, ...filteredHistory].slice(0, MAX_HISTORY),
+      HISTORY_WRITE_DELAY_MS
+    );
+    emitRecentlyWatchedChange();
   },
 
   getHistory: (): HistoryItem[] => {
@@ -155,12 +170,23 @@ export const recentlyWatchedStorage = {
       .filter((item) => !(item.id === id && item.type === type));
     const key = getHistoryKey();
     if (!key) return;
-    localStorageService.set(key, history);
+    localStorageService.setDeferred(key, history, HISTORY_WRITE_DELAY_MS);
+    emitRecentlyWatchedChange();
   },
 
   clearHistory: () => {
     const key = getHistoryKey();
     if (!key) return;
-    localStorageService.set(key, []);
+    localStorageService.setDeferred(key, [], HISTORY_WRITE_DELAY_MS);
+    emitRecentlyWatchedChange();
   },
+
+  subscribe: (listener: RecentlyWatchedListener) => {
+    recentlyWatchedListeners.add(listener);
+    return () => {
+      recentlyWatchedListeners.delete(listener);
+    };
+  },
+
+  getRevision: () => recentlyWatchedRevision,
 };

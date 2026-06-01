@@ -17,6 +17,8 @@ export interface FavoriteItem {
   addedAt: string;
 }
 
+const FAVORITES_WRITE_DELAY_MS = 200;
+
 export const favoritesStorage = {
   getFavorites: (): FavoriteItem[] => {
     const key = getFavoritesKey();
@@ -38,7 +40,7 @@ export const favoritesStorage = {
 
     const key = getFavoritesKey();
     if (!key) return;
-    localStorageService.set(key, favorites);
+    localStorageService.setDeferred(key, favorites, FAVORITES_WRITE_DELAY_MS);
   },
 
   toggleFavorite: (item: Omit<FavoriteItem, "addedAt">) => {
@@ -57,7 +59,7 @@ export const favoritesStorage = {
 
     const key = getFavoritesKey();
     if (!key) return index === -1;
-    localStorageService.set(key, favorites);
+    localStorageService.setDeferred(key, favorites, FAVORITES_WRITE_DELAY_MS);
     return index === -1; // Returns true if added
   },
 
@@ -75,12 +77,12 @@ export const favoritesStorage = {
     );
     const key = getFavoritesKey();
     if (!key) return;
-    localStorageService.set(key, favorites);
+    localStorageService.setDeferred(key, favorites, FAVORITES_WRITE_DELAY_MS);
   },
 
   clearFavorites: (): void => {
     const key = getFavoritesKey();
     if (!key) return;
-    localStorageService.set(key, []);
+    localStorageService.setDeferred(key, [], FAVORITES_WRITE_DELAY_MS);
   },
 };

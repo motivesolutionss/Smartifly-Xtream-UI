@@ -22,6 +22,8 @@ const getAllLocalStorageKeys = (): string[] => {
 };
 
 const clearScopedKeysForPlaylist = (playlistId: string): void => {
+  localStorageService.flushPending();
+
   const exactKeys = new Set<string>([
     `smartifly_profiles_${playlistId}`,
     `smartifly_active_profile_id_${playlistId}`,
@@ -31,6 +33,7 @@ const clearScopedKeysForPlaylist = (playlistId: string): void => {
     `smartifly_favorites_${playlistId}_`,
     `smartifly_history_${playlistId}_`,
     `smartifly_settings_${playlistId}_`,
+    `smartifly_home_snapshot_${playlistId}_`,
   ];
 
   getAllLocalStorageKeys().forEach((key) => {

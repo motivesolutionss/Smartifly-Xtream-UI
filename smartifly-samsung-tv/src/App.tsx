@@ -33,6 +33,16 @@ type ScreenId =
   | "SEARCH"
   | "SETTINGS";
 
+const DEFAULT_FOCUS_BY_SCREEN: Record<ScreenId, string> = {
+  HOME: "hero-play",
+  LIVE: "live-search-input-wrapper",
+  VOD: "vod-search-input-wrapper",
+  SERIES: "series-search-input-wrapper",
+  LIBRARY: "library-tab-FAVORITES",
+  SEARCH: "search-input",
+  SETTINGS: "settings-nav-account",
+};
+
 function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>("HOME");
   const [isLoginView, setIsLoginView] = useState(false);
@@ -66,6 +76,8 @@ function App() {
     SEARCH: null,
     SETTINGS: null,
   });
+  const pendingScreenFocusRef = useRef<string | null>(null);
+  const playbackReturnFocusRef = useRef<string | null>(null);
 
   const handleLoginSuccess = () => {
     setHasPlaylist(true);
@@ -100,9 +112,19 @@ function App() {
       if (focusedId && !focusedId.startsWith("nav-") && !focusedId.startsWith("epg-")) {
         focusByScreenRef.current[activeScreen] = focusedId;
       }
+
+      const nextFocusId =
+        focusByScreenRef.current[nextScreen] ?? DEFAULT_FOCUS_BY_SCREEN[nextScreen];
+
+      if (nextScreen === activeScreen) {
+        setFocus(nextFocusId);
+        return;
+      }
+
+      pendingScreenFocusRef.current = nextFocusId;
       setActiveScreen(nextScreen);
     },
-    [activeScreen, focusedId]
+    [activeScreen, focusedId, setFocus]
   );
 
   useEffect(() => {
@@ -114,12 +136,37 @@ function App() {
   }, [activePlaybackItem, activeScreen, focusedId]);
 
   useEffect(() => {
+    if (!activePlaybackItem) return;
+    if (playbackReturnFocusRef.current) return;
+
+    const fallbackFocusId =
+      focusByScreenRef.current[activeScreen] ?? DEFAULT_FOCUS_BY_SCREEN[activeScreen];
+    const candidateFocusId =
+      focusedId &&
+      !focusedId.startsWith("nav-") &&
+      !focusedId.startsWith("player-") &&
+      !focusedId.startsWith("top-")
+        ? focusedId
+        : fallbackFocusId;
+
+    playbackReturnFocusRef.current = candidateFocusId;
+  }, [activePlaybackItem, activeScreen, focusedId]);
+
+  useEffect(() => {
     if (!hasPlaylist) return;
     if (activePlaybackItem) return;
 
     const restoreId =
-      focusByScreenRef.current[activeScreen] ?? `nav-${activeScreen}`;
+      pendingScreenFocusRef.current ??
+      focusByScreenRef.current[activeScreen] ??
+      DEFAULT_FOCUS_BY_SCREEN[activeScreen];
+
+    if (focusedId?.startsWith("nav-") && !restoreId.startsWith("nav-")) {
+      setFocus(null);
+    }
+
     const animationFrame = window.requestAnimationFrame(() => {
+      pendingScreenFocusRef.current = null;
       setFocus(restoreId);
     });
 
@@ -213,14 +260,17 @@ function App() {
       {activePlaybackItem && (
         <Player
           onBack={() => {
+            const targetFocusId =
+              liveReturnFocusId ??
+              playbackReturnFocusRef.current ??
+              focusByScreenRef.current[activeScreen] ??
+              DEFAULT_FOCUS_BY_SCREEN[activeScreen];
+
+            pendingScreenFocusRef.current = targetFocusId;
+            playbackReturnFocusRef.current = null;
+            setLiveReturnFocusId(null);
+            setFocus(targetFocusId);
             setActivePlaybackItem(null);
-            if (liveReturnFocusId) {
-              const frameId = window.requestAnimationFrame(() => {
-                setFocus(liveReturnFocusId);
-                setLiveReturnFocusId(null);
-              });
-              window.setTimeout(() => window.cancelAnimationFrame(frameId), 500);
-            }
           }}
         />
       )}

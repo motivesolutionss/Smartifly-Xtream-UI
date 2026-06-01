@@ -2,6 +2,7 @@ import { localStorageService } from "./localStorageService";
 
 const SEARCH_HISTORY_KEY = "smartifly_search_history";
 const MAX_SEARCH_HISTORY = 5;
+const SEARCH_WRITE_DELAY_MS = 150;
 
 export const searchStorage = {
   getRecentSearches: (): string[] => {
@@ -20,10 +21,10 @@ export const searchStorage = {
     // Keep it up to MAX_SEARCH_HISTORY items
     history = history.slice(0, MAX_SEARCH_HISTORY);
 
-    localStorageService.set(SEARCH_HISTORY_KEY, history);
+    localStorageService.setDeferred(SEARCH_HISTORY_KEY, history, SEARCH_WRITE_DELAY_MS);
   },
 
   clearSearchHistory: (): void => {
-    localStorageService.set(SEARCH_HISTORY_KEY, []);
+    localStorageService.setDeferred(SEARCH_HISTORY_KEY, [], SEARCH_WRITE_DELAY_MS);
   },
 };
