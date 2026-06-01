@@ -19,7 +19,7 @@
   position: absolute;
   inset: 0;
   z-index: 2;
-  transition: all 1.2s cubic-bezier(0.2, 0, 0.2, 1);
+  transition: background 0.45s cubic-bezier(0.2, 0, 0.2, 1);
   pointer-events: none;
 }
 
@@ -75,7 +75,7 @@
   padding-left: 4rem; 
   padding-right: 12rem; 
   margin-top: -1.5rem;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   scrollbar-width: none;
 }
 
@@ -110,4 +110,18 @@
 .rail > div:focus-within {
   position: relative !important;
   z-index: 100 !important;
+}
+
+:global(.perf-reduced) .wallpaper {
+  background: none;
+}
+
+:global(.perf-reduced) .atmosphere {
+  transition: none;
+  background: none !important;
+}
+
+:global(.perf-reduced) .scrollContent,
+:global(.perf-reduced) .rail {
+  scroll-behavior: auto;
 }

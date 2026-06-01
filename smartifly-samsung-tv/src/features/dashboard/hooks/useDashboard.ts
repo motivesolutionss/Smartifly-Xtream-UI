@@ -1,25 +1,26 @@
-import { useCallback, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { favoritesStorage } from "../../../storage/favoritesStorage";
-import type { FavoriteItem } from "../../../storage/favoritesStorage";
 import { recentlyWatchedStorage } from "../../../storage/recentlyWatchedStorage";
-import type { RecentlyWatchedItem } from "../../../storage/recentlyWatchedStorage";
 
 export const useDashboard = () => {
-  const [favorites, setFavorites] = useState<FavoriteItem[]>(() =>
-    favoritesStorage.getFavorites()
-  );
-  const [history, setHistory] = useState<RecentlyWatchedItem[]>(() =>
-    recentlyWatchedStorage.getHistory()
-  );
-  const [continueWatching, setContinueWatching] = useState<RecentlyWatchedItem[]>(() =>
-    recentlyWatchedStorage.getContinueWatching()
+  const subscribeRecentlyWatched = useCallback(
+    (listener: () => void) => recentlyWatchedStorage.subscribe(listener),
+    []
   );
 
+  const recentlyWatchedRevision = useSyncExternalStore(
+    subscribeRecentlyWatched,
+    () => recentlyWatchedStorage.getRevision(),
+    () => 0
+  );
+
+  const history = recentlyWatchedStorage.getHistory();
+  const continueWatching = recentlyWatchedStorage.getContinueWatching();
+  const favorites = favoritesStorage.getFavorites();
+
   const refresh = useCallback(() => {
-    setFavorites(favoritesStorage.getFavorites());
-    setHistory(recentlyWatchedStorage.getHistory());
-    setContinueWatching(recentlyWatchedStorage.getContinueWatching());
-  }, []);
+    return recentlyWatchedRevision;
+  }, [recentlyWatchedRevision]);
 
   return {
     favorites,

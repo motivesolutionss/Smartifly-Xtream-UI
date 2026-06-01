@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { services } from "../../services";
+import React, { useState, useEffect, useRef, useMemo, useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "../../store/playerStore";
 import { Card } from "../../components/ui/Card";
 import { HeroBanner, type HeroItem } from "../../components/common/HeroBanner";
@@ -13,18 +12,43 @@ import { useDashboard } from "../dashboard/hooks/useDashboard";
 import { useFocus } from "../../providers/useFocus";
 import type {
   AppMovie,
-  AppSeries,
   AppChannel,
   AppMovieDetails,
   AppSeriesDetails,
-  AppCategory,
 } from "../../types/appModels";
-import { logger } from "../../utils/logger";
-import { buildHomeHeroItems, buildHomeRails } from "./homePolicy";
 import type { HomeRail, HomeRailItem } from "./homeTypes";
 import { recentlyWatchedStorage } from "../../storage/recentlyWatchedStorage";
 import { getResumePositionSeconds } from "../../utils/resumePosition";
+import { useHomeSnapshot } from "./useHomeSnapshot";
+import { services } from "../../services";
 import styles from "./Home.module.css";
+
+const EMPTY_HERO_ITEMS: HeroItem[] = [];
+const EMPTY_RAILS: HomeRail[] = [];
+
+const getOffsetTopWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
+  let offsetTop = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== ancestor) {
+    offsetTop += current.offsetTop;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return offsetTop;
+};
+
+const getOffsetLeftWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
+  let offsetLeft = 0;
+  let current: HTMLElement | null = element;
+
+  while (current && current !== ancestor) {
+    offsetLeft += current.offsetLeft;
+    current = current.offsetParent as HTMLElement | null;
+  }
+
+  return offsetLeft;
+};
 
 type HomeScreenId =
   | "HOME"
@@ -36,152 +60,154 @@ type HomeScreenId =
   | "SETTINGS";
 
 export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onNavigate }) => {
-  const { setActivePlaybackItem } = usePlayerStore();
+  const { activePlaybackItem, setActivePlaybackItem } = usePlayerStore();
   const { continueWatching } = useDashboard();
+  const { snapshot, isBooting, isError, refresh } = useHomeSnapshot(continueWatching);
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
   const [atmosphereColor, setAtmosphereColor] = useState<string>("transparent");
 
-  const {
-    data: movies,
-    isLoading: moviesLoading,
-    isError: moviesError,
-    refetch: refetchMovies,
-  } = useQuery<AppMovie[]>({
-    queryKey: ["home-movies"],
-    queryFn: () => services.content.getVodStreams(),
-    retry: 2,
-    staleTime: 60 * 60 * 1000,
-  });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { focusedId, setFocus } = useFocus();
+  const recentlyWatchedRevision = useSyncExternalStore(
+    recentlyWatchedStorage.subscribe,
+    recentlyWatchedStorage.getRevision,
+    () => 0
+  );
+  const heroItems = snapshot?.heroItems ?? EMPTY_HERO_ITEMS;
+  const rails = snapshot?.rails ?? EMPTY_RAILS;
+  const activeHero = heroItems[0];
+  const playbackStartRevisionRef = useRef<number | null>(null);
+  const playbackStartTypeRef = useRef<"live" | "vod" | "series" | null>(null);
+  const lastPlaybackDrivenRefreshAtRef = useRef(0);
+  const lastHomeFocusedIdRef = useRef("hero-play");
+  const wasInDetailsRef = useRef(false);
 
-  const {
-    data: series,
-    isLoading: seriesLoading,
-    isError: seriesError,
-    refetch: refetchSeries,
-  } = useQuery<AppSeries[]>({
-    queryKey: ["home-series"],
-    queryFn: () => services.content.getSeries(),
-    retry: 2,
-    staleTime: 60 * 60 * 1000,
-  });
+  const scrollHomeToTop = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  };
 
-  const {
-    data: liveStreams,
-    isLoading: liveLoading,
-    isError: liveError,
-    refetch: refetchLive,
-  } = useQuery<AppChannel[]>({
-    queryKey: ["home-live"],
-    queryFn: () => services.content.getLiveStreams(),
-    retry: 2,
-    staleTime: 15 * 60 * 1000,
-  });
-
-  // Removed imageFailureMemory.clear() from mount to prevent repeated failure attempts
-  
-  const { data: vodCategories } = useQuery<AppCategory[]>({
-    queryKey: ["home-vod-categories"],
-    queryFn: () => services.content.getVodCategories(),
-    retry: 2,
-    staleTime: 60 * 60 * 1000,
-  });
-
-  const { data: seriesCategories } = useQuery<AppCategory[]>({
-    queryKey: ["home-series-categories"],
-    queryFn: () => services.content.getSeriesCategories(),
-    retry: 2,
-    staleTime: 60 * 60 * 1000,
-  });
-
-  const rails: HomeRail[] = useMemo(() => {
-    return buildHomeRails(
-      movies,
-      series,
-      liveStreams,
-      continueWatching,
-      vodCategories || [],
-      seriesCategories || []
-    );
-  }, [movies, series, liveStreams, continueWatching, vodCategories, seriesCategories]);
-
-  const baseHeroItems: HeroItem[] = useMemo(() => {
-    return buildHomeHeroItems(movies, series, liveStreams, continueWatching);
-  }, [movies, series, liveStreams, continueWatching]);
-
-  const heroDetailQueries = useQueries({
-    queries: baseHeroItems.map((item) => ({
-      queryKey: ["home-hero-details", item.type, item.data.id],
-      enabled: item.type !== "live",
-      queryFn: async () => {
-        if (item.type === "vod") {
-          return (await services.content.getVodInfo(item.data.id)) as
-            | AppMovieDetails
-            | AppSeriesDetails;
-        }
-
-        if (item.type === "series") {
-          return (await services.content.getSeriesInfo(item.data.id)) as
-            | AppMovieDetails
-            | AppSeriesDetails;
-        }
-
-        return undefined;
-      },
-      retry: 1,
-      staleTime: 6 * 60 * 60 * 1000,
-    })),
-  });
-
-  const heroItems: HeroItem[] = useMemo(() => {
-    const items = [...baseHeroItems];
-
-    for (let i = 0; i < items.length; i += 1) {
-      const detail = heroDetailQueries[i]?.data;
-      const item = items[i];
-      if (!item || !detail) continue;
-
-      if (item.type === "vod") {
-        const vodDetail = detail as AppMovieDetails;
-        items[i] = {
-          ...item,
-          backdropUrl: vodDetail.backdropUrl || vodDetail.posterUrl || item.backdropUrl,
-          description: vodDetail.description || item.description,
-          rating: vodDetail.rating || item.rating,
-          year: vodDetail.year || vodDetail.releaseDate || item.year,
-          duration: vodDetail.duration || item.duration,
-          genre: vodDetail.genre || item.genre,
-        };
-      } else if (item.type === "series") {
-        const seriesDetail = detail as AppSeriesDetails;
-        items[i] = {
-          ...item,
-          backdropUrl:
-            seriesDetail.backdropUrl || seriesDetail.posterUrl || item.backdropUrl,
-          description: seriesDetail.description || item.description,
-          rating: seriesDetail.rating || item.rating,
-          genre: seriesDetail.genre || item.genre,
-        };
+  const { data: activeHeroDetail } = useQuery<AppMovieDetails | AppSeriesDetails | null>({
+    queryKey: ["home-active-hero-detail", activeHero?.type, activeHero?.id],
+    enabled: Boolean(activeHero && activeHero.type !== "live"),
+    queryFn: async () => {
+      if (!activeHero || activeHero.type === "live") return null;
+      if (activeHero.type === "vod") {
+        return services.content.getVodInfo(activeHero.id);
       }
+      return services.content.getSeriesInfo(activeHero.id);
+    },
+    staleTime: 6 * 60 * 60 * 1000,
+    gcTime: 12 * 60 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+
+  const hydratedHeroItems = useMemo(() => {
+    if (!activeHero || !activeHeroDetail) return heroItems;
+
+    const [firstHero, ...restHeroes] = heroItems;
+    if (!firstHero) return heroItems;
+
+    const mergedFirstHero: HeroItem = {
+      ...firstHero,
+      backdropUrl:
+        activeHeroDetail.backdropUrl ||
+        activeHeroDetail.posterUrl ||
+        firstHero.backdropUrl,
+      description: activeHeroDetail.description || firstHero.description,
+      rating: activeHeroDetail.rating || firstHero.rating,
+      year:
+        ("year" in activeHeroDetail && activeHeroDetail.year) ||
+        ("releaseDate" in activeHeroDetail && activeHeroDetail.releaseDate) ||
+        firstHero.year,
+      duration:
+        ("duration" in activeHeroDetail && activeHeroDetail.duration) ||
+        firstHero.duration,
+      genre: activeHeroDetail.genre || firstHero.genre,
+    };
+
+    return [mergedFirstHero, ...restHeroes];
+  }, [activeHero, activeHeroDetail, heroItems]);
+
+  useEffect(() => {
+    if (activePlaybackItem) {
+      if (playbackStartRevisionRef.current === null) {
+        playbackStartRevisionRef.current = recentlyWatchedRevision;
+        playbackStartTypeRef.current = activePlaybackItem.contentType;
+      }
+      return;
     }
 
-    logger.debug("home_hero_selected", {
-      movieCount: movies?.length || 0,
-      seriesCount: series?.length || 0,
-      liveCount: liveStreams?.length || 0,
-      heroCount: items.length,
-    });
-    return items;
-  }, [baseHeroItems, heroDetailQueries, movies, series, liveStreams]);
+    if (playbackStartRevisionRef.current === null) {
+      return;
+    }
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const { focusedId } = useFocus();
+    const revisionChanged = recentlyWatchedRevision > playbackStartRevisionRef.current;
+    const shouldRefreshFromPlayback =
+      revisionChanged && playbackStartTypeRef.current !== "live";
+
+    playbackStartRevisionRef.current = null;
+    playbackStartTypeRef.current = null;
+
+    if (!shouldRefreshFromPlayback) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastPlaybackDrivenRefreshAtRef.current < 45_000) {
+      return;
+    }
+
+    lastPlaybackDrivenRefreshAtRef.current = now;
+    void refresh();
+  }, [activePlaybackItem, recentlyWatchedRevision, refresh]);
+
+  useEffect(() => {
+    if (!focusedId) return;
+    if (selectedMovieId || selectedSeriesId) return;
+    if (focusedId.startsWith("nav-") || focusedId.startsWith("epg-") || focusedId.startsWith("player-")) {
+      return;
+    }
+
+    lastHomeFocusedIdRef.current = focusedId;
+  }, [focusedId, selectedMovieId, selectedSeriesId]);
+
+  useEffect(() => {
+    const inDetails = Boolean(selectedMovieId || selectedSeriesId);
+
+    if (inDetails) {
+      wasInDetailsRef.current = true;
+      return;
+    }
+
+    if (!wasInDetailsRef.current) {
+      return;
+    }
+
+    wasInDetailsRef.current = false;
+    const targetFocusId = lastHomeFocusedIdRef.current || "hero-play";
+
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setFocus(targetFocusId);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [selectedMovieId, selectedSeriesId, setFocus]);
 
   // Auto-scroll to top when focusing TopBar
   useEffect(() => {
     if (focusedId?.startsWith('top-')) {
-      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollHomeToTop();
     }
   }, [focusedId]);
 
@@ -211,7 +237,7 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
     );
   }
 
-  if (moviesLoading || seriesLoading || liveLoading) {
+  if (isBooting) {
     return (
       <div className={styles.container}>
         <div className={styles.scrollContent}>
@@ -231,14 +257,12 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
     );
   }
 
-  if (moviesError && seriesError && liveError) {
+  if (isError && !snapshot) {
     return (
       <ErrorView
         message="Unable to load home content right now."
         onRetry={() => {
-          void refetchMovies();
-          void refetchSeries();
-          void refetchLive();
+          void refresh();
         }}
         showBackToLogin
       />
@@ -346,10 +370,10 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
       <TopBar onNavigate={onNavigate} />
 
       <div ref={scrollRef} className={styles.scrollContent}>
-        {heroItems.length > 0 && (
+        {hydratedHeroItems.length > 0 && (
           <div style={heroStyle}>
             <HeroBanner
-              items={heroItems}
+              items={hydratedHeroItems}
               onPlay={handleHeroPlay}
               onInfo={(item) => {
                 setSelectedCategoryName("Featured");
@@ -358,12 +382,7 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
               }}
               onFocus={() => {
                 setAtmosphereColor("transparent");
-                // Definitively lock scroll to Y=0 after all event loop ticks settle
-                setTimeout(() => {
-                  if (scrollRef.current) {
-                    scrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }, 50);
+                window.requestAnimationFrame(scrollHomeToTop);
               }}
             />
           </div>
@@ -393,58 +412,52 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
                       const railElement = document.getElementById(`rail-${rail.id}`);
                       const itemIndex = rail.items.findIndex(it => it.id === item.id);
                       if (railElement && itemIndex !== -1) {
-                        // 1. Dynamic TV Vertical Scroll: Smoothly scroll the page so that the focused rail aligns at exactly 15rem from the top
+                        // 1. Align the focused rail at a fixed vertical anchor without layout reads.
                         const scrollContainer = scrollRef.current;
                         if (scrollContainer) {
-                          const railRect = railElement.getBoundingClientRect();
-                          const containerRect = scrollContainer.getBoundingClientRect();
-                          const currentScrollTop = scrollContainer.scrollTop;
-                          
-                          const railTopInContainer = railRect.top - containerRect.top + currentScrollTop;
+                          const railTopInContainer = getOffsetTopWithinAncestor(
+                            railElement,
+                            scrollContainer
+                          );
                           const fontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
                           const targetScrollTop = Math.max(0, railTopInContainer - 15 * fontSize);
-                          
-                          scrollContainer.scrollTo({
-                            top: targetScrollTop,
-                            behavior: "smooth"
-                          });
+
+                          if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 1) {
+                            scrollContainer.scrollTop = targetScrollTop;
+                          }
                         }
 
-                        // 2. Explicit First-Card Guard: Force scroll position to exactly 0 to guarantee the card never clips behind the sidebar.
+                        // 2. Edge-aware horizontal scroll (enterprise behavior): only scroll when card hits rail edges.
                         if (itemIndex === 0) {
-                          railElement.scrollLeft = 0;
-                          setTimeout(() => {
-                            const el = document.getElementById(`rail-${rail.id}`);
-                            if (el) el.scrollLeft = 0;
-                          }, 0);
+                          if (railElement.scrollLeft !== 0) {
+                            railElement.scrollLeft = 0;
+                          }
                         } else {
                           const cardElement = document.getElementById(`card-${rail.id}-${item.type}-${item.id}`);
-                          if (cardElement) {
-                            const fontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
-                            const railPadding = 4 * fontSize; // 4rem padding
+                          const cardContainer = cardElement?.parentElement as HTMLElement | null;
+                          if (cardContainer) {
+                            const railStyles = window.getComputedStyle(railElement);
+                            const leftInset = parseFloat(railStyles.paddingLeft) || 24;
+                            const rightInset = parseFloat(railStyles.paddingRight) || 24;
                             const viewportWidth = railElement.clientWidth;
-                            
-                            const railRect = railElement.getBoundingClientRect();
-                            const cardRect = cardElement.getBoundingClientRect();
                             const currentScroll = railElement.scrollLeft;
+                            const cardLeftInRail = getOffsetLeftWithinAncestor(cardContainer, railElement);
+                            const cardWidth = cardContainer.offsetWidth;
                             
-                            // Mathematically bulletproof Y-independent X coordinate inside the scroll container
-                            const cardLeftInRail = cardRect.left - railRect.left + currentScroll;
-                            const cardWidth = cardRect.width;
-                            
-                            // 3. Scrolling right: when card's right boundary exceeds visible viewport minus padding
-                            if (cardLeftInRail + cardWidth > currentScroll + viewportWidth - railPadding) {
-                              railElement.scrollTo({
-                                left: cardLeftInRail + cardWidth - viewportWidth + railPadding,
-                                behavior: "smooth"
-                              });
+                            // Scroll right only when card exits right safety inset.
+                            if (cardLeftInRail + cardWidth > currentScroll + viewportWidth - rightInset) {
+                              const nextLeft =
+                                cardLeftInRail + cardWidth - viewportWidth + rightInset;
+                              if (Math.abs(currentScroll - nextLeft) > 1) {
+                                railElement.scrollLeft = nextLeft;
+                              }
                             } 
-                            // 4. Scrolling left: when card's left boundary falls under current scroll position plus padding
-                            else if (cardLeftInRail < currentScroll + railPadding) {
-                              railElement.scrollTo({
-                                left: Math.max(0, cardLeftInRail - railPadding),
-                                behavior: "smooth"
-                              });
+                            // Scroll left only when card exits left safety inset.
+                            else if (cardLeftInRail < currentScroll + leftInset) {
+                              const nextLeft = Math.max(0, cardLeftInRail - leftInset);
+                              if (Math.abs(currentScroll - nextLeft) > 1) {
+                                railElement.scrollLeft = nextLeft;
+                              }
                             }
                           }
                         }

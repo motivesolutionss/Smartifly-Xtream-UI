@@ -112,7 +112,11 @@ export const buildHomeRails = (
   // ── 2. Push Trending for You ───────────────────────────────────────────────
   const trending = [...movies, ...series]
     .filter((item) => !!item.posterUrl)
-    .sort(() => Math.random() - 0.5);
+    .sort((left, right) => {
+      const leftScore = isMovie(left) ? scoreMovie(left) : scoreSeries(left);
+      const rightScore = isMovie(right) ? scoreMovie(right) : scoreSeries(right);
+      return rightScore - leftScore;
+    });
 
   if (trending.length > 0) {
     const items: HomeRailItem[] = getDedupped(trending, 15).map((item) =>
@@ -286,10 +290,18 @@ export const buildHomeHeroItems = (
   continueWatching: RecentlyWatchedItem[] = []
 ): HeroItem[] => {
   const heroItems: HeroItem[] = [];
+  const heroIds = new Set<string>();
+
+  const canPushHero = (id: string) => {
+    if (heroIds.has(id)) return false;
+    heroIds.add(id);
+    return true;
+  };
 
   const pushMovieHero = (movie: AppMovie, description?: string) => {
     const backdropUrl = movie.backdropUrl || movie.posterUrl;
     if (!backdropUrl) return;
+    if (!canPushHero(`vod:${movie.id}`)) return;
     heroItems.push({
       id: movie.id,
       title: movie.title,
@@ -307,6 +319,7 @@ export const buildHomeHeroItems = (
   const pushSeriesHero = (seriesItem: AppSeries, description?: string) => {
     const backdropUrl = seriesItem.backdropUrl || seriesItem.posterUrl;
     if (!backdropUrl) return;
+    if (!canPushHero(`series:${seriesItem.id}`)) return;
     heroItems.push({
       id: seriesItem.id,
       title: seriesItem.title,
@@ -324,6 +337,7 @@ export const buildHomeHeroItems = (
 
   const pushLiveHero = (live: AppChannel, description?: string) => {
     if (!live.logoUrl) return;
+    if (!canPushHero(`live:${live.id}`)) return;
     heroItems.push({
       id: live.id,
       title: live.title,
@@ -344,6 +358,16 @@ export const buildHomeHeroItems = (
           movie,
           movie.description || "Resume watching where you left off"
         );
+      } else {
+        pushMovieHero(
+          {
+            id: resume.id,
+            title: resume.title,
+            posterUrl: resume.imageUrl,
+            backdropUrl: resume.backdropUrl || resume.imageUrl,
+          },
+          "Resume watching where you left off"
+        );
       }
     } else if (resume.type === "series") {
       const seriesItem = series.find((item) => item.id === resume.id);
@@ -352,11 +376,31 @@ export const buildHomeHeroItems = (
           seriesItem,
           seriesItem.description || "Resume watching where you left off"
         );
+      } else {
+        pushSeriesHero(
+          {
+            id: resume.id,
+            title: resume.title,
+            posterUrl: resume.imageUrl,
+            backdropUrl: resume.backdropUrl || resume.imageUrl,
+          },
+          "Resume watching where you left off"
+        );
       }
     } else if (resume.type === "live") {
       const live = liveStreams.find((item) => item.id === resume.id);
       if (live) {
         pushLiveHero(live, "Resume watching where you left off");
+      } else if (resume.imageUrl) {
+        pushLiveHero(
+          {
+            id: resume.id,
+            title: resume.title,
+            logoUrl: resume.imageUrl,
+            streamType: "live",
+          },
+          "Resume watching where you left off"
+        );
       }
     }
   }

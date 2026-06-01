@@ -37,8 +37,8 @@
   width: 104%;
   height: 104%;
   object-fit: cover;
-  filter: blur(18px) brightness(0.45) saturate(1.05);
-  transform: scale(1.06);
+  filter: brightness(0.42);
+  transform: none;
 }
 
 .backdrop {
@@ -47,7 +47,7 @@
   height: 100%;
   object-fit: cover;
   object-position: center center;
-  transform: scale(1.02);
+  transform: scale(1.01);
 }
 
 /* Precise Reference Gradients */
@@ -183,7 +183,11 @@
   gap: 12px;
   font-size: 19px;
   font-weight: 800;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .playBtn {
@@ -199,12 +203,31 @@
 .playBtn:global(.focused), .infoBtn:global(.focused) {
   background: #FFFFFF !important;
   color: #000000 !important;
-  transform: scale(1.06);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
 }
 
 .heroPlaceholder {
   width: 100%;
   height: 620px;
   background: #000000;
+}
+
+:global(.perf-reduced) .backdropFill {
+  display: none;
+}
+
+:global(.perf-reduced) .backdrop {
+  transform: none;
+}
+
+:global(.perf-reduced) .playBtn,
+:global(.perf-reduced) .infoBtn {
+  transition: none !important;
+}
+
+:global(.perf-reduced) .playBtn:global(.focused),
+:global(.perf-reduced) .infoBtn:global(.focused) {
+  transform: none;
+  box-shadow: none;
 }
