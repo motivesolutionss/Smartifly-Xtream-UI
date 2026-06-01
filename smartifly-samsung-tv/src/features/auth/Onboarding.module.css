@@ -39,7 +39,7 @@
 .logo {
   width: 15rem;
   margin-bottom: 2.5rem;
-  filter: drop-shadow(0 0 1.25rem rgba(var(--color-primary-rgb), 0.4));
+  filter: none;
 }
 
 .title {
@@ -167,7 +167,7 @@
   transform: rotateZ(-12deg) rotateY(30deg);
   margin-right: -10rem;
   z-index: 1;
-  animation: floatLeft 8s ease-in-out infinite alternate;
+  animation: none;
 }
 
 .posterCenter {
@@ -175,7 +175,7 @@
   height: 42rem; /* Scaled up */
   transform: rotateZ(-5deg) rotateY(0deg);
   z-index: 3;
-  animation: floatCenter 8s ease-in-out infinite alternate;
+  animation: none;
 }
 
 .posterRight {
@@ -184,7 +184,7 @@
   transform: rotateZ(8deg) rotateY(-30deg);
   margin-left: -10rem;
   z-index: 2;
-  animation: floatRight 8s ease-in-out infinite alternate;
+  animation: none;
 }
 
 @keyframes floatLeft {

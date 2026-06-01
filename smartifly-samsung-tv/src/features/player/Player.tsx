@@ -32,6 +32,10 @@ type TizenHwKeyEvent = Event & {
 };
 
 const BACK_KEYS = new Set(["Backspace", "Escape", "BrowserBack", "GoBack"]);
+const POSITION_POLL_INTERVAL_MS = 1000;
+const PROGRESS_PERSIST_INTERVAL_MS = 30000;
+const PROGRESS_PERSIST_MIN_STEP_SECONDS = 20;
+const MIN_RESUME_PERSIST_SECONDS = 10;
 
 const formatSeconds = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return "00:00";
@@ -89,7 +93,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   } = useSettingsStore();
   const { setFocus, setFocusScope } = useFocus();
   const [snapshot, setSnapshot] = useState<PlayerStateSnapshot>({ state: "IDLE" });
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [parentalError, setParentalError] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -186,11 +189,11 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     return `${formatClockTime(nextProgram.startMs)} - ${formatClockTime(nextProgram.endMs)}`;
   }, [nextProgram]);
 
-  const showLogo = useMemo(() => {
+  const showLogo = (() => {
     if (!activePlaybackItem?.logoUrl) return false;
     if (imageFailureMemory.hasFailed(activePlaybackItem.logoUrl)) return false;
     return !failedUrls[activePlaybackItem.logoUrl];
-  }, [activePlaybackItem?.logoUrl, failedUrls]);
+  })();
 
   const placeholderStyle = useMemo(
     () => ({
@@ -216,12 +219,18 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   );
 
   const persistPlaybackPosition = useCallback(
-    (seconds: number) => {
+    (seconds: number, options?: { force?: boolean }) => {
       if (!activePlaybackItem || activePlaybackItem.contentType === "live") return;
-      if (!Number.isFinite(seconds) || seconds < 10) return;
+      if (!Number.isFinite(seconds) || seconds < MIN_RESUME_PERSIST_SECONDS) return;
 
       const rounded = Math.floor(seconds);
-      if (rounded <= lastSavedSecondRef.current + 5) return;
+      const force = options?.force ?? false;
+      if (force) {
+        if (rounded <= lastSavedSecondRef.current) return;
+      } else if (rounded <= lastSavedSecondRef.current + PROGRESS_PERSIST_MIN_STEP_SECONDS) {
+        return;
+      }
+
       lastSavedSecondRef.current = rounded;
 
       void services.userData.saveRecentlyWatched({
@@ -353,7 +362,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   );
 
   const saveSnapshotBeforeExit = useCallback(() => {
-    persistPlaybackPosition(readCurrentSeconds());
+    persistPlaybackPosition(readCurrentSeconds(), { force: true });
   }, [persistPlaybackPosition, readCurrentSeconds]);
 
   const exitPlayer = useCallback(() => {
@@ -394,11 +403,16 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   // EPG Peek timer on channel switch / zapping
   useEffect(() => {
     if (!activePlaybackItem) return;
-    setIsEpgPeekActive(true);
-    const timer = window.setTimeout(() => {
+    const showTimer = window.setTimeout(() => {
+      setIsEpgPeekActive(true);
+    }, 0);
+    const hideTimer = window.setTimeout(() => {
       setIsEpgPeekActive(false);
     }, 4000);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
   }, [activePlaybackItem?.id, activePlaybackItem?.contentType]);
 
   const getLiveExtensionCandidates = useCallback((): Array<"ts" | "m3u8"> => {
@@ -489,7 +503,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     const loadStream = async () => {
       try {
         setError(null);
-        setStreamUrl(null);
         if (isBrowserMode) {
           setSnapshot({ state: "LOADING" });
         }
@@ -524,7 +537,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
               url = await services.playback.getPlaybackUrl(attemptRequest);
             }
             if (isDisposed) return;
-            setStreamUrl(url);
 
             if (isBrowserMode) {
               await playBrowserStream(url);
@@ -634,12 +646,12 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
         setCurrentSeconds(nextPosition);
         setDurationSeconds(nextDuration);
       }
-    }, 1000);
+    }, POSITION_POLL_INTERVAL_MS);
 
-    if (!isBrowserMode && activePlaybackItem.contentType !== "live") {
+    if (activePlaybackItem.contentType !== "live") {
       persistTimer = window.setInterval(() => {
         persistPlaybackPosition(readCurrentSeconds());
-      }, 15000);
+      }, PROGRESS_PERSIST_INTERVAL_MS);
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -780,7 +792,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     isBrowserMode,
     isLive,
     exitPlayer,
-    playBrowserStream,
     persistPlaybackPosition,
     readCurrentSeconds,
     readDurationSeconds,
@@ -879,25 +890,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       }
     };
   }, [clearBrowserBufferingTimer]);
-
-  useEffect(() => {
-    if (!activePlaybackItem || activePlaybackItem.contentType === "live") return;
-    if (!isBrowserMode) return;
-
-    const videoElement = videoRef.current;
-    if (!videoElement) return;
-
-    const handleTimeUpdate = () => {
-      setCurrentSeconds(videoElement.currentTime || 0);
-      setDurationSeconds(videoElement.duration || 0);
-      persistPlaybackPosition(videoElement.currentTime);
-    };
-
-    videoElement.addEventListener("timeupdate", handleTimeUpdate);
-    return () => {
-      videoElement.removeEventListener("timeupdate", handleTimeUpdate);
-    };
-  }, [activePlaybackItem, isBrowserMode, persistPlaybackPosition, streamUrl]);
 
   useEffect(() => {
     if (!controlsVisible || settingsVisible || playerState !== "PLAYING") return;

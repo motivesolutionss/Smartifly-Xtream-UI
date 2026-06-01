@@ -23,7 +23,7 @@
   padding: 0 20px;
   display: flex;
   align-items: center;
-  transition: all 0.2s ease-out;
+  transition: background-color 0.2s ease-out, border-color 0.2s ease-out;
 }
 
 .focusableWrapper:global(.focused) {

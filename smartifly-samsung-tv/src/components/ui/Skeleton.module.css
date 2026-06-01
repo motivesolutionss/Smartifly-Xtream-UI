@@ -28,3 +28,7 @@
     rgba(8, 12, 20, 1) 100%
   );
 }
+
+:global(.perf-reduced) .skeleton {
+  animation: none !important;
+}

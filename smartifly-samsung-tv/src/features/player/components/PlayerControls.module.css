@@ -54,16 +54,21 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
 }
 
 .backButton:global(.focused) {
   background: #ffffff;
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: scale(1.15);
-  box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.6), 0 4px 15px rgba(0, 0, 0, 0.4);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 .topMeta {
@@ -96,7 +101,7 @@
   font-weight: 900;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  text-shadow: 0 0 10px rgba(var(--color-primary-glow-rgb), 0.45);
+  text-shadow: none;
 }
 
 .liveMetaRow {
@@ -131,13 +136,7 @@
   height: 10px;
   border-radius: 50%;
   background: var(--color-primary-glow);
-  box-shadow: 0 0 8px var(--color-primary-glow);
-  animation: livePulse 1.4s ease-in-out infinite;
-}
-
-@keyframes livePulse {
-  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px var(--color-primary-glow); }
-  50%       { opacity: 0.4; transform: scale(0.75); box-shadow: 0 0 2px var(--color-primary-glow); }
+  box-shadow: none;
 }
 
 .settingsButton {
@@ -151,16 +150,21 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
 }
 
 .settingsButton:global(.focused) {
   background: #ffffff;
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: scale(1.15);
-  box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.6), 0 4px 15px rgba(0, 0, 0, 0.4);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 .clockPill {
@@ -269,7 +273,7 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   position: relative;
   cursor: pointer;
-  transition: all 200ms ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .seekProgress {
@@ -278,7 +282,7 @@
   /* Elite gradient progress bar */
   background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
   position: relative;
-  box-shadow: 0 0 10px rgba(var(--color-primary-rgb), 0.55);
+  box-shadow: none;
 }
 
 /* Scrubber thumb - modern double ring dot */
@@ -292,7 +296,7 @@
   height: 16px;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 0 5px rgba(var(--color-primary-rgb), 0.45), 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
   transition: transform 150ms ease;
 }
 
@@ -315,16 +319,21 @@
   color: rgba(255, 255, 255, 0.88);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
 }
 
 .iconButton:global(.focused) {
   background: #ffffff;
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: scale(1.18);
-  box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.6), 0 4px 15px rgba(0, 0, 0, 0.4);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 .playPauseButton {
@@ -338,15 +347,19 @@
   /* Elite gradient accent */
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
   border: none;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 15px rgba(var(--color-primary-rgb), 0.45), 0 6px 18px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 0 0 1px rgba(var(--color-primary-rgb), 0.18), 0 6px 16px rgba(0, 0, 0, 0.26);
 }
 
 .playPauseButton:global(.focused) {
   background: #ffffff;
   color: var(--color-primary);
-  transform: scale(1.22);
-  box-shadow: 0 0 30px rgba(var(--color-primary-rgb), 0.85), 0 6px 20px rgba(0, 0, 0, 0.4);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
 /* Seek labels below buttons */
@@ -396,4 +409,19 @@
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.05em;
+}
+
+:global(.perf-reduced) .backButton,
+:global(.perf-reduced) .settingsButton,
+:global(.perf-reduced) .seekTrack,
+:global(.perf-reduced) .iconButton,
+:global(.perf-reduced) .playPauseButton {
+  transition: none !important;
+}
+
+:global(.perf-reduced) .backButton:global(.focused),
+:global(.perf-reduced) .settingsButton:global(.focused),
+:global(.perf-reduced) .iconButton:global(.focused),
+:global(.perf-reduced) .playPauseButton:global(.focused) {
+  transform: none !important;
 }

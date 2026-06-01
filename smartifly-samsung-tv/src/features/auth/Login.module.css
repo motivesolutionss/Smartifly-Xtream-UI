@@ -12,7 +12,7 @@
   inset: 0;
   background: 
     radial-gradient(circle at bottom right, rgba(var(--color-primary-rgb), 0.15), transparent 60%);
-  filter: blur(6.25rem);
+  filter: none;
   z-index: 1;
 }
 
@@ -229,7 +229,6 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  backdrop-filter: blur(1rem);
 }
 
 .handshakeContent {
@@ -252,7 +251,6 @@
 .handshakeLogoMinimal {
   width: 11rem; /* Scaled from 7rem */
   z-index: 5;
-  filter: drop-shadow(0 0 1.5rem rgba(0, 0, 0, 0.5));
 }
 
 .handshakeCircularLoader {
@@ -272,7 +270,13 @@
   stroke: var(--color-primary);
   stroke-width: 5; /* Slightly thicker */
   stroke-linecap: round;
-  filter: drop-shadow(0 0 0.75rem var(--color-primary));
+}
+
+:global(.perf-reduced) .background,
+:global(.perf-reduced) .stepContent,
+:global(.perf-reduced) .errorText,
+:global(.perf-reduced) .handshakeContent {
+  animation: none !important;
 }
 
 .handshakeStatusArea {

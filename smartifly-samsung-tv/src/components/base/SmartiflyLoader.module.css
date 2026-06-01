@@ -3,7 +3,6 @@
   height: var(--loader-size, 60px);
   border-radius: 999px;
   position: relative;
-  animation: loaderPulse 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
 }
 
 .loader::before,
@@ -16,7 +15,7 @@
 
 .loader::before {
   border: var(--loader-stroke, 4px) solid rgba(var(--color-primary-rgb), 0.1);
-  box-shadow: 0 0 28px rgba(var(--color-primary-rgb), 0.08);
+  box-shadow: 0 0 12px rgba(var(--color-primary-rgb), 0.04);
 }
 
 .loader::after {
@@ -24,15 +23,6 @@
   border-top-color: var(--color-primary);
   border-right-color: var(--color-primary-glow);
   animation: loaderSpin 1.5s linear infinite;
-}
-
-@keyframes loaderPulse {
-  from {
-    transform: scale(0.95);
-  }
-  to {
-    transform: scale(1.05);
-  }
 }
 
 @keyframes loaderSpin {
