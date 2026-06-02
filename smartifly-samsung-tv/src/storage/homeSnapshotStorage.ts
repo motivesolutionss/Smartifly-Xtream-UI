@@ -1,12 +1,13 @@
 import type { AppCategory, AppChannel, AppMovie, AppSeries } from "../types/appModels";
 import { localStorageService } from "./localStorageService";
 
-const HOME_SNAPSHOT_VERSION = 1;
+const HOME_SNAPSHOT_VERSION = 2;
 const HOME_SNAPSHOT_KEY_PREFIX = "smartifly_home_snapshot";
 const HOME_SNAPSHOT_WRITE_DELAY_MS = 600;
 
 export type PersistedHomeSnapshot = {
   version: number;
+  completeness: "bootstrap" | "full";
   generatedAt: string;
   movies: AppMovie[];
   series: AppSeries[];

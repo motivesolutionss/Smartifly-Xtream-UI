@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import type { HeroItem } from "../../components/common/HeroBanner";
 import { services } from "../../services";
 import { homeSnapshotStorage, type PersistedHomeSnapshot } from "../../storage/homeSnapshotStorage";
@@ -14,6 +14,9 @@ import type { HomeRail } from "./homeTypes";
 
 const HOME_SNAPSHOT_STALE_MS = 5 * 60 * 1000;
 const HOME_SNAPSHOT_GC_MS = 2 * 60 * 60 * 1000;
+const HOME_BOOTSTRAP_VOD_CATEGORY_COUNT = 1;
+const HOME_BOOTSTRAP_SERIES_CATEGORY_COUNT = 1;
+const HOME_BOOTSTRAP_LIVE_CATEGORY_COUNT = 1;
 const HOME_VOD_CATEGORY_COUNT = 2;
 const HOME_SERIES_CATEGORY_COUNT = 2;
 const HOME_LIVE_CATEGORY_COUNT = 1;
@@ -23,6 +26,33 @@ const HOME_LIVE_FALLBACK_MIN = 10;
 const HOME_MOVIE_CACHE_CAP = 40;
 const HOME_SERIES_CACHE_CAP = 40;
 const HOME_LIVE_CACHE_CAP = 24;
+type HomeSnapshotMode = "bootstrap" | "full";
+
+const HOME_SNAPSHOT_CONFIG: Record<
+  HomeSnapshotMode,
+  {
+    completeness: HomeSnapshotMode;
+    vodCategoryCount: number;
+    seriesCategoryCount: number;
+    liveCategoryCount: number;
+    includeFallbackFetches: boolean;
+  }
+> = {
+  bootstrap: {
+    completeness: "bootstrap",
+    vodCategoryCount: HOME_BOOTSTRAP_VOD_CATEGORY_COUNT,
+    seriesCategoryCount: HOME_BOOTSTRAP_SERIES_CATEGORY_COUNT,
+    liveCategoryCount: HOME_BOOTSTRAP_LIVE_CATEGORY_COUNT,
+    includeFallbackFetches: false,
+  },
+  full: {
+    completeness: "full",
+    vodCategoryCount: HOME_VOD_CATEGORY_COUNT,
+    seriesCategoryCount: HOME_SERIES_CATEGORY_COUNT,
+    liveCategoryCount: HOME_LIVE_CATEGORY_COUNT,
+    includeFallbackFetches: true,
+  },
+};
 
 const GENERIC_CATEGORY_NAMES = new Set([
   "all",
@@ -92,11 +122,23 @@ const isSparseSnapshot = (snapshot: PersistedHomeSnapshot) => {
   );
 };
 
+export const hasHomeSnapshotContent = (snapshot: PersistedHomeSnapshot | null | undefined) => {
+  if (!snapshot) return false;
+  return snapshot.movies.length > 0 || snapshot.series.length > 0 || snapshot.liveStreams.length > 0;
+};
+
 const getSnapshotUpdatedAt = (snapshot: PersistedHomeSnapshot | null) => {
   if (!snapshot) return undefined;
+  if (snapshot.completeness === "bootstrap") return 0;
   if (isSparseSnapshot(snapshot)) return 0;
   const timestamp = Date.parse(snapshot.generatedAt);
   return Number.isNaN(timestamp) ? undefined : timestamp;
+};
+
+export const isHomeSnapshotFresh = (snapshot: PersistedHomeSnapshot | null | undefined) => {
+  const updatedAt = getSnapshotUpdatedAt(snapshot ?? null);
+  if (updatedAt === undefined || updatedAt <= 0) return false;
+  return Date.now() - updatedAt <= HOME_SNAPSHOT_STALE_MS;
 };
 
 const fulfilledGroups = <T>(results: PromiseSettledResult<T[]>[]) => {
@@ -112,7 +154,8 @@ const allRejected = (results: PromiseSettledResult<unknown>[]) => {
   return results.length > 0 && results.every((result) => result.status === "rejected");
 };
 
-const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
+const fetchHomeSnapshot = async (mode: HomeSnapshotMode): Promise<PersistedHomeSnapshot> => {
+  const config = HOME_SNAPSHOT_CONFIG[mode];
   const categoryResults = await Promise.allSettled([
     services.content.getVodCategories(),
     services.content.getSeriesCategories(),
@@ -127,9 +170,9 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
   const seriesCategories = categoryResults[1]?.status === "fulfilled" ? categoryResults[1].value : [];
   const liveCategories = categoryResults[2]?.status === "fulfilled" ? categoryResults[2].value : [];
 
-  const selectedVodCategories = selectCategories(vodCategories, HOME_VOD_CATEGORY_COUNT);
-  const selectedSeriesCategories = selectCategories(seriesCategories, HOME_SERIES_CATEGORY_COUNT);
-  const selectedLiveCategories = selectCategories(liveCategories, HOME_LIVE_CATEGORY_COUNT);
+  const selectedVodCategories = selectCategories(vodCategories, config.vodCategoryCount);
+  const selectedSeriesCategories = selectCategories(seriesCategories, config.seriesCategoryCount);
+  const selectedLiveCategories = selectCategories(liveCategories, config.liveCategoryCount);
 
   const [vodResults, seriesResults, liveResults] = await Promise.all([
     Promise.allSettled(
@@ -167,7 +210,7 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
     )
   );
 
-  if (movies.length < HOME_MOVIE_FALLBACK_MIN) {
+  if (config.includeFallbackFetches && movies.length < HOME_MOVIE_FALLBACK_MIN) {
     try {
       const previousCount = movies.length;
       const fallbackMovies = await services.content.getVodStreams();
@@ -189,7 +232,7 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
     movies = dedupeById(movies);
   }
 
-  if (series.length < HOME_SERIES_FALLBACK_MIN) {
+  if (config.includeFallbackFetches && series.length < HOME_SERIES_FALLBACK_MIN) {
     try {
       const previousCount = series.length;
       const fallbackSeries = await services.content.getSeries();
@@ -211,7 +254,7 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
     series = dedupeById(series);
   }
 
-  if (liveStreams.length < HOME_LIVE_FALLBACK_MIN) {
+  if (config.includeFallbackFetches && liveStreams.length < HOME_LIVE_FALLBACK_MIN) {
     try {
       const previousCount = liveStreams.length;
       const fallbackLiveStreams = await services.content.getLiveStreams();
@@ -247,6 +290,7 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
   }
 
   logger.info("home_snapshot_built", {
+    mode,
     vodCategoryCount: selectedVodCategories.length,
     seriesCategoryCount: selectedSeriesCategories.length,
     liveCategoryCount: selectedLiveCategories.length,
@@ -256,7 +300,8 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
   });
 
   return {
-    version: 1,
+    version: 2,
+    completeness: config.completeness,
     generatedAt: new Date().toISOString(),
     movies,
     series,
@@ -264,6 +309,68 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
     vodCategories: selectedVodCategories,
     seriesCategories: selectedSeriesCategories,
   };
+};
+
+export const getHomeSnapshotQueryKey = (playlistId: string | null, profileId: string | null) =>
+  ["home-snapshot", playlistId, profileId] as const;
+
+export const hasFreshHomeSnapshotInCache = (
+  queryClient: QueryClient,
+  playlistId: string | null,
+  profileId: string | null
+) => {
+  if (!playlistId || !profileId) return false;
+
+  const cachedSnapshot =
+    queryClient.getQueryData<PersistedHomeSnapshot>(getHomeSnapshotQueryKey(playlistId, profileId)) ??
+    null;
+
+  return (
+    cachedSnapshot?.completeness === "full" &&
+    hasHomeSnapshotContent(cachedSnapshot) &&
+    isHomeSnapshotFresh(cachedSnapshot)
+  );
+};
+
+export const preloadHomeSnapshot = (
+  queryClient: QueryClient,
+  playlistId: string | null,
+  profileId: string | null
+) => {
+  if (!playlistId || !profileId) {
+    return Promise.resolve();
+  }
+
+  if (hasFreshHomeSnapshotInCache(queryClient, playlistId, profileId)) {
+    return Promise.resolve(
+      queryClient.getQueryData<PersistedHomeSnapshot>(getHomeSnapshotQueryKey(playlistId, profileId))
+    );
+  }
+
+  const persistedSnapshot = homeSnapshotStorage.getSnapshot(playlistId, profileId);
+  const queryKey = getHomeSnapshotQueryKey(playlistId, profileId);
+
+  return queryClient.fetchQuery({
+    queryKey,
+    queryFn: async () => {
+      const bootstrapSnapshot = await fetchHomeSnapshot("bootstrap");
+
+      if (!hasHomeSnapshotContent(bootstrapSnapshot) && hasHomeSnapshotContent(persistedSnapshot)) {
+        logger.info("home_snapshot_bootstrap_fallback_to_persisted", {
+          profileId,
+          persistedCompleteness: persistedSnapshot?.completeness ?? "none",
+        });
+        return persistedSnapshot as PersistedHomeSnapshot;
+      }
+
+      return bootstrapSnapshot;
+    },
+    initialData: persistedSnapshot ?? undefined,
+    initialDataUpdatedAt: getSnapshotUpdatedAt(persistedSnapshot),
+    staleTime: HOME_SNAPSHOT_STALE_MS,
+    gcTime: HOME_SNAPSHOT_GC_MS,
+    retry: 1,
+  });
 };
 
 export const useHomeSnapshot = (continueWatching: RecentlyWatchedItem[]) => {
@@ -276,8 +383,8 @@ export const useHomeSnapshot = (continueWatching: RecentlyWatchedItem[]) => {
   );
 
   const query = useQuery<PersistedHomeSnapshot>({
-    queryKey: ["home-snapshot", playlistId, profileId],
-    queryFn: fetchHomeSnapshot,
+    queryKey: getHomeSnapshotQueryKey(playlistId, profileId),
+    queryFn: () => fetchHomeSnapshot("full"),
     enabled: Boolean(playlistId && profileId),
     initialData: persistedSnapshot ?? undefined,
     initialDataUpdatedAt: getSnapshotUpdatedAt(persistedSnapshot),
@@ -291,6 +398,7 @@ export const useHomeSnapshot = (continueWatching: RecentlyWatchedItem[]) => {
     if (!query.data) return;
 
     homeSnapshotStorage.saveSnapshot(playlistId, profileId, {
+      completeness: query.data.completeness,
       generatedAt: query.data.generatedAt,
       movies: query.data.movies,
       series: query.data.series,

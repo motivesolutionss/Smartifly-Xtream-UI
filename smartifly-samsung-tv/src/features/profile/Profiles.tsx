@@ -37,7 +37,7 @@ export const AVATAR_ICONS: Record<
 };
 
 interface ProfilesProps {
-  onSelectProfile: () => void;
+  onSelectProfile: (profile: UserProfile) => void;
 }
 
 export const Profiles: React.FC<ProfilesProps> = ({ onSelectProfile }) => {
@@ -175,7 +175,7 @@ export const Profiles: React.FC<ProfilesProps> = ({ onSelectProfile }) => {
       handleOpenEditProfile(profile);
     } else {
       selectProfile(profile);
-      onSelectProfile();
+      onSelectProfile(profile);
     }
   };
 
