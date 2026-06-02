@@ -12,12 +12,13 @@
   padding: 2.5rem 0;
   z-index: var(--z-sidebar);
   transition:
-    width 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.2s ease,
-    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.16s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 2.8rem;
-  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.52);
+  box-shadow: 0 0.45rem 1.2rem rgba(0, 0, 0, 0.35);
+  will-change: width, transform, opacity;
 }
 
 /* Hide sidebar when a full-screen modal (EPG) is open */
@@ -27,7 +28,7 @@
   transform: translateY(-50%) translateX(-120%);
 }
 
-.sidebar.expanded {
+.sidebar:focus-within {
   width: 14.5rem; /* Room for both icon + label with clean margins */
 }
 
@@ -44,12 +45,12 @@
   height: 3.2rem;
   border-radius: 0.8rem;
   object-fit: contain;
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.24);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.2);
 }
 
-.sidebar.expanded .logo {
-  transform: scale(1.03);
+.sidebar:focus-within .logo {
+  transform: scale(1.01);
 }
 
 .nav {
@@ -68,15 +69,14 @@
   justify-content: center;
   color: rgba(255, 255, 255, 0.45);
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s ease,
-    border-color 0.18s ease;
+    background-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: pointer;
   position: relative;
   border: 1px solid transparent;
   background: transparent;
+  will-change: transform;
 }
 
 .navItem > div:first-child {
@@ -84,13 +84,13 @@
   padding: 0 !important;
 }
 
-.sidebar.expanded .navItem {
+.sidebar:focus-within .navItem {
   width: 12.8rem; 
   height: 3.8rem;
   border-radius: 1.9rem;
 }
 
-.sidebar.expanded .navItem > div:first-child {
+.sidebar:focus-within .navItem > div:first-child {
   justify-content: flex-start !important;
   padding-left: 1.35rem !important;
 }
@@ -106,12 +106,11 @@
   height: 1.5rem;
   background: linear-gradient(to bottom, var(--color-primary), var(--color-primary-glow));
   border-radius: 0 4px 4px 0;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-  box-shadow: 0 0 8px rgba(var(--color-primary-glow-rgb), 0.38);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
   opacity: 0;
 }
 
-.sidebar.expanded .navItem.active::before {
+.sidebar:focus-within .navItem.active::before {
   transform: translateY(-50%) scaleY(1);
   opacity: 1;
 }
@@ -126,7 +125,7 @@
   color: var(--color-primary);
 }
 
-.sidebar.expanded .navItem.active {
+.sidebar:focus-within .navItem.active {
   background: rgba(var(--color-primary-rgb), 0.08);
 }
 
@@ -134,19 +133,17 @@
 .navItem:global(.focused) {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%) !important;
   color: #FFFFFF !important;
-  transform: scale(1.06);
+  transform: scale(1.03);
   box-shadow:
-    0 8px 18px rgba(var(--color-primary-rgb), 0.26),
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+    0 4px 10px rgba(var(--color-primary-rgb), 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset;
   border: 1px solid rgba(255, 255, 255, 0.25);
   z-index: 10;
 }
 
-.sidebar.expanded .navItem:global(.focused) {
-  transform: scale(1.03);
-  box-shadow:
-    0 9px 20px rgba(var(--color-primary-rgb), 0.28),
-    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+.sidebar:focus-within .navItem:global(.focused) {
+  transform: scale(1.02);
+  box-shadow: 0 5px 11px rgba(var(--color-primary-rgb), 0.24);
 }
 
 .navItem:global(.focused) .icon {
@@ -162,7 +159,7 @@
 .icon {
   width: 1.35rem;
   height: 1.35rem;
-  transition: color 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color 0.16s ease, transform 0.16s ease;
   flex-shrink: 0;
   color: inherit;
 }
@@ -176,12 +173,12 @@
   font-size: 1.05rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  transition: opacity 0.3s ease, max-width 0.3s ease, margin 0.3s ease;
+  transition: opacity 0.16s ease, max-width 0.16s ease, margin 0.16s ease;
   margin-left: 0;
   color: inherit;
 }
 
-.sidebar.expanded .label {
+.sidebar:focus-within .label {
   opacity: 0.85;
   max-width: 8rem;
   margin-left: 1.1rem;
@@ -205,14 +202,14 @@
   transition: none !important;
 }
 
-:global(.perf-reduced) .sidebar.expanded .logo,
+:global(.perf-reduced) .sidebar:focus-within .logo,
 :global(.perf-reduced) .navItem:global(.focused),
-:global(.perf-reduced) .sidebar.expanded .navItem:global(.focused) {
+:global(.perf-reduced) .sidebar:focus-within .navItem:global(.focused) {
   transform: none;
 }
 
 :global(.perf-reduced) .navItem:global(.focused),
-:global(.perf-reduced) .sidebar.expanded .navItem:global(.focused) {
+:global(.perf-reduced) .sidebar:focus-within .navItem:global(.focused) {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 

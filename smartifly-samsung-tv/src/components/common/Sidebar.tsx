@@ -9,7 +9,6 @@ import {
   Settings,
 } from "lucide-react";
 import { Focusable } from "../tv/Focusable";
-import { useFocus } from "../../providers/useFocus";
 import styles from "./Sidebar.module.css";
 
 interface SidebarProps {
@@ -36,9 +35,6 @@ interface SidebarProps {
 type SidebarNavId = SidebarProps["activeId"];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
-  const { focusedId } = useFocus();
-  const isExpanded = focusedId?.startsWith("nav-") ?? false;
-
   const navItems: {
     id: SidebarNavId;
     icon: React.ComponentType<{ className?: string; size?: number }>;
@@ -54,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
   ];
 
   return (
-    <aside className={`${styles.sidebar} ${isExpanded ? styles.expanded : ""}`}>
+    <aside className={`${styles.sidebar} smartifly-sidebar`}>
       <div className={styles.logoSection}>
         <img src="/smartifly_logo.png" alt="Logo" className={styles.logo} />
       </div>

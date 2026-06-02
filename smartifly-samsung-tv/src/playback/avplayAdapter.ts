@@ -53,8 +53,26 @@ const requireMethod = <K extends keyof AvPlayLike>(avplay: AvPlayLike, method: K
   return fn as (...args: unknown[]) => unknown;
 };
 
+/**
+ * Returns true only when AVPlay is present AND its core methods are callable.
+ * The Tizen emulator sometimes exposes `window.webapi.avplay` as a stub object
+ * where methods exist but are no-ops or throw immediately. We probe `open` and
+ * `prepareAsync` to distinguish a real AVPlay surface from a dead stub.
+ */
+const probeAvPlayAvailability = (): boolean => {
+  if (typeof window === "undefined") return false;
+  const avplay = window.webapi?.avplay;
+  if (!avplay) return false;
+  // Must have at minimum open + prepareAsync + play to be usable
+  return (
+    typeof avplay.open === "function" &&
+    typeof avplay.prepareAsync === "function" &&
+    typeof avplay.play === "function"
+  );
+};
+
 export const avplayAdapter = {
-  isAvailable: () => typeof window !== "undefined" && Boolean(window.webapi?.avplay),
+  isAvailable: probeAvPlayAvailability,
   supportsSeeking: () => {
     try {
       return typeof getAvPlay().seekTo === "function";
@@ -119,7 +137,8 @@ export const avplayAdapter = {
 
   setBufferTime: (timeMs: number) =>
     runAvPlay("setBufferTime", (avplay) => {
-      // In Tizen AVPlay, we use PROPERTY_PLAYER_BUFFER_FOR_PLAY
+      // AVPlay streaming property values for buffer are in milliseconds.
+      // Use the correct property key format for Tizen AVPlay.
       const fn = requireMethod(avplay, "setStreamingProperty");
       fn("PLAYER_BUFFER_FOR_PLAY", String(timeMs));
       fn("PLAYER_BUFFER_FOR_RESUME", String(timeMs));

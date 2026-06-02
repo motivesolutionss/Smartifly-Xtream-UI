@@ -12,21 +12,19 @@
   flex: 1;
   position: relative;
   z-index: 5;
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+  transition: opacity 0.16s ease;
 }
 
-.sidebar-expanded .main-content {
-  transform: translateX(100px);
-  opacity: 0.4; /* Dim background content for better focus */
+.smartifly-sidebar:focus-within ~ .main-content {
+  opacity: 0.62;
 }
 
 .perf-reduced .main-content {
   transition: opacity 0.15s linear;
 }
 
-.perf-reduced .sidebar-expanded .main-content {
-  transform: none;
-  opacity: 0.55;
+.perf-reduced .smartifly-sidebar:focus-within ~ .main-content {
+  opacity: 0.7;
 }
 
 .page-body {

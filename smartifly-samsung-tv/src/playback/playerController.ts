@@ -43,28 +43,52 @@ export class PlayerController {
     try {
       logger.info("Player startup initiated", { requestId, url });
       this.updateState("LOADING", undefined, requestId);
+
+      // Always release cleanly before opening a new stream.
       this.release({ silent: true });
 
+      logger.debug("AVPlay open", { requestId });
       avplayAdapter.open(url);
+
+      // Apply optional streaming optimisations (all wrapped in try/catch internally).
       this.applyOptionalOptimizations(options);
-      avplayAdapter.setDisplayRect(0, 0, window.innerWidth, window.innerHeight);
+
+      // Register event listeners before prepareAsync so we don't miss early events.
       avplayAdapter.setListener({
-        onbufferingstart: () => this.updateState("BUFFERING", undefined, requestId),
-        onbufferingcomplete: () => this.updateState("PLAYING", undefined, requestId),
-        onstreamcompleted: () => this.updateState("ENDED", undefined, requestId),
+        onbufferingstart: () => {
+          logger.debug("AVPlay onbufferingstart", { requestId });
+          this.updateState("BUFFERING", undefined, requestId);
+        },
+        onbufferingcomplete: () => {
+          logger.debug("AVPlay onbufferingcomplete", { requestId });
+          this.updateState("PLAYING", undefined, requestId);
+        },
+        onstreamcompleted: () => {
+          logger.debug("AVPlay onstreamcompleted", { requestId });
+          this.updateState("ENDED", undefined, requestId);
+        },
         onerror: (error) => {
+          logger.error("AVPlay onerror callback", { requestId, error });
           const appError = mapPlaybackError(error);
           this.updateState("ERROR", appError.message, requestId);
         },
       });
 
+      logger.debug("AVPlay prepareAsync starting", { requestId });
       await this.prepareWithTimeout(20000);
-      logger.debug("AVPlay prepared", {
+      logger.debug("AVPlay prepareAsync resolved", {
         requestId,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
+
+      // setDisplayRect AFTER prepare — some Tizen emulator builds require this order.
+      avplayAdapter.setDisplayRect(0, 0, window.innerWidth, window.innerHeight);
+
       this.updateState("READY", undefined, requestId);
+
+      logger.debug("AVPlay play", { requestId });
       avplayAdapter.play();
+
       if (
         typeof options.startPositionSeconds === "number" &&
         Number.isFinite(options.startPositionSeconds) &&
@@ -76,6 +100,7 @@ export class PlayerController {
           logger.warn("Unable to resume AVPlay stream at saved position", error);
         }
       }
+
       this.updateState("PLAYING", undefined, requestId);
       logger.info("Playback started", {
         requestId,

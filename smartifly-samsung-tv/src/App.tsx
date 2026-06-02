@@ -256,7 +256,7 @@ function App() {
   };
 
   return (
-    <div className={`app-container ${focusedId?.startsWith("nav-") ? "sidebar-expanded" : ""}`}>
+    <div className="app-container">
       {activePlaybackItem && (
         <Player
           onBack={() => {

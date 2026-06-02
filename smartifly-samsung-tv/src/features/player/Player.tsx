@@ -36,6 +36,7 @@ const POSITION_POLL_INTERVAL_MS = 1000;
 const PROGRESS_PERSIST_INTERVAL_MS = 30000;
 const PROGRESS_PERSIST_MIN_STEP_SECONDS = 20;
 const MIN_RESUME_PERSIST_SECONDS = 10;
+const VOD_SERIES_EXTENSION_FALLBACKS = ["mp4", "mkv", "m3u8", "ts"] as const;
 
 const formatSeconds = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return "00:00";
@@ -82,6 +83,33 @@ const cleanTitle = (title: string): string => {
   return title;
 };
 
+const getBrowserMediaErrorMessage = (video: HTMLVideoElement) => {
+  const code = video.error?.code;
+  if (code === MediaError.MEDIA_ERR_NETWORK) {
+    return "Unable to reach the stream server. Please try another stream.";
+  }
+  if (code === MediaError.MEDIA_ERR_DECODE) {
+    return "This stream could not be decoded on this device.";
+  }
+  if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+    return "This stream format is not supported on this device.";
+  }
+  return "This stream is currently unavailable. Please try again.";
+};
+
+const normalizeExtension = (value?: string) =>
+  value?.replace(/^\./, "").trim().toLowerCase() || "";
+
+const buildExtensionCandidates = (extensions: Array<string | undefined>) => {
+  const unique = new Set<string>();
+  for (const value of extensions) {
+    const normalized = normalizeExtension(value);
+    if (!normalized) continue;
+    unique.add(normalized);
+  }
+  return Array.from(unique);
+};
+
 export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const { activePlaybackItem, liveChannels, setActivePlaybackItem } = usePlayerStore();
   const {
@@ -99,6 +127,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [isEpgPeekActive, setIsEpgPeekActive] = useState(false);
   const [lastActivity, setLastActivity] = useState(0);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [skipIntroDismissed, setSkipIntroDismissed] = useState(false);
@@ -122,6 +151,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const stallSinceMsRef = useRef<number | null>(null);
   const isAutoRecoveringRef = useRef(false);
   const isBrowserPlaybackAttemptingRef = useRef(false);
+  const loadAttemptIdRef = useRef(0);
   const isBrowserMode = useMemo(() => !avplayAdapter.isAvailable(), []);
   const controller = useMemo(() => PlayerController.getInstance(), []);
   const trackSelectionManager = useMemo(() => new TrackSelectionManager(), []);
@@ -136,8 +166,11 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const playerState = snapshot.state;
   const isPlaying = playerState === "PLAYING";
 
+  const shouldLoadLiveEpg = Boolean(
+    isLive && (controlsVisible || isEpgPeekActive || zappingChannel)
+  );
   const { currentProgram, nextPrograms } = useEpg(
-    activePlaybackItem?.contentType === "live" ? activePlaybackItem.id : ""
+    shouldLoadLiveEpg ? activePlaybackItem?.id || "" : ""
   );
 
   const nextEpisode = activePlaybackItem?.nextItem ?? null;
@@ -393,13 +426,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     });
   }, [activePlaybackItem?.seriesId, nextEpisode, setActivePlaybackItem]);
 
-  const retryPlayback = useCallback(() => {
-    if (!activePlaybackItem) return;
-    didHandleExitRef.current = false;
-    setError(null);
-    setActivePlaybackItem({ ...activePlaybackItem });
-  }, [activePlaybackItem, setActivePlaybackItem]);
-
   // EPG Peek timer on channel switch / zapping
   useEffect(() => {
     if (!activePlaybackItem) return;
@@ -415,15 +441,34 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     };
   }, [activePlaybackItem?.id, activePlaybackItem?.contentType]);
 
-  const getLiveExtensionCandidates = useCallback((): Array<"ts" | "m3u8"> => {
-    if (isBrowserMode) {
-      return liveExtension === "m3u8" ? ["m3u8", "ts"] : ["ts", "m3u8"];
-    }
+  const getPlaybackExtensionCandidates = useCallback(
+    (contentType: "live" | "vod" | "series", extension?: string): string[] => {
+      if (contentType === "live") {
+        const preferred = normalizeExtension(
+          extension || liveExtension || (isBrowserMode ? "m3u8" : "ts")
+        );
+        if (isBrowserMode) {
+          if (preferred === "ts") {
+            return buildExtensionCandidates(["m3u8", "ts"]);
+          }
+          if (preferred === "m3u8") {
+            return buildExtensionCandidates(["m3u8", "ts"]);
+          }
+          return buildExtensionCandidates([preferred, "m3u8", "ts"]);
+        }
+        if (preferred === "m3u8") {
+          return buildExtensionCandidates(["m3u8", "ts"]);
+        }
+        if (preferred === "ts") {
+          return buildExtensionCandidates(["ts", "m3u8"]);
+        }
+        return buildExtensionCandidates([preferred, "ts", "m3u8"]);
+      }
 
-    const preferred: "ts" | "m3u8" = liveExtension === "m3u8" ? "m3u8" : "ts";
-    const fallback: "ts" | "m3u8" = preferred === "ts" ? "m3u8" : "ts";
-    return [preferred, fallback];
-  }, [isBrowserMode, liveExtension]);
+      return buildExtensionCandidates([extension, ...VOD_SERIES_EXTENSION_FALLBACKS]);
+    },
+    [isBrowserMode, liveExtension]
+  );
 
   const playBrowserStream = useCallback(async (url: string) => {
     const video = videoRef.current;
@@ -445,6 +490,20 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       browserBufferingTimerRef.current = null;
     }
   }, []);
+
+  const retryPlayback = useCallback(() => {
+    if (!activePlaybackItem) return;
+    didHandleExitRef.current = false;
+    setError(null);
+    clearBrowserBufferingTimer();
+    if (isBrowserMode) {
+      browserPlaybackAdapter.reset(videoRef.current);
+    } else {
+      controller.release({ silent: true });
+    }
+    setSnapshot({ state: "LOADING" });
+    setRetryNonce((current) => current + 1);
+  }, [activePlaybackItem, clearBrowserBufferingTimer, controller, isBrowserMode]);
 
   const markBrowserPlaying = useCallback(() => {
     clearBrowserBufferingTimer();
@@ -501,6 +560,8 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     let isDisposed = false;
 
     const loadStream = async () => {
+      const loadAttemptId = ++loadAttemptIdRef.current;
+      const isStaleAttempt = () => isDisposed || loadAttemptId !== loadAttemptIdRef.current;
       try {
         setError(null);
         if (isBrowserMode) {
@@ -513,30 +574,38 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
           extension: activePlaybackItem.extension,
         };
 
-        const liveExtensions =
-          activePlaybackItem.contentType === "live"
-            ? getLiveExtensionCandidates()
-            : [activePlaybackItem.extension];
+        const playbackExtensions = getPlaybackExtensionCandidates(
+          activePlaybackItem.contentType,
+          activePlaybackItem.extension
+        );
         const startPositionSeconds = getSafeResumeTarget();
         let lastError: unknown = null;
         let hasStartedPlayback = false;
 
-        for (const liveExt of liveExtensions) {
+        logger.info("Playback extension candidates resolved", {
+          streamId: activePlaybackItem.id,
+          contentType: activePlaybackItem.contentType,
+          candidates: playbackExtensions,
+        });
+
+        for (let attemptIndex = 0; attemptIndex < playbackExtensions.length; attemptIndex += 1) {
+          const attemptExtension = playbackExtensions[attemptIndex];
+          const attemptStartedAt = performance.now();
           const attemptRequest = {
             ...request,
-            extension: activePlaybackItem.contentType === "live" ? liveExt : request.extension,
+            extension: attemptExtension,
           };
           let url: string;
           try {
             try {
               url = await services.playback.getPlaybackUrl(attemptRequest);
             } catch {
-              if (isDisposed) return;
+              if (isStaleAttempt()) return;
               await new Promise((resolve) => window.setTimeout(resolve, 300));
-              if (isDisposed) return;
+              if (isStaleAttempt()) return;
               url = await services.playback.getPlaybackUrl(attemptRequest);
             }
-            if (isDisposed) return;
+            if (isStaleAttempt()) return;
 
             if (isBrowserMode) {
               await playBrowserStream(url);
@@ -547,9 +616,9 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
                   contentType: activePlaybackItem.contentType,
                 });
               } catch {
-                if (isDisposed) return;
+                if (isStaleAttempt()) return;
                 await new Promise((resolve) => window.setTimeout(resolve, 450));
-                if (isDisposed) return;
+                if (isStaleAttempt()) return;
                 await controller.playStream(url, {
                   startPositionSeconds,
                   contentType: activePlaybackItem.contentType,
@@ -557,24 +626,31 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
               }
             }
 
+            if (isStaleAttempt()) return;
             hasStartedPlayback = true;
-            if (activePlaybackItem.contentType === "live") {
-              logger.info("Live extension selected for playback", {
-                streamId: activePlaybackItem.id,
-                extension: liveExt,
-              });
-            }
+            logger.info("Playback extension selected for stream", {
+              streamId: activePlaybackItem.id,
+              contentType: activePlaybackItem.contentType,
+              extension: attemptExtension,
+              attempt: attemptIndex + 1,
+              totalAttempts: playbackExtensions.length,
+              startupMs: Math.round(performance.now() - attemptStartedAt),
+            });
             break;
           } catch (attemptError) {
             lastError = attemptError;
-            if (activePlaybackItem.contentType === "live") {
-              logger.warn("Live extension attempt failed", {
-                streamId: activePlaybackItem.id,
-                extension: liveExt,
-                error: attemptError,
-              });
-            } else {
-              break;
+            logger.warn("Playback extension attempt failed", {
+              streamId: activePlaybackItem.id,
+              contentType: activePlaybackItem.contentType,
+              extension: attemptExtension,
+              attempt: attemptIndex + 1,
+              totalAttempts: playbackExtensions.length,
+              startupMs: Math.round(performance.now() - attemptStartedAt),
+              error: attemptError,
+            });
+            if (isBrowserMode) {
+              clearBrowserBufferingTimer();
+              browserPlaybackAdapter.reset(videoRef.current);
             }
           }
         }
@@ -583,12 +659,16 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
           throw lastError || new Error("Unable to start playback");
         }
 
-        if (isDisposed) return;
+        if (isStaleAttempt()) return;
         if (!isBrowserMode && startPositionSeconds) {
           setCurrentSeconds(startPositionSeconds);
         }
       } catch (err: unknown) {
-        if (isDisposed) return;
+        if (isStaleAttempt()) return;
+        if (isBrowserMode) {
+          clearBrowserBufferingTimer();
+          browserPlaybackAdapter.reset(videoRef.current);
+        }
         setError(err instanceof Error ? err.message : "Unable to start playback");
         if (isBrowserMode) {
           setSnapshot({
@@ -611,6 +691,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
     return () => {
       isDisposed = true;
+      loadAttemptIdRef.current += 1;
       unsubscribe();
       clearBrowserBufferingTimer();
       if (isBrowserMode) {
@@ -621,10 +702,11 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     };
   }, [
     playbackKey,
+    retryNonce,
     requiresParentalUnlock,
     isBrowserMode,
     controller,
-    getLiveExtensionCandidates,
+    getPlaybackExtensionCandidates,
     getSafeResumeTarget,
     clearBrowserBufferingTimer,
   ]);
@@ -828,7 +910,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   useEffect(() => {
     if (!activePlaybackItem) return;
     if (requiresParentalUnlock) return;
-    if (isBrowserMode && isLive) return;
+    if (isBrowserMode) return;
     if (settingsVisible) return;
     if (!["PLAYING", "BUFFERING"].includes(playerState)) return;
 
@@ -973,7 +1055,16 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
           }}
           onError={() => {
             if (isBrowserPlaybackAttemptingRef.current) return;
-            const message = "Stream not supported in this browser.";
+            const video = videoRef.current;
+            if (!video?.error) return;
+            if (!video.paused && !video.ended && video.readyState >= 2) {
+              logger.warn("Ignoring non-fatal browser video error during active playback", {
+                code: video.error.code,
+              });
+              return;
+            }
+            browserPlaybackAdapter.reset(video);
+            const message = getBrowserMediaErrorMessage(video);
             setError(message);
             setSnapshot({ state: "ERROR", errorMessage: message });
           }}

@@ -256,6 +256,7 @@ const fetchHomeSnapshot = async (): Promise<PersistedHomeSnapshot> => {
   });
 
   return {
+    version: 1,
     generatedAt: new Date().toISOString(),
     movies,
     series,

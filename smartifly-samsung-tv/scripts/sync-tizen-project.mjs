@@ -18,10 +18,14 @@ if (!existsSync(tizenProjectDir)) {
 }
 
 const copyFiles = [
+  "center_pillar.png",
   "favicon.svg",
   "icons.svg",
+  "left_pillar.png",
   "loginscreen_image.png",
+  "right_pillar.png",
   "smartifly_icon.png",
+  "smartifly_logo.png",
 ];
 
 const rawIndexHtml = await readFile(resolve(distDir, "index.html"), "utf8");
