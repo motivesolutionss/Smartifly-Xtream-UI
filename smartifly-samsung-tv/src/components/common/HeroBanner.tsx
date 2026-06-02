@@ -77,18 +77,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   return (
     <div ref={containerRef} className={`${styles.container} ${className}`} style={style}>
       <div className={styles.backdropContainer}>
-        <img
-          key={`${activeItem.id}-fill`}
-          src={activeItem.backdropUrl}
-          alt=""
-          className={styles.backdropFill}
-        />
         <img 
           key={activeItem.id}
           src={activeItem.backdropUrl} 
           alt="" 
+          loading="eager"
+          decoding="async"
           className={styles.backdrop} 
         />
+        <div className={styles.backdropTint} />
         <div className={styles.overlayHorizontal} />
         <div className={styles.overlayVertical} />
       </div>

@@ -14,13 +14,13 @@
   z-index: 1;
 }
 
-/* Dynamic Atmosphere Glow */
+/* Static Atmosphere Layer — no dynamic updates, no repaints */
 .atmosphere {
   position: absolute;
   inset: 0;
   z-index: 2;
-  transition: background 0.45s cubic-bezier(0.2, 0, 0.2, 1);
   pointer-events: none;
+  background: radial-gradient(circle at 0% 0%, rgba(229, 9, 20, 0.04) 0%, transparent 60%);
 }
 
 .scrollContent {
@@ -59,7 +59,7 @@
 .rowTitle {
   padding-left: 4rem; /* Balanced breathing room */
   font-size: 1.75rem;
-  font-weight: 750;
+  font-weight: 800;
   color: var(--color-text-primary);
   opacity: 0.9;
   letter-spacing: 0.03rem;
@@ -114,11 +114,6 @@
 
 :global(.perf-reduced) .wallpaper {
   background: none;
-}
-
-:global(.perf-reduced) .atmosphere {
-  transition: none;
-  background: none !important;
 }
 
 :global(.perf-reduced) .scrollContent,

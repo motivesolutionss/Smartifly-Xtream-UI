@@ -74,6 +74,8 @@ export const Card: React.FC<CardProps> = ({
             <img
               src={imageUrl}
               alt={title}
+              loading="lazy"
+              decoding="async"
               className={styles.image}
               onError={() => {
                 if (!imageUrl) return;
