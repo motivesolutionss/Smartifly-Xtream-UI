@@ -1,0 +1,1 @@
+import{d as e}from"./useTvBack-D004S7HU.js";var t=e(),n=({title:e,message:n})=>(0,t.jsxs)(`section`,{className:`empty-state`,children:[(0,t.jsx)(`h2`,{children:e}),(0,t.jsx)(`p`,{children:n})]});export{n as t};
