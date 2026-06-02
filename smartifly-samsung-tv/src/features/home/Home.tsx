@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo, useSyncExternalStore } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "../../store/playerStore";
 import { Card } from "../../components/ui/Card";
@@ -9,7 +17,6 @@ import { HeroSkeleton, CardSkeleton } from "../../components/ui/Skeleton";
 import VodDetails from "../vod/VodDetails";
 import { SeriesDetails } from "../series/SeriesDetails";
 import { useDashboard } from "../dashboard/hooks/useDashboard";
-import { useFocus } from "../../providers/useFocus";
 import type {
   AppMovie,
   AppChannel,
@@ -59,17 +66,24 @@ type HomeScreenId =
   | "SEARCH"
   | "SETTINGS";
 
-export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onNavigate }) => {
+type HomeProps = {
+  onNavigate: (id: HomeScreenId) => void;
+  setFocus: (id: string | null) => void;
+};
+
+export const Home: React.FC<HomeProps> = memo(function Home({
+  onNavigate,
+  setFocus,
+}) {
   const { activePlaybackItem, setActivePlaybackItem } = usePlayerStore();
   const { continueWatching } = useDashboard();
   const { snapshot, isBooting, isError, refresh } = useHomeSnapshot(continueWatching);
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
-  const [atmosphereColor, setAtmosphereColor] = useState<string>("transparent");
+  const [isHeroDetailEnabled, setIsHeroDetailEnabled] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { focusedId, setFocus } = useFocus();
   const recentlyWatchedRevision = useSyncExternalStore(
     recentlyWatchedStorage.subscribe,
     recentlyWatchedStorage.getRevision,
@@ -90,9 +104,48 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
     }
   };
 
+  const handleFocusCapture = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      if (selectedMovieId || selectedSeriesId) return;
+
+      const target = event.target as HTMLElement | null;
+      const targetId = target?.id ?? "";
+      if (!targetId) return;
+
+      if (
+        !targetId.startsWith("nav-") &&
+        !targetId.startsWith("epg-") &&
+        !targetId.startsWith("player-")
+      ) {
+        lastHomeFocusedIdRef.current = targetId;
+      }
+
+      if (targetId.startsWith("top-")) {
+        scrollHomeToTop();
+      }
+    },
+    [selectedMovieId, selectedSeriesId]
+  );
+
+  useEffect(() => {
+    setIsHeroDetailEnabled(false);
+
+    if (!activeHero || activeHero.type === "live") {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setIsHeroDetailEnabled(true);
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [activeHero?.id, activeHero?.type]);
+
   const { data: activeHeroDetail } = useQuery<AppMovieDetails | AppSeriesDetails | null>({
     queryKey: ["home-active-hero-detail", activeHero?.type, activeHero?.id],
-    enabled: Boolean(activeHero && activeHero.type !== "live"),
+    enabled: Boolean(activeHero && activeHero.type !== "live" && isHeroDetailEnabled),
     queryFn: async () => {
       if (!activeHero || activeHero.type === "live") return null;
       if (activeHero.type === "vod") {
@@ -167,16 +220,6 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
   }, [activePlaybackItem, recentlyWatchedRevision, refresh]);
 
   useEffect(() => {
-    if (!focusedId) return;
-    if (selectedMovieId || selectedSeriesId) return;
-    if (focusedId.startsWith("nav-") || focusedId.startsWith("epg-") || focusedId.startsWith("player-")) {
-      return;
-    }
-
-    lastHomeFocusedIdRef.current = focusedId;
-  }, [focusedId, selectedMovieId, selectedSeriesId]);
-
-  useEffect(() => {
     const inDetails = Boolean(selectedMovieId || selectedSeriesId);
 
     if (inDetails) {
@@ -203,13 +246,6 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
   }, [selectedMovieId, selectedSeriesId, setFocus]);
-
-  // Auto-scroll to top when focusing TopBar
-  useEffect(() => {
-    if (focusedId?.startsWith('top-')) {
-      scrollHomeToTop();
-    }
-  }, [focusedId]);
 
   if (selectedMovieId) {
     return (
@@ -312,17 +348,6 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
     }
   };
 
-  const getVibeColor = (title: string, item: HomeRailItem) => {
-    const t = title.toLowerCase();
-    const it = item.title.toLowerCase();
-    if (t.includes("action") || it.includes("war")) return "#E50914"; // Action Red
-    if (t.includes("sci-fi") || it.includes("space")) return "#00D1FF"; // Sci-Fi Blue
-    if (t.includes("trending")) return "#6200EE"; // Premium Purple
-    if (t.includes("continue")) return "#FFA500"; // Continue Orange
-    if (t.includes("live")) return "#E50914"; // Live Red
-    return "#1F1F1F";
-  };
-
   const handleCardClick = (item: HomeRailItem, categoryName?: string) => {
     const imageUrl = item.imageUrl || item.backdropUrl;
 
@@ -357,15 +382,10 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
   };
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} onFocusCapture={handleFocusCapture}>
       {/* Immersive Background Layers */}
       <div className={styles.wallpaper} />
-      <div 
-        className={styles.atmosphere} 
-        style={{ 
-          background: `radial-gradient(circle at 0% 0%, ${atmosphereColor}22 0%, transparent 70%)` 
-        }} 
-      />
+      <div className={styles.atmosphere} />
 
       <TopBar onNavigate={onNavigate} />
 
@@ -381,7 +401,6 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
                 else if (item.type === "series") setSelectedSeriesId(item.data.id);
               }}
               onFocus={() => {
-                setAtmosphereColor("transparent");
                 window.requestAnimationFrame(scrollHomeToTop);
               }}
             />
@@ -407,8 +426,6 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
                     className={rail.id === "continue-watching" ? styles.continueCard : undefined}
                     disableAutoScroll={true}
                     onFocus={() => {
-                      setAtmosphereColor(getVibeColor(rail.title, item));
-                      
                       const railElement = document.getElementById(`rail-${rail.id}`);
                       const itemIndex = rail.items.findIndex(it => it.id === item.id);
                       if (railElement && itemIndex !== -1) {
@@ -473,4 +490,4 @@ export const Home: React.FC<{ onNavigate: (id: HomeScreenId) => void }> = ({ onN
       </div>
     </div>
   );
-};
+});

@@ -12,6 +12,32 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    *  is temporarily unmounted (virtualized card scrolled out of window). */
   const lastKnownRectRef = useRef<DOMRect | null>(null);
 
+  /**
+   * Persistent rect cache — survives between moveFocus calls.
+   * Invalidated on any scroll or resize event so stale positions don't
+   * cause wrong navigation. Saves 200+ getBoundingClientRect() calls per
+   * keypress on large grids.
+   */
+  const persistentRectCacheRef = useRef<Map<HTMLElement, DOMRect>>(new Map());
+  const rectCacheValidRef = useRef(false);
+
+  const invalidateRectCache = useCallback(() => {
+    if (rectCacheValidRef.current) {
+      persistentRectCacheRef.current.clear();
+      rectCacheValidRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => invalidateRectCache();
+    window.addEventListener("scroll", handler, { passive: true, capture: true });
+    window.addEventListener("resize", handler, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handler, { capture: true });
+      window.removeEventListener("resize", handler);
+    };
+  }, [invalidateRectCache]);
+
   const isIdAllowed = useCallback((id: string | null) => {
     if (!id) return true;
     const scopePrefixes = focusScopePrefixesRef.current;
@@ -59,6 +85,7 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const registerElement = useCallback(
     (id: string, ref: HTMLElement) => {
       elements.current.set(id, ref);
+      invalidateRectCache();
 
       if (pendingFocusIdRef.current === id && isIdAllowed(id)) {
         setFocus(id);
@@ -75,6 +102,8 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const unregisterElement = useCallback(
     (id: string) => {
+      const elem = elements.current.get(id);
+      if (elem) persistentRectCacheRef.current.delete(elem);
       elements.current.delete(id);
       if (pendingFocusIdRef.current === id) {
         pendingFocusIdRef.current = null;
@@ -178,13 +207,17 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const currentElem = elements.current.get(currentId);
-    const rectCache = new Map<HTMLElement, DOMRect>();
-    const getRect = (element: HTMLElement) => {
-      const cached = rectCache.get(element);
-      if (cached) return cached;
+
+    // Use the persistent cross-call rect cache. Falls back to a live measurement
+    // only when an element isn't cached yet. The cache is invalidated by scroll
+    // and resize events, so we never serve stale layout data.
+    const getRect = (element: HTMLElement): DOMRect => {
+      const persistent = persistentRectCacheRef.current.get(element);
+      if (persistent) return persistent;
       measuredRectCount += 1;
       const rect = element.getBoundingClientRect();
-      rectCache.set(element, rect);
+      persistentRectCacheRef.current.set(element, rect);
+      rectCacheValidRef.current = true;
       return rect;
     };
 
