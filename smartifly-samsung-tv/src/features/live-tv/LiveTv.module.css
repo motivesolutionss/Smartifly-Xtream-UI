@@ -701,12 +701,6 @@
 .railGrid {
   height: 100%;
   overflow-x: hidden;
-  animation: gridFadeIn 0.4s ease both;
-}
-
-@keyframes gridFadeIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Loading skeleton ────────────────────────────────────────────────────── */

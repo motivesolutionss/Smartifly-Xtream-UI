@@ -32,6 +32,7 @@ const HEADER_HEIGHT = 90;
 const TIME_HEADER_HEIGHT = 54;
 /** Must match .detailsPanel min-height in CSS */
 const DETAILS_PANEL_HEIGHT = 160;
+const EPG_SCROLL_DEBOUNCE_MS = 120;
 
 // Shared clock source for "now playing" highlighting without calling Date.now()
 // during render.
@@ -181,9 +182,32 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
     Math.ceil((sidebarScrollTop + viewportHeight) / CHANNEL_ROW_HEIGHT) +
       SIDEBAR_OVERSCAN
   );
+  const [epgVisibleRange, setEpgVisibleRange] = useState(() => ({
+    start: visibleStart,
+    end: visibleEnd,
+  }));
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setEpgVisibleRange((previous) => {
+        if (previous.start === visibleStart && previous.end === visibleEnd) {
+          return previous;
+        }
+
+        return { start: visibleStart, end: visibleEnd };
+      });
+    }, EPG_SCROLL_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timerId);
+  }, [visibleEnd, visibleStart]);
+
   const visibleChannels = useMemo(
     () => channels.slice(visibleStart, visibleEnd),
     [channels, visibleEnd, visibleStart]
+  );
+  const epgVisibleChannels = useMemo(
+    () => channels.slice(epgVisibleRange.start, epgVisibleRange.end),
+    [channels, epgVisibleRange.end, epgVisibleRange.start]
   );
 
   // ── Time window ───────────────────────────────────────────────────────────
@@ -202,7 +226,7 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
 
   // ── Batch EPG fetch for only the visible channel window ────────────────────
   const epgQueries = useQueries({
-    queries: visibleChannels.map((ch) => ({
+    queries: epgVisibleChannels.map((ch) => ({
       ...getShortEpgQueryOptions(ch.id),
       select: (items: AppEpgItem[]) =>
         sliceShortEpgToWindow(items, windowStartMs, windowEndMs),
@@ -211,11 +235,11 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
 
   const channelEpgMap = useMemo<Record<string, AppEpgItem[]>>(() => {
     const map: Record<string, AppEpgItem[]> = {};
-    visibleChannels.forEach((ch, i) => {
+    epgVisibleChannels.forEach((ch, i) => {
       map[ch.id] = (epgQueries[i]?.data as AppEpgItem[] | undefined) ?? [];
     });
     return map;
-  }, [epgQueries, visibleChannels]);
+  }, [epgQueries, epgVisibleChannels]);
 
   const nowMs = useSyncExternalStore(subscribeNow, getNowSnapshot, getNowSnapshot);
 
