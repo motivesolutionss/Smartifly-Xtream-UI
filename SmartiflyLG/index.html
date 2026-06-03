@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07090f" />
+    <title>Smartifly LG</title>
+    <style>
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes boot-progress {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(172%);
+        }
+      }
+
+      #boot-debug {
+        position: fixed;
+        inset: 24px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 24px;
+        background: #07090f;
+        color: #f3f6fb;
+        font-family: monospace;
+        white-space: pre-wrap;
+        overflow: auto;
+      }
+
+      #boot-debug[data-hidden="true"] {
+        display: none;
+      }
+
+      #boot-debug h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      #boot-debug p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      #boot-debug__log {
+        margin: 0;
+        color: #ff9db7;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .lg-details-scroll,
+      .lg-details-scroll-x,
+      .lg-browse-scroll {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+
+      .lg-details-scroll::-webkit-scrollbar,
+      .lg-details-scroll-x::-webkit-scrollbar,
+      .lg-browse-scroll::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-debug" aria-live="polite">
+      <h1>Smartifly LG Debug</h1>
+      <p id="boot-debug__status">HTML loaded. Waiting for app bundle...</p>
+      <pre id="boot-debug__log">No runtime events yet.</pre>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var panel = document.getElementById('boot-debug');
+        var statusNode = document.getElementById('boot-debug__status');
+        var logNode = document.getElementById('boot-debug__log');
+
+        function stringify(value) {
+          if (value == null) {
+            return String(value);
+          }
+
+          if (value instanceof Error) {
+            return value.stack || value.message || String(value);
+          }
+
+          if (typeof value === 'object') {
+            try {
+              return JSON.stringify(value, null, 2);
+            } catch (_error) {
+              return String(value);
+            }
+          }
+
+          return String(value);
+        }
+
+        function setStatus(message) {
+          if (statusNode) {
+            statusNode.textContent = message;
+          }
+        }
+
+        function appendLog(label, detail) {
+          if (!logNode) {
+            return;
+          }
+
+          var existing = logNode.textContent === 'No runtime events yet.' ? '' : logNode.textContent + '\n\n';
+          logNode.textContent = existing + label + '\n' + stringify(detail);
+        }
+
+        window.__SMARTIFLY_BOOT_DEBUG__ = {
+          hide: function () {
+            if (panel) {
+              panel.setAttribute('data-hidden', 'true');
+            }
+          },
+          setStatus: setStatus,
+          appendLog: appendLog
+        };
+
+        setStatus('HTML loaded. Installing global error handlers...');
+        window.addEventListener('error', function (event) {
+          setStatus('A runtime error blocked rendering.');
+          appendLog('window.error', event.error || event.message || 'Unknown error');
+        });
+        window.addEventListener('unhandledrejection', function (event) {
+          setStatus('An unhandled promise rejection blocked rendering.');
+          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

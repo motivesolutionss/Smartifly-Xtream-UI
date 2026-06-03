@@ -45,6 +45,9 @@ yarn-error.log
 yarn-debug.log*
 pnpm-debug.log*
 .npm-cache/
+**/.env
+**/.env.local
+!**/.env.example
 
 # fastlane
 #
@@ -70,7 +73,7 @@ pnpm-debug.log*
 
 # testing
 /coverage
-SmartiflyLG*
+smartifly-web-portal*
 # Yarn
 .yarn/*
 !.yarn/patches

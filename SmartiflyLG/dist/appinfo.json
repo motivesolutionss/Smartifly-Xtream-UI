@@ -1,0 +1,14 @@
+{
+  "id": "com.smartifly.lg",
+  "version": "0.1.0",
+  "vendor": "Smartifly",
+  "type": "web",
+  "main": "index.html",
+  "title": "Smartifly",
+  "icon": "assets/smartifly_icon.png",
+  "largeIcon": "assets/smartifly_icon.png",
+  "requiredPermissions": [],
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "bgColor": "#07090f"
+}

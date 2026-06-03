@@ -83,6 +83,11 @@ export type Profile = $Result.DefaultSelection<Prisma.$ProfilePayload>
  * 
  */
 export type TmdbMetadata = $Result.DefaultSelection<Prisma.$TmdbMetadataPayload>
+/**
+ * Model ProviderHealthEvent
+ * 
+ */
+export type ProviderHealthEvent = $Result.DefaultSelection<Prisma.$ProviderHealthEventPayload>
 
 /**
  * Enums
@@ -461,6 +466,16 @@ export class PrismaClient<
     * ```
     */
   get tmdbMetadata(): Prisma.TmdbMetadataDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.providerHealthEvent`: Exposes CRUD operations for the **ProviderHealthEvent** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ProviderHealthEvents
+    * const providerHealthEvents = await prisma.providerHealthEvent.findMany()
+    * ```
+    */
+  get providerHealthEvent(): Prisma.ProviderHealthEventDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -915,7 +930,8 @@ export namespace Prisma {
     ParentalConfig: 'ParentalConfig',
     ThemeConfig: 'ThemeConfig',
     Profile: 'Profile',
-    TmdbMetadata: 'TmdbMetadata'
+    TmdbMetadata: 'TmdbMetadata',
+    ProviderHealthEvent: 'ProviderHealthEvent'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -934,7 +950,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "deviceUser" | "xtreamServer" | "license" | "auditLog" | "session" | "deviceToken" | "deviceBlacklist" | "playbackActivity" | "resumeProgress" | "parentalConfig" | "themeConfig" | "profile" | "tmdbMetadata"
+      modelProps: "user" | "deviceUser" | "xtreamServer" | "license" | "auditLog" | "session" | "deviceToken" | "deviceBlacklist" | "playbackActivity" | "resumeProgress" | "parentalConfig" | "themeConfig" | "profile" | "tmdbMetadata" | "providerHealthEvent"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -1862,6 +1878,72 @@ export namespace Prisma {
           }
         }
       }
+      ProviderHealthEvent: {
+        payload: Prisma.$ProviderHealthEventPayload<ExtArgs>
+        fields: Prisma.ProviderHealthEventFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ProviderHealthEventFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ProviderHealthEventFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          findFirst: {
+            args: Prisma.ProviderHealthEventFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ProviderHealthEventFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          findMany: {
+            args: Prisma.ProviderHealthEventFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>[]
+          }
+          create: {
+            args: Prisma.ProviderHealthEventCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          createMany: {
+            args: Prisma.ProviderHealthEventCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          delete: {
+            args: Prisma.ProviderHealthEventDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          update: {
+            args: Prisma.ProviderHealthEventUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          deleteMany: {
+            args: Prisma.ProviderHealthEventDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ProviderHealthEventUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          upsert: {
+            args: Prisma.ProviderHealthEventUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ProviderHealthEventPayload>
+          }
+          aggregate: {
+            args: Prisma.ProviderHealthEventAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateProviderHealthEvent>
+          }
+          groupBy: {
+            args: Prisma.ProviderHealthEventGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ProviderHealthEventGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ProviderHealthEventCountArgs<ExtArgs>
+            result: $Utils.Optional<ProviderHealthEventCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -1972,6 +2054,7 @@ export namespace Prisma {
     themeConfig?: ThemeConfigOmit
     profile?: ProfileOmit
     tmdbMetadata?: TmdbMetadataOmit
+    providerHealthEvent?: ProviderHealthEventOmit
   }
 
   /* Types for Logging */
@@ -14361,6 +14444,8 @@ export namespace Prisma {
     avatarUrl: string | null
     isKids: boolean | null
     pin: string | null
+    primaryColor: string | null
+    themeVariant: string | null
     lastUsed: Date | null
   }
 
@@ -14371,6 +14456,8 @@ export namespace Prisma {
     avatarUrl: string | null
     isKids: boolean | null
     pin: string | null
+    primaryColor: string | null
+    themeVariant: string | null
     lastUsed: Date | null
   }
 
@@ -14381,6 +14468,8 @@ export namespace Prisma {
     avatarUrl: number
     isKids: number
     pin: number
+    primaryColor: number
+    themeVariant: number
     lastUsed: number
     _all: number
   }
@@ -14401,6 +14490,8 @@ export namespace Prisma {
     avatarUrl?: true
     isKids?: true
     pin?: true
+    primaryColor?: true
+    themeVariant?: true
     lastUsed?: true
   }
 
@@ -14411,6 +14502,8 @@ export namespace Prisma {
     avatarUrl?: true
     isKids?: true
     pin?: true
+    primaryColor?: true
+    themeVariant?: true
     lastUsed?: true
   }
 
@@ -14421,6 +14514,8 @@ export namespace Prisma {
     avatarUrl?: true
     isKids?: true
     pin?: true
+    primaryColor?: true
+    themeVariant?: true
     lastUsed?: true
     _all?: true
   }
@@ -14518,6 +14613,8 @@ export namespace Prisma {
     avatarUrl: string | null
     isKids: boolean
     pin: string | null
+    primaryColor: string
+    themeVariant: string
     lastUsed: Date
     _count: ProfileCountAggregateOutputType | null
     _avg: ProfileAvgAggregateOutputType | null
@@ -14547,6 +14644,8 @@ export namespace Prisma {
     avatarUrl?: boolean
     isKids?: boolean
     pin?: boolean
+    primaryColor?: boolean
+    themeVariant?: boolean
     lastUsed?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["profile"]>
@@ -14560,10 +14659,12 @@ export namespace Prisma {
     avatarUrl?: boolean
     isKids?: boolean
     pin?: boolean
+    primaryColor?: boolean
+    themeVariant?: boolean
     lastUsed?: boolean
   }
 
-  export type ProfileOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "name" | "avatarUrl" | "isKids" | "pin" | "lastUsed", ExtArgs["result"]["profile"]>
+  export type ProfileOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "name" | "avatarUrl" | "isKids" | "pin" | "primaryColor" | "themeVariant" | "lastUsed", ExtArgs["result"]["profile"]>
   export type ProfileInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
   }
@@ -14580,6 +14681,8 @@ export namespace Prisma {
       avatarUrl: string | null
       isKids: boolean
       pin: string | null
+      primaryColor: string
+      themeVariant: string
       lastUsed: Date
     }, ExtArgs["result"]["profile"]>
     composites: {}
@@ -14957,6 +15060,8 @@ export namespace Prisma {
     readonly avatarUrl: FieldRef<"Profile", 'String'>
     readonly isKids: FieldRef<"Profile", 'Boolean'>
     readonly pin: FieldRef<"Profile", 'String'>
+    readonly primaryColor: FieldRef<"Profile", 'String'>
+    readonly themeVariant: FieldRef<"Profile", 'String'>
     readonly lastUsed: FieldRef<"Profile", 'DateTime'>
   }
     
@@ -15351,6 +15456,7 @@ export namespace Prisma {
     overview: string | null
     posterPath: string | null
     backdropPath: string | null
+    trailerUrl: string | null
     rating: number | null
     ageRating: string | null
     releaseDate: string | null
@@ -15367,6 +15473,7 @@ export namespace Prisma {
     overview: string | null
     posterPath: string | null
     backdropPath: string | null
+    trailerUrl: string | null
     rating: number | null
     ageRating: string | null
     releaseDate: string | null
@@ -15383,6 +15490,7 @@ export namespace Prisma {
     overview: number
     posterPath: number
     backdropPath: number
+    trailerUrl: number
     rating: number
     ageRating: number
     releaseDate: number
@@ -15413,6 +15521,7 @@ export namespace Prisma {
     overview?: true
     posterPath?: true
     backdropPath?: true
+    trailerUrl?: true
     rating?: true
     ageRating?: true
     releaseDate?: true
@@ -15429,6 +15538,7 @@ export namespace Prisma {
     overview?: true
     posterPath?: true
     backdropPath?: true
+    trailerUrl?: true
     rating?: true
     ageRating?: true
     releaseDate?: true
@@ -15445,6 +15555,7 @@ export namespace Prisma {
     overview?: true
     posterPath?: true
     backdropPath?: true
+    trailerUrl?: true
     rating?: true
     ageRating?: true
     releaseDate?: true
@@ -15548,6 +15659,7 @@ export namespace Prisma {
     overview: string | null
     posterPath: string | null
     backdropPath: string | null
+    trailerUrl: string | null
     rating: number | null
     ageRating: string | null
     releaseDate: string | null
@@ -15583,6 +15695,7 @@ export namespace Prisma {
     overview?: boolean
     posterPath?: boolean
     backdropPath?: boolean
+    trailerUrl?: boolean
     rating?: boolean
     ageRating?: boolean
     releaseDate?: boolean
@@ -15601,6 +15714,7 @@ export namespace Prisma {
     overview?: boolean
     posterPath?: boolean
     backdropPath?: boolean
+    trailerUrl?: boolean
     rating?: boolean
     ageRating?: boolean
     releaseDate?: boolean
@@ -15609,7 +15723,7 @@ export namespace Prisma {
     updatedAt?: boolean
   }
 
-  export type TmdbMetadataOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "contentId" | "tmdbId" | "title" | "overview" | "posterPath" | "backdropPath" | "rating" | "ageRating" | "releaseDate" | "genres" | "cast" | "updatedAt", ExtArgs["result"]["tmdbMetadata"]>
+  export type TmdbMetadataOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "contentId" | "tmdbId" | "title" | "overview" | "posterPath" | "backdropPath" | "trailerUrl" | "rating" | "ageRating" | "releaseDate" | "genres" | "cast" | "updatedAt", ExtArgs["result"]["tmdbMetadata"]>
 
   export type $TmdbMetadataPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     name: "TmdbMetadata"
@@ -15622,6 +15736,7 @@ export namespace Prisma {
       overview: string | null
       posterPath: string | null
       backdropPath: string | null
+      trailerUrl: string | null
       rating: number | null
       ageRating: string | null
       releaseDate: string | null
@@ -16004,6 +16119,7 @@ export namespace Prisma {
     readonly overview: FieldRef<"TmdbMetadata", 'String'>
     readonly posterPath: FieldRef<"TmdbMetadata", 'String'>
     readonly backdropPath: FieldRef<"TmdbMetadata", 'String'>
+    readonly trailerUrl: FieldRef<"TmdbMetadata", 'String'>
     readonly rating: FieldRef<"TmdbMetadata", 'Float'>
     readonly ageRating: FieldRef<"TmdbMetadata", 'String'>
     readonly releaseDate: FieldRef<"TmdbMetadata", 'String'>
@@ -16332,6 +16448,1039 @@ export namespace Prisma {
 
 
   /**
+   * Model ProviderHealthEvent
+   */
+
+  export type AggregateProviderHealthEvent = {
+    _count: ProviderHealthEventCountAggregateOutputType | null
+    _avg: ProviderHealthEventAvgAggregateOutputType | null
+    _sum: ProviderHealthEventSumAggregateOutputType | null
+    _min: ProviderHealthEventMinAggregateOutputType | null
+    _max: ProviderHealthEventMaxAggregateOutputType | null
+  }
+
+  export type ProviderHealthEventAvgAggregateOutputType = {
+    id: number | null
+  }
+
+  export type ProviderHealthEventSumAggregateOutputType = {
+    id: bigint | null
+  }
+
+  export type ProviderHealthEventMinAggregateOutputType = {
+    id: bigint | null
+    eventId: string | null
+    deviceId: string | null
+    profileId: string | null
+    portalIdentity: string | null
+    portalBaseUrl: string | null
+    host: string | null
+    eventType: string | null
+    context: string | null
+    contentType: string | null
+    contentId: string | null
+    occurredAt: Date | null
+    appVersion: string | null
+    platform: string | null
+    createdAt: Date | null
+  }
+
+  export type ProviderHealthEventMaxAggregateOutputType = {
+    id: bigint | null
+    eventId: string | null
+    deviceId: string | null
+    profileId: string | null
+    portalIdentity: string | null
+    portalBaseUrl: string | null
+    host: string | null
+    eventType: string | null
+    context: string | null
+    contentType: string | null
+    contentId: string | null
+    occurredAt: Date | null
+    appVersion: string | null
+    platform: string | null
+    createdAt: Date | null
+  }
+
+  export type ProviderHealthEventCountAggregateOutputType = {
+    id: number
+    eventId: number
+    deviceId: number
+    profileId: number
+    portalIdentity: number
+    portalBaseUrl: number
+    host: number
+    eventType: number
+    context: number
+    contentType: number
+    contentId: number
+    metadataJson: number
+    occurredAt: number
+    appVersion: number
+    platform: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type ProviderHealthEventAvgAggregateInputType = {
+    id?: true
+  }
+
+  export type ProviderHealthEventSumAggregateInputType = {
+    id?: true
+  }
+
+  export type ProviderHealthEventMinAggregateInputType = {
+    id?: true
+    eventId?: true
+    deviceId?: true
+    profileId?: true
+    portalIdentity?: true
+    portalBaseUrl?: true
+    host?: true
+    eventType?: true
+    context?: true
+    contentType?: true
+    contentId?: true
+    occurredAt?: true
+    appVersion?: true
+    platform?: true
+    createdAt?: true
+  }
+
+  export type ProviderHealthEventMaxAggregateInputType = {
+    id?: true
+    eventId?: true
+    deviceId?: true
+    profileId?: true
+    portalIdentity?: true
+    portalBaseUrl?: true
+    host?: true
+    eventType?: true
+    context?: true
+    contentType?: true
+    contentId?: true
+    occurredAt?: true
+    appVersion?: true
+    platform?: true
+    createdAt?: true
+  }
+
+  export type ProviderHealthEventCountAggregateInputType = {
+    id?: true
+    eventId?: true
+    deviceId?: true
+    profileId?: true
+    portalIdentity?: true
+    portalBaseUrl?: true
+    host?: true
+    eventType?: true
+    context?: true
+    contentType?: true
+    contentId?: true
+    metadataJson?: true
+    occurredAt?: true
+    appVersion?: true
+    platform?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type ProviderHealthEventAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ProviderHealthEvent to aggregate.
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ProviderHealthEvents to fetch.
+     */
+    orderBy?: ProviderHealthEventOrderByWithRelationInput | ProviderHealthEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ProviderHealthEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ProviderHealthEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ProviderHealthEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned ProviderHealthEvents
+    **/
+    _count?: true | ProviderHealthEventCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: ProviderHealthEventAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: ProviderHealthEventSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ProviderHealthEventMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ProviderHealthEventMaxAggregateInputType
+  }
+
+  export type GetProviderHealthEventAggregateType<T extends ProviderHealthEventAggregateArgs> = {
+        [P in keyof T & keyof AggregateProviderHealthEvent]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateProviderHealthEvent[P]>
+      : GetScalarType<T[P], AggregateProviderHealthEvent[P]>
+  }
+
+
+
+
+  export type ProviderHealthEventGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ProviderHealthEventWhereInput
+    orderBy?: ProviderHealthEventOrderByWithAggregationInput | ProviderHealthEventOrderByWithAggregationInput[]
+    by: ProviderHealthEventScalarFieldEnum[] | ProviderHealthEventScalarFieldEnum
+    having?: ProviderHealthEventScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ProviderHealthEventCountAggregateInputType | true
+    _avg?: ProviderHealthEventAvgAggregateInputType
+    _sum?: ProviderHealthEventSumAggregateInputType
+    _min?: ProviderHealthEventMinAggregateInputType
+    _max?: ProviderHealthEventMaxAggregateInputType
+  }
+
+  export type ProviderHealthEventGroupByOutputType = {
+    id: bigint
+    eventId: string
+    deviceId: string
+    profileId: string | null
+    portalIdentity: string
+    portalBaseUrl: string
+    host: string
+    eventType: string
+    context: string
+    contentType: string | null
+    contentId: string | null
+    metadataJson: JsonValue | null
+    occurredAt: Date
+    appVersion: string
+    platform: string
+    createdAt: Date
+    _count: ProviderHealthEventCountAggregateOutputType | null
+    _avg: ProviderHealthEventAvgAggregateOutputType | null
+    _sum: ProviderHealthEventSumAggregateOutputType | null
+    _min: ProviderHealthEventMinAggregateOutputType | null
+    _max: ProviderHealthEventMaxAggregateOutputType | null
+  }
+
+  type GetProviderHealthEventGroupByPayload<T extends ProviderHealthEventGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ProviderHealthEventGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ProviderHealthEventGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ProviderHealthEventGroupByOutputType[P]>
+            : GetScalarType<T[P], ProviderHealthEventGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ProviderHealthEventSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    eventId?: boolean
+    deviceId?: boolean
+    profileId?: boolean
+    portalIdentity?: boolean
+    portalBaseUrl?: boolean
+    host?: boolean
+    eventType?: boolean
+    context?: boolean
+    contentType?: boolean
+    contentId?: boolean
+    metadataJson?: boolean
+    occurredAt?: boolean
+    appVersion?: boolean
+    platform?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["providerHealthEvent"]>
+
+
+
+  export type ProviderHealthEventSelectScalar = {
+    id?: boolean
+    eventId?: boolean
+    deviceId?: boolean
+    profileId?: boolean
+    portalIdentity?: boolean
+    portalBaseUrl?: boolean
+    host?: boolean
+    eventType?: boolean
+    context?: boolean
+    contentType?: boolean
+    contentId?: boolean
+    metadataJson?: boolean
+    occurredAt?: boolean
+    appVersion?: boolean
+    platform?: boolean
+    createdAt?: boolean
+  }
+
+  export type ProviderHealthEventOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "eventId" | "deviceId" | "profileId" | "portalIdentity" | "portalBaseUrl" | "host" | "eventType" | "context" | "contentType" | "contentId" | "metadataJson" | "occurredAt" | "appVersion" | "platform" | "createdAt", ExtArgs["result"]["providerHealthEvent"]>
+
+  export type $ProviderHealthEventPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ProviderHealthEvent"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      id: bigint
+      eventId: string
+      deviceId: string
+      profileId: string | null
+      portalIdentity: string
+      portalBaseUrl: string
+      host: string
+      eventType: string
+      context: string
+      contentType: string | null
+      contentId: string | null
+      metadataJson: Prisma.JsonValue | null
+      occurredAt: Date
+      appVersion: string
+      platform: string
+      createdAt: Date
+    }, ExtArgs["result"]["providerHealthEvent"]>
+    composites: {}
+  }
+
+  type ProviderHealthEventGetPayload<S extends boolean | null | undefined | ProviderHealthEventDefaultArgs> = $Result.GetResult<Prisma.$ProviderHealthEventPayload, S>
+
+  type ProviderHealthEventCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ProviderHealthEventFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ProviderHealthEventCountAggregateInputType | true
+    }
+
+  export interface ProviderHealthEventDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ProviderHealthEvent'], meta: { name: 'ProviderHealthEvent' } }
+    /**
+     * Find zero or one ProviderHealthEvent that matches the filter.
+     * @param {ProviderHealthEventFindUniqueArgs} args - Arguments to find a ProviderHealthEvent
+     * @example
+     * // Get one ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ProviderHealthEventFindUniqueArgs>(args: SelectSubset<T, ProviderHealthEventFindUniqueArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ProviderHealthEvent that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ProviderHealthEventFindUniqueOrThrowArgs} args - Arguments to find a ProviderHealthEvent
+     * @example
+     * // Get one ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ProviderHealthEventFindUniqueOrThrowArgs>(args: SelectSubset<T, ProviderHealthEventFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ProviderHealthEvent that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventFindFirstArgs} args - Arguments to find a ProviderHealthEvent
+     * @example
+     * // Get one ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ProviderHealthEventFindFirstArgs>(args?: SelectSubset<T, ProviderHealthEventFindFirstArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ProviderHealthEvent that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventFindFirstOrThrowArgs} args - Arguments to find a ProviderHealthEvent
+     * @example
+     * // Get one ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ProviderHealthEventFindFirstOrThrowArgs>(args?: SelectSubset<T, ProviderHealthEventFindFirstOrThrowArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ProviderHealthEvents that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ProviderHealthEvents
+     * const providerHealthEvents = await prisma.providerHealthEvent.findMany()
+     * 
+     * // Get first 10 ProviderHealthEvents
+     * const providerHealthEvents = await prisma.providerHealthEvent.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const providerHealthEventWithIdOnly = await prisma.providerHealthEvent.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends ProviderHealthEventFindManyArgs>(args?: SelectSubset<T, ProviderHealthEventFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ProviderHealthEvent.
+     * @param {ProviderHealthEventCreateArgs} args - Arguments to create a ProviderHealthEvent.
+     * @example
+     * // Create one ProviderHealthEvent
+     * const ProviderHealthEvent = await prisma.providerHealthEvent.create({
+     *   data: {
+     *     // ... data to create a ProviderHealthEvent
+     *   }
+     * })
+     * 
+     */
+    create<T extends ProviderHealthEventCreateArgs>(args: SelectSubset<T, ProviderHealthEventCreateArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ProviderHealthEvents.
+     * @param {ProviderHealthEventCreateManyArgs} args - Arguments to create many ProviderHealthEvents.
+     * @example
+     * // Create many ProviderHealthEvents
+     * const providerHealthEvent = await prisma.providerHealthEvent.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ProviderHealthEventCreateManyArgs>(args?: SelectSubset<T, ProviderHealthEventCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Delete a ProviderHealthEvent.
+     * @param {ProviderHealthEventDeleteArgs} args - Arguments to delete one ProviderHealthEvent.
+     * @example
+     * // Delete one ProviderHealthEvent
+     * const ProviderHealthEvent = await prisma.providerHealthEvent.delete({
+     *   where: {
+     *     // ... filter to delete one ProviderHealthEvent
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ProviderHealthEventDeleteArgs>(args: SelectSubset<T, ProviderHealthEventDeleteArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ProviderHealthEvent.
+     * @param {ProviderHealthEventUpdateArgs} args - Arguments to update one ProviderHealthEvent.
+     * @example
+     * // Update one ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ProviderHealthEventUpdateArgs>(args: SelectSubset<T, ProviderHealthEventUpdateArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ProviderHealthEvents.
+     * @param {ProviderHealthEventDeleteManyArgs} args - Arguments to filter ProviderHealthEvents to delete.
+     * @example
+     * // Delete a few ProviderHealthEvents
+     * const { count } = await prisma.providerHealthEvent.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ProviderHealthEventDeleteManyArgs>(args?: SelectSubset<T, ProviderHealthEventDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ProviderHealthEvents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ProviderHealthEvents
+     * const providerHealthEvent = await prisma.providerHealthEvent.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ProviderHealthEventUpdateManyArgs>(args: SelectSubset<T, ProviderHealthEventUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create or update one ProviderHealthEvent.
+     * @param {ProviderHealthEventUpsertArgs} args - Arguments to update or create a ProviderHealthEvent.
+     * @example
+     * // Update or create a ProviderHealthEvent
+     * const providerHealthEvent = await prisma.providerHealthEvent.upsert({
+     *   create: {
+     *     // ... data to create a ProviderHealthEvent
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ProviderHealthEvent we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ProviderHealthEventUpsertArgs>(args: SelectSubset<T, ProviderHealthEventUpsertArgs<ExtArgs>>): Prisma__ProviderHealthEventClient<$Result.GetResult<Prisma.$ProviderHealthEventPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ProviderHealthEvents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventCountArgs} args - Arguments to filter ProviderHealthEvents to count.
+     * @example
+     * // Count the number of ProviderHealthEvents
+     * const count = await prisma.providerHealthEvent.count({
+     *   where: {
+     *     // ... the filter for the ProviderHealthEvents we want to count
+     *   }
+     * })
+    **/
+    count<T extends ProviderHealthEventCountArgs>(
+      args?: Subset<T, ProviderHealthEventCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ProviderHealthEventCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ProviderHealthEvent.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ProviderHealthEventAggregateArgs>(args: Subset<T, ProviderHealthEventAggregateArgs>): Prisma.PrismaPromise<GetProviderHealthEventAggregateType<T>>
+
+    /**
+     * Group by ProviderHealthEvent.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ProviderHealthEventGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ProviderHealthEventGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ProviderHealthEventGroupByArgs['orderBy'] }
+        : { orderBy?: ProviderHealthEventGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ProviderHealthEventGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetProviderHealthEventGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ProviderHealthEvent model
+   */
+  readonly fields: ProviderHealthEventFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ProviderHealthEvent.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ProviderHealthEventClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ProviderHealthEvent model
+   */
+  interface ProviderHealthEventFieldRefs {
+    readonly id: FieldRef<"ProviderHealthEvent", 'BigInt'>
+    readonly eventId: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly deviceId: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly profileId: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly portalIdentity: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly portalBaseUrl: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly host: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly eventType: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly context: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly contentType: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly contentId: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly metadataJson: FieldRef<"ProviderHealthEvent", 'Json'>
+    readonly occurredAt: FieldRef<"ProviderHealthEvent", 'DateTime'>
+    readonly appVersion: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly platform: FieldRef<"ProviderHealthEvent", 'String'>
+    readonly createdAt: FieldRef<"ProviderHealthEvent", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * ProviderHealthEvent findUnique
+   */
+  export type ProviderHealthEventFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ProviderHealthEvent to fetch.
+     */
+    where: ProviderHealthEventWhereUniqueInput
+  }
+
+  /**
+   * ProviderHealthEvent findUniqueOrThrow
+   */
+  export type ProviderHealthEventFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ProviderHealthEvent to fetch.
+     */
+    where: ProviderHealthEventWhereUniqueInput
+  }
+
+  /**
+   * ProviderHealthEvent findFirst
+   */
+  export type ProviderHealthEventFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ProviderHealthEvent to fetch.
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ProviderHealthEvents to fetch.
+     */
+    orderBy?: ProviderHealthEventOrderByWithRelationInput | ProviderHealthEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ProviderHealthEvents.
+     */
+    cursor?: ProviderHealthEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ProviderHealthEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ProviderHealthEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ProviderHealthEvents.
+     */
+    distinct?: ProviderHealthEventScalarFieldEnum | ProviderHealthEventScalarFieldEnum[]
+  }
+
+  /**
+   * ProviderHealthEvent findFirstOrThrow
+   */
+  export type ProviderHealthEventFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ProviderHealthEvent to fetch.
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ProviderHealthEvents to fetch.
+     */
+    orderBy?: ProviderHealthEventOrderByWithRelationInput | ProviderHealthEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ProviderHealthEvents.
+     */
+    cursor?: ProviderHealthEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ProviderHealthEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ProviderHealthEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ProviderHealthEvents.
+     */
+    distinct?: ProviderHealthEventScalarFieldEnum | ProviderHealthEventScalarFieldEnum[]
+  }
+
+  /**
+   * ProviderHealthEvent findMany
+   */
+  export type ProviderHealthEventFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ProviderHealthEvents to fetch.
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ProviderHealthEvents to fetch.
+     */
+    orderBy?: ProviderHealthEventOrderByWithRelationInput | ProviderHealthEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing ProviderHealthEvents.
+     */
+    cursor?: ProviderHealthEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ProviderHealthEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ProviderHealthEvents.
+     */
+    skip?: number
+    distinct?: ProviderHealthEventScalarFieldEnum | ProviderHealthEventScalarFieldEnum[]
+  }
+
+  /**
+   * ProviderHealthEvent create
+   */
+  export type ProviderHealthEventCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ProviderHealthEvent.
+     */
+    data: XOR<ProviderHealthEventCreateInput, ProviderHealthEventUncheckedCreateInput>
+  }
+
+  /**
+   * ProviderHealthEvent createMany
+   */
+  export type ProviderHealthEventCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ProviderHealthEvents.
+     */
+    data: ProviderHealthEventCreateManyInput | ProviderHealthEventCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * ProviderHealthEvent update
+   */
+  export type ProviderHealthEventUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ProviderHealthEvent.
+     */
+    data: XOR<ProviderHealthEventUpdateInput, ProviderHealthEventUncheckedUpdateInput>
+    /**
+     * Choose, which ProviderHealthEvent to update.
+     */
+    where: ProviderHealthEventWhereUniqueInput
+  }
+
+  /**
+   * ProviderHealthEvent updateMany
+   */
+  export type ProviderHealthEventUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ProviderHealthEvents.
+     */
+    data: XOR<ProviderHealthEventUpdateManyMutationInput, ProviderHealthEventUncheckedUpdateManyInput>
+    /**
+     * Filter which ProviderHealthEvents to update
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * Limit how many ProviderHealthEvents to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ProviderHealthEvent upsert
+   */
+  export type ProviderHealthEventUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ProviderHealthEvent to update in case it exists.
+     */
+    where: ProviderHealthEventWhereUniqueInput
+    /**
+     * In case the ProviderHealthEvent found by the `where` argument doesn't exist, create a new ProviderHealthEvent with this data.
+     */
+    create: XOR<ProviderHealthEventCreateInput, ProviderHealthEventUncheckedCreateInput>
+    /**
+     * In case the ProviderHealthEvent was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ProviderHealthEventUpdateInput, ProviderHealthEventUncheckedUpdateInput>
+  }
+
+  /**
+   * ProviderHealthEvent delete
+   */
+  export type ProviderHealthEventDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+    /**
+     * Filter which ProviderHealthEvent to delete.
+     */
+    where: ProviderHealthEventWhereUniqueInput
+  }
+
+  /**
+   * ProviderHealthEvent deleteMany
+   */
+  export type ProviderHealthEventDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ProviderHealthEvents to delete
+     */
+    where?: ProviderHealthEventWhereInput
+    /**
+     * Limit how many ProviderHealthEvents to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ProviderHealthEvent without action
+   */
+  export type ProviderHealthEventDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ProviderHealthEvent
+     */
+    select?: ProviderHealthEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ProviderHealthEvent
+     */
+    omit?: ProviderHealthEventOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -16527,6 +17676,8 @@ export namespace Prisma {
     avatarUrl: 'avatarUrl',
     isKids: 'isKids',
     pin: 'pin',
+    primaryColor: 'primaryColor',
+    themeVariant: 'themeVariant',
     lastUsed: 'lastUsed'
   };
 
@@ -16541,6 +17692,7 @@ export namespace Prisma {
     overview: 'overview',
     posterPath: 'posterPath',
     backdropPath: 'backdropPath',
+    trailerUrl: 'trailerUrl',
     rating: 'rating',
     ageRating: 'ageRating',
     releaseDate: 'releaseDate',
@@ -16552,12 +17704,42 @@ export namespace Prisma {
   export type TmdbMetadataScalarFieldEnum = (typeof TmdbMetadataScalarFieldEnum)[keyof typeof TmdbMetadataScalarFieldEnum]
 
 
+  export const ProviderHealthEventScalarFieldEnum: {
+    id: 'id',
+    eventId: 'eventId',
+    deviceId: 'deviceId',
+    profileId: 'profileId',
+    portalIdentity: 'portalIdentity',
+    portalBaseUrl: 'portalBaseUrl',
+    host: 'host',
+    eventType: 'eventType',
+    context: 'context',
+    contentType: 'contentType',
+    contentId: 'contentId',
+    metadataJson: 'metadataJson',
+    occurredAt: 'occurredAt',
+    appVersion: 'appVersion',
+    platform: 'platform',
+    createdAt: 'createdAt'
+  };
+
+  export type ProviderHealthEventScalarFieldEnum = (typeof ProviderHealthEventScalarFieldEnum)[keyof typeof ProviderHealthEventScalarFieldEnum]
+
+
   export const SortOrder: {
     asc: 'asc',
     desc: 'desc'
   };
 
   export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+  export const NullableJsonNullValueInput: {
+    DbNull: typeof DbNull,
+    JsonNull: typeof JsonNull
+  };
+
+  export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
 
 
   export const NullsOrder: {
@@ -16687,7 +17869,9 @@ export namespace Prisma {
     id: 'id',
     name: 'name',
     avatarUrl: 'avatarUrl',
-    pin: 'pin'
+    pin: 'pin',
+    primaryColor: 'primaryColor',
+    themeVariant: 'themeVariant'
   };
 
   export type ProfileOrderByRelevanceFieldEnum = (typeof ProfileOrderByRelevanceFieldEnum)[keyof typeof ProfileOrderByRelevanceFieldEnum]
@@ -16699,6 +17883,7 @@ export namespace Prisma {
     overview: 'overview',
     posterPath: 'posterPath',
     backdropPath: 'backdropPath',
+    trailerUrl: 'trailerUrl',
     ageRating: 'ageRating',
     releaseDate: 'releaseDate',
     genres: 'genres',
@@ -16706,6 +17891,41 @@ export namespace Prisma {
   };
 
   export type TmdbMetadataOrderByRelevanceFieldEnum = (typeof TmdbMetadataOrderByRelevanceFieldEnum)[keyof typeof TmdbMetadataOrderByRelevanceFieldEnum]
+
+
+  export const JsonNullValueFilter: {
+    DbNull: typeof DbNull,
+    JsonNull: typeof JsonNull,
+    AnyNull: typeof AnyNull
+  };
+
+  export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
+
+
+  export const QueryMode: {
+    default: 'default',
+    insensitive: 'insensitive'
+  };
+
+  export type QueryMode = (typeof QueryMode)[keyof typeof QueryMode]
+
+
+  export const ProviderHealthEventOrderByRelevanceFieldEnum: {
+    eventId: 'eventId',
+    deviceId: 'deviceId',
+    profileId: 'profileId',
+    portalIdentity: 'portalIdentity',
+    portalBaseUrl: 'portalBaseUrl',
+    host: 'host',
+    eventType: 'eventType',
+    context: 'context',
+    contentType: 'contentType',
+    contentId: 'contentId',
+    appVersion: 'appVersion',
+    platform: 'platform'
+  };
+
+  export type ProviderHealthEventOrderByRelevanceFieldEnum = (typeof ProviderHealthEventOrderByRelevanceFieldEnum)[keyof typeof ProviderHealthEventOrderByRelevanceFieldEnum]
 
 
   /**
@@ -16794,6 +18014,27 @@ export namespace Prisma {
    * Reference to a field of type 'Float'
    */
   export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
+    
+
+
+  /**
+   * Reference to a field of type 'BigInt'
+   */
+  export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+    
+
+
+  /**
+   * Reference to a field of type 'Json'
+   */
+  export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Json'>
+    
+
+
+  /**
+   * Reference to a field of type 'QueryMode'
+   */
+  export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
     
   /**
    * Deep Input Types
@@ -17731,6 +18972,8 @@ export namespace Prisma {
     avatarUrl?: StringNullableFilter<"Profile"> | string | null
     isKids?: BoolFilter<"Profile"> | boolean
     pin?: StringNullableFilter<"Profile"> | string | null
+    primaryColor?: StringFilter<"Profile"> | string
+    themeVariant?: StringFilter<"Profile"> | string
     lastUsed?: DateTimeFilter<"Profile"> | Date | string
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
   }
@@ -17742,6 +18985,8 @@ export namespace Prisma {
     avatarUrl?: SortOrderInput | SortOrder
     isKids?: SortOrder
     pin?: SortOrderInput | SortOrder
+    primaryColor?: SortOrder
+    themeVariant?: SortOrder
     lastUsed?: SortOrder
     user?: UserOrderByWithRelationInput
     _relevance?: ProfileOrderByRelevanceInput
@@ -17757,6 +19002,8 @@ export namespace Prisma {
     avatarUrl?: StringNullableFilter<"Profile"> | string | null
     isKids?: BoolFilter<"Profile"> | boolean
     pin?: StringNullableFilter<"Profile"> | string | null
+    primaryColor?: StringFilter<"Profile"> | string
+    themeVariant?: StringFilter<"Profile"> | string
     lastUsed?: DateTimeFilter<"Profile"> | Date | string
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
   }, "id">
@@ -17768,6 +19015,8 @@ export namespace Prisma {
     avatarUrl?: SortOrderInput | SortOrder
     isKids?: SortOrder
     pin?: SortOrderInput | SortOrder
+    primaryColor?: SortOrder
+    themeVariant?: SortOrder
     lastUsed?: SortOrder
     _count?: ProfileCountOrderByAggregateInput
     _avg?: ProfileAvgOrderByAggregateInput
@@ -17786,6 +19035,8 @@ export namespace Prisma {
     avatarUrl?: StringNullableWithAggregatesFilter<"Profile"> | string | null
     isKids?: BoolWithAggregatesFilter<"Profile"> | boolean
     pin?: StringNullableWithAggregatesFilter<"Profile"> | string | null
+    primaryColor?: StringWithAggregatesFilter<"Profile"> | string
+    themeVariant?: StringWithAggregatesFilter<"Profile"> | string
     lastUsed?: DateTimeWithAggregatesFilter<"Profile"> | Date | string
   }
 
@@ -17800,6 +19051,7 @@ export namespace Prisma {
     overview?: StringNullableFilter<"TmdbMetadata"> | string | null
     posterPath?: StringNullableFilter<"TmdbMetadata"> | string | null
     backdropPath?: StringNullableFilter<"TmdbMetadata"> | string | null
+    trailerUrl?: StringNullableFilter<"TmdbMetadata"> | string | null
     rating?: FloatNullableFilter<"TmdbMetadata"> | number | null
     ageRating?: StringNullableFilter<"TmdbMetadata"> | string | null
     releaseDate?: StringNullableFilter<"TmdbMetadata"> | string | null
@@ -17816,6 +19068,7 @@ export namespace Prisma {
     overview?: SortOrderInput | SortOrder
     posterPath?: SortOrderInput | SortOrder
     backdropPath?: SortOrderInput | SortOrder
+    trailerUrl?: SortOrderInput | SortOrder
     rating?: SortOrderInput | SortOrder
     ageRating?: SortOrderInput | SortOrder
     releaseDate?: SortOrderInput | SortOrder
@@ -17836,6 +19089,7 @@ export namespace Prisma {
     overview?: StringNullableFilter<"TmdbMetadata"> | string | null
     posterPath?: StringNullableFilter<"TmdbMetadata"> | string | null
     backdropPath?: StringNullableFilter<"TmdbMetadata"> | string | null
+    trailerUrl?: StringNullableFilter<"TmdbMetadata"> | string | null
     rating?: FloatNullableFilter<"TmdbMetadata"> | number | null
     ageRating?: StringNullableFilter<"TmdbMetadata"> | string | null
     releaseDate?: StringNullableFilter<"TmdbMetadata"> | string | null
@@ -17852,6 +19106,7 @@ export namespace Prisma {
     overview?: SortOrderInput | SortOrder
     posterPath?: SortOrderInput | SortOrder
     backdropPath?: SortOrderInput | SortOrder
+    trailerUrl?: SortOrderInput | SortOrder
     rating?: SortOrderInput | SortOrder
     ageRating?: SortOrderInput | SortOrder
     releaseDate?: SortOrderInput | SortOrder
@@ -17876,12 +19131,123 @@ export namespace Prisma {
     overview?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     posterPath?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     backdropPath?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
+    trailerUrl?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     rating?: FloatNullableWithAggregatesFilter<"TmdbMetadata"> | number | null
     ageRating?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     releaseDate?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     genres?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     cast?: StringNullableWithAggregatesFilter<"TmdbMetadata"> | string | null
     updatedAt?: DateTimeWithAggregatesFilter<"TmdbMetadata"> | Date | string
+  }
+
+  export type ProviderHealthEventWhereInput = {
+    AND?: ProviderHealthEventWhereInput | ProviderHealthEventWhereInput[]
+    OR?: ProviderHealthEventWhereInput[]
+    NOT?: ProviderHealthEventWhereInput | ProviderHealthEventWhereInput[]
+    id?: BigIntFilter<"ProviderHealthEvent"> | bigint | number
+    eventId?: StringFilter<"ProviderHealthEvent"> | string
+    deviceId?: StringFilter<"ProviderHealthEvent"> | string
+    profileId?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    portalIdentity?: StringFilter<"ProviderHealthEvent"> | string
+    portalBaseUrl?: StringFilter<"ProviderHealthEvent"> | string
+    host?: StringFilter<"ProviderHealthEvent"> | string
+    eventType?: StringFilter<"ProviderHealthEvent"> | string
+    context?: StringFilter<"ProviderHealthEvent"> | string
+    contentType?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    contentId?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    metadataJson?: JsonNullableFilter<"ProviderHealthEvent">
+    occurredAt?: DateTimeFilter<"ProviderHealthEvent"> | Date | string
+    appVersion?: StringFilter<"ProviderHealthEvent"> | string
+    platform?: StringFilter<"ProviderHealthEvent"> | string
+    createdAt?: DateTimeFilter<"ProviderHealthEvent"> | Date | string
+  }
+
+  export type ProviderHealthEventOrderByWithRelationInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    deviceId?: SortOrder
+    profileId?: SortOrderInput | SortOrder
+    portalIdentity?: SortOrder
+    portalBaseUrl?: SortOrder
+    host?: SortOrder
+    eventType?: SortOrder
+    context?: SortOrder
+    contentType?: SortOrderInput | SortOrder
+    contentId?: SortOrderInput | SortOrder
+    metadataJson?: SortOrderInput | SortOrder
+    occurredAt?: SortOrder
+    appVersion?: SortOrder
+    platform?: SortOrder
+    createdAt?: SortOrder
+    _relevance?: ProviderHealthEventOrderByRelevanceInput
+  }
+
+  export type ProviderHealthEventWhereUniqueInput = Prisma.AtLeast<{
+    id?: bigint | number
+    eventId?: string
+    AND?: ProviderHealthEventWhereInput | ProviderHealthEventWhereInput[]
+    OR?: ProviderHealthEventWhereInput[]
+    NOT?: ProviderHealthEventWhereInput | ProviderHealthEventWhereInput[]
+    deviceId?: StringFilter<"ProviderHealthEvent"> | string
+    profileId?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    portalIdentity?: StringFilter<"ProviderHealthEvent"> | string
+    portalBaseUrl?: StringFilter<"ProviderHealthEvent"> | string
+    host?: StringFilter<"ProviderHealthEvent"> | string
+    eventType?: StringFilter<"ProviderHealthEvent"> | string
+    context?: StringFilter<"ProviderHealthEvent"> | string
+    contentType?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    contentId?: StringNullableFilter<"ProviderHealthEvent"> | string | null
+    metadataJson?: JsonNullableFilter<"ProviderHealthEvent">
+    occurredAt?: DateTimeFilter<"ProviderHealthEvent"> | Date | string
+    appVersion?: StringFilter<"ProviderHealthEvent"> | string
+    platform?: StringFilter<"ProviderHealthEvent"> | string
+    createdAt?: DateTimeFilter<"ProviderHealthEvent"> | Date | string
+  }, "id" | "eventId">
+
+  export type ProviderHealthEventOrderByWithAggregationInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    deviceId?: SortOrder
+    profileId?: SortOrderInput | SortOrder
+    portalIdentity?: SortOrder
+    portalBaseUrl?: SortOrder
+    host?: SortOrder
+    eventType?: SortOrder
+    context?: SortOrder
+    contentType?: SortOrderInput | SortOrder
+    contentId?: SortOrderInput | SortOrder
+    metadataJson?: SortOrderInput | SortOrder
+    occurredAt?: SortOrder
+    appVersion?: SortOrder
+    platform?: SortOrder
+    createdAt?: SortOrder
+    _count?: ProviderHealthEventCountOrderByAggregateInput
+    _avg?: ProviderHealthEventAvgOrderByAggregateInput
+    _max?: ProviderHealthEventMaxOrderByAggregateInput
+    _min?: ProviderHealthEventMinOrderByAggregateInput
+    _sum?: ProviderHealthEventSumOrderByAggregateInput
+  }
+
+  export type ProviderHealthEventScalarWhereWithAggregatesInput = {
+    AND?: ProviderHealthEventScalarWhereWithAggregatesInput | ProviderHealthEventScalarWhereWithAggregatesInput[]
+    OR?: ProviderHealthEventScalarWhereWithAggregatesInput[]
+    NOT?: ProviderHealthEventScalarWhereWithAggregatesInput | ProviderHealthEventScalarWhereWithAggregatesInput[]
+    id?: BigIntWithAggregatesFilter<"ProviderHealthEvent"> | bigint | number
+    eventId?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    deviceId?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    profileId?: StringNullableWithAggregatesFilter<"ProviderHealthEvent"> | string | null
+    portalIdentity?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    portalBaseUrl?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    host?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    eventType?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    context?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    contentType?: StringNullableWithAggregatesFilter<"ProviderHealthEvent"> | string | null
+    contentId?: StringNullableWithAggregatesFilter<"ProviderHealthEvent"> | string | null
+    metadataJson?: JsonNullableWithAggregatesFilter<"ProviderHealthEvent">
+    occurredAt?: DateTimeWithAggregatesFilter<"ProviderHealthEvent"> | Date | string
+    appVersion?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    platform?: StringWithAggregatesFilter<"ProviderHealthEvent"> | string
+    createdAt?: DateTimeWithAggregatesFilter<"ProviderHealthEvent"> | Date | string
   }
 
   export type UserCreateInput = {
@@ -18852,6 +20218,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
     user: UserCreateNestedOneWithoutProfilesInput
   }
@@ -18863,6 +20231,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
   }
 
@@ -18872,6 +20242,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
     user?: UserUpdateOneRequiredWithoutProfilesNestedInput
   }
@@ -18883,6 +20255,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -18893,6 +20267,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
   }
 
@@ -18902,6 +20278,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -18912,6 +20290,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -18922,6 +20302,7 @@ export namespace Prisma {
     overview?: string | null
     posterPath?: string | null
     backdropPath?: string | null
+    trailerUrl?: string | null
     rating?: number | null
     ageRating?: string | null
     releaseDate?: string | null
@@ -18938,6 +20319,7 @@ export namespace Prisma {
     overview?: string | null
     posterPath?: string | null
     backdropPath?: string | null
+    trailerUrl?: string | null
     rating?: number | null
     ageRating?: string | null
     releaseDate?: string | null
@@ -18953,6 +20335,7 @@ export namespace Prisma {
     overview?: NullableStringFieldUpdateOperationsInput | string | null
     posterPath?: NullableStringFieldUpdateOperationsInput | string | null
     backdropPath?: NullableStringFieldUpdateOperationsInput | string | null
+    trailerUrl?: NullableStringFieldUpdateOperationsInput | string | null
     rating?: NullableFloatFieldUpdateOperationsInput | number | null
     ageRating?: NullableStringFieldUpdateOperationsInput | string | null
     releaseDate?: NullableStringFieldUpdateOperationsInput | string | null
@@ -18969,6 +20352,7 @@ export namespace Prisma {
     overview?: NullableStringFieldUpdateOperationsInput | string | null
     posterPath?: NullableStringFieldUpdateOperationsInput | string | null
     backdropPath?: NullableStringFieldUpdateOperationsInput | string | null
+    trailerUrl?: NullableStringFieldUpdateOperationsInput | string | null
     rating?: NullableFloatFieldUpdateOperationsInput | number | null
     ageRating?: NullableStringFieldUpdateOperationsInput | string | null
     releaseDate?: NullableStringFieldUpdateOperationsInput | string | null
@@ -18985,6 +20369,7 @@ export namespace Prisma {
     overview?: string | null
     posterPath?: string | null
     backdropPath?: string | null
+    trailerUrl?: string | null
     rating?: number | null
     ageRating?: string | null
     releaseDate?: string | null
@@ -19000,6 +20385,7 @@ export namespace Prisma {
     overview?: NullableStringFieldUpdateOperationsInput | string | null
     posterPath?: NullableStringFieldUpdateOperationsInput | string | null
     backdropPath?: NullableStringFieldUpdateOperationsInput | string | null
+    trailerUrl?: NullableStringFieldUpdateOperationsInput | string | null
     rating?: NullableFloatFieldUpdateOperationsInput | number | null
     ageRating?: NullableStringFieldUpdateOperationsInput | string | null
     releaseDate?: NullableStringFieldUpdateOperationsInput | string | null
@@ -19016,12 +20402,146 @@ export namespace Prisma {
     overview?: NullableStringFieldUpdateOperationsInput | string | null
     posterPath?: NullableStringFieldUpdateOperationsInput | string | null
     backdropPath?: NullableStringFieldUpdateOperationsInput | string | null
+    trailerUrl?: NullableStringFieldUpdateOperationsInput | string | null
     rating?: NullableFloatFieldUpdateOperationsInput | number | null
     ageRating?: NullableStringFieldUpdateOperationsInput | string | null
     releaseDate?: NullableStringFieldUpdateOperationsInput | string | null
     genres?: NullableStringFieldUpdateOperationsInput | string | null
     cast?: NullableStringFieldUpdateOperationsInput | string | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ProviderHealthEventCreateInput = {
+    id?: bigint | number
+    eventId: string
+    deviceId: string
+    profileId?: string | null
+    portalIdentity: string
+    portalBaseUrl: string
+    host: string
+    eventType: string
+    context: string
+    contentType?: string | null
+    contentId?: string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt: Date | string
+    appVersion: string
+    platform: string
+    createdAt?: Date | string
+  }
+
+  export type ProviderHealthEventUncheckedCreateInput = {
+    id?: bigint | number
+    eventId: string
+    deviceId: string
+    profileId?: string | null
+    portalIdentity: string
+    portalBaseUrl: string
+    host: string
+    eventType: string
+    context: string
+    contentType?: string | null
+    contentId?: string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt: Date | string
+    appVersion: string
+    platform: string
+    createdAt?: Date | string
+  }
+
+  export type ProviderHealthEventUpdateInput = {
+    id?: BigIntFieldUpdateOperationsInput | bigint | number
+    eventId?: StringFieldUpdateOperationsInput | string
+    deviceId?: StringFieldUpdateOperationsInput | string
+    profileId?: NullableStringFieldUpdateOperationsInput | string | null
+    portalIdentity?: StringFieldUpdateOperationsInput | string
+    portalBaseUrl?: StringFieldUpdateOperationsInput | string
+    host?: StringFieldUpdateOperationsInput | string
+    eventType?: StringFieldUpdateOperationsInput | string
+    context?: StringFieldUpdateOperationsInput | string
+    contentType?: NullableStringFieldUpdateOperationsInput | string | null
+    contentId?: NullableStringFieldUpdateOperationsInput | string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    appVersion?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ProviderHealthEventUncheckedUpdateInput = {
+    id?: BigIntFieldUpdateOperationsInput | bigint | number
+    eventId?: StringFieldUpdateOperationsInput | string
+    deviceId?: StringFieldUpdateOperationsInput | string
+    profileId?: NullableStringFieldUpdateOperationsInput | string | null
+    portalIdentity?: StringFieldUpdateOperationsInput | string
+    portalBaseUrl?: StringFieldUpdateOperationsInput | string
+    host?: StringFieldUpdateOperationsInput | string
+    eventType?: StringFieldUpdateOperationsInput | string
+    context?: StringFieldUpdateOperationsInput | string
+    contentType?: NullableStringFieldUpdateOperationsInput | string | null
+    contentId?: NullableStringFieldUpdateOperationsInput | string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    appVersion?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ProviderHealthEventCreateManyInput = {
+    id?: bigint | number
+    eventId: string
+    deviceId: string
+    profileId?: string | null
+    portalIdentity: string
+    portalBaseUrl: string
+    host: string
+    eventType: string
+    context: string
+    contentType?: string | null
+    contentId?: string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt: Date | string
+    appVersion: string
+    platform: string
+    createdAt?: Date | string
+  }
+
+  export type ProviderHealthEventUpdateManyMutationInput = {
+    id?: BigIntFieldUpdateOperationsInput | bigint | number
+    eventId?: StringFieldUpdateOperationsInput | string
+    deviceId?: StringFieldUpdateOperationsInput | string
+    profileId?: NullableStringFieldUpdateOperationsInput | string | null
+    portalIdentity?: StringFieldUpdateOperationsInput | string
+    portalBaseUrl?: StringFieldUpdateOperationsInput | string
+    host?: StringFieldUpdateOperationsInput | string
+    eventType?: StringFieldUpdateOperationsInput | string
+    context?: StringFieldUpdateOperationsInput | string
+    contentType?: NullableStringFieldUpdateOperationsInput | string | null
+    contentId?: NullableStringFieldUpdateOperationsInput | string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    appVersion?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ProviderHealthEventUncheckedUpdateManyInput = {
+    id?: BigIntFieldUpdateOperationsInput | bigint | number
+    eventId?: StringFieldUpdateOperationsInput | string
+    deviceId?: StringFieldUpdateOperationsInput | string
+    profileId?: NullableStringFieldUpdateOperationsInput | string | null
+    portalIdentity?: StringFieldUpdateOperationsInput | string
+    portalBaseUrl?: StringFieldUpdateOperationsInput | string
+    host?: StringFieldUpdateOperationsInput | string
+    eventType?: StringFieldUpdateOperationsInput | string
+    context?: StringFieldUpdateOperationsInput | string
+    contentType?: NullableStringFieldUpdateOperationsInput | string | null
+    contentId?: NullableStringFieldUpdateOperationsInput | string | null
+    metadataJson?: NullableJsonNullValueInput | InputJsonValue
+    occurredAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    appVersion?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type IntFilter<$PrismaModel = never> = {
@@ -20029,6 +21549,8 @@ export namespace Prisma {
     avatarUrl?: SortOrder
     isKids?: SortOrder
     pin?: SortOrder
+    primaryColor?: SortOrder
+    themeVariant?: SortOrder
     lastUsed?: SortOrder
   }
 
@@ -20043,6 +21565,8 @@ export namespace Prisma {
     avatarUrl?: SortOrder
     isKids?: SortOrder
     pin?: SortOrder
+    primaryColor?: SortOrder
+    themeVariant?: SortOrder
     lastUsed?: SortOrder
   }
 
@@ -20053,6 +21577,8 @@ export namespace Prisma {
     avatarUrl?: SortOrder
     isKids?: SortOrder
     pin?: SortOrder
+    primaryColor?: SortOrder
+    themeVariant?: SortOrder
     lastUsed?: SortOrder
   }
 
@@ -20085,6 +21611,7 @@ export namespace Prisma {
     overview?: SortOrder
     posterPath?: SortOrder
     backdropPath?: SortOrder
+    trailerUrl?: SortOrder
     rating?: SortOrder
     ageRating?: SortOrder
     releaseDate?: SortOrder
@@ -20107,6 +21634,7 @@ export namespace Prisma {
     overview?: SortOrder
     posterPath?: SortOrder
     backdropPath?: SortOrder
+    trailerUrl?: SortOrder
     rating?: SortOrder
     ageRating?: SortOrder
     releaseDate?: SortOrder
@@ -20123,6 +21651,7 @@ export namespace Prisma {
     overview?: SortOrder
     posterPath?: SortOrder
     backdropPath?: SortOrder
+    trailerUrl?: SortOrder
     rating?: SortOrder
     ageRating?: SortOrder
     releaseDate?: SortOrder
@@ -20151,6 +21680,151 @@ export namespace Prisma {
     _sum?: NestedFloatNullableFilter<$PrismaModel>
     _min?: NestedFloatNullableFilter<$PrismaModel>
     _max?: NestedFloatNullableFilter<$PrismaModel>
+  }
+
+  export type BigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+  export type JsonNullableFilter<$PrismaModel = never> =
+    | PatchUndefined<
+        Either<Required<JsonNullableFilterBase<$PrismaModel>>, Exclude<keyof Required<JsonNullableFilterBase<$PrismaModel>>, 'path'>>,
+        Required<JsonNullableFilterBase<$PrismaModel>>
+      >
+    | OptionalFlat<Omit<Required<JsonNullableFilterBase<$PrismaModel>>, 'path'>>
+
+  export type JsonNullableFilterBase<$PrismaModel = never> = {
+    equals?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    path?: string
+    mode?: QueryMode | EnumQueryModeFieldRefInput<$PrismaModel>
+    string_contains?: string | StringFieldRefInput<$PrismaModel>
+    string_starts_with?: string | StringFieldRefInput<$PrismaModel>
+    string_ends_with?: string | StringFieldRefInput<$PrismaModel>
+    array_starts_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_ends_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_contains?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    lt?: InputJsonValue
+    lte?: InputJsonValue
+    gt?: InputJsonValue
+    gte?: InputJsonValue
+    not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+  }
+
+  export type ProviderHealthEventOrderByRelevanceInput = {
+    fields: ProviderHealthEventOrderByRelevanceFieldEnum | ProviderHealthEventOrderByRelevanceFieldEnum[]
+    sort: SortOrder
+    search: string
+  }
+
+  export type ProviderHealthEventCountOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    deviceId?: SortOrder
+    profileId?: SortOrder
+    portalIdentity?: SortOrder
+    portalBaseUrl?: SortOrder
+    host?: SortOrder
+    eventType?: SortOrder
+    context?: SortOrder
+    contentType?: SortOrder
+    contentId?: SortOrder
+    metadataJson?: SortOrder
+    occurredAt?: SortOrder
+    appVersion?: SortOrder
+    platform?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ProviderHealthEventAvgOrderByAggregateInput = {
+    id?: SortOrder
+  }
+
+  export type ProviderHealthEventMaxOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    deviceId?: SortOrder
+    profileId?: SortOrder
+    portalIdentity?: SortOrder
+    portalBaseUrl?: SortOrder
+    host?: SortOrder
+    eventType?: SortOrder
+    context?: SortOrder
+    contentType?: SortOrder
+    contentId?: SortOrder
+    occurredAt?: SortOrder
+    appVersion?: SortOrder
+    platform?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ProviderHealthEventMinOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    deviceId?: SortOrder
+    profileId?: SortOrder
+    portalIdentity?: SortOrder
+    portalBaseUrl?: SortOrder
+    host?: SortOrder
+    eventType?: SortOrder
+    context?: SortOrder
+    contentType?: SortOrder
+    contentId?: SortOrder
+    occurredAt?: SortOrder
+    appVersion?: SortOrder
+    platform?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ProviderHealthEventSumOrderByAggregateInput = {
+    id?: SortOrder
+  }
+
+  export type BigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
+  }
+  export type JsonNullableWithAggregatesFilter<$PrismaModel = never> =
+    | PatchUndefined<
+        Either<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, Exclude<keyof Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>,
+        Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>
+      >
+    | OptionalFlat<Omit<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>
+
+  export type JsonNullableWithAggregatesFilterBase<$PrismaModel = never> = {
+    equals?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    path?: string
+    mode?: QueryMode | EnumQueryModeFieldRefInput<$PrismaModel>
+    string_contains?: string | StringFieldRefInput<$PrismaModel>
+    string_starts_with?: string | StringFieldRefInput<$PrismaModel>
+    string_ends_with?: string | StringFieldRefInput<$PrismaModel>
+    array_starts_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_ends_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_contains?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    lt?: InputJsonValue
+    lte?: InputJsonValue
+    gt?: InputJsonValue
+    gte?: InputJsonValue
+    not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _min?: NestedJsonNullableFilter<$PrismaModel>
+    _max?: NestedJsonNullableFilter<$PrismaModel>
   }
 
   export type DeviceUserCreateNestedManyWithoutUserInput = {
@@ -20673,6 +22347,14 @@ export namespace Prisma {
     divide?: number
   }
 
+  export type BigIntFieldUpdateOperationsInput = {
+    set?: bigint | number
+    increment?: bigint | number
+    decrement?: bigint | number
+    multiply?: bigint | number
+    divide?: bigint | number
+  }
+
   export type NestedIntFilter<$PrismaModel = never> = {
     equals?: number | IntFieldRefInput<$PrismaModel>
     in?: number[]
@@ -21013,6 +22695,56 @@ export namespace Prisma {
     _max?: NestedFloatNullableFilter<$PrismaModel>
   }
 
+  export type NestedBigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+
+  export type NestedBigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
+  }
+  export type NestedJsonNullableFilter<$PrismaModel = never> =
+    | PatchUndefined<
+        Either<Required<NestedJsonNullableFilterBase<$PrismaModel>>, Exclude<keyof Required<NestedJsonNullableFilterBase<$PrismaModel>>, 'path'>>,
+        Required<NestedJsonNullableFilterBase<$PrismaModel>>
+      >
+    | OptionalFlat<Omit<Required<NestedJsonNullableFilterBase<$PrismaModel>>, 'path'>>
+
+  export type NestedJsonNullableFilterBase<$PrismaModel = never> = {
+    equals?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    path?: string
+    mode?: QueryMode | EnumQueryModeFieldRefInput<$PrismaModel>
+    string_contains?: string | StringFieldRefInput<$PrismaModel>
+    string_starts_with?: string | StringFieldRefInput<$PrismaModel>
+    string_ends_with?: string | StringFieldRefInput<$PrismaModel>
+    array_starts_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_ends_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_contains?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    lt?: InputJsonValue
+    lte?: InputJsonValue
+    gt?: InputJsonValue
+    gte?: InputJsonValue
+    not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+  }
+
   export type DeviceUserCreateWithoutUserInput = {
     deviceId: string
     softwareId?: string | null
@@ -21161,6 +22893,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
   }
 
@@ -21170,6 +22904,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
   }
 
@@ -21359,6 +23095,8 @@ export namespace Prisma {
     avatarUrl?: StringNullableFilter<"Profile"> | string | null
     isKids?: BoolFilter<"Profile"> | boolean
     pin?: StringNullableFilter<"Profile"> | string | null
+    primaryColor?: StringFilter<"Profile"> | string
+    themeVariant?: StringFilter<"Profile"> | string
     lastUsed?: DateTimeFilter<"Profile"> | Date | string
   }
 
@@ -22274,6 +24012,8 @@ export namespace Prisma {
     avatarUrl?: string | null
     isKids?: boolean
     pin?: string | null
+    primaryColor?: string
+    themeVariant?: string
     lastUsed?: Date | string
   }
 
@@ -22437,6 +24177,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -22446,6 +24188,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -22455,6 +24199,8 @@ export namespace Prisma {
     avatarUrl?: NullableStringFieldUpdateOperationsInput | string | null
     isKids?: BoolFieldUpdateOperationsInput | boolean
     pin?: NullableStringFieldUpdateOperationsInput | string | null
+    primaryColor?: StringFieldUpdateOperationsInput | string
+    themeVariant?: StringFieldUpdateOperationsInput | string
     lastUsed?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 

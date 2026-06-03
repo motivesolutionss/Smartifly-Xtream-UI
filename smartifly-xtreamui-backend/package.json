@@ -3,18 +3,21 @@
   "version": "0.1.0",
   "main": "dist/server.js",
   "scripts": {
+    "prisma:generate": "npx prisma generate",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "db:up": "docker compose -f ../docker-compose.local-db.yml up -d",
+    "db:down": "docker compose -f ../docker-compose.local-db.yml down",
+    "db:logs": "docker compose -f ../docker-compose.local-db.yml logs -f mysql-local",
+    "db:push": "npx prisma db push",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
     "format": "prettier --check \"src/**/*.{ts,tsx,js,json,md}\"",
     "format:fix": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
-    "seed:dev": "npx ts-node ops/dev/seed.ts",
-    "smoke:admin": "npx ts-node ops/dev/smoke-admin.ts"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed:dev": "npm run prisma:generate && npx ts-node ops/dev/seed.ts",
+    "smoke:admin": "npx ts-node ops/dev/smoke-admin.ts",
+    "dump:xtream:discovery": "npx ts-node ops/dev/dump-xtream-discovery.ts"
   },
   "license": "MIT",
   "description": "",

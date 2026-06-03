@@ -1,0 +1,28 @@
+{
+  "name": "smartifly-lg",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "probe:stream": "node scripts/probe-stream.mjs",
+    "webos:stage": "npm run build",
+    "webos:package": "npm run webos:stage && ares-package --no-minify dist",
+    "webos:install": "ares-install com.smartifly.lg_0.1.0_all.ipk",
+    "webos:launch": "ares-launch com.smartifly.lg"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "shaka-player": "^4.16.3",
+    "vite": "^7.2.6",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}
