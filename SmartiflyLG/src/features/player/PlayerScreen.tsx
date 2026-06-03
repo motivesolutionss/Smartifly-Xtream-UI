@@ -73,6 +73,8 @@ const SEEK_STEP_SECONDS = 10;
 const HUD_TIMEOUT_MS = 3500;
 const STALL_WATCHDOG_MS = 8000;
 const WEBOS_STALL_WATCHDOG_MS = 18000;
+const LIVE_NO_PROGRESS_WATCHDOG_MS = 8000;
+const LIVE_NO_PROGRESS_RETRY_DELAY_MS = 600;
 const WAITING_DEBOUNCE_MS = 3000;
 const WEBOS_WAITING_DEBOUNCE_MS = 4000;
 const INITIAL_PLAY_GRACE_MS = 12000;
@@ -734,6 +736,8 @@ function PlayerScreen() {
   const startupAttemptInFlightRef = useRef(false);
   const startupGuardRetryTimerRef = useRef<number | null>(null);
   const startupGuardRetryUsedRef = useRef(false);
+  const liveNoProgressWatchdogTimerRef = useRef<number | null>(null);
+  const liveNoProgressRetryUsedRef = useRef(false);
   const suppressHudRevealRef = useRef(false);
   const playbackStartedAtRef = useRef(0);
   const lastProgressAtRef = useRef(0);
@@ -834,6 +838,13 @@ function PlayerScreen() {
     liveSwitchCooldownHoldActiveRef.current = false;
   }, []);
 
+  const clearLiveNoProgressWatchdog = useCallback(() => {
+    if (liveNoProgressWatchdogTimerRef.current) {
+      window.clearTimeout(liveNoProgressWatchdogTimerRef.current);
+      liveNoProgressWatchdogTimerRef.current = null;
+    }
+  }, []);
+
   const clearSilentSeekSuppression = useCallback(() => {
     suppressHudRevealRef.current = false;
   }, []);
@@ -847,12 +858,86 @@ function PlayerScreen() {
 
   const clearRecoveryState = useCallback(() => {
     clearRecoveryTimers();
+    clearLiveNoProgressWatchdog();
     clearStartupGuardRetry();
     clearSilentSeekSuppression();
     retryCountRef.current = 0;
     setRetryCount(0);
     setRecoveryMessage(null);
-  }, [clearRecoveryTimers, clearSilentSeekSuppression, clearStartupGuardRetry]);
+  }, [clearRecoveryTimers, clearLiveNoProgressWatchdog, clearSilentSeekSuppression, clearStartupGuardRetry]);
+
+  const scheduleLiveNoProgressWatchdog = useCallback(
+    (reason: string) => {
+      if (!isLive || startupAttemptInFlightRef.current) {
+        return;
+      }
+
+      const video = videoRef.current;
+      if (!video || video.paused || video.seeking) {
+        return;
+      }
+
+      clearLiveNoProgressWatchdog();
+      liveNoProgressWatchdogTimerRef.current = window.setTimeout(() => {
+        liveNoProgressWatchdogTimerRef.current = null;
+
+        const activeVideo = videoRef.current;
+        if (!activeVideo || activeVideo.paused || activeVideo.seeking || startupAttemptInFlightRef.current) {
+          return;
+        }
+
+        const stalledFor = Date.now() - lastProgressAtRef.current;
+        if (stalledFor < LIVE_NO_PROGRESS_WATCHDOG_MS) {
+          return;
+        }
+
+        console.warn(`${PLAYER_LOG_PREFIX} live no-progress watchdog fired`, {
+          reason,
+          stalledFor,
+          currentTime: Number.isFinite(activeVideo.currentTime) ? Number(activeVideo.currentTime.toFixed(3)) : activeVideo.currentTime,
+          buffered: getBufferedTime(activeVideo),
+          readyState: activeVideo.readyState,
+          networkState: activeVideo.networkState,
+          engine: activeEngineRef.current
+        });
+
+        setIsReady(false);
+        setRecoveryMessage('Buffering... reconnecting.');
+        setStatusMessage('Reconnecting live stream');
+        setIsHudVisible(true);
+        suppressHudRevealRef.current = false;
+
+        if (!liveNoProgressRetryUsedRef.current) {
+          liveNoProgressRetryUsedRef.current = true;
+          window.setTimeout(() => {
+            if (playbackRef.current?.kind !== 'live') {
+              return;
+            }
+
+            console.debug(`${PLAYER_LOG_PREFIX} live no-progress quick retry`, {
+              reason,
+              currentTime: Number.isFinite(activeVideo.currentTime) ? Number(activeVideo.currentTime.toFixed(3)) : activeVideo.currentTime
+            });
+            setLoadNonce((value) => value + 1);
+          }, LIVE_NO_PROGRESS_RETRY_DELAY_MS);
+          return;
+        }
+
+        const nextEpoch = liveSessionEpochRef.current + 1;
+        liveSessionEpochRef.current = nextEpoch;
+        liveNoProgressRetryUsedRef.current = false;
+        startupAttemptInFlightRef.current = true;
+        setEngineOverride(null);
+        setLiveSessionEpoch(nextEpoch);
+        setLoadNonce((value) => value + 1);
+        console.warn(`${PLAYER_LOG_PREFIX} live no-progress full reload`, {
+          reason,
+          nextEpoch
+        });
+      }, LIVE_NO_PROGRESS_WATCHDOG_MS);
+    },
+    [clearLiveNoProgressWatchdog, isLive, setStatusMessage]
+  );
 
   const scheduleStartupGuardRetry = useCallback(
     (reason: string) => {
@@ -899,6 +984,7 @@ function PlayerScreen() {
   useEffect(() => {
     liveNativeStartupRetryUsedRef.current = false;
     liveShakaStartupRetryUsedRef.current = false;
+    liveNoProgressRetryUsedRef.current = false;
   }, [activeStreamUrl, playback?.id]);
 
   const teardownPlayer = useCallback(async () => {
@@ -2206,6 +2292,11 @@ function PlayerScreen() {
       setCurrentTime(video.currentTime || 0);
       setBufferedTime(getBufferedTime(video));
       lastProgressAtRef.current = Date.now();
+      if (playback?.kind === 'live') {
+        liveNoProgressRetryUsedRef.current = false;
+        clearLiveNoProgressWatchdog();
+        scheduleLiveNoProgressWatchdog('Live playback stalled');
+      }
       if (!video.paused) {
         playbackStartedAtRef.current = playbackStartedAtRef.current || Date.now();
         // Track watch progress during active playback
@@ -2255,6 +2346,10 @@ function PlayerScreen() {
       playbackStartedAtRef.current = playbackStartedAtRef.current || Date.now();
       clearStallWatchdog();
       clearRecoveryState();
+      if (playback?.kind === 'live') {
+        liveNoProgressRetryUsedRef.current = false;
+        scheduleLiveNoProgressWatchdog('Live playback active');
+      }
       
       const isPlaybackActive = !video.paused && !video.seeking && (isLive || (video.duration > 0 && video.currentTime > 0));
       if (isPlaybackActive) {
@@ -2271,6 +2366,7 @@ function PlayerScreen() {
       logVideoSnapshot('pause', video);
       setIsPlaying(false);
       clearStallWatchdog();
+      clearLiveNoProgressWatchdog();
       if (!wasSuppressingHud && playback?.kind !== 'live') {
         showHUD();
       }
@@ -2301,7 +2397,11 @@ function PlayerScreen() {
       setIsReady(false);
       if (!suppressHudRevealRef.current && !video.paused) {
         setRecoveryMessage('Buffering...');
-        scheduleWaitingRecovery('Buffering stalled');
+        if (playback?.kind === 'live') {
+          scheduleLiveNoProgressWatchdog('Buffering stalled');
+        } else {
+          scheduleWaitingRecovery('Buffering stalled');
+        }
       }
     };
 
@@ -2316,7 +2416,11 @@ function PlayerScreen() {
       logVideoSnapshot('stalled', video);
       setIsReady(false);
       if (!suppressHudRevealRef.current) {
-        startStallWatchdog('Stream stalled');
+        if (playback?.kind === 'live') {
+          scheduleLiveNoProgressWatchdog('Stream stalled');
+        } else {
+          startStallWatchdog('Stream stalled');
+        }
       }
     };
 
@@ -2505,6 +2609,7 @@ function PlayerScreen() {
     activeStreamUrl,
     applyVideoAudioState,
     clearRecoveryState,
+    clearLiveNoProgressWatchdog,
     clearStallWatchdog,
     currentLiveStreamId,
     engineOverride,
@@ -2513,6 +2618,7 @@ function PlayerScreen() {
     playbackSources,
     markLiveStreamForbidden,
     scheduleLiveSwitchCooldownRetry,
+    scheduleLiveNoProgressWatchdog,
     scheduleWaitingRecovery,
     startStallWatchdog,
     setStatusMessage
