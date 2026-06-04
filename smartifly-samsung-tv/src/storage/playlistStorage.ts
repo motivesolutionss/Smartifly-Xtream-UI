@@ -7,6 +7,8 @@ export type PlaylistCredentials = {
   username: string;
   password: string;
   addedAt: string;
+  serverCode?: string;
+  portalName?: string;
 };
 
 const PLAYLISTS_KEY = "smartifly_playlists";

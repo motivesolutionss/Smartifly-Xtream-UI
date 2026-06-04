@@ -3,8 +3,10 @@ import { AppError, type AppErrorCode } from "../types/errors";
 const errorMessages: Record<AppErrorCode, string> = {
   INVALID_SERVER_URL:
     "Invalid server URL. Please check the address and try again.",
+  INVALID_SERVER_CODE:
+    "Invalid server code. Please check the code and try again.",
   SERVER_UNREACHABLE:
-    "Unable to connect to the server. Please check your server URL and try again.",
+    "Unable to connect to the server. Please check your connection and try again.",
   TIMEOUT:
     "The server took too long to respond. Please try again in a moment.",
   INVALID_CREDENTIALS:
@@ -19,6 +21,8 @@ const errorMessages: Record<AppErrorCode, string> = {
     "The server returned an unexpected response. Please check your playlist details.",
   PLAYBACK_FAILED:
     "Playback failed. Please try another stream or try again later.",
+  BACKEND_NOT_CONFIGURED:
+    "This app is missing its backend configuration. Please contact support.",
   UNKNOWN:
     "Something went wrong. Please try again.",
 };

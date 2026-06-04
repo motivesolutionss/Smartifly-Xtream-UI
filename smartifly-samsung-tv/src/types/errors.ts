@@ -1,5 +1,6 @@
 export type AppErrorCode =
   | "INVALID_SERVER_URL"
+  | "INVALID_SERVER_CODE"
   | "SERVER_UNREACHABLE"
   | "TIMEOUT"
   | "INVALID_CREDENTIALS"
@@ -8,6 +9,7 @@ export type AppErrorCode =
   | "EMPTY_CONTENT"
   | "INVALID_RESPONSE"
   | "PLAYBACK_FAILED"
+  | "BACKEND_NOT_CONFIGURED"
   | "UNKNOWN";
 
 export class AppError extends Error {
