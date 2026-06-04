@@ -156,11 +156,12 @@ function App() {
   const { activeProfile, selectProfile, rehydrateForPlaylist } = useProfileStore();
   const rehydrateSettingsForScope = useSettingsStore((store) => store.rehydrateForScope);
   const queryClient = useQueryClient();
-
-  // Auto-adaptive visual profile (reduces effects on low-end Tizen hardware).
-  useAdaptiveProfile();
-
   const { activePlaybackItem, setActivePlaybackItem } = usePlayerStore();
+
+  // Auto-adaptive visual profile is useful for content browsing, but during
+  // playback it becomes an extra per-frame observer competing with the player.
+  useAdaptiveProfile(!activePlaybackItem);
+
   const { focusedId, setFocus } = useFocus();
   const liveReturnFocusId = useLiveTvStore((state) => state.returnFocusId);
   const setLiveReturnFocusId = useLiveTvStore((state) => state.setReturnFocusId);
@@ -353,7 +354,12 @@ function App() {
   // Auth Flow
   if (!hasPlaylist) {
     if (isActivationView) {
-      return <Activation onBack={() => setIsActivationView(false)} />;
+      return (
+        <Activation
+          onBack={() => setIsActivationView(false)}
+          onSuccess={handleLoginSuccess}
+        />
+      );
     }
     if (!isLoginView) {
       return (
@@ -392,6 +398,28 @@ function App() {
     );
   }
 
+  if (activePlaybackItem) {
+    return (
+      <Suspense fallback={<ScreenFallback overlay />}>
+        <Player
+          onBack={() => {
+            const targetFocusId =
+              liveReturnFocusId ??
+              playbackReturnFocusRef.current ??
+              focusByScreenRef.current[activeScreen] ??
+              DEFAULT_FOCUS_BY_SCREEN[activeScreen];
+
+            pendingScreenFocusRef.current = targetFocusId;
+            playbackReturnFocusRef.current = null;
+            setLiveReturnFocusId(null);
+            setFocus(targetFocusId);
+            setActivePlaybackItem(null);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   const renderScreen = () => {
     switch (activeScreen) {
       case "HOME":
@@ -422,26 +450,6 @@ function App() {
 
   return (
     <div className="app-container">
-      {activePlaybackItem && (
-        <Suspense fallback={<ScreenFallback overlay />}>
-          <Player
-            onBack={() => {
-              const targetFocusId =
-                liveReturnFocusId ??
-                playbackReturnFocusRef.current ??
-                focusByScreenRef.current[activeScreen] ??
-                DEFAULT_FOCUS_BY_SCREEN[activeScreen];
-
-              pendingScreenFocusRef.current = targetFocusId;
-              playbackReturnFocusRef.current = null;
-              setLiveReturnFocusId(null);
-              setFocus(targetFocusId);
-              setActivePlaybackItem(null);
-            }}
-          />
-        </Suspense>
-      )}
-      
       <Sidebar activeId={activeScreen} onNavigate={handleNavigate} />
 
       <main className="main-content">

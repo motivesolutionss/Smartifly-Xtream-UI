@@ -9,7 +9,7 @@ type SkipIntroOverlayProps = {
   onSkip: () => void;
 };
 
-export const SkipIntroOverlay: React.FC<SkipIntroOverlayProps> = ({ isVisible, onSkip }) => {
+const SkipIntroOverlayComponent: React.FC<SkipIntroOverlayProps> = ({ isVisible, onSkip }) => {
   const { setFocus } = useFocus();
 
   // Focus the skip button whenever it appears
@@ -37,3 +37,5 @@ export const SkipIntroOverlay: React.FC<SkipIntroOverlayProps> = ({ isVisible, o
     </div>
   );
 };
+
+export const SkipIntroOverlay = React.memo(SkipIntroOverlayComponent);

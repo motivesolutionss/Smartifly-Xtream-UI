@@ -43,31 +43,55 @@ type BrowserPlaybackEngine = {
   destroy: () => void;
 };
 
+type PlaybackContentType = "live" | "vod" | "series";
+
+const isTizenBrowserRuntime = () =>
+  typeof navigator !== "undefined" && /tizen/i.test(navigator.userAgent);
+
 const START_TIMEOUT_MS = 15000;
 const LIVE_BUFFER_PROFILE = {
   hls: {
     lowLatencyMode: false,
-    backBufferLength: 90,
-    maxBufferLength: 30,
+    backBufferLength: 120,
+    maxBufferLength: 45,
     maxBufferHole: 1.5,
-    liveSyncDurationCount: 3,
-    liveMaxLatencyDurationCount: 10,
-    maxLiveSyncPlaybackRate: 1.15,
+    liveSyncDurationCount: 5,
+    liveMaxLatencyDurationCount: 15,
+    maxLiveSyncPlaybackRate: 1.0,
   },
   mpegts: {
     isLive: true,
     enableWorker: true,
     enableStashBuffer: true,
-    stashInitialSize: 768 * 1024,
+    stashInitialSize: 2 * 1024 * 1024,
     lazyLoad: false,
     autoCleanupSourceBuffer: true,
-    autoCleanupMaxBackwardDuration: 30,
-    autoCleanupMinBackwardDuration: 10,
+    autoCleanupMaxBackwardDuration: 45,
+    autoCleanupMinBackwardDuration: 15,
     liveBufferLatencyChasing: false,
     liveSync: true,
-    liveSyncMaxLatency: 4,
-    liveSyncTargetLatency: 1.8,
-    liveSyncPlaybackRate: 1.08,
+    liveSyncMaxLatency: 8,
+    liveSyncTargetLatency: 3.5,
+    liveSyncPlaybackRate: 1.0,
+  },
+} as const;
+
+const ON_DEMAND_BUFFER_PROFILE = {
+  hls: {
+    lowLatencyMode: false,
+    backBufferLength: 90,
+    maxBufferLength: 90,
+    maxBufferHole: 0.5,
+  },
+  mpegts: {
+    isLive: false,
+    enableWorker: true,
+    enableStashBuffer: true,
+    stashInitialSize: 1024 * 1024,
+    lazyLoad: true,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 120,
+    autoCleanupMinBackwardDuration: 30,
   },
 } as const;
 
@@ -104,6 +128,18 @@ const canPlayNativeHls = (video: HTMLMediaElement) =>
 
 const canPlayNativeTransportStream = (video: HTMLMediaElement) =>
   video.canPlayType("video/mp2t") !== "" || video.canPlayType("video/MP2T") !== "";
+
+const buildHlsProfile = (isLivePlayback: boolean) => ({
+  ...(isLivePlayback ? LIVE_BUFFER_PROFILE.hls : ON_DEMAND_BUFFER_PROFILE.hls),
+  // Tizen browser engines tend to behave better with less worker indirection.
+  enableWorker: !isTizenBrowserRuntime(),
+});
+
+const buildMpegTsProfile = (isLivePlayback: boolean) => ({
+  ...(isLivePlayback ? LIVE_BUFFER_PROFILE.mpegts : ON_DEMAND_BUFFER_PROFILE.mpegts),
+  // The emulator's JS engine is usually steadier without demux workers.
+  enableWorker: !isTizenBrowserRuntime(),
+});
 
 const waitForUsablePlayback = (video: HTMLVideoElement, timeoutMs = START_TIMEOUT_MS) =>
   new Promise<void>((resolve, reject) => {
@@ -179,11 +215,20 @@ export const browserPlaybackAdapter = {
     video.load();
   },
 
-  async play(url: string, video: HTMLVideoElement) {
+  async play(
+    url: string,
+    video: HTMLVideoElement,
+    options: { contentType?: PlaybackContentType } = {}
+  ) {
     this.reset(video);
 
     const extension = getUrlExtension(url);
-    logger.info("Browser playback startup initiated", { extension, url });
+    const isLivePlayback = options.contentType === "live";
+    logger.info("Browser playback startup initiated", {
+      extension,
+      contentType: options.contentType ?? "vod",
+      url,
+    });
 
     if (extension === "m3u8") {
       if (canPlayNativeHls(video)) {
@@ -199,14 +244,22 @@ export const browserPlaybackAdapter = {
         );
       }
 
-      await this.playWithHls(url, video, Hls);
+      await this.playWithHls(url, video, Hls, isLivePlayback);
       return;
     }
 
     if (extension === "ts") {
+      const shouldPreferNativeTransportStream =
+        isTizenBrowserRuntime() && canPlayNativeTransportStream(video);
+
+      if (shouldPreferNativeTransportStream) {
+        await this.playNative(url, video);
+        return;
+      }
+
       const mpegts = await loadMpegTsModule();
       if (mpegts.isSupported()) {
-        await this.playWithMpegTs(url, video, mpegts);
+        await this.playWithMpegTs(url, video, mpegts, isLivePlayback);
         return;
       }
 
@@ -232,13 +285,18 @@ export const browserPlaybackAdapter = {
     await ready;
   },
 
-  async playWithHls(url: string, video: HTMLVideoElement, Hls: HlsConstructor) {
+  async playWithHls(
+    url: string,
+    video: HTMLVideoElement,
+    Hls: HlsConstructor,
+    isLivePlayback: boolean
+  ) {
     logger.info("Browser playback engine selected", {
       engine: "hls.js",
-      profile: "stable-live",
+      profile: isLivePlayback ? "stable-live" : "stable-vod",
     });
 
-    const hls = new Hls(LIVE_BUFFER_PROFILE.hls);
+    const hls = new Hls(buildHlsProfile(isLivePlayback));
 
     this.activeEngine = {
       name: "hls.js",
@@ -267,15 +325,20 @@ export const browserPlaybackAdapter = {
     await Promise.race([ready, fatalError]);
   },
 
-  async playWithMpegTs(url: string, video: HTMLVideoElement, mpegts: MpegTsModule) {
+  async playWithMpegTs(
+    url: string,
+    video: HTMLVideoElement,
+    mpegts: MpegTsModule,
+    isLivePlayback: boolean
+  ) {
     logger.info("Browser playback engine selected", {
       engine: "mpegts.js",
-      profile: "stable-live",
+      profile: isLivePlayback ? "stable-live" : "stable-vod",
     });
 
     const player = mpegts.createPlayer(
-      { type: "mpegts", isLive: true, url },
-      LIVE_BUFFER_PROFILE.mpegts
+      { type: "mpegts", isLive: isLivePlayback, url },
+      buildMpegTsProfile(isLivePlayback)
     );
 
     this.activeEngine = {

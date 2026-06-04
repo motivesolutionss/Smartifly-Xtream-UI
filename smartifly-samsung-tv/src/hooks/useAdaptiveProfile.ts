@@ -25,7 +25,7 @@ const SLOW_FRAME_COUNT = 6;
 const FAST_FRAME_COUNT = 8;
 const PERF_REDUCED_CLASS = "perf-reduced";
 
-export const useAdaptiveProfile = () => {
+export const useAdaptiveProfile = (enabled: boolean = true) => {
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const samplesRef = useRef<number[]>([]);
@@ -34,6 +34,11 @@ export const useAdaptiveProfile = () => {
   const isReducedRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) {
+      document.documentElement.classList.remove(PERF_REDUCED_CLASS);
+      return;
+    }
+
     const tick = (now: number) => {
       if (lastTimeRef.current !== null) {
         const delta = now - lastTimeRef.current;
@@ -79,5 +84,5 @@ export const useAdaptiveProfile = () => {
       // Always restore full visuals on unmount.
       document.documentElement.classList.remove(PERF_REDUCED_CLASS);
     };
-  }, []);
+  }, [enabled]);
 };

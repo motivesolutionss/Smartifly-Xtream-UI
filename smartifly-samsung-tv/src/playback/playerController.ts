@@ -4,20 +4,77 @@ import type { PlayerState, PlayerStateSnapshot } from "./playerState";
 import { logger } from "../utils/logger";
 
 type PlayerListener = (snapshot: PlayerStateSnapshot) => void;
+type CurrentTimeListener = (seconds: number) => void;
 
 type PlayStreamOptions = {
   startPositionSeconds?: number;
   contentType?: "live" | "vod" | "series";
+  displayRect?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+const PREPARE_TIMEOUT_MS: Record<NonNullable<PlayStreamOptions["contentType"]>, number> = {
+  live: 20_000,
+  vod: 30_000,
+  series: 30_000,
+};
+
+const AVPLAY_CAPS_STORAGE_KEY = "smartifly_avplay_caps";
+
+type AvplayCapabilities = {
+  customHeader: boolean | null;
+  bufferTuning: boolean | null;
+  adaptiveInfo: boolean | null;
+};
+
+const readPersistedAvplayCapabilities = (): AvplayCapabilities | null => {
+  try {
+    const raw = window.sessionStorage.getItem(AVPLAY_CAPS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AvplayCapabilities>;
+    return {
+      customHeader:
+        typeof parsed.customHeader === "boolean" ? parsed.customHeader : null,
+      bufferTuning:
+        typeof parsed.bufferTuning === "boolean" ? parsed.bufferTuning : null,
+      adaptiveInfo:
+        typeof parsed.adaptiveInfo === "boolean" ? parsed.adaptiveInfo : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const persistAvplayCapabilities = (caps: AvplayCapabilities) => {
+  try {
+    window.sessionStorage.setItem(AVPLAY_CAPS_STORAGE_KEY, JSON.stringify(caps));
+  } catch {
+    // Ignore storage failures in restricted runtimes.
+  }
 };
 
 export class PlayerController {
   private static instance: PlayerController;
   private snapshot: PlayerStateSnapshot = { state: "IDLE" };
   private listeners = new Set<PlayerListener>();
+  private currentTimeListeners = new Set<CurrentTimeListener>();
   private playRequestId = 0;
   private isReleasing = false;
+  private supportsCustomHeader: boolean | null = null;
+  private supportsBufferTuning: boolean | null = null;
+  private supportsAdaptiveInfo: boolean | null = null;
 
-  private constructor() {}
+  private constructor() {
+    const persistedCaps = readPersistedAvplayCapabilities();
+    if (!persistedCaps) return;
+    this.supportsCustomHeader = persistedCaps.customHeader;
+    this.supportsBufferTuning = persistedCaps.bufferTuning;
+    this.supportsAdaptiveInfo = persistedCaps.adaptiveInfo;
+  }
 
   static getInstance(): PlayerController {
     if (!PlayerController.instance) {
@@ -32,9 +89,26 @@ export class PlayerController {
     return () => this.listeners.delete(listener);
   }
 
+  subscribeCurrentTime(listener: CurrentTimeListener) {
+    this.currentTimeListeners.add(listener);
+    return () => this.currentTimeListeners.delete(listener);
+  }
+
   async playStream(url: string, options: PlayStreamOptions = {}) {
     const requestId = ++this.playRequestId;
     const startedAt = performance.now();
+    let didObserveStartupReady = false;
+    let resolveStartupReady: (() => void) | null = null;
+    const startupReadySignal = new Promise<void>((resolve) => {
+      resolveStartupReady = resolve;
+    });
+    const markStartupReady = (reason: string) => {
+      if (didObserveStartupReady) return;
+      didObserveStartupReady = true;
+      logger.debug("AVPlay startup readiness observed", { requestId, reason });
+      resolveStartupReady?.();
+      resolveStartupReady = null;
+    };
     if (!avplayAdapter.isAvailable()) {
       this.updateState("ERROR", "Samsung AVPlay is not available");
       throw mapPlaybackError(new Error("Samsung AVPlay is not available"));
@@ -62,10 +136,19 @@ export class PlayerController {
         onbufferingcomplete: () => {
           logger.debug("AVPlay onbufferingcomplete", { requestId });
           this.updateState("PLAYING", undefined, requestId);
+          markStartupReady("onbufferingcomplete");
         },
         onstreamcompleted: () => {
           logger.debug("AVPlay onstreamcompleted", { requestId });
           this.updateState("ENDED", undefined, requestId);
+        },
+        oncurrentplaytime: (currentTimeMs) => {
+          const seconds = Number(currentTimeMs) / 1000;
+          if (!Number.isFinite(seconds) || seconds < 0) return;
+          if (seconds > 0) {
+            markStartupReady("oncurrentplaytime");
+          }
+          this.currentTimeListeners.forEach((listener) => listener(seconds));
         },
         onerror: (error) => {
           logger.error("AVPlay onerror callback", { requestId, error });
@@ -75,14 +158,26 @@ export class PlayerController {
       });
 
       logger.debug("AVPlay prepareAsync starting", { requestId });
-      await this.prepareWithTimeout(20000);
-      logger.debug("AVPlay prepareAsync resolved", {
+      const contentType = options.contentType ?? "vod";
+      await Promise.race([
+        this.prepareWithTimeout(PREPARE_TIMEOUT_MS[contentType] ?? 25_000),
+        startupReadySignal,
+      ]);
+      logger.debug("AVPlay startup barrier resolved", {
         requestId,
         elapsedMs: Math.round(performance.now() - startedAt),
+        source: didObserveStartupReady ? "playback-event" : "prepareAsync",
       });
 
       // setDisplayRect AFTER prepare — some Tizen emulator builds require this order.
-      avplayAdapter.setDisplayRect(0, 0, window.innerWidth, window.innerHeight);
+      const displayRect = this.resolveDisplayRect(options.displayRect);
+      logger.debug("AVPlay setDisplayRect", { requestId, displayRect });
+      avplayAdapter.setDisplayRect(
+        displayRect.x,
+        displayRect.y,
+        displayRect.width,
+        displayRect.height
+      );
 
       this.updateState("READY", undefined, requestId);
 
@@ -137,26 +232,77 @@ export class PlayerController {
     }
   }
 
+  private resolveDisplayRect(
+    displayRect?: PlayStreamOptions["displayRect"]
+  ): NonNullable<PlayStreamOptions["displayRect"]> {
+    const fallback = {
+      x: 0,
+      y: 0,
+      width: Math.max(1, Math.round(window.innerWidth || 1)),
+      height: Math.max(1, Math.round(window.innerHeight || 1)),
+    };
+
+    if (!displayRect) return fallback;
+
+    const width = Math.max(1, Math.round(displayRect.width));
+    const height = Math.max(1, Math.round(displayRect.height));
+
+    return {
+      x: Math.max(0, Math.round(displayRect.x)),
+      y: Math.max(0, Math.round(displayRect.y)),
+      width: Number.isFinite(width) ? width : fallback.width,
+      height: Number.isFinite(height) ? height : fallback.height,
+    };
+  }
+
   private applyOptionalOptimizations(options: PlayStreamOptions) {
-    const bufferTimeMs = options.contentType === "live" ? 5000 : 3000;
+    // Favor smoother playback over minimal latency, especially in the Tizen emulator
+    // where shallow buffers tend to produce visible jitter.
+    const bufferTimeMs = options.contentType === "live" ? 12000 : 6000;
 
-    try {
-      avplayAdapter.setStreamingProperty("SET_HTTP_CUSTOM_HEADER", "User-Agent: Smartifly/1.0");
-    } catch (error) {
-      logger.warn("AVPlay custom header is not supported on this device", error);
+    if (this.supportsCustomHeader !== false) {
+      try {
+        avplayAdapter.setStreamingProperty("SET_HTTP_CUSTOM_HEADER", "User-Agent: Smartifly/1.0");
+        this.supportsCustomHeader = true;
+        this.persistCapabilities();
+      } catch (error) {
+        this.supportsCustomHeader = false;
+        this.persistCapabilities();
+        logger.warn("AVPlay custom header is not supported on this device", error);
+      }
     }
 
-    try {
-      avplayAdapter.setBufferTime(bufferTimeMs);
-    } catch (error) {
-      logger.warn("AVPlay buffer tuning is not supported on this device", error);
+    if (this.supportsBufferTuning !== false) {
+      try {
+        avplayAdapter.setBufferTime(bufferTimeMs);
+        this.supportsBufferTuning = true;
+        this.persistCapabilities();
+      } catch (error) {
+        this.supportsBufferTuning = false;
+        this.persistCapabilities();
+        logger.warn("AVPlay buffer tuning is not supported on this device", error);
+      }
     }
 
-    try {
-      avplayAdapter.setAdaptiveInfo(true);
-    } catch (error) {
-      logger.warn("AVPlay adaptive info is not supported on this device", error);
+    if (this.supportsAdaptiveInfo !== false) {
+      try {
+        avplayAdapter.setAdaptiveInfo(true);
+        this.supportsAdaptiveInfo = true;
+        this.persistCapabilities();
+      } catch (error) {
+        this.supportsAdaptiveInfo = false;
+        this.persistCapabilities();
+        logger.warn("AVPlay adaptive info is not supported on this device", error);
+      }
     }
+  }
+
+  private persistCapabilities() {
+    persistAvplayCapabilities({
+      customHeader: this.supportsCustomHeader,
+      bufferTuning: this.supportsBufferTuning,
+      adaptiveInfo: this.supportsAdaptiveInfo,
+    });
   }
 
   pause() {

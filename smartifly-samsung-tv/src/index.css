@@ -37,6 +37,27 @@ body {
   justify-content: center;
 }
 
+html.smartifly-avplay-active,
+body.smartifly-avplay-active,
+#root.smartifly-avplay-active {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.smartifly-player-active,
+body.smartifly-player-active,
+#root.smartifly-player-active {
+  scroll-behavior: auto !important;
+}
+
+#root.smartifly-player-active *,
+body.smartifly-player-active * {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
 :focus {
   outline: none;
 }

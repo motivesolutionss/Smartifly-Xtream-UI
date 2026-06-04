@@ -6,11 +6,12 @@ import { browserPlaybackAdapter } from "../../playback/browserPlaybackAdapter";
 import type { PlayerStateSnapshot } from "../../playback/playerState";
 import { services } from "../../services";
 import { useSettingsStore } from "../../store/settingsStore";
+import { perfMetrics } from "../../utils/perfMetrics";
 import { TvKeyboard } from "../../components/ui/TvKeyboard";
 import { useEpg } from "../live-tv/hooks/useEpg";
 import { Loader } from "../../components/ui/Loader";
-import { contentTypeLabels } from "./playerLabels";
 import { PlayerControls } from "./components/PlayerControls";
+import { LivePlayerOverlay } from "./components/LivePlayerOverlay";
 import { PlayerSettingsOverlay } from "./components/PlayerSettingsOverlay";
 import { SkipIntroOverlay } from "./components/SkipIntroOverlay";
 import { UpNextOverlay } from "./components/UpNextOverlay";
@@ -19,8 +20,12 @@ import { Focusable } from "../../components/tv/Focusable";
 import { useFocus } from "../../providers/useFocus";
 import type { AppChannel } from "../../types/appModels";
 import { getResumePositionSeconds } from "../../utils/resumePosition";
-import { logger } from "../../utils/logger";
-import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import {
+  isDebugLoggingEnabled,
+  logger,
+  subscribeToDebugLoggingChanges,
+} from "../../utils/logger";
+import { Rewind, FastForward } from "lucide-react";
 import styles from "./Player.module.css";
 
 interface PlayerProps {
@@ -32,10 +37,19 @@ type TizenHwKeyEvent = Event & {
 };
 
 const BACK_KEYS = new Set(["Backspace", "Escape", "BrowserBack", "GoBack"]);
-const POSITION_POLL_INTERVAL_MS = 1000;
+const BROWSER_POSITION_POLL_INTERVAL_MS = 1000;
+const AVPLAY_DURATION_POLL_INTERVAL_MS = 4000;
+const AVPLAY_VISIBLE_PROGRESS_COMMIT_INTERVAL_MS = 250;
+const AVPLAY_BACKGROUND_PROGRESS_COMMIT_INTERVAL_MS = 5000;
 const PROGRESS_PERSIST_INTERVAL_MS = 30000;
 const PROGRESS_PERSIST_MIN_STEP_SECONDS = 20;
 const MIN_RESUME_PERSIST_SECONDS = 10;
+const AVPLAY_HEARTBEAT_INTERVAL_MS = 2500;
+const PLAYER_JANK_SAMPLE_INTERVAL_MS = 5000;
+const PLAYER_JANK_SLOW_FRAME_MS = 34;
+const PLAYER_JANK_SEVERE_FRAME_MS = 67;
+const PLAYER_LONG_TASK_LOG_THRESHOLD_MS = 100;
+const PLAYER_LONG_TASK_LOG_COOLDOWN_MS = 3000;
 const VOD_SERIES_EXTENSION_FALLBACKS = ["mp4", "mkv", "m3u8", "ts"] as const;
 
 const formatSeconds = (value: number) => {
@@ -56,32 +70,7 @@ const formatClockTime = (timestampMs: number) =>
     minute: "2-digit",
   });
 
-const hashString = (str: string): number => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
-  }
-  return hash;
-};
 
-const cleanTitle = (title: string): string => {
-  if (!title) return "";
-  const delimiters = ["||", "|", " - ", " : "];
-  for (const delimiter of delimiters) {
-    if (title.includes(delimiter)) {
-      const parts = title.split(delimiter);
-      if (parts.length > 1 && parts[1].trim()) {
-        return parts[1].trim();
-      }
-    }
-  }
-  const colonIndex = title.indexOf(":");
-  if (colonIndex > 0 && colonIndex < 8) {
-    const afterColon = title.substring(colonIndex + 1).trim();
-    if (afterColon) return afterColon;
-  }
-  return title;
-};
 
 const getBrowserMediaErrorMessage = (video: HTMLVideoElement) => {
   const code = video.error?.code;
@@ -110,6 +99,16 @@ const buildExtensionCandidates = (extensions: Array<string | undefined>) => {
   return Array.from(unique);
 };
 
+type PlayerJankSample = {
+  windowMs: number;
+  totalFrames: number;
+  slowFrames: number;
+  severeFrames: number;
+  worstFrameMs: number;
+  avgFrameMs: number | null;
+  approxFps: number | null;
+};
+
 export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const { activePlaybackItem, liveChannels, setActivePlaybackItem } = usePlayerStore();
   const {
@@ -119,7 +118,13 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     isParentalUnlocked,
     unlockParentalSession,
   } = useSettingsStore();
-  const { setFocus, setFocusScope } = useFocus();
+  const { focusedId, setFocus, setFocusScope } = useFocus();
+  const focusedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    focusedIdRef.current = focusedId;
+  }, [focusedId]);
+  const [skipIndicator, setSkipIndicator] = useState<{ direction: "left" | "right"; amount: number } | null>(null);
+  const skipIndicatorTimerRef = useRef<number | null>(null);
   const [snapshot, setSnapshot] = useState<PlayerStateSnapshot>({ state: "IDLE" });
   const [error, setError] = useState<string | null>(null);
   const [parentalError, setParentalError] = useState<string | null>(null);
@@ -133,12 +138,15 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const [skipIntroDismissed, setSkipIntroDismissed] = useState(false);
   const [upNextDismissed, setUpNextDismissed] = useState(false);
   const [zappingChannel, setZappingChannel] = useState<AppChannel | null>(null);
-  const [failedUrls, setFailedUrls] = useState<Record<string, true>>({});
   const [liveClockMs, setLiveClockMs] = useState(() => Date.now());
   const videoRef = useRef<HTMLVideoElement>(null);
+  const avPlayerSurfaceRef = useRef<HTMLDivElement>(null);
   const lastSavedSecondRef = useRef<number>(0);
   const durationSecondsRef = useRef<number>(0);
   const browserResumeAppliedKeyRef = useRef<string | null>(null);
+  const avplayCurrentTimeRef = useRef(0);
+  const lastAvplayProgressCommitAtRef = useRef(0);
+  const lastAvplayProgressCommitSecondsRef = useRef(0);
   const didAutoPlayNextRef = useRef(false);
   const zappingOverlayTimerRef = useRef<number | null>(null);
   const browserBufferingTimerRef = useRef<number | null>(null);
@@ -152,9 +160,39 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const isAutoRecoveringRef = useRef(false);
   const isBrowserPlaybackAttemptingRef = useRef(false);
   const loadAttemptIdRef = useRef(0);
+  const latestJankSampleRef = useRef<PlayerJankSample | null>(null);
+  const lastLongTaskLogAtRef = useRef(0);
   const isBrowserMode = useMemo(() => !avplayAdapter.isAvailable(), []);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(() =>
+    isDebugLoggingEnabled()
+  );
   const controller = useMemo(() => PlayerController.getInstance(), []);
   const trackSelectionManager = useMemo(() => new TrackSelectionManager(), []);
+  const playerEngineLabel = isBrowserMode ? "browser" : "avplay";
+
+  const measurePlayerWork = useCallback(
+    <T,>(metric: string, data: Record<string, unknown>, fn: () => T): T => {
+      if (!perfMetrics.enabled) {
+        return fn();
+      }
+
+      const startedAt = performance.now();
+      try {
+        return fn();
+      } finally {
+        perfMetrics.recordDuration(metric, performance.now() - startedAt, {
+          slowAboveMs: 34,
+          data: {
+            streamId: activePlaybackItem?.id,
+            contentType: activePlaybackItem?.contentType,
+            engine: playerEngineLabel,
+            ...data,
+          },
+        });
+      }
+    },
+    [activePlaybackItem?.contentType, activePlaybackItem?.id, playerEngineLabel]
+  );
 
   const isProtectedContent = Boolean(
     activePlaybackItem && activePlaybackItem.contentType !== "live"
@@ -170,7 +208,12 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     isLive && (controlsVisible || isEpgPeekActive || zappingChannel)
   );
   const { currentProgram, nextPrograms } = useEpg(
-    shouldLoadLiveEpg ? activePlaybackItem?.id || "" : ""
+    activePlaybackItem?.id || "",
+    {
+      enabled: shouldLoadLiveEpg,
+      refetchInterval: false,
+      refreshClock: shouldLoadLiveEpg,
+    }
   );
 
   const nextEpisode = activePlaybackItem?.nextItem ?? null;
@@ -193,8 +236,6 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   const playbackKey = activePlaybackItem
     ? `${activePlaybackItem.contentType}:${activePlaybackItem.seriesId || "single"}:${activePlaybackItem.id}`
     : "none";
-
-  const displayTitle = useMemo(() => cleanTitle(activePlaybackItem?.title || ""), [activePlaybackItem?.title]);
   const liveClockLabel = useMemo(() => formatClockTime(liveClockMs), [liveClockMs]);
   const liveChannelIndex = useMemo(() => {
     if (!isLive || !activePlaybackItem) return -1;
@@ -204,43 +245,14 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     if (!isLive || liveChannelIndex < 0) return undefined;
     return `CH ${String(liveChannelIndex + 1).padStart(3, "0")} / ${String(liveChannels.length).padStart(3, "0")}`;
   }, [isLive, liveChannelIndex, liveChannels.length]);
-  const previousChannelTitle = useMemo(() => {
-    if (!isLive || liveChannels.length < 2 || liveChannelIndex < 0) return undefined;
-    return liveChannels[(liveChannelIndex - 1 + liveChannels.length) % liveChannels.length]?.title;
-  }, [isLive, liveChannelIndex, liveChannels]);
-  const nextChannelTitle = useMemo(() => {
-    if (!isLive || liveChannels.length < 2 || liveChannelIndex < 0) return undefined;
-    return liveChannels[(liveChannelIndex + 1) % liveChannels.length]?.title;
-  }, [isLive, liveChannelIndex, liveChannels]);
-  const liveProgramTimeLabel = useMemo(() => {
-    if (!currentProgram) return undefined;
-    return `${formatClockTime(currentProgram.startMs)} - ${formatClockTime(currentProgram.endMs)}`;
-  }, [currentProgram]);
   const nextProgram = nextPrograms[0];
-  const nextProgramTimeLabel = useMemo(() => {
-    if (!nextProgram) return undefined;
-    return `${formatClockTime(nextProgram.startMs)} - ${formatClockTime(nextProgram.endMs)}`;
-  }, [nextProgram]);
 
-  const showLogo = (() => {
-    if (!activePlaybackItem?.logoUrl) return false;
-    if (imageFailureMemory.hasFailed(activePlaybackItem.logoUrl)) return false;
-    return !failedUrls[activePlaybackItem.logoUrl];
-  })();
-
-  const placeholderStyle = useMemo(
-    () => ({
-      background: `linear-gradient(135deg,
-        hsl(${Math.abs(hashString(displayTitle)) % 360}, 50%, 25%),
-        hsl(${(Math.abs(hashString(displayTitle)) + 60) % 360}, 35%, 15%))`,
-    }),
-    [displayTitle]
-  );
-
-  const placeholderInitials = useMemo(() => {
-    const cleanLetters = displayTitle.replace(/[^a-zA-Z0-9]/g, "").trim();
-    return cleanLetters.substring(0, 2).toUpperCase() || "TV";
-  }, [displayTitle]);
+  useEffect(() => {
+    setDiagnosticsEnabled(isDebugLoggingEnabled());
+    return subscribeToDebugLoggingChanges(() => {
+      setDiagnosticsEnabled(isDebugLoggingEnabled());
+    });
+  }, []);
 
   const getSafeResumeTarget = useCallback(
     (knownDurationSeconds?: number) =>
@@ -290,9 +302,9 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       return videoRef.current?.currentTime || 0;
     }
     try {
-      return avplayAdapter.getCurrentTime() / 1000;
+      return Math.max(avplayCurrentTimeRef.current, avplayAdapter.getCurrentTime() / 1000);
     } catch {
-      return 0;
+      return avplayCurrentTimeRef.current;
     }
   }, [isBrowserMode]);
 
@@ -306,6 +318,34 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       return 0;
     }
   }, [isBrowserMode]);
+
+  const commitAvplayCurrentSeconds = useCallback(
+    (seconds: number, options?: { force?: boolean }) => {
+      if (isLive) return;
+
+      const force = options?.force ?? false;
+      const now = performance.now();
+      const commitIntervalMs =
+        controlsVisibleRef.current || settingsVisibleRef.current
+          ? AVPLAY_VISIBLE_PROGRESS_COMMIT_INTERVAL_MS
+          : AVPLAY_BACKGROUND_PROGRESS_COMMIT_INTERVAL_MS;
+      const sinceLastCommitMs = now - lastAvplayProgressCommitAtRef.current;
+      const deltaSeconds = Math.abs(seconds - lastAvplayProgressCommitSecondsRef.current);
+
+      if (
+        !force &&
+        sinceLastCommitMs < commitIntervalMs &&
+        deltaSeconds < 1
+      ) {
+        return;
+      }
+
+      lastAvplayProgressCommitAtRef.current = now;
+      lastAvplayProgressCommitSecondsRef.current = seconds;
+      setCurrentSeconds(seconds);
+    },
+    [isLive]
+  );
 
   const seekBySeconds = useCallback(
     (deltaSeconds: number) => {
@@ -326,6 +366,30 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
       setCurrentSeconds(target);
       persistPlaybackPosition(target);
+
+      // Trigger Netflix-style skip indicator overlay if the control overlay is hidden
+      if (!controlsVisibleRef.current) {
+        setSkipIndicator((prev) => {
+          const dir = deltaSeconds > 0 ? "right" : "left";
+          if (prev && prev.direction === dir) {
+            return {
+              direction: dir,
+              amount: prev.amount + Math.abs(deltaSeconds),
+            };
+          }
+          return {
+            direction: dir,
+            amount: Math.abs(deltaSeconds),
+          };
+        });
+
+        if (skipIndicatorTimerRef.current !== null) {
+          window.clearTimeout(skipIndicatorTimerRef.current);
+        }
+        skipIndicatorTimerRef.current = window.setTimeout(() => {
+          setSkipIndicator(null);
+        }, 1000);
+      }
     },
     [activePlaybackItem, isBrowserMode, persistPlaybackPosition, readCurrentSeconds]
   );
@@ -434,7 +498,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     }, 0);
     const hideTimer = window.setTimeout(() => {
       setIsEpgPeekActive(false);
-    }, 4000);
+    }, 2500);
     return () => {
       window.clearTimeout(showTimer);
       window.clearTimeout(hideTimer);
@@ -470,7 +534,25 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     [isBrowserMode, liveExtension]
   );
 
-  const playBrowserStream = useCallback(async (url: string) => {
+  const getAvPlayDisplayRect = useCallback(() => {
+    const surface = avPlayerSurfaceRef.current;
+    if (!surface) return undefined;
+
+    const rect = surface.getBoundingClientRect();
+    if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+      return undefined;
+    }
+
+    return {
+      x: Math.max(0, Math.round(rect.left)),
+      y: Math.max(0, Math.round(rect.top)),
+      width: Math.max(1, Math.round(rect.width)),
+      height: Math.max(1, Math.round(rect.height)),
+    };
+  }, []);
+
+  const playBrowserStream = useCallback(
+    async (url: string, contentType: "live" | "vod" | "series") => {
     const video = videoRef.current;
     if (!video) {
       throw new Error("Browser video surface is not ready");
@@ -478,11 +560,13 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
     isBrowserPlaybackAttemptingRef.current = true;
     try {
-      await browserPlaybackAdapter.play(url, video);
+      await browserPlaybackAdapter.play(url, video, { contentType });
     } finally {
       isBrowserPlaybackAttemptingRef.current = false;
     }
-  }, []);
+    },
+    []
+  );
 
   const clearBrowserBufferingTimer = useCallback(() => {
     if (browserBufferingTimerRef.current !== null) {
@@ -545,12 +629,299 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
   }, [controlsVisible]);
 
   useEffect(() => {
+    const classNames = ["smartifly-player-active"];
+    if (!isBrowserMode) {
+      classNames.push("smartifly-avplay-active");
+    }
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById("root");
+
+    classNames.forEach((className) => {
+      html.classList.add(className);
+      body.classList.add(className);
+      root?.classList.add(className);
+    });
+
+    return () => {
+      classNames.forEach((className) => {
+        html.classList.remove(className);
+        body.classList.remove(className);
+        root?.classList.remove(className);
+      });
+    };
+  }, [isBrowserMode]);
+
+  useEffect(() => {
+    if (!activePlaybackItem) return;
+    logger.info("Player status snapshot", {
+      streamId: activePlaybackItem.id,
+      contentType: activePlaybackItem.contentType,
+      engine: playerEngineLabel,
+      playerState,
+      controlsVisible,
+      settingsVisible,
+      error,
+    });
+  }, [
+    activePlaybackItem,
+    controlsVisible,
+    error,
+    playerEngineLabel,
+    playerState,
+    settingsVisible,
+  ]);
+
+  useEffect(() => {
+    if (!activePlaybackItem) return;
+    if (!diagnosticsEnabled) return;
+    if (typeof PerformanceObserver === "undefined") return;
+
+    let observer: PerformanceObserver | null = null;
+
+    try {
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.duration < PLAYER_LONG_TASK_LOG_THRESHOLD_MS) continue;
+
+          const now = performance.now();
+          if (now - lastLongTaskLogAtRef.current < PLAYER_LONG_TASK_LOG_COOLDOWN_MS) {
+            continue;
+          }
+          lastLongTaskLogAtRef.current = now;
+
+          const attribution = (
+            (entry as PerformanceEntry & {
+              attribution?: Array<{
+                name?: string;
+                entryType?: string;
+                scriptUrl?: string;
+                functionName?: string;
+                containerType?: string;
+                containerName?: string;
+              }>;
+            }).attribution ?? []
+          ).map((item) => ({
+            name: item.name,
+            entryType: item.entryType,
+            scriptUrl: item.scriptUrl,
+            functionName: item.functionName,
+            containerType: item.containerType,
+            containerName: item.containerName,
+          }));
+
+          logger.warn("Player long task observed", {
+            streamId: activePlaybackItem.id,
+            contentType: activePlaybackItem.contentType,
+            engine: playerEngineLabel,
+            state: playerState,
+            durationMs: Math.round(entry.duration),
+            controlsVisible: controlsVisibleRef.current,
+            settingsVisible: settingsVisibleRef.current,
+            jankSample: latestJankSampleRef.current,
+            attribution: attribution.length > 0 ? attribution : undefined,
+          });
+        }
+      });
+
+      observer.observe({ entryTypes: ["longtask"] });
+    } catch {
+      return;
+    }
+
+    return () => {
+      observer?.disconnect();
+    };
+  }, [activePlaybackItem, diagnosticsEnabled, playerEngineLabel, playerState]);
+
+  useEffect(() => {
+    if (!activePlaybackItem) return;
+    if (!diagnosticsEnabled) return;
+
+    let rafId = 0;
+    let reportTimer: number | null = null;
+    let lastFrameAt = performance.now();
+    let sampleStartedAt = lastFrameAt;
+    let totalFrames = 0;
+    let slowFrames = 0;
+    let severeFrames = 0;
+    let worstFrameMs = 0;
+    let totalFrameMs = 0;
+
+    const flushSample = () => {
+      const now = performance.now();
+      const windowMs = Math.max(1, now - sampleStartedAt);
+      const avgFrameMs = totalFrames > 0 ? totalFrameMs / totalFrames : null;
+      const approxFps = avgFrameMs && avgFrameMs > 0 ? 1000 / avgFrameMs : null;
+      const sample: PlayerJankSample = {
+        windowMs: Math.round(windowMs),
+        totalFrames,
+        slowFrames,
+        severeFrames,
+        worstFrameMs: Number(worstFrameMs.toFixed(1)),
+        avgFrameMs: avgFrameMs ? Number(avgFrameMs.toFixed(2)) : null,
+        approxFps: approxFps ? Number(approxFps.toFixed(1)) : null,
+      };
+      latestJankSampleRef.current = sample;
+      logger.debug("Player render performance sample", {
+        streamId: activePlaybackItem.id,
+        contentType: activePlaybackItem.contentType,
+        engine: playerEngineLabel,
+        ...sample,
+        controlsVisible: controlsVisibleRef.current,
+        settingsVisible: settingsVisibleRef.current,
+        focusedId: focusedIdRef.current,
+      });
+      if (sample.severeFrames > 0 || (sample.approxFps !== null && sample.approxFps < 24)) {
+        logger.warn("Player render jank detected", {
+          streamId: activePlaybackItem.id,
+          contentType: activePlaybackItem.contentType,
+          engine: playerEngineLabel,
+          ...sample,
+        });
+      }
+      sampleStartedAt = now;
+      totalFrames = 0;
+      slowFrames = 0;
+      severeFrames = 0;
+      worstFrameMs = 0;
+      totalFrameMs = 0;
+    };
+
+    const loop = (timestamp: number) => {
+      const frameMs = timestamp - lastFrameAt;
+      lastFrameAt = timestamp;
+      if (frameMs > 0) {
+        totalFrames += 1;
+        totalFrameMs += frameMs;
+        worstFrameMs = Math.max(worstFrameMs, frameMs);
+        if (frameMs >= PLAYER_JANK_SLOW_FRAME_MS) {
+          slowFrames += 1;
+        }
+        if (frameMs >= PLAYER_JANK_SEVERE_FRAME_MS) {
+          severeFrames += 1;
+        }
+      }
+      rafId = window.requestAnimationFrame(loop);
+    };
+
+    rafId = window.requestAnimationFrame(loop);
+    reportTimer = window.setInterval(flushSample, PLAYER_JANK_SAMPLE_INTERVAL_MS);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (reportTimer !== null) {
+        window.clearInterval(reportTimer);
+      }
+      latestJankSampleRef.current = null;
+    };
+  }, [activePlaybackItem, diagnosticsEnabled, playerEngineLabel]);
+
+  useEffect(() => {
     if (!isLive) return;
     const intervalId = window.setInterval(() => {
       setLiveClockMs(Date.now());
     }, 30000);
     return () => window.clearInterval(intervalId);
   }, [isLive, activePlaybackItem?.id]);
+
+  useEffect(() => {
+    if (!activePlaybackItem) return;
+    if (isBrowserMode) return;
+    if (!diagnosticsEnabled) return;
+
+    let lastSample:
+      | {
+          at: number;
+          currentSeconds: number;
+        }
+      | null = null;
+
+    const intervalId = window.setInterval(() => {
+      const now = performance.now();
+      const current = readCurrentSeconds();
+      const duration = readDurationSeconds();
+      const deltaWallSeconds = lastSample ? (now - lastSample.at) / 1000 : null;
+      const deltaMediaSeconds = lastSample ? current - lastSample.currentSeconds : null;
+      const mediaClockRate =
+        deltaWallSeconds && deltaWallSeconds > 0 && deltaMediaSeconds !== null
+          ? Number((deltaMediaSeconds / deltaWallSeconds).toFixed(2))
+          : null;
+
+      const diagnostics = {
+        streamId: activePlaybackItem.id,
+        contentType: activePlaybackItem.contentType,
+        state: playerState,
+        currentSeconds: Number(current.toFixed(2)),
+        durationSeconds: Number(duration.toFixed(2)),
+        deltaWallSeconds: deltaWallSeconds ? Number(deltaWallSeconds.toFixed(2)) : null,
+        deltaMediaSeconds:
+          deltaMediaSeconds !== null ? Number(deltaMediaSeconds.toFixed(2)) : null,
+        mediaClockRate,
+        controlsVisible: controlsVisibleRef.current,
+        settingsVisible: settingsVisibleRef.current,
+        focusedId: focusedIdRef.current,
+        jankSample: latestJankSampleRef.current,
+      };
+
+      logger.debug("AVPlay playback heartbeat", diagnostics);
+
+      if (
+        playerState === "PLAYING" &&
+        mediaClockRate !== null &&
+        mediaClockRate < 0.7
+      ) {
+        logger.warn("AVPlay media clock lag detected", diagnostics);
+      }
+
+      lastSample = {
+        at: now,
+        currentSeconds: current,
+      };
+    }, AVPLAY_HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    activePlaybackItem,
+    diagnosticsEnabled,
+    isBrowserMode,
+    playerState,
+    readCurrentSeconds,
+    readDurationSeconds,
+  ]);
+
+  useEffect(() => {
+    if (isBrowserMode) {
+      avplayCurrentTimeRef.current = 0;
+      return;
+    }
+
+    const unsubscribeCurrentTime = controller.subscribeCurrentTime((seconds) => {
+      avplayCurrentTimeRef.current = seconds;
+      commitAvplayCurrentSeconds(seconds);
+    });
+
+    return () => {
+      unsubscribeCurrentTime();
+      avplayCurrentTimeRef.current = 0;
+    };
+  }, [commitAvplayCurrentSeconds, controller, isBrowserMode, playbackKey]);
+
+  useEffect(() => {
+    if (isBrowserMode || isLive) return;
+    if (!controlsVisible && !settingsVisible) return;
+    commitAvplayCurrentSeconds(readCurrentSeconds(), { force: true });
+  }, [
+    commitAvplayCurrentSeconds,
+    controlsVisible,
+    isBrowserMode,
+    isLive,
+    playbackKey,
+    readCurrentSeconds,
+    settingsVisible,
+  ]);
 
   // 1. Stream Loader Effect
   useEffect(() => {
@@ -585,6 +956,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
         logger.info("Playback extension candidates resolved", {
           streamId: activePlaybackItem.id,
           contentType: activePlaybackItem.contentType,
+          playerEngine: playerEngineLabel,
           candidates: playbackExtensions,
         });
 
@@ -608,12 +980,13 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
             if (isStaleAttempt()) return;
 
             if (isBrowserMode) {
-              await playBrowserStream(url);
+              await playBrowserStream(url, activePlaybackItem.contentType);
             } else {
               try {
                 await controller.playStream(url, {
                   startPositionSeconds,
                   contentType: activePlaybackItem.contentType,
+                  displayRect: getAvPlayDisplayRect(),
                 });
               } catch {
                 if (isStaleAttempt()) return;
@@ -622,6 +995,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
                 await controller.playStream(url, {
                   startPositionSeconds,
                   contentType: activePlaybackItem.contentType,
+                  displayRect: getAvPlayDisplayRect(),
                 });
               }
             }
@@ -631,6 +1005,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
             logger.info("Playback extension selected for stream", {
               streamId: activePlaybackItem.id,
               contentType: activePlaybackItem.contentType,
+              playerEngine: playerEngineLabel,
               extension: attemptExtension,
               attempt: attemptIndex + 1,
               totalAttempts: playbackExtensions.length,
@@ -642,6 +1017,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
             logger.warn("Playback extension attempt failed", {
               streamId: activePlaybackItem.id,
               contentType: activePlaybackItem.contentType,
+              playerEngine: playerEngineLabel,
               extension: attemptExtension,
               attempt: attemptIndex + 1,
               totalAttempts: playbackExtensions.length,
@@ -659,10 +1035,10 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
           throw lastError || new Error("Unable to start playback");
         }
 
-        if (isStaleAttempt()) return;
-        if (!isBrowserMode && startPositionSeconds) {
-          setCurrentSeconds(startPositionSeconds);
-        }
+      if (isStaleAttempt()) return;
+      if (!isBrowserMode && startPositionSeconds) {
+          commitAvplayCurrentSeconds(startPositionSeconds, { force: true });
+      }
       } catch (err: unknown) {
         if (isStaleAttempt()) return;
         if (isBrowserMode) {
@@ -683,7 +1059,9 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       setSnapshot(snap);
       if (snap.state === "ERROR") {
         setError(snap.errorMessage || "Playback failed");
+        return;
       }
+      setError(null);
     });
     const browserVideoElement = videoRef.current;
 
@@ -707,9 +1085,70 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     isBrowserMode,
     controller,
     getPlaybackExtensionCandidates,
+    getAvPlayDisplayRect,
     getSafeResumeTarget,
     clearBrowserBufferingTimer,
+    playerEngineLabel,
   ]);
+
+  useEffect(() => {
+    if (!isBrowserMode) return;
+    const video = videoRef.current;
+    if (!video || !activePlaybackItem) return;
+
+    let lastLoggedSecond = -1;
+
+    const logBrowserEvent = (eventName: string) => {
+      logger.debug(`Browser video event: ${eventName}`, {
+        streamId: activePlaybackItem.id,
+        contentType: activePlaybackItem.contentType,
+        readyState: video.readyState,
+        networkState: video.networkState,
+        currentTime: Number(video.currentTime.toFixed(2)),
+        duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(2)) : null,
+      });
+    };
+
+    const handleTimeUpdate = () => {
+      const second = Math.floor(video.currentTime || 0);
+      if (second < 0 || second === lastLoggedSecond || second % 5 !== 0) return;
+      lastLoggedSecond = second;
+      logger.debug("Browser playback heartbeat", {
+        streamId: activePlaybackItem.id,
+        contentType: activePlaybackItem.contentType,
+        second,
+        readyState: video.readyState,
+        buffered: video.buffered.length
+          ? {
+              start: Number(video.buffered.start(0).toFixed(2)),
+              end: Number(video.buffered.end(video.buffered.length - 1).toFixed(2)),
+            }
+          : null,
+      });
+    };
+
+    const listeners: Array<[keyof HTMLMediaElementEventMap, EventListener]> = [
+      ["loadedmetadata", () => logBrowserEvent("loadedmetadata")],
+      ["canplay", () => logBrowserEvent("canplay")],
+      ["playing", () => logBrowserEvent("playing")],
+      ["waiting", () => logBrowserEvent("waiting")],
+      ["stalled", () => logBrowserEvent("stalled")],
+      ["suspend", () => logBrowserEvent("suspend")],
+      ["progress", () => logBrowserEvent("progress")],
+      ["timeupdate", handleTimeUpdate as EventListener],
+      ["error", () => logBrowserEvent("error")],
+    ];
+
+    listeners.forEach(([eventName, listener]) => {
+      video.addEventListener(eventName, listener);
+    });
+
+    return () => {
+      listeners.forEach(([eventName, listener]) => {
+        video.removeEventListener(eventName, listener);
+      });
+    };
+  }, [activePlaybackItem, isBrowserMode]);
 
   // 2. Playback timers, remote controls key handlers, and browser page/visibility event listeners
   useEffect(() => {
@@ -720,15 +1159,47 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     let persistTimer: number | null = null;
 
     positionTimer = window.setInterval(() => {
-      const nextPosition = readCurrentSeconds();
-      const nextDuration = readDurationSeconds();
-      durationSecondsRef.current = nextDuration;
+      measurePlayerWork(
+        "player_position_tick_ms",
+        {
+          controlsVisible: controlsVisibleRef.current,
+          settingsVisible: settingsVisibleRef.current,
+          isLive,
+          isBrowserMode,
+        },
+        () => {
+          const previousDuration = durationSecondsRef.current;
+          const shouldSkipHiddenAvplayVodTick =
+            !isLive &&
+            !isBrowserMode &&
+            !controlsVisibleRef.current &&
+            !settingsVisibleRef.current &&
+            previousDuration > 0;
 
-      if (!isLive) {
-        setCurrentSeconds(nextPosition);
-        setDurationSeconds(nextDuration);
-      }
-    }, POSITION_POLL_INTERVAL_MS);
+          if (shouldSkipHiddenAvplayVodTick) {
+            return;
+          }
+
+          const nextDuration = readDurationSeconds();
+          durationSecondsRef.current = nextDuration;
+
+          if (!isLive) {
+            if (
+              previousDuration <= 0 ||
+              Math.abs(nextDuration - previousDuration) >= 1 ||
+              controlsVisibleRef.current ||
+              settingsVisibleRef.current ||
+              isBrowserMode
+            ) {
+              setDurationSeconds(nextDuration);
+            }
+            if (isBrowserMode) {
+              setCurrentSeconds(readCurrentSeconds());
+            }
+          }
+        }
+      );
+    }, isBrowserMode ? BROWSER_POSITION_POLL_INTERVAL_MS : AVPLAY_DURATION_POLL_INTERVAL_MS);
 
     if (activePlaybackItem.contentType !== "live") {
       persistTimer = window.setInterval(() => {
@@ -737,100 +1208,118 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isBack = BACK_KEYS.has(e.key) || e.keyCode === 10009;
-      if (isBack) {
-        e.preventDefault();
-        if (settingsVisibleRef.current) {
-          setSettingsVisible(false);
-          setControlsVisible(true);
-          return;
+      measurePlayerWork(
+        "player_keydown_handler_ms",
+        {
+          key: e.key,
+          controlsVisible: controlsVisibleRef.current,
+          settingsVisible: settingsVisibleRef.current,
+          isLive,
+        },
+        () => {
+          const isBack = BACK_KEYS.has(e.key) || e.keyCode === 10009;
+          if (isBack) {
+            e.preventDefault();
+            if (settingsVisibleRef.current) {
+              setSettingsVisible(false);
+              setControlsVisible(true);
+              return;
+            }
+            exitPlayer();
+            return;
+          }
+
+          setLastActivity(Date.now());
+
+          // 1. If settings overlay is visible, let it handle keys (except back/tizen back which was handled above)
+          if (settingsVisibleRef.current) return;
+
+          // 2. Hardware/Dedicated play/pause button (MediaPlayPause or Spacebar)
+          if (e.key === "MediaPlayPause" || e.key === " ") {
+            e.preventDefault();
+            togglePlayPause();
+            return;
+          }
+
+          // 3. Dedicated hardware keys (should always work, regardless of controls visibility)
+          if (e.key === "MediaFastForward" && !isLive) {
+            e.preventDefault();
+            setControlsVisible(true);
+            seekBySeconds(10);
+            return;
+          }
+
+          if (e.key === "MediaRewind" && !isLive) {
+            e.preventDefault();
+            setControlsVisible(true);
+            seekBySeconds(-10);
+            return;
+          }
+
+          if (isLive && e.key === "ChannelUp") {
+            e.preventDefault();
+            switchChannel(1);
+            return;
+          }
+
+          if (isLive && e.key === "ChannelDown") {
+            e.preventDefault();
+            switchChannel(-1);
+            return;
+          }
+
+          // 4. D-pad navigation keys (ArrowLeft, ArrowRight, ArrowUp, ArrowDown)
+          if (!controlsVisibleRef.current) {
+            if (!isLive && e.key === "ArrowUp") {
+              e.preventDefault();
+              setIsEpgPeekActive(true);
+              window.setTimeout(() => {
+                setIsEpgPeekActive(false);
+              }, 4000);
+              return;
+            }
+
+            if (!isLive && e.key === "ArrowRight") {
+              e.preventDefault();
+              seekBySeconds(10);
+              return;
+            }
+
+            if (!isLive && e.key === "ArrowLeft") {
+              e.preventDefault();
+              seekBySeconds(-10);
+              return;
+            }
+
+            if (isLive && e.key === "ArrowUp") {
+              e.preventDefault();
+              switchChannel(1);
+              return;
+            }
+
+            if (isLive && e.key === "ArrowDown") {
+              e.preventDefault();
+              switchChannel(-1);
+              return;
+            }
+
+            setControlsVisible(true);
+          } else {
+            if (isLive && e.key === "ArrowUp") {
+              e.preventDefault();
+              switchChannel(1);
+              setControlsVisible(false);
+              return;
+            }
+            if (isLive && e.key === "ArrowDown") {
+              e.preventDefault();
+              switchChannel(-1);
+              setControlsVisible(false);
+              return;
+            }
+          }
         }
-        exitPlayer();
-        return;
-      }
-
-      setLastActivity(Date.now());
-
-      // 1. If settings overlay is visible, let it handle keys (except back/tizen back which was handled above)
-      if (settingsVisibleRef.current) return;
-
-      // 2. Hardware/Dedicated play/pause button (MediaPlayPause or Spacebar)
-      if (e.key === "MediaPlayPause" || e.key === " ") {
-        e.preventDefault();
-        togglePlayPause();
-        return;
-      }
-
-      // 3. Dedicated hardware keys (should always work, regardless of controls visibility)
-      if (e.key === "MediaFastForward" && !isLive) {
-        e.preventDefault();
-        setControlsVisible(true);
-        seekBySeconds(10);
-        return;
-      }
-
-      if (e.key === "MediaRewind" && !isLive) {
-        e.preventDefault();
-        setControlsVisible(true);
-        seekBySeconds(-10);
-        return;
-      }
-
-      if (isLive && e.key === "ChannelUp") {
-        e.preventDefault();
-        switchChannel(1);
-        return;
-      }
-
-      if (isLive && e.key === "ChannelDown") {
-        e.preventDefault();
-        switchChannel(-1);
-        return;
-      }
-
-      // 4. D-pad navigation keys (ArrowLeft, ArrowRight, ArrowUp, ArrowDown)
-      if (!controlsVisibleRef.current) {
-        // Controls are HIDDEN: D-pad keys perform their immediate quick actions
-
-        // ArrowUp on VOD/Series triggers 4-second rich EPG peek overlay
-        if (!isLive && e.key === "ArrowUp") {
-          e.preventDefault();
-          setIsEpgPeekActive(true);
-          window.setTimeout(() => {
-            setIsEpgPeekActive(false);
-          }, 4000);
-          return;
-        }
-
-        // ArrowRight/ArrowLeft triggers seek and shows controls on VOD/Series
-        if (!isLive && e.key === "ArrowRight") {
-          e.preventDefault();
-          setControlsVisible(true);
-          seekBySeconds(10);
-          return;
-        }
-
-        if (!isLive && e.key === "ArrowLeft") {
-          e.preventDefault();
-          setControlsVisible(true);
-          seekBySeconds(-10);
-          return;
-        }
-
-        // ArrowUp/ArrowDown triggers channel switching (zapping) on Live TV
-        if (isLive && e.key === "ArrowUp") {
-          e.preventDefault();
-          switchChannel(1);
-          return;
-        }
-
-        // Any other key (e.g. Enter, ArrowDown on VOD) just shows the controls
-        setControlsVisible(true);
-      } else {
-        // Controls are VISIBLE:
-        // Do NOT intercept Arrow keys (ArrowLeft, ArrowRight, ArrowUp, ArrowDown) globally.
-        // Let React synthetic focus events handle them to move focus between the buttons.
-      }
+      );
     };
 
     const handleTizenBack = (event: TizenHwKeyEvent) => {
@@ -867,6 +1356,9 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (positionTimer !== null) window.clearInterval(positionTimer);
       if (persistTimer !== null) window.clearInterval(persistTimer);
+      if (skipIndicatorTimerRef.current !== null) {
+        window.clearTimeout(skipIndicatorTimerRef.current);
+      }
     };
   }, [
     playbackKey,
@@ -891,13 +1383,15 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     lastProgressSecondRef.current = 0;
     stallSinceMsRef.current = null;
     const frame = window.requestAnimationFrame(() => {
-      setControlsVisible(true);
+      setControlsVisible(activePlaybackItem?.contentType !== "live");
       setSettingsVisible(false);
       setCurrentSeconds(0);
       setDurationSeconds(0);
       setSkipIntroDismissed(false);
       setUpNextDismissed(false);
       lastSavedSecondRef.current = 0;
+      lastAvplayProgressCommitAtRef.current = 0;
+      lastAvplayProgressCommitSecondsRef.current = 0;
       browserResumeAppliedKeyRef.current = null;
     });
     return () => window.cancelAnimationFrame(frame);
@@ -915,8 +1409,13 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     if (!["PLAYING", "BUFFERING"].includes(playerState)) return;
 
     const now = Date.now();
-    const seconds = currentSeconds;
+    const seconds = isBrowserMode ? currentSeconds : readCurrentSeconds();
     const lastSeconds = lastProgressSecondRef.current;
+
+    if (seconds <= 0 && lastSeconds <= 0) {
+      return;
+    }
+
     const progressed = seconds > lastSeconds + 0.35;
 
     if (progressed) {
@@ -926,8 +1425,10 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       return;
     }
 
+    const effectiveDurationSeconds = Math.max(durationSecondsRef.current, durationSeconds);
     const nearEnd =
-      durationSeconds > 0 && durationSeconds - Math.max(0, seconds) <= 3;
+      effectiveDurationSeconds > 0 &&
+      effectiveDurationSeconds - Math.max(0, seconds) <= 3;
     if (nearEnd) return;
 
     if (!stallSinceMsRef.current) {
@@ -936,11 +1437,11 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     }
 
     const stalledForMs = now - stallSinceMsRef.current;
-    if (stalledForMs < 12000 || isAutoRecoveringRef.current) return;
+    if (stalledForMs < 8000 || isAutoRecoveringRef.current) return;
 
     const key = playbackKey;
     const attempts = stallRetryAttemptsRef.current[key] || 0;
-    if (attempts >= 1) return;
+    if (attempts >= 2) return;
 
     stallRetryAttemptsRef.current[key] = attempts + 1;
     isAutoRecoveringRef.current = true;
@@ -955,6 +1456,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
     activePlaybackItem,
     currentSeconds,
     durationSeconds,
+    readCurrentSeconds,
     playbackKey,
     playerState,
     requiresParentalUnlock,
@@ -978,7 +1480,7 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
     const timer = window.setTimeout(() => {
       setControlsVisible(false);
-    }, 5000);
+    }, 2500);
     return () => window.clearTimeout(timer);
   }, [controlsVisible, playerState, settingsVisible, lastActivity]);
 
@@ -989,6 +1491,12 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
       didAutoPlayNextRef.current = true;
     }
   }, [isPlaying, playNextEpisodeNow, remainingSeconds, settingsVisible, shouldShowUpNext]);
+
+  useEffect(() => {
+    if (playerState !== "ENDED" || !nextEpisode || didAutoPlayNextRef.current) return;
+    playNextEpisodeNow();
+    didAutoPlayNextRef.current = true;
+  }, [nextEpisode, playNextEpisodeNow, playerState]);
 
   const handleParentalSubmit = (value: string) => {
     if (value !== parentalPin) {
@@ -1017,17 +1525,13 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
   if (!activePlaybackItem) return null;
 
-  const showEpgPanel = isEpgPeekActive || controlsVisible;
 
-  const infoOverlayClass = `${styles.infoOverlay} ${
-    showEpgPanel ? styles.infoOverlayVisible : styles.infoOverlayHidden
-  } ${controlsVisible ? styles.infoOverlayShifted : ""}`;
 
   const progress =
     durationSeconds > 0 ? Math.min(100, Math.max(0, (currentSeconds / durationSeconds) * 100)) : 0;
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} ${!isBrowserMode ? styles.avplayContainer : ""}`.trim()}>
       {isBrowserMode ? (
         <video
           ref={videoRef}
@@ -1070,7 +1574,11 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
           }}
         />
       ) : (
-        <div id="av-player" className={styles.videoSurface} />
+        <div
+          id="av-player"
+          ref={avPlayerSurfaceRef}
+          className={`${styles.videoSurface} ${styles.avplaySurface}`.trim()}
+        />
       )}
 
       {(playerState === "LOADING" || playerState === "BUFFERING") && !requiresParentalUnlock && (
@@ -1134,179 +1642,105 @@ export const Player: React.FC<PlayerProps> = ({ onBack }) => {
 
       {!requiresParentalUnlock && (
         <>
-          <SkipIntroOverlay
-            isVisible={shouldShowSkipIntro}
-            onSkip={() => {
-              seekBySeconds(85);
-              setSkipIntroDismissed(true);
-            }}
-          />
-
-          <UpNextOverlay
-            isVisible={shouldShowUpNext}
-            nextEpisode={
-              nextEpisode
-                ? {
-                    title: nextEpisode.title,
-                    seasonNumber: nextEpisode.seasonNumber,
-                    episodeNumber: nextEpisode.episodeNumber,
-                    thumbnailUrl: nextEpisode.logoUrl,
-                  }
-                : null
-            }
-            countdownSeconds={upNextCountdown}
-            onPlayNow={playNextEpisodeNow}
-            onCancel={() => setUpNextDismissed(true)}
-          />
-
-          <PlayerControls
-            isVisible={controlsVisible}
-            title={activePlaybackItem.title}
-            isPlaying={isPlaying}
-            isLive={isLive}
-            progress={progress}
-            currentTimeLabel={formatSeconds(currentSeconds)}
-            durationLabel={isLive ? "" : formatSeconds(durationSeconds)}
-            onPlayPause={togglePlayPause}
-            onSeekBackward={isLive ? undefined : () => seekBySeconds(-10)}
-            onSeekForward={isLive ? undefined : () => seekBySeconds(10)}
-            onPreviousChannel={isLive ? () => switchChannel(-1) : undefined}
-            onNextChannel={isLive ? () => switchChannel(1) : undefined}
-            onBack={() => {
-              exitPlayer();
-            }}
-            onSettingsClick={() => {
-              setSettingsVisible(true);
-              setControlsVisible(true);
-            }}
-            liveChannelLabel={liveChannelLabel}
-            liveProgramLabel={currentProgram?.title || activePlaybackItem.title}
-            liveProgramTimeLabel={liveProgramTimeLabel}
-            nextProgramLabel={nextProgram?.title}
-            nextProgramTimeLabel={nextProgramTimeLabel}
-            previousChannelTitle={previousChannelTitle}
-            nextChannelTitle={nextChannelTitle}
-            liveClockLabel={isLive ? liveClockLabel : undefined}
-          />
-
-          <PlayerSettingsOverlay
-            isVisible={settingsVisible}
-            onClose={() => setSettingsVisible(false)}
-            trackSelectionManager={isBrowserMode ? null : trackSelectionManager}
-          />
-
-          <div className={infoOverlayClass}>
-            <div className={styles.channelInfo}>
-              {showLogo ? (
-                <img
-                  src={activePlaybackItem.logoUrl}
-                  alt=""
-                  className={styles.logo}
-                  onError={() => {
-                    if (!activePlaybackItem.logoUrl) return;
-                    imageFailureMemory.markFailed(activePlaybackItem.logoUrl);
-                    setFailedUrls((prev) => ({ ...prev, [activePlaybackItem.logoUrl!]: true }));
+          {isLive ? (
+            controlsVisible || isEpgPeekActive || Boolean(zappingChannel) ? (
+              <LivePlayerOverlay
+                isVisible
+                controlsVisible={controlsVisible}
+                channel={activePlaybackItem}
+                isPlaying={isPlaying}
+                currentProgram={currentProgram}
+                nextProgram={nextProgram}
+                liveClockLabel={liveClockLabel}
+                liveChannelLabel={liveChannelLabel}
+                zappingChannel={zappingChannel}
+                onPlayPause={togglePlayPause}
+                onBack={exitPlayer}
+                onSettingsClick={() => setSettingsVisible(true)}
+              />
+            ) : null
+          ) : (
+            <>
+              {shouldShowSkipIntro ? (
+                <SkipIntroOverlay
+                  isVisible
+                  onSkip={() => {
+                    seekBySeconds(85);
+                    setSkipIntroDismissed(true);
                   }}
                 />
-              ) : (
-                <div className={styles.placeholder} style={placeholderStyle}>
-                  {placeholderInitials}
-                </div>
-              )}
-              <div className={styles.channelMeta}>
-                <div className={styles.badgeRow}>
-                  <span className={styles.contentTypeBadge}>
-                    {contentTypeLabels[activePlaybackItem.contentType]}
-                  </span>
-                  {activePlaybackItem.metadata?.seasonNumber !== undefined && (
-                    <span className={styles.episodeBadge}>
-                      Season {activePlaybackItem.metadata.seasonNumber} • Episode {activePlaybackItem.metadata.episodeNumber}
-                    </span>
-                  )}
-                  <span className={styles.qualityBadge}>4K Ultra HD</span>
-                  <span className={styles.qualityBadge}>HDR10+</span>
-                  <span className={styles.audioBadge}>Dolby Atmos</span>
-                </div>
-                <h1 className={styles.channelTitle}>{activePlaybackItem.title}</h1>
-                {currentProgram?.title ? (
-                  <p className={styles.channelSubtitle}>
-                    {currentProgram.title}
-                  </p>
-                ) : (
-                  activePlaybackItem.contentType !== "live" && (
-                    <p className={styles.channelSubtitle}>
-                      {contentTypeLabels[activePlaybackItem.contentType]}
-                    </p>
-                  )
-                )}
-                {currentProgram && (
-                  <>
-                    <div className={styles.programMetaRow}>
-                      {liveChannelLabel ? <span className={styles.programInfoChip}>{liveChannelLabel}</span> : null}
-                      {liveProgramTimeLabel ? <span className={styles.programInfoText}>{liveProgramTimeLabel}</span> : null}
-                    </div>
-                    <div className={styles.epgProgressBar} aria-hidden="true">
-                      <div
-                        className={styles.epgProgressFill}
-                        style={{ width: `${Math.min(100, Math.max(0, currentProgram.progress))}%` }}
-                      />
-                    </div>
-                    {nextProgram ? (
-                      <div className={styles.nextProgramRow}>
-                        <span className={styles.nextProgramLabel}>Next</span>
-                        <span className={styles.nextProgramTitle}>{nextProgram.title}</span>
-                        {nextProgramTimeLabel ? (
-                          <span className={styles.nextProgramTime}>{nextProgramTimeLabel}</span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    <div className={styles.quickHintRow}>
-                      <span className={styles.quickHint}>Up previous channel</span>
-                      <span className={styles.quickHint}>Down next channel</span>
-                      <span className={styles.quickHint}>Enter controls</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+              ) : null}
 
-          {zappingChannel && (
-            <div className={styles.zappingOverlay} aria-live="polite">
-              <div className={styles.zappingLogoWrap}>
-                {zappingChannel.logoUrl && !failedUrls[zappingChannel.logoUrl] && !imageFailureMemory.hasFailed(zappingChannel.logoUrl) ? (
-                  <img
-                    src={zappingChannel.logoUrl}
-                    alt=""
-                    className={styles.zappingLogo}
-                    onError={() => {
-                      if (!zappingChannel.logoUrl) return;
-                      imageFailureMemory.markFailed(zappingChannel.logoUrl);
-                      setFailedUrls((prev) => ({ ...prev, [zappingChannel.logoUrl!]: true }));
-                    }}
-                  />
-                ) : (
-                  <div
-                    className={styles.zappingPlaceholder}
-                    style={{
-                      background: `linear-gradient(135deg,
-                        hsl(${Math.abs(hashString(cleanTitle(zappingChannel.title))) % 360}, 50%, 25%),
-                        hsl(${(Math.abs(hashString(cleanTitle(zappingChannel.title))) + 60) % 360}, 35%, 15%))`
-                    }}
-                  >
-                    {cleanTitle(zappingChannel.title).replace(/[^a-zA-Z0-9]/g, "").substring(0, 2).toUpperCase() || "TV"}
-                  </div>
-                )}
-              </div>
-              <div className={styles.zappingMeta}>
-                <span className={styles.zappingLabel}>Switching to</span>
-                <span className={styles.zappingTitle}>{zappingChannel.title}</span>
-                {isLive && liveChannels.length > 0 ? (
-                  <span className={styles.zappingChannelNumber}>
-                    CH {String(Math.max(1, liveChannels.findIndex((channel) => channel.id === zappingChannel.id) + 1)).padStart(3, "0")}
-                  </span>
-                ) : null}
-              </div>
+              {shouldShowUpNext ? (
+                <UpNextOverlay
+                  isVisible
+                  nextEpisode={
+                    nextEpisode
+                      ? {
+                          title: nextEpisode.title,
+                          seasonNumber: nextEpisode.seasonNumber,
+                          episodeNumber: nextEpisode.episodeNumber,
+                          thumbnailUrl: nextEpisode.logoUrl,
+                        }
+                      : null
+                  }
+                  countdownSeconds={upNextCountdown}
+                  onPlayNow={playNextEpisodeNow}
+                  onCancel={() => setUpNextDismissed(true)}
+                />
+              ) : null}
+
+              {controlsVisible ? (
+                <PlayerControls
+                  isVisible
+                  title={activePlaybackItem.title}
+                  isPlaying={isPlaying}
+                  isLive={isLive}
+                  progress={progress}
+                  currentTimeLabel={formatSeconds(currentSeconds)}
+                  durationLabel={formatSeconds(durationSeconds)}
+                  onPlayPause={togglePlayPause}
+                  onBack={() => {
+                    exitPlayer();
+                  }}
+                  onSettingsClick={() => {
+                    setSettingsVisible(true);
+                    setControlsVisible(true);
+                  }}
+                  seasonNumber={activePlaybackItem.metadata?.seasonNumber}
+                  episodeNumber={activePlaybackItem.metadata?.episodeNumber}
+                  onSeekBackward={() => seekBySeconds(-10)}
+                  onSeekForward={() => seekBySeconds(10)}
+                />
+              ) : null}
+            </>
+          )}
+
+          {settingsVisible ? (
+            <PlayerSettingsOverlay
+              isVisible
+              onClose={() => setSettingsVisible(false)}
+              trackSelectionManager={isBrowserMode ? null : trackSelectionManager}
+            />
+          ) : null}
+
+          {skipIndicator && (
+            <div
+              key={`${skipIndicator.direction}-${skipIndicator.amount}`}
+              className={`${styles.skipIndicator} ${
+                skipIndicator.direction === "left"
+                  ? styles.skipIndicatorLeft
+                  : styles.skipIndicatorRight
+              }`}
+            >
+              {skipIndicator.direction === "left" ? (
+                <Rewind size={28} fill="currentColor" />
+              ) : (
+                <FastForward size={28} fill="currentColor" />
+              )}
+              <span className={styles.skipIndicatorValue}>
+                {skipIndicator.direction === "left" ? "-" : "+"}{skipIndicator.amount}s
+              </span>
             </div>
           )}
         </>

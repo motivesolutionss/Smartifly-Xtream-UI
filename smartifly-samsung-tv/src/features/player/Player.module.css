@@ -19,6 +19,15 @@
   background: #000;
 }
 
+.avplayContainer,
+.avplaySurface {
+  background: transparent;
+}
+
+.avplaySurface {
+  pointer-events: none;
+}
+
 /* ── Loading overlay ─────────────────────────────────────────────────────── */
 
 .loadingOverlay {
@@ -485,4 +494,85 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* ── Skip Indicator overlays (Netflix-style) ────────────────────────────── */
+
+.skipIndicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  z-index: 25;
+  animation: skipPulse 800ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}
+
+.skipIndicatorLeft {
+  left: 8rem;
+}
+
+.skipIndicatorRight {
+  right: 8rem;
+}
+
+.skipIndicatorValue {
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin-top: 0.35rem;
+  color: #ffffff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes skipPulse {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.05);
+  }
+  35% {
+    transform: translateY(-50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95);
+  }
+}
+
+:global(.perf-reduced) .infoOverlay,
+:global(.perf-reduced) .zappingOverlay,
+:global(.perf-reduced) .skipIndicator {
+  animation: none !important;
+  transition: none !important;
+}
+
+:global(.perf-reduced) .logo,
+:global(.perf-reduced) .placeholder,
+:global(.perf-reduced) .contentTypeBadge,
+:global(.perf-reduced) .epgProgressFill,
+:global(.perf-reduced) .zappingOverlay {
+  box-shadow: none !important;
+}
+
+:global(.perf-reduced) .placeholder,
+:global(.perf-reduced) .channelTitle,
+:global(.perf-reduced) .channelSubtitle,
+:global(.perf-reduced) .zappingPlaceholder {
+  text-shadow: none !important;
+}
+
+:global(.perf-reduced) .skipIndicator {
+  filter: none !important;
 }

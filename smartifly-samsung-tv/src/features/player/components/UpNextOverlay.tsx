@@ -26,7 +26,7 @@ type UpNextOverlayProps = {
   onCancel: () => void;
 };
 
-export const UpNextOverlay: React.FC<UpNextOverlayProps> = ({
+const UpNextOverlayComponent: React.FC<UpNextOverlayProps> = ({
   isVisible,
   nextEpisode,
   countdownSeconds,
@@ -129,5 +129,7 @@ export const UpNextOverlay: React.FC<UpNextOverlayProps> = ({
     </div>
   );
 };
+
+export const UpNextOverlay = React.memo(UpNextOverlayComponent);
 
 export type { UpNextEpisode };

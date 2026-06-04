@@ -18,6 +18,23 @@ export const getShortEpgQueryOptions = (streamId: string) => ({
   placeholderData: (previousData: AppEpgItem[] | undefined) => previousData,
 });
 
+type ShortEpgQueryOverrides = {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+};
+
+export const getShortEpgQueryOptionsWithOverrides = (
+  streamId: string,
+  overrides: ShortEpgQueryOverrides = {}
+) => ({
+  ...getShortEpgQueryOptions(streamId),
+  enabled: overrides.enabled ?? !!streamId,
+  refetchInterval:
+    overrides.refetchInterval === undefined
+      ? EPG_REFETCH_INTERVAL_MS
+      : overrides.refetchInterval,
+});
+
 export const sliceShortEpgToWindow = (
   items: AppEpgItem[],
   windowStartMs: number,

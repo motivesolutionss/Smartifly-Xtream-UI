@@ -25,11 +25,14 @@ declare global {
     webapi?: {
       avplay?: AvPlayLike;
     };
+    webapis?: {
+      avplay?: AvPlayLike;
+    };
   }
 }
 
 const getAvPlay = () => {
-  const avplay = window.webapi?.avplay;
+  const avplay = window.webapis?.avplay ?? window.webapi?.avplay;
   if (!avplay) {
     throw new AppError("PLAYBACK_FAILED", "Samsung AVPlay is not available");
   }
@@ -53,6 +56,14 @@ const requireMethod = <K extends keyof AvPlayLike>(avplay: AvPlayLike, method: K
   return fn as (...args: unknown[]) => unknown;
 };
 
+const isBrowserPlaybackForced = () => {
+  const explicitEngine = import.meta.env.VITE_SMARTIFLY_PLAYER_ENGINE?.trim().toLowerCase();
+  if (explicitEngine === "browser") return true;
+  if (explicitEngine === "avplay") return false;
+  const flag = import.meta.env.VITE_SMARTIFLY_FORCE_BROWSER_PLAYBACK?.trim().toLowerCase();
+  return flag === "1" || flag === "true" || flag === "yes";
+};
+
 /**
  * Returns true only when AVPlay is present AND its core methods are callable.
  * The Tizen emulator sometimes exposes `window.webapi.avplay` as a stub object
@@ -60,8 +71,9 @@ const requireMethod = <K extends keyof AvPlayLike>(avplay: AvPlayLike, method: K
  * `prepareAsync` to distinguish a real AVPlay surface from a dead stub.
  */
 const probeAvPlayAvailability = (): boolean => {
+  if (isBrowserPlaybackForced()) return false;
   if (typeof window === "undefined") return false;
-  const avplay = window.webapi?.avplay;
+  const avplay = window.webapis?.avplay ?? window.webapi?.avplay;
   if (!avplay) return false;
   // Must have at minimum open + prepareAsync + play to be usable
   return (

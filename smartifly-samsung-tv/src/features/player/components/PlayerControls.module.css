@@ -300,6 +300,37 @@
   transition: transform 150ms ease;
 }
 
+/* VOD Metadata Row */
+.vodMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+}
+
+.episodeBadge {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.25rem 0.8rem;
+  border-radius: 999px;
+}
+
+.qualityBadge,
+.audioBadge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* ── Control buttons row ─────────────────────────────────────────────────── */
 
 .controlRow {

@@ -1,6 +1,5 @@
-import { logger } from "./logger";
+import { isDebugLoggingEnabled, logger } from "./logger";
 
-const IS_DEV = import.meta.env.DEV;
 const FLUSH_INTERVAL_MS = 15000;
 
 type DurationOptions = {
@@ -30,10 +29,12 @@ const reset = () => {
   suppressedSlowLogsByMetric.clear();
 };
 
+const isPerfEnabled = () => isDebugLoggingEnabled();
+
 const flush = () => {
   flushTimerId = null;
 
-  if (!IS_DEV || (counters.size === 0 && durations.size === 0)) {
+  if (!isPerfEnabled() || (counters.size === 0 && durations.size === 0)) {
     reset();
     return;
   }
@@ -67,7 +68,7 @@ const flush = () => {
 };
 
 const scheduleFlush = () => {
-  if (!IS_DEV || flushTimerId !== null || typeof window === "undefined") {
+  if (!isPerfEnabled() || flushTimerId !== null || typeof window === "undefined") {
     return;
   }
 
@@ -75,14 +76,16 @@ const scheduleFlush = () => {
 };
 
 export const perfMetrics = {
-  enabled: IS_DEV,
+  get enabled() {
+    return isPerfEnabled();
+  },
   increment(name: string, delta = 1) {
-    if (!IS_DEV) return;
+    if (!isPerfEnabled()) return;
     counters.set(name, (counters.get(name) ?? 0) + delta);
     scheduleFlush();
   },
   recordDuration(name: string, durationMs: number, options?: DurationOptions) {
-    if (!IS_DEV) return;
+    if (!isPerfEnabled()) return;
 
     const summary = durations.get(name) ?? {
       count: 0,

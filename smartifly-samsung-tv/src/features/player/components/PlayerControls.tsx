@@ -1,17 +1,10 @@
 import React, { useEffect } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  FastForward,
-  Pause,
-  Play,
-  Rewind,
-  Settings,
-} from "lucide-react";
+import { ArrowLeft, Pause, Play, Settings, Rewind, FastForward } from "lucide-react";
 import { Focusable } from "../../../components/tv/Focusable";
 import { useFocus } from "../../../providers/useFocus";
 import styles from "./PlayerControls.module.css";
+import { detectVideoResolution } from "../../../utils/resolutionDetector";
+
 
 type PlayerControlsProps = {
   isVisible: boolean;
@@ -22,10 +15,6 @@ type PlayerControlsProps = {
   currentTimeLabel: string;
   durationLabel: string;
   onPlayPause: () => void;
-  onSeekForward?: () => void;
-  onSeekBackward?: () => void;
-  onPreviousChannel?: () => void;
-  onNextChannel?: () => void;
   onBack: () => void;
   onSettingsClick: () => void;
   liveChannelLabel?: string;
@@ -33,12 +22,14 @@ type PlayerControlsProps = {
   liveProgramTimeLabel?: string;
   nextProgramLabel?: string;
   nextProgramTimeLabel?: string;
-  previousChannelTitle?: string;
-  nextChannelTitle?: string;
   liveClockLabel?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  onSeekBackward?: () => void;
+  onSeekForward?: () => void;
 };
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({
+const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
   isVisible,
   title,
   isPlaying,
@@ -47,10 +38,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   currentTimeLabel,
   durationLabel,
   onPlayPause,
-  onSeekForward,
-  onSeekBackward,
-  onPreviousChannel,
-  onNextChannel,
   onBack,
   onSettingsClick,
   liveChannelLabel,
@@ -58,9 +45,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   liveProgramTimeLabel,
   nextProgramLabel,
   nextProgramTimeLabel,
-  previousChannelTitle,
-  nextChannelTitle,
   liveClockLabel,
+  seasonNumber,
+  episodeNumber,
+  onSeekBackward,
+  onSeekForward,
 }) => {
   const { setFocus } = useFocus();
 
@@ -74,25 +63,24 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
 
   if (!isVisible) return null;
 
+  // D-pad Navigation key handlers
   const handleBackKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowRight") {
       e.preventDefault();
-      if (onSeekBackward) {
-        setFocus("player-rewind");
-      } else if (onPreviousChannel) {
-        setFocus("player-prev-channel");
-      } else {
-        setFocus("player-playpause");
-      }
+      setFocus("player-settings");
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (onSeekBackward) {
-        setFocus("player-rewind");
-      } else if (onPreviousChannel) {
-        setFocus("player-prev-channel");
-      } else {
-        setFocus("player-playpause");
-      }
+      setFocus("player-playpause");
+    }
+  };
+
+  const handleSettingsKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setFocus("player-back");
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocus("player-playpause");
     }
   };
 
@@ -109,89 +97,26 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     }
   };
 
-  const handlePlayPauseKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      if (onSeekBackward) {
-        setFocus("player-rewind");
-      } else if (onPreviousChannel) {
-        setFocus("player-prev-channel");
-      } else {
-        setFocus("player-back");
-      }
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      if (onSeekForward) {
-        setFocus("player-forward");
-      } else if (onNextChannel) {
-        setFocus("player-next-channel");
-      } else {
-        setFocus("player-settings");
-      }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocus("player-back");
-    }
-  };
-
   const handleForwardKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowLeft") {
       e.preventDefault();
       setFocus("player-playpause");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setFocus("player-settings");
-    } else if (e.key === "ArrowUp") {
+    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
       e.preventDefault();
       setFocus("player-settings");
     }
   };
 
-  const handleSettingsKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
+  const handlePlayPauseKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft" && onSeekBackward) {
       e.preventDefault();
-      if (onSeekForward) {
-        setFocus("player-forward");
-      } else if (onNextChannel) {
-        setFocus("player-next-channel");
-      } else {
-        setFocus("player-playpause");
-      }
-    } else if (e.key === "ArrowDown") {
+      setFocus("player-rewind");
+    } else if (e.key === "ArrowRight" && onSeekForward) {
       e.preventDefault();
-      if (onSeekForward) {
-        setFocus("player-forward");
-      } else if (onNextChannel) {
-        setFocus("player-next-channel");
-      } else {
-        setFocus("player-playpause");
-      }
-    }
-  };
-
-  const handlePreviousChannelKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      setFocus("player-back");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setFocus("player-playpause");
+      setFocus("player-forward");
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setFocus("player-back");
-    }
-  };
-
-  const handleNextChannelKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      setFocus("player-playpause");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setFocus("player-settings");
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocus("player-settings");
     }
   };
 
@@ -241,6 +166,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
       </div>
 
       <div className={styles.bottomArea}>
+        {/* Now / Next Live TV EPG Card (only shown for Live playback) */}
         {isLive && (liveProgramLabel || nextProgramLabel) ? (
           <div className={styles.liveProgramCard}>
             <div className={styles.liveProgramColumn}>
@@ -261,6 +187,21 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </div>
         ) : null}
 
+        {/* VOD / Series metadata directly above the seek bar */}
+        {!isLive && (
+          <div className={styles.vodMetaRow}>
+            {seasonNumber !== undefined && (
+              <span className={styles.episodeBadge}>
+                Season {seasonNumber} • Episode {episodeNumber}
+              </span>
+            )}
+            <span className={styles.qualityBadge}>{detectVideoResolution(title)}</span>
+            <span className={styles.qualityBadge}>HDR10+</span>
+            <span className={styles.audioBadge}>Dolby Atmos</span>
+          </div>
+        )}
+
+        {/* Seek track timeline (only shown for VOD/Series playback) */}
         {!isLive && (
           <div className={styles.seekRow}>
             <span className={styles.timeLabel}>{currentTimeLabel}</span>
@@ -276,8 +217,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </div>
         )}
 
+        {/* Control Button Row (Rewind, Play/Pause, FastForward) */}
         <div className={styles.controlRow}>
-          {onSeekBackward ? (
+          {onSeekBackward && (
             <div className={styles.buttonGroup}>
               <Focusable
                 id="player-rewind"
@@ -290,24 +232,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               </Focusable>
               <span className={styles.seekLabel}>-10s</span>
             </div>
-          ) : onPreviousChannel ? (
-            <div className={styles.buttonGroup}>
-              <Focusable
-                id="player-prev-channel"
-                onEnter={onPreviousChannel}
-                onKeyDown={handlePreviousChannelKeyDown}
-                disableFocusEffects
-                className={styles.iconButton}
-              >
-                <ArrowUp size={28} />
-              </Focusable>
-              <span className={styles.seekLabel}>Prev ch</span>
-              {previousChannelTitle ? (
-                <span className={styles.channelLabel}>{previousChannelTitle}</span>
-              ) : null}
-            </div>
-          ) : (
-            <div style={{ width: "4.4rem" }} />
           )}
 
           <Focusable
@@ -317,13 +241,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             disableFocusEffects
             className={styles.playPauseButton}
           >
-            {isPlaying
-              ? <Pause size={36} fill="currentColor" />
-              : <Play size={36} fill="currentColor" style={{ marginLeft: "3px" }} />
-            }
+            {isPlaying ? (
+              <Pause size={36} fill="currentColor" />
+            ) : (
+              <Play size={36} fill="currentColor" style={{ marginLeft: "3px" }} />
+            )}
           </Focusable>
 
-          {onSeekForward ? (
+          {onSeekForward && (
             <div className={styles.buttonGroup}>
               <Focusable
                 id="player-forward"
@@ -336,36 +261,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               </Focusable>
               <span className={styles.seekLabel}>+10s</span>
             </div>
-          ) : onNextChannel ? (
-            <div className={styles.buttonGroup}>
-              <Focusable
-                id="player-next-channel"
-                onEnter={onNextChannel}
-                onKeyDown={handleNextChannelKeyDown}
-                disableFocusEffects
-                className={styles.iconButton}
-              >
-                <ArrowDown size={28} />
-              </Focusable>
-              <span className={styles.seekLabel}>Next ch</span>
-              {nextChannelTitle ? (
-                <span className={styles.channelLabel}>{nextChannelTitle}</span>
-              ) : null}
-            </div>
-          ) : (
-            <div style={{ width: "4.4rem" }} />
           )}
         </div>
 
-        {isLive ? (
-          <div className={styles.remoteHintRow} aria-hidden="true">
-            <span className={styles.remoteHint}>Up Previous channel</span>
-            <span className={styles.remoteHint}>Down Next channel</span>
-            <span className={styles.remoteHint}>Enter Show controls</span>
-            <span className={styles.remoteHint}>Back Exit player</span>
-          </div>
-        ) : null}
+
       </div>
     </div>
   );
 };
+
+export const PlayerControls = React.memo(PlayerControlsComponent);
