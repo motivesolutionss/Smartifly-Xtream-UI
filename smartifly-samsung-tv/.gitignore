@@ -28,6 +28,9 @@ agent-skills/
 
 Debug/
 SmartiflySamsungTV/Debug/
+SmartiflySamsungTV/assets/
+SmartiflySamsungTV/dist/
+SmartiflySamsungTV/index.html
 tmp/
 .witsconfig.json
 *.code-workspace

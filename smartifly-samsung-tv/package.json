@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build --emptyOutDir false",
+    "build": "tsc -b && vite build",
     "postbuild": "node scripts/sync-wits-config.mjs && node scripts/sync-tizen-project.mjs",
     "wits:preload": "npm run build && node scripts/preload-wits-content.mjs",
     "wits:dev": "node scripts/dev-wits.mjs",
