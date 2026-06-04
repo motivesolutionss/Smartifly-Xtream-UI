@@ -14,6 +14,8 @@ import { getUserFriendlyErrorMessage } from "../../utils/errorMapper";
 import { useFocus } from "../../providers/useFocus";
 import { getAtmosphereColor } from "../../hooks/vibeUtils.ts";
 import { getResumePositionSeconds } from "../../utils/resumePosition";
+import { detectVideoResolution } from "../../utils/resolutionDetector";
+
 
 interface VodDetailsProps {
   movieId: string;
@@ -224,7 +226,7 @@ export default function VodDetails({ movieId, categoryName, onBack }: VodDetails
               </React.Fragment>
             ))}
             {statItems.length > 0 && <span className={styles.dot} />}
-            <span className={styles.qualityBadge}>4K Ultra HD</span>
+            <span className={styles.qualityBadge}>{detectVideoResolution(movie.title, movie.description)}</span>
           </div>
 
           <div className={styles.genrePills}>

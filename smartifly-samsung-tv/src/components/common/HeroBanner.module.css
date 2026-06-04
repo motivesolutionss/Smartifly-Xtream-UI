@@ -83,8 +83,8 @@
   position: relative;
   z-index: 20;
   height: 100%;
-  padding-left: 12.5rem; /* Clear sidebar and perfectly align with the rail titles */
-  padding-top: 6.5rem; /* 104px */
+  padding-left: 14.5rem; /* Clear sidebar and perfectly align with the rail titles */
+  padding-top: 4.5rem; /* Raised to position brand logo higher and provide vertical breathing room */
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -121,9 +121,10 @@
   font-size: 5rem; /* 80px */
   font-weight: 950;
   color: #FFFFFF;
-  line-height: 0.98;
+  line-height: 1.1; /* Increased to prevent letter descenders from clipping */
   letter-spacing: -3px;
   margin-bottom: 12px;
+  padding-bottom: 0.2rem; /* Add padding to accommodate letter descenders on line-clamp */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -133,12 +134,17 @@
 
 .infoRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 24px;
   color: rgba(255, 255, 255, 0.6);
   font-size: 18px;
   font-weight: 700;
+}
+
+.infoRow span {
+  white-space: nowrap;
 }
 
 .dot {
@@ -229,4 +235,18 @@
 :global(.perf-reduced) .infoBtn:global(.focused) {
   transform: none;
   box-shadow: none;
+}
+
+.brandLogoContainer {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2.4rem;
+}
+
+.brandLogo {
+  height: 2.2rem; /* Reduced for a more elegant, proportionate TV appearance */
+  width: auto;
+  object-fit: contain;
+  opacity: 0.95;
+  margin-left: 0.15rem; /* Align perfectly with the left edge of the TOP 10 badge / title */
 }

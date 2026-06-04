@@ -5,6 +5,8 @@ import type { AppMovie, AppSeries, AppChannel } from "../../types/appModels";
 import { Badge } from "../ui/Badge";
 import { DotSeparator } from "../ui/DotSeparator";
 import styles from "./HeroBanner.module.css";
+import { detectVideoResolution } from "../../utils/resolutionDetector";
+
 
 export type HeroItem = {
   id: string;
@@ -91,6 +93,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       </div>
 
       <div className={styles.content}>
+        <div className={styles.brandLogoContainer}>
+          <img src="/smartifly_logo.png" alt="Smartifly" className={styles.brandLogo} />
+        </div>
         {/* Reference Meta Row */}
         <div className={styles.metaRow}>
           <Badge text="TOP 10" />
@@ -111,7 +116,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           {durationMeta && genreMeta && <DotSeparator />}
           {genreMeta && <span>{genreMeta}</span>}
           {(yearMeta || ratingMeta || durationMeta || genreMeta) && <DotSeparator />}
-          <Badge text="4K ULTRA HD" variant="glass" />
+          <Badge text={detectVideoResolution(activeItem.title, activeItem.description)} variant="glass" />
         </div>
 
         <p className={styles.description}>{heroDescription}</p>

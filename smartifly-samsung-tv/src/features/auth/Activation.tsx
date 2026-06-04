@@ -1,79 +1,376 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../components/tv/Focusable";
+import { BackendClient } from "../../services/backend/backendClient";
+import { getOrCreateDeviceIdentity } from "../../services/backend/deviceIdentity";
+import { initializeServices, services } from "../../services";
+import {
+  createPlaylistId,
+  type PlaylistCredentials,
+} from "../../storage/playlistStorage";
+import { useAuthStore } from "../../store/authStore";
+import { AppError } from "../../types/errors";
+import { getUserFriendlyErrorMessage } from "../../utils/errorMapper";
+import { normalizeServerUrl } from "../../utils/normalizeServerUrl";
+import type {
+  DeviceActivationState,
+  DeviceCheckStatus,
+  DeviceIdentityPayload,
+  DeviceQrSession,
+} from "../../services/backend/backendTypes";
 import styles from "./Activation.module.css";
 
 interface ActivationProps {
   onBack: () => void;
+  onSuccess: () => void;
 }
 
-export const Activation: React.FC<ActivationProps> = ({ onBack }) => {
+const POLL_INTERVAL_MS = 5000;
+
+const TERMINAL_STATE_MESSAGES: Partial<Record<DeviceActivationState, string>> = {
+  EXPIRED: "This activation has expired. Please contact your provider.",
+  DISABLED: "This device has been disabled. Please contact your provider.",
+  BLOCKED: "This device has been blocked. Please contact your provider.",
+  BLACKLISTED: "This device is blacklisted. Please contact your provider.",
+  BAD_REQUEST: "The backend rejected this activation request.",
+  SERVER_ERROR: "The backend could not complete activation right now.",
+};
+
+const statusLabelForState = (
+  session: DeviceQrSession | null,
+  error: string | null,
+  terminalState: DeviceActivationState | null,
+  isCompleting: boolean
+) => {
+  if (isCompleting) return "FINALIZING SESSION...";
+  if (terminalState) return `${terminalState} STATUS`;
+  if (error) return "ACTIVATION ERROR";
+  if (!session) return "GENERATING QR CODE...";
+  return "AWAITING BINDING...";
+};
+
+const describeState = (
+  error: string | null,
+  terminalState: DeviceActivationState | null,
+  session: DeviceQrSession | null
+) => {
+  if (error) return error;
+
+  if (terminalState) {
+    return (
+      TERMINAL_STATE_MESSAGES[terminalState] ||
+      "This device cannot be activated right now."
+    );
+  }
+
+  if (!session) {
+    return "Preparing your activation code and portal link for this TV.";
+  }
+
+  return [
+    "Scan the QR code or visit the link below on your phone.",
+    "Once your account is linked, your TV will automatically sign in.",
+  ].join("\n");
+};
+
+const formatPortalLink = (value: string | null) => {
+  if (!value) return "Preparing activation link...";
+  return value.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+};
+
+const buildActivatedPlaylist = (status: DeviceCheckStatus): PlaylistCredentials => {
+  const rawServerUrl = status.serverUrl?.trim();
+  const rawUsername = status.xtreamUser?.trim();
+  const password = status.xtreamPass ?? "";
+
+  if (!rawServerUrl || !rawUsername || !password) {
+    throw new AppError(
+      "INVALID_RESPONSE",
+      "Activation completed without Xtream credentials"
+    );
+  }
+
+  const normalizedServerUrl = normalizeServerUrl(rawServerUrl);
+
+  return {
+    id: createPlaylistId(normalizedServerUrl, rawUsername),
+    name: status.serverName || "Smartifly TV",
+    serverUrl: normalizedServerUrl,
+    username: rawUsername,
+    password,
+    addedAt: new Date().toISOString(),
+    portalName: status.serverName || undefined,
+  };
+};
+
+export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => {
+  const backendClient = useMemo(() => new BackendClient(), []);
+  const setActivePlaylist = useAuthStore((store) => store.setActivePlaylist);
+  const [session, setSession] = useState<DeviceQrSession | null>(null);
+  const [deviceIdentity, setDeviceIdentity] = useState<DeviceIdentityPayload | null>(
+    null
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [terminalState, setTerminalState] = useState<DeviceActivationState | null>(
+    null
+  );
+  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const isPollingRef = useRef(false);
+  const isCompletingRef = useRef(false);
+
+  const completeActivation = useCallback(
+    async (status: DeviceCheckStatus) => {
+      if (isCompletingRef.current) return;
+
+      isCompletingRef.current = true;
+      setIsCompleting(true);
+      setError(null);
+      setTerminalState(null);
+
+      try {
+        const playlist = buildActivatedPlaylist(status);
+
+        initializeServices(
+          playlist.serverUrl,
+          playlist.username,
+          playlist.password
+        );
+
+        const [liveCategories, liveStreams] = await Promise.all([
+          services.content.getLiveCategories(),
+          services.content.getLiveStreams(),
+        ]);
+
+        if (liveCategories.length === 0 || liveStreams.length === 0) {
+          throw new AppError("EMPTY_CONTENT", "No content found on this server");
+        }
+
+        await services.userData.savePlaylist(playlist);
+        await services.userData.setActivePlaylistId(playlist.id);
+        setActivePlaylist(playlist);
+        onSuccess();
+      } catch (nextError) {
+        isCompletingRef.current = false;
+        setIsCompleting(false);
+        setError(getUserFriendlyErrorMessage(nextError));
+      }
+    },
+    [onSuccess, setActivePlaylist]
+  );
+
+  const pollDeviceStatus = useCallback(
+    async (identity: DeviceIdentityPayload) => {
+      if (isPollingRef.current || isCompletingRef.current) return;
+
+      isPollingRef.current = true;
+
+      try {
+        const status = await backendClient.checkDevice({
+          deviceId: identity.deviceId,
+          mac: identity.mac,
+        });
+
+        if (status.state === "ACTIVE") {
+          await completeActivation(status);
+          return;
+        }
+
+        if (status.state === "PENDING" || status.state === "NO_DEVICE") {
+          setTerminalState(null);
+          setError(null);
+          return;
+        }
+
+        setTerminalState(status.state);
+        setError(
+          status.reason || TERMINAL_STATE_MESSAGES[status.state] || "Activation failed"
+        );
+      } catch (nextError) {
+        setError(getUserFriendlyErrorMessage(nextError));
+      } finally {
+        isPollingRef.current = false;
+      }
+    },
+    [backendClient, completeActivation]
+  );
+
+  const refreshActivation = useCallback(async () => {
+    setIsRefreshing(true);
+    setError(null);
+    setTerminalState(null);
+    setSession(null);
+    setIsCompleting(false);
+    isCompletingRef.current = false;
+
+    try {
+      const identity = getOrCreateDeviceIdentity();
+      setDeviceIdentity(identity);
+
+      const nextSession = await backendClient.generateDeviceQr(identity);
+      setSession(nextSession);
+
+      await pollDeviceStatus(identity);
+    } catch (nextError) {
+      setError(getUserFriendlyErrorMessage(nextError));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [backendClient, pollDeviceStatus]);
+
+  useEffect(() => {
+    const bootstrapId = window.setTimeout(() => {
+      void refreshActivation();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(bootstrapId);
+    };
+  }, [refreshActivation]);
+
+  useEffect(() => {
+    if (!deviceIdentity || !session || error || terminalState || isCompleting) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pollDeviceStatus(deviceIdentity);
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    deviceIdentity,
+    error,
+    isCompleting,
+    pollDeviceStatus,
+    session,
+    terminalState,
+  ]);
+
+  const statusText = statusLabelForState(
+    session,
+    error,
+    terminalState,
+    isCompleting
+  );
+  const description = describeState(error, terminalState, session);
+  const rawCode = session?.settingsCode || "";
+  const activationCode = rawCode
+    ? rawCode.length === 6
+      ? `${rawCode.slice(0, 3)} ${rawCode.slice(3)}`
+      : rawCode
+    : "......";
+  const portalLink = formatPortalLink(session?.webLink || null);
+  const expiresText = session?.expiresIn || null;
+  const showRefresh = Boolean(error || terminalState || !session);
+  const isErrorState = Boolean(error || terminalState);
+
   return (
     <div className={styles.activationPage}>
-      {/* Immersive Background */}
-      <div className={styles.background}>
-        <img src="/center_pillar.png" className={styles.bgImage} alt="" />
-        <div className={styles.bgOverlay} />
-      </div>
-
-      {/* Main Glass Card */}
-      <div className={styles.glassCard}>
-        {/* Left Branding */}
-        <div className={styles.brandingSide}>
-          <img src="/smartifly_logo.png" alt="Smartifly" className={styles.logo} />
-          <h2 className={styles.brandingTitle}>SMARTIFLY TV</h2>
-          <div className={styles.brandingSubtitle}>Enterprise Activation</div>
-        </div>
-
-        {/* Right Content */}
-        <div className={styles.contentSide}>
-          <div className={styles.header}>
-            <div className={styles.statusIndicator}>
-              <div className={styles.statusDot} />
-              <span className={styles.statusText}>AWAITING BINDING...</span>
-            </div>
-            <h1 className={styles.title}>Connect your account</h1>
-            <p className={styles.desc}>
-              Scan the QR code or visit the link below on your phone.{"\n"}
-              Once logged in, your TV will automatically activate.
-            </p>
+      <div className={styles.container}>
+        {/* Left Column: Instructions and details */}
+        <div className={styles.leftCol}>
+          <div className={styles.brandingHeader}>
+            <span className={styles.brandingWord}>SMARTIFLY</span>
+            <span className={styles.brandingDot} />
+            <span className={styles.brandingSubText}>TV ACTIVATION</span>
           </div>
 
-          <div className={styles.activationGrid}>
-            <div className={styles.qrWrapper}>
-              <svg className={styles.qrImage} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M0 0H33V33H0V0ZM7 7V26H26V7H7Z" fill="black"/>
-                <path d="M11 11H22V22H11V11Z" fill="black"/>
-                <path d="M67 0H100V33H67V0ZM74 7V26H93V7H74Z" fill="black"/>
-                <path d="M78 11H89V22H78V11Z" fill="black"/>
-                <path d="M0 67H33V100H0V67ZM7 74V93H26V74H7Z" fill="black"/>
-                <path d="M11 78H22V89H11V78Z" fill="black"/>
-                <path d="M40 0H50V10H40V0ZM55 0H65V10H55V0ZM40 15H50V25H40V15ZM55 15H65V25H55V15ZM40 30H50V40H40V30ZM55 30H65V40H55V30Z" fill="black"/>
-                <path d="M0 40H10V50H0V40ZM15 40H25V50H15V40ZM30 40H40V50H30V40Z" fill="black"/>
-                <path d="M40 45H55V60H40V45ZM60 45H75V60H60V45ZM80 45H100V60H80V45Z" fill="black"/>
-                <path d="M40 65H55V80H40V65ZM60 65H75V80H60V65ZM80 65H100V80H80V65Z" fill="black"/>
-                <path d="M40 85H55V100H40V85ZM60 85H75V100H60V85ZM80 85H100V100H80V85Z" fill="black"/>
-              </svg>
+          <h1 className={styles.title}>Connect your account</h1>
+          
+          <div className={styles.instructions}>
+            <div className={styles.step}>
+              <span className={styles.stepNumber}>1</span>
+              <p className={styles.stepText}>
+                Scan the QR code on the right with your phone camera, or visit{" "}
+                <span className={styles.highlightText}>{portalLink}</span>
+              </p>
             </div>
+            <div className={styles.step}>
+              <span className={styles.stepNumber}>2</span>
+              <p className={styles.stepText}>
+                Enter the activation code below to link your device.
+              </p>
+            </div>
+          </div>
 
-            <div className={styles.infoBlock}>
-              <div className={styles.group}>
-                <span className={styles.label}>Activation Code</span>
-                <div className={styles.value}>693064</div>
-              </div>
-              <div className={styles.group}>
-                <span className={styles.label}>Portal Link</span>
-                <div className={styles.link}>smartifly.app/activate</div>
-              </div>
-            </div>
+          <div className={styles.codeContainer}>
+            <div className={styles.codeLabel}>ACTIVATION CODE</div>
+            <div className={styles.codeValue}>{activationCode}</div>
+            {expiresText && (
+              <div className={styles.expiryText}>Valid for {expiresText}</div>
+            )}
           </div>
 
           <div className={styles.actions}>
+            {showRefresh && (
+              <Focusable
+                id="btn-refresh-activation"
+                onEnter={() => {
+                  void refreshActivation();
+                }}
+                disabled={isRefreshing || isCompleting}
+              >
+                <div className={styles.btnPrimary}>
+                  {isRefreshing ? "Refreshing..." : "Refresh Code"}
+                </div>
+              </Focusable>
+            )}
             <Focusable id="btn-cancel-activation" onEnter={onBack} autoFocus>
               <div className={styles.btnCancel}>Cancel & Return</div>
             </Focusable>
+          </div>
+
+          {deviceIdentity?.deviceId && (
+            <div className={styles.deviceId}>
+              Device ID: <span>{deviceIdentity.deviceId}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: QR Code card and status badge */}
+        <div className={styles.rightCol}>
+          <div className={styles.qrCard}>
+            <div className={styles.qrWrapper}>
+              {session?.qrCode ? (
+                <img
+                  src={session.qrCode}
+                  alt="Activation QR code"
+                  className={styles.qrImage}
+                />
+              ) : (
+                <div className={styles.qrPlaceholder}>
+                  {isRefreshing ? "Loading QR..." : "QR unavailable"}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.statusBadge}>
+              <div
+                className={`${styles.statusDot} ${
+                  isErrorState ? styles.statusDotError : styles.statusDotActive
+                }`}
+              />
+              <span
+                className={`${styles.statusText} ${
+                  isErrorState ? styles.statusTextError : ""
+                }`}
+              >
+                {statusText}
+              </span>
+            </div>
+            {isErrorState ? (
+              <p className={styles.errorDesc}>{description}</p>
+            ) : (
+              <p className={styles.statusDesc}>
+                Once your account is linked, your TV will automatically sign in.
+              </p>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 };
+

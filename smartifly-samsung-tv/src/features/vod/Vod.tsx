@@ -23,7 +23,7 @@ import {
 } from "../../hooks/useBudgetedImagePreload";
 import styles from "./Vod.module.css";
 
-const CATEGORY_ROW_HEIGHT = 66;
+const CATEGORY_ROW_HEIGHT = 80;
 const GRID_ITEM_HEIGHT = 392;
 const GRID_ITEM_WIDTH = 251;
 const GRID_GAP = 24;
@@ -687,8 +687,8 @@ export const Vod: React.FC = () => {
         ) : (
           <>
             <div className={styles.sidebarHeader}>
-              <h2 className={styles.sidebarTitle}>Categories</h2>
-              <span className={styles.sidebarMeta}>{categories.length} sections</span>
+              <span className={styles.sidebarMeta}>SMARTIFLY</span>
+              <h2 className={styles.sidebarTitle}>Movies</h2>
             </div>
 
             <div
@@ -725,7 +725,7 @@ export const Vod: React.FC = () => {
                             top: absIndex * CATEGORY_ROW_HEIGHT,
                             left: 0,
                             right: 0,
-                            height: 64,
+                            height: 78,
                             display: "flex",
                             alignItems: "center",
                             zIndex: focusedId === `vod-cat-${category.id}` ? 10 : (effectiveSelectedCategoryId === categoryId ? 2 : 1),

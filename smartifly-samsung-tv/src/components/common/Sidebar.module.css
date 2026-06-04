@@ -1,9 +1,9 @@
 .sidebar {
   position: fixed;
-  left: 2rem;
+  left: 1rem;
   top: 50%;
   transform: translateY(-50%);
-  width: 5.5rem; /* Slightly wider for better icon spacing */
+  width: 6.8rem; /* Larger collapsed width for TV */
   height: auto;
   max-height: 90vh;
   background: rgba(10, 14, 23, 0.98); 
@@ -29,26 +29,27 @@
 }
 
 .sidebar:focus-within {
-  width: 14.5rem; /* Room for both icon + label with clean margins */
+  width: 18.5rem; /* Room for both icon + label with clean margins */
 }
 
 .logoSection {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 2rem;
-  height: 4rem;
+  margin-bottom: 2.5rem;
+  height: 5.5rem;
+  padding: 0 1rem;
 }
-
+ 
 .logo {
-  width: 3.2rem;
-  height: 3.2rem;
+  width: 4.2rem;
+  height: 4.2rem;
   border-radius: 0.8rem;
   object-fit: contain;
   transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.2);
 }
-
+ 
 .sidebar:focus-within .logo {
   transform: scale(1.01);
 }
@@ -56,14 +57,14 @@
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  padding: 0 0.85rem;
+  gap: 1.5rem;
+  padding: 0 1rem;
 }
 
 .navItem {
-  width: 3.8rem; 
-  height: 3.8rem;
-  border-radius: 1.9rem;
+  width: 5.2rem; 
+  height: 5.2rem;
+  border-radius: 2.6rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,14 +86,14 @@
 }
 
 .sidebar:focus-within .navItem {
-  width: 12.8rem; 
-  height: 3.8rem;
-  border-radius: 1.9rem;
+  width: 16.5rem; 
+  height: 5.2rem;
+  border-radius: 2.6rem;
 }
 
 .sidebar:focus-within .navItem > div:first-child {
   justify-content: flex-start !important;
-  padding-left: 1.35rem !important;
+  padding-left: 1.7rem !important;
 }
 
 /* Premium Left Vertical Active Indicator */
@@ -103,7 +104,7 @@
   top: 50%;
   transform: translateY(-50%) scaleY(0);
   width: 4px;
-  height: 1.5rem;
+  height: 2.2rem;
   background: linear-gradient(to bottom, var(--color-primary), var(--color-primary-glow));
   border-radius: 0 4px 4px 0;
   transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
@@ -157,8 +158,8 @@
 
 /* Icon & Label Styles */
 .icon {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.8rem;
+  height: 1.8rem;
   transition: color 0.16s ease, transform 0.16s ease;
   flex-shrink: 0;
   color: inherit;
@@ -170,7 +171,7 @@
   overflow: hidden;
   white-space: nowrap;
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 1.25rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   transition: opacity 0.16s ease, max-width 0.16s ease, margin 0.16s ease;
@@ -180,8 +181,8 @@
 
 .sidebar:focus-within .label {
   opacity: 0.85;
-  max-width: 8rem;
-  margin-left: 1.1rem;
+  max-width: 11rem;
+  margin-left: 1.6rem;
 }
 
 .navItem.active .label {
@@ -215,4 +216,106 @@
 
 :global(.perf-reduced) .navItem::before {
   box-shadow: none;
+}
+
+/* Quick Profile Selection Button styling */
+.profileBtn {
+  width: 5.2rem;
+  height: 5.2rem;
+  border-radius: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  will-change: transform;
+}
+
+.profileBtn > div:first-child {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.sidebar:focus-within .profileBtn {
+  width: 16.5rem;
+  height: 5.2rem;
+  border-radius: 1.2rem;
+}
+
+.sidebar:focus-within .profileBtn > div:first-child {
+  justify-content: flex-start !important;
+  padding-left: 0.75rem !important; /* Visual inset to align with avatar container */
+}
+
+/* Avatar container inside button */
+.avatarContainer {
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.25);
+  transition: transform 0.14s ease;
+}
+
+.avatarIcon {
+  width: 1.8rem;
+  height: 1.8rem;
+  color: #ffffff;
+}
+
+/* Text label */
+.profileLabel {
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: opacity 0.16s ease, max-width 0.16s ease, margin 0.16s ease;
+  margin-left: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.sidebar:focus-within .profileLabel {
+  opacity: 1;
+  max-width: 10rem;
+  margin-left: 1.2rem;
+}
+
+/* Focused Profile Button (Premium Glow Gradient) */
+.profileBtn:global(.focused) {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%) !important;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: scale(1.02);
+  box-shadow:
+    0 4px 10px rgba(var(--color-primary-rgb), 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+  z-index: 10;
+}
+
+.profileBtn:global(.focused) .profileLabel {
+  color: #ffffff !important;
+}
+
+/* Low-performance hardware adaptations */
+:global(.perf-reduced) .profileBtn,
+:global(.perf-reduced) .avatarContainer,
+:global(.perf-reduced) .profileLabel {
+  transition: none !important;
+}
+:global(.perf-reduced) .profileBtn:global(.focused) {
+  transform: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }

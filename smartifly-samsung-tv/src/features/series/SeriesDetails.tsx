@@ -15,6 +15,8 @@ import { useFocus } from "../../providers/useFocus";
 import { getAtmosphereColor } from "../../hooks/vibeUtils.ts";
 import { getResumePositionSeconds } from "../../utils/resumePosition";
 import styles from "./SeriesDetails.module.css";
+import { detectVideoResolution } from "../../utils/resolutionDetector";
+
 
 interface SeriesDetailsProps {
   seriesId: string;
@@ -334,11 +336,9 @@ export const SeriesDetails: React.FC<SeriesDetailsProps> = ({ seriesId, category
   );
 
   const qualityLabel = useMemo(() => {
-    const probe = `${series?.title ?? ""} ${series?.description ?? ""}`.toLowerCase();
-    if (probe.includes("4k") || probe.includes("uhd")) return "4K Ultra HD";
-    if (probe.includes("1080")) return "Full HD";
-    return "HD";
-  }, [series?.description, series?.title]);
+    if (!series) return "HD";
+    return detectVideoResolution(series.title, series.description);
+  }, [series?.title, series?.description]);
 
   const handlePlayEpisode = useCallback((episode: AppEpisode, episodeIndex: number) => {
     if (!series) return;

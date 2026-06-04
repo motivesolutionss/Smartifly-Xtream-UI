@@ -7,10 +7,14 @@ import {
   Library,
   Search,
   Settings,
+  Smile,
+  Star,
+  Heart,
 } from "lucide-react";
 import { Focusable } from "../tv/Focusable";
+import { useProfileStore } from "../../store/profileStore";
 import styles from "./Sidebar.module.css";
-
+ 
 interface SidebarProps {
   activeId:
     | "HOME"
@@ -31,10 +35,24 @@ interface SidebarProps {
       | "SETTINGS"
   ) => void;
 }
-
+ 
 type SidebarNavId = SidebarProps["activeId"];
-
+ 
+const AVATAR_ICONS: Record<
+  string,
+  React.ComponentType<{ className?: string; size?: number }>
+> = {
+  smile: Smile,
+  tv: Tv,
+  film: Film,
+  clapperboard: Clapperboard,
+  heart: Heart,
+  star: Star,
+};
+ 
 export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
+  const { activeProfile, selectProfile } = useProfileStore();
+ 
   const navItems: {
     id: SidebarNavId;
     icon: React.ComponentType<{ className?: string; size?: number }>;
@@ -48,11 +66,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
     { id: "SEARCH", icon: Search, label: "Search" },
     { id: "SETTINGS", icon: Settings, label: "Settings" },
   ];
-
+ 
   return (
     <aside className={`${styles.sidebar} smartifly-sidebar`}>
       <div className={styles.logoSection}>
-        <img src="/smartifly_logo.png" alt="Logo" className={styles.logo} />
+        {activeProfile ? (
+          <Focusable
+            id="nav-profile"
+            className={styles.profileBtn}
+            disableFocusEffects={true}
+            onEnter={() => selectProfile(null)}
+          >
+            <div
+              className={styles.avatarContainer}
+              style={{ backgroundColor: activeProfile.avatarColor }}
+            >
+              {React.createElement(AVATAR_ICONS[activeProfile.avatarIcon] || Smile, {
+                className: styles.avatarIcon,
+                size: 26,
+              })}
+            </div>
+            <span className={styles.profileLabel}>{activeProfile.name}</span>
+          </Focusable>
+        ) : (
+          <img src="/smartifly_logo.png" alt="Logo" className={styles.logo} />
+        )}
       </div>
 
       <nav className={styles.nav}>
@@ -67,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
               disableFocusEffects={true}
               onEnter={() => onNavigate(item.id)}
             >
-              <Icon className={styles.icon} size={20} />
+              <Icon className={styles.icon} size={26} />
               <span className={styles.label}>{item.label}</span>
             </Focusable>
           );

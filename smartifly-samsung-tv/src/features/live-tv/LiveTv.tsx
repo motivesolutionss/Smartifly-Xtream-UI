@@ -40,7 +40,7 @@ const EPG_PREVIEW_DEBOUNCE_MS = 140;
  */
 const GRID_ITEM_HEIGHT = 296;
 const GRID_GAP = 16;
-const CATEGORY_ROW_HEIGHT = 66;
+const CATEGORY_ROW_HEIGHT = 80;
 
 const parseChannelTitle = (title: string) => {
   let cleanTitle = cleanChannelTitle(title);
@@ -733,8 +733,8 @@ export const LiveTv: React.FC = () => {
         ) : (
           <>
             <div className={styles.sidebarHeader}>
-              <h2 className={styles.sidebarTitle}>Live Categories</h2>
-              <span className={styles.sidebarMeta}>{categories.length} categories</span>
+              <span className={styles.sidebarMeta}>SMARTIFLY</span>
+              <h2 className={styles.sidebarTitle}>Live TV</h2>
             </div>
 
             <div
@@ -774,7 +774,7 @@ export const LiveTv: React.FC = () => {
                             top: absIndex * CATEGORY_ROW_HEIGHT,
                             left: 0,
                             right: 0,
-                            height: 64,
+                            height: 78,
                             display: "flex",
                             alignItems: "center",
                             zIndex: focusedId === `live-cat-${category.id}` ? 10 : (activeCategoryId === category.id ? 2 : 1),
