@@ -1,8 +1,13 @@
 // src/config/prisma.ts
-import { PrismaClient } from "../../../prisma/generated/client";
+import path from "path";
+import type { PrismaClient as PrismaClientType } from "../../prisma/generated/client";
+
+const { PrismaClient } = require(path.join(process.cwd(), "prisma/generated/client")) as {
+  PrismaClient: new (...args: any[]) => PrismaClientType;
+};
 
 const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClient;
+  prisma?: PrismaClientType;
 };
 
 function createPrismaClient() {
