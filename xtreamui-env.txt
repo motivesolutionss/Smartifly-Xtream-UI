@@ -16,7 +16,7 @@ ADMIN_EMAIL=admin@smartifly.com
 ADMIN_PASSWORD=Hockers06@123$
 
 # IMPORTANT: must match MYSQL_USER + MYSQL_PASSWORD above
-DATABASE_URL=mysql://xtream_user:Hockers06@123$@Motive$@xtream-db:3306/xtream_db
+DATABASE_URL=mysql://xtream_user:Hockers06@123$@Motive$@sxui-db:3306/smartifly_xtream_db
 
 JWT_SECRET=CHANGE_ME_LONG_RANDOM_JWT_SECRET_MIN_32_CHARS
 JWT_ACCESS_SECRET=CHANGE_ME_LONG_RANDOM_ACCESS_SECRET_MIN_32_CHARS
@@ -56,8 +56,8 @@ oP7eyNhlVpDdTKPnzsBfHYn6
 FIREBASE_PROJECT_ID=smartifly-xtream
 
 # API CORS
-CORS_ORIGINS=https://staging.smartifly.co,https://admin-staging.smartifly.co
-FRONTEND_URL=https://staging.smartifly.co
+CORS_ORIGINS=https://smartifly.co,https://admin.smartifly.co
+FRONTEND_URL=https://smartifly.co
 
 # Email (Brevo/SMTP)
 BREVO_API_KEY=CHANGE_ME_BREVO_API_KEY
@@ -69,4 +69,4 @@ SMTP_FROM=motivesolutionz@gmail.com
 SMTP_SECURE=false
 
 # 3) FRONTEND BUILD-TIME
-NEXT_PUBLIC_API_URL=https://api-staging.smartifly.co
+NEXT_PUBLIC_API_URL=https://api.smartifly.co

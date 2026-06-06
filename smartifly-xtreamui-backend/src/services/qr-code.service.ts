@@ -56,7 +56,7 @@ export class QRCodeService {
       },
     });
 
-    const webPortalUrl = process.env.FRONTEND_URL || 'https://staging.smartifly.co';
+    const webPortalUrl = process.env.FRONTEND_URL || 'https://smartifly.co';
     const webLink = `${webPortalUrl.replace(/\/+$/, '')}/activate?code=${settingsCode}`;
 
     const qrCode = await QRCode.toDataURL(webLink, {
