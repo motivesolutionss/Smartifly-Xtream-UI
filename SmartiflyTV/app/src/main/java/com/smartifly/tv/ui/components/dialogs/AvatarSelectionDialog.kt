@@ -23,14 +23,10 @@ import com.smartifly.tv.ui.theme.Dimensions
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun AvatarSelectionDialog(
-    isKids: Boolean,
     onAvatarSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val avatars = remember { 
-        if (isKids) AvatarLibrary.getByCategory("Kids") 
-        else AvatarLibrary.getByCategory("Adults") 
-    }
+    val avatars = remember { AvatarLibrary.avatars }
 
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)),

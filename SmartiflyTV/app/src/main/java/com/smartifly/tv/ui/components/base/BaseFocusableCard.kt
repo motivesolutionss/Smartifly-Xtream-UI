@@ -12,29 +12,39 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.tv.material3.*
 import com.smartifly.tv.performance.lowend.DeviceTier
 import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.ui.theme.Dimensions
-import com.smartifly.tv.ui.theme.PrimaryRed
-import com.smartifly.tv.ui.theme.PrimaryRedGlow
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun BaseFocusableCard(
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onFocus: (() -> Unit)? = null,
+    focusBorderColor: Color = Color.White,
+    focusBorderWidth: Dp = Dimensions.FocusBorderWidth,
     content: @Composable BoxScope.() -> Unit
 ) {
     val config = LocalPerformanceConfig.current
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    var longPressTriggered by remember { mutableStateOf(false) }
+    var suppressNextClick by remember { mutableStateOf(false) }
+    var selectDownAtMs by remember { mutableStateOf(0L) }
 
     // Trigger the focus callback when focused changes to true
     LaunchedEffect(isFocused) {
@@ -43,22 +53,23 @@ fun BaseFocusableCard(
         }
     }
 
-    // Professional Scale Animation
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) Dimensions.FocusScale else 1.0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+        targetValue = 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "scale"
     )
 
-    // Masterpiece Shine Animation
-    val shineProgress by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0f,
-        animationSpec = if (isFocused) tween(600) else snap(),
-        label = "shine"
-    )
-
     Surface(
-        onClick = onClick,
+        onClick = {
+            if (suppressNextClick) {
+                suppressNextClick = false
+                return@Surface
+            }
+            onClick()
+        },
         interactionSource = interactionSource,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f), // Using graphicsLayer for peak performance
         colors = ClickableSurfaceDefaults.colors(
@@ -67,6 +78,45 @@ fun BaseFocusableCard(
         ),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(Dimensions.FocusCornerRadius)),
         modifier = modifier
+            .onPreviewKeyEvent { event ->
+                val callback = onLongClick ?: return@onPreviewKeyEvent false
+                val isSelectKey = event.key == Key.Enter || event.key == Key.DirectionCenter || event.key == Key.NumPadEnter
+                if (!isSelectKey) return@onPreviewKeyEvent false
+
+                when (event.type) {
+                    KeyEventType.KeyDown -> {
+                        if (event.nativeKeyEvent.repeatCount == 0) {
+                            selectDownAtMs = System.currentTimeMillis()
+                        }
+                        if (!longPressTriggered && event.nativeKeyEvent.repeatCount >= 6) {
+                            longPressTriggered = true
+                            suppressNextClick = true
+                            callback()
+                            return@onPreviewKeyEvent true
+                        }
+                        longPressTriggered
+                    }
+                    KeyEventType.KeyUp -> {
+                        val heldMs = if (selectDownAtMs > 0L) System.currentTimeMillis() - selectDownAtMs else 0L
+                        if (!longPressTriggered && heldMs >= 700L) {
+                            longPressTriggered = true
+                            suppressNextClick = true
+                            callback()
+                        }
+                        val consume = longPressTriggered
+                        longPressTriggered = false
+                        selectDownAtMs = 0L
+                        consume
+                    }
+                    else -> false
+                }
+            }
+            .then(Modifier.zIndex(if (isFocused) 10f else 1f))
+            .shadow(
+                elevation = if (isFocused && config.tier == DeviceTier.HIGH) 16.dp else 0.dp,
+                shape = RoundedCornerShape(Dimensions.FocusCornerRadius),
+                clip = false
+            )
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -76,50 +126,14 @@ fun BaseFocusableCard(
             // Main content layer
             content()
             
-            // Masterpiece Enhancement: Spotlight Shine (Sweep effect) - Only on High Tier
-            if (isFocused && config.tier == DeviceTier.HIGH) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.2f),
-                                    Color.Transparent
-                                ),
-                                start = Offset(x = shineProgress * 1000f - 500f, y = 0f),
-                                end = Offset(x = shineProgress * 1000f, y = 1000f)
-                            )
-                        )
-                )
-            }
-            
-            // Specular Highlight (The "Glass" Reflection) - High Tier Only
-            if (isFocused && config.tier == DeviceTier.HIGH) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.15f),
-                                    Color.Transparent,
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-            }
-
             // Adaptive Professional Border
             if (isFocused) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .border(
-                            width = Dimensions.FocusBorderWidth,
-                            color = Color.White,
+                            width = focusBorderWidth,
+                            color = focusBorderColor,
                             shape = RoundedCornerShape(Dimensions.FocusCornerRadius)
                         )
                 )

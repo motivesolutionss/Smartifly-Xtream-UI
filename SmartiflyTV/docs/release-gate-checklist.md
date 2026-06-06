@@ -53,8 +53,7 @@
 - [ ] Cache repopulation works after migration.
 
 ## 8. Release Decision
-- [ ] All build gates passed.
+- [ ] Selected build gates passed.
 - [ ] Manual QA matrix passed for both providers.
 - [ ] No critical/high severity defects open.
 - [ ] Go/No-Go approved.
-

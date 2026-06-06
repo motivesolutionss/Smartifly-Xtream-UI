@@ -10,16 +10,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,11 +35,12 @@ import com.smartifly.tv.data.onboarding.ActivationStateManager
 import com.smartifly.tv.data.onboarding.DeviceStatus
 import com.smartifly.tv.data.onboarding.OnboardingRepository
 import com.smartifly.tv.data.warmup.CatalogWarmupOrchestrator
-import com.smartifly.tv.data.warmup.CatalogWarmupState
-import com.smartifly.tv.data.warmup.DomainWarmupProgress
-import com.smartifly.tv.data.warmup.WarmupStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -66,8 +64,6 @@ fun SplashScreen(
         label = "alpha"
     )
 
-    val warmupState by warmupOrchestrator.state.collectAsState(initial = CatalogWarmupState())
-
     LaunchedEffect(Unit) {
         val previousStatus = activationManager.activationStatus.first()
 
@@ -77,49 +73,53 @@ fun SplashScreen(
             deviceId
         }
 
-        repository.registerDevice(id)
-
-        val remoteStatusResult = repository.checkActivationStatusDetailed(id)
-        val remoteStatus = remoteStatusResult.status
-
-        val status = when {
-            previousStatus == DeviceStatus.ACTIVATED && remoteStatus == DeviceStatus.PENDING -> DeviceStatus.ACTIVATED
-            previousStatus == DeviceStatus.BLOCKED && remoteStatus == DeviceStatus.PENDING -> DeviceStatus.BLOCKED
-            else -> remoteStatus
+        val initialStatus = when (previousStatus) {
+            DeviceStatus.ACTIVATED,
+            DeviceStatus.BLOCKED,
+            DeviceStatus.EXPIRED -> previousStatus
+            else -> DeviceStatus.PENDING
         }
 
-        activationManager.updateStatus(status)
+        if (initialStatus != previousStatus) {
+            activationManager.updateStatus(initialStatus)
+        }
 
-        if (status == DeviceStatus.ACTIVATED) {
+        if (initialStatus == DeviceStatus.ACTIVATED) {
             val warmupEnabled = BuildConfig.STARTUP_WARMUP_V2
-            val warmupStartedAt = System.currentTimeMillis()
-            if (warmupEnabled) {
-                val warmupCompleted = withTimeoutOrNull(25_000L) {
-                    warmupOrchestrator.runStartupWarmup()
-                    true
-                } ?: false
-                val warmupDuration = System.currentTimeMillis() - warmupStartedAt
-                val current = warmupOrchestrator.state.value
-                TelemetryManager.trackEvent(
-                    "startup_warmup_v2",
-                    mapOf(
-                        "completed" to warmupCompleted.toString(),
-                        "duration_ms" to warmupDuration.toString(),
-                        "live_status" to current.live.status.name,
-                        "movies_status" to current.movies.status.name,
-                        "series_status" to current.series.status.name
-                    )
+            TelemetryManager.trackEvent(
+                "startup_warmup_v2_deferred",
+                mapOf(
+                    "enabled" to warmupEnabled.toString(),
+                    "reason" to "moved_off_splash_critical_path"
                 )
-            } else {
-                TelemetryManager.trackEvent(
-                    "startup_warmup_v2_skipped",
-                    mapOf("reason" to "flag_disabled")
-                )
+            )
+        }
+
+        launch(Dispatchers.IO) {
+            runCatching { repository.registerDevice(id) }
+
+            val remoteStatusResult = runCatching {
+                withTimeoutOrNull(4000) {
+                    repository.checkActivationStatusDetailed(id)
+                }
+            }.getOrNull()
+
+            val resolvedRemoteStatus = remoteStatusResult?.status ?: return@launch
+            val resolvedStatus = when {
+                previousStatus == DeviceStatus.ACTIVATED && resolvedRemoteStatus == DeviceStatus.PENDING -> DeviceStatus.ACTIVATED
+                previousStatus == DeviceStatus.BLOCKED && resolvedRemoteStatus == DeviceStatus.PENDING -> DeviceStatus.BLOCKED
+                else -> resolvedRemoteStatus
+            }
+
+            if (resolvedStatus != initialStatus) {
+                withContext(Dispatchers.Main) {
+                    activationManager.updateStatus(resolvedStatus)
+                }
             }
         }
 
-        delay(1000)
-        onInitializationComplete(status)
+        delay(450)
+        onInitializationComplete(initialStatus)
     }
 
     Box(
@@ -175,11 +175,12 @@ fun SplashScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
-            WarmupDomainCard(label = "Movies", progress = warmupState.movies, noun = "Movies")
-            Spacer(modifier = Modifier.height(10.dp))
-            WarmupDomainCard(label = "Series", progress = warmupState.series, noun = "Series")
-            Spacer(modifier = Modifier.height(10.dp))
-            WarmupDomainCard(label = "Live", progress = warmupState.live, noun = "Channels")
+            Text(
+                text = "Starting up...",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
 
         Box(
@@ -195,57 +196,6 @@ fun SplashScreen(
                 letterSpacing = 3.sp
             )
         }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun WarmupDomainCard(
-    label: String,
-    progress: DomainWarmupProgress,
-    noun: String
-) {
-    val pct = when (progress.status) {
-        WarmupStatus.SUCCESS -> 100
-        WarmupStatus.RUNNING -> progress.progressPct.coerceIn(1, 99)
-        WarmupStatus.FAILED -> 0
-        WarmupStatus.PARTIAL -> 100
-        WarmupStatus.PENDING -> 0
-    }
-    val statusSuffix = when (progress.status) {
-        WarmupStatus.SUCCESS -> "OK"
-        WarmupStatus.RUNNING -> "..."
-        WarmupStatus.FAILED -> "!"
-        WarmupStatus.PARTIAL -> "~"
-        WarmupStatus.PENDING -> "-"
-    }
-
-    Row(
-        modifier = Modifier
-            .width(620.dp)
-            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "${progress.itemsLoaded} $noun",
-            color = Color.White.copy(alpha = 0.45f),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "$pct% $statusSuffix",
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }
 

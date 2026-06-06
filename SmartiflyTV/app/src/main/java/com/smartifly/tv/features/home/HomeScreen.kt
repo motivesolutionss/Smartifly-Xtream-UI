@@ -1,312 +1,308 @@
 package com.smartifly.tv.features.home
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.smartifly.tv.BuildConfig
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import com.smartifly.tv.performance.lowend.DeviceTier
-import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
-
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.Icon
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.itemsIndexed
-import androidx.tv.foundation.lazy.list.items
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.models.MovieMetadata
-import com.smartifly.tv.performance.ImagePreloader
+import com.smartifly.tv.data.models.UserProfile
+import com.smartifly.tv.navigation.Destination
+import com.smartifly.tv.performance.PrefetchBudgetController
+import com.smartifly.tv.performance.PrefetchOrchestrator
 import com.smartifly.tv.performance.RowPrefetchManager
-import com.smartifly.tv.ui.components.content.HeroBanner
-import com.smartifly.tv.ui.components.content.PosterCard
+import com.smartifly.tv.performance.lowend.DeviceTier
+import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.ui.theme.Dimensions
 import com.smartifly.tv.ui.theme.SmartiflyTheme
-import com.smartifly.tv.ui.theme.TextSecondary
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     profileId: String,
+    profiles: List<UserProfile> = emptyList(),
+    selectedProfile: UserProfile? = null,
+    onProfileSelected: (UserProfile) -> Unit = {},
+    navBarFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    screenContentFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    onHeroVisibilityChanged: (Boolean) -> Unit = {},
     onMovieClick: (MovieMetadata) -> Unit,
-    onPlayClick: (MovieMetadata) -> Unit
+    onPlayClick: (MovieMetadata) -> Unit,
+    onSearchClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    onNavigationClick: (Destination) -> Unit = {}
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val config = LocalPerformanceConfig.current
+    val prefetchManager = remember(context) { PrefetchOrchestrator.manager(context) }
+    var homeScreenLoadStartedAtMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var homeSuccessLogged by remember { mutableStateOf(false) }
 
-    val preloader = remember { ImagePreloader(context) }
-    val prefetchManager = remember { RowPrefetchManager(preloader) }
+    LaunchedEffect(uiState) {
+        if (uiState is HomeUiState.Loading && (uiState as HomeUiState.Loading).heroMovie == null) {
+            homeScreenLoadStartedAtMs = System.currentTimeMillis()
+            homeSuccessLogged = false
+        } else if (!homeSuccessLogged && uiState is HomeUiState.Success) {
+            val success = uiState as HomeUiState.Success
+            if (BuildConfig.LIVE_DEBUG_TRACE) {
+                android.util.Log.i(
+                    "SmartiflyHomePerf",
+                    "home_ui_success profile=$profileId duration_ms=${System.currentTimeMillis() - homeScreenLoadStartedAtMs} hero_present=${success.heroMovie != null} sections=${success.sections.size} first_section=${success.sections.firstOrNull()?.title ?: "none"} first_items=${success.sections.firstOrNull()?.items?.size ?: 0}"
+                )
+            }
+            homeSuccessLogged = true
+        }
+    }
 
     SmartiflyTheme {
-        // Masterpiece Enhancement: Atmospheric Background Sync
-        var atmosphereColor by remember { mutableStateOf(Color.Black) }
+        var atmosphereColor by rememberAtmosphereColor()
         val animatedAtmosphere by animateColorAsState(
             targetValue = atmosphereColor,
             animationSpec = tween(1000),
-            label = "atmosphere"
+            label = "homeAtmosphere"
         )
 
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            // Enterprise Branding: Subtle Wallpaper Layer
-            androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.smartifly.tv.R.drawable.loginscreen_image),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.05f },
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-            )
-
-            // Atmospheric Glow (Top Left) - Only on High/Medium Tier
-            if (config.tier != DeviceTier.LOW) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(animatedAtmosphere.copy(alpha = 0.15f), Color.Transparent),
-                                center = Offset(0f, 0f),
-                                radius = 2000f
-                            )
-                        )
-                )
-            }
-
+        HomeScreenShell(atmosphereColor = animatedAtmosphere, tier = config.tier) {
             when (val state = uiState) {
                 is HomeUiState.Loading -> {
-                    Column(modifier = Modifier.fillMaxSize().padding(Dimensions.PaddingExtraLarge)) {
-                        com.smartifly.tv.ui.components.base.ShimmerHeroBanner()
-                        Spacer(modifier = Modifier.height(Dimensions.RowSpacing))
-                        repeat(2) {
-                            Row {
-                                repeat(6) {
-                                    com.smartifly.tv.ui.components.base.ShimmerPosterCard()
-                                    Spacer(modifier = Modifier.width(Dimensions.ItemSpacing))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(Dimensions.RowSpacing))
-                        }
-                    }
+                    PrimeHeroImage(
+                        heroMovie = state.heroMovie,
+                        prefetchManager = prefetchManager
+                    )
+                    HomeLoadingState()
                 }
                 is HomeUiState.Success -> {
-                    LaunchedEffect(state.sections, config.tier) {
-                        val (criticalRails, criticalItems, nearItems, warmItems) = when (config.tier) {
-                            DeviceTier.LOW -> listOf(1, 4, 6, 8)
-                            DeviceTier.MEDIUM -> listOf(2, 8, 14, 18)
-                            DeviceTier.HIGH -> listOf(2, 10, 18, 24)
-                        }
-                        prefetchManager.primeHomeAboveFold(
-                            sections = state.sections.map { it.items },
-                            maxRails = 3,
-                            itemsPerRail = nearItems,
-                            criticalRails = criticalRails,
-                            criticalItemsPerRail = criticalItems,
-                            warmItemsPerRail = warmItems,
-                            debugTag = "home_above_fold"
-                        )
-                    }
+                    val focusPrefetchEnabled = rememberFocusPrefetchEnabled(state.sections)
+                    PrimeHeroImage(
+                        heroMovie = state.heroMovie,
+                        prefetchManager = prefetchManager
+                    )
+                    PrimeHomeAboveFold(
+                        sections = state.sections,
+                        prefetchManager = prefetchManager,
+                        tier = config.tier
+                    )
                     HomeContent(
                         heroMovie = state.heroMovie,
+                        heroCarousel = state.heroCarousel,
                         sections = state.sections,
                         isDegraded = state.isDegraded,
                         profileId = profileId,
+                        profiles = profiles,
+                        selectedProfile = selectedProfile,
+                        onProfileSelected = onProfileSelected,
                         prefetchManager = prefetchManager,
+                        focusPrefetchEnabled = focusPrefetchEnabled,
+                        navBarFocusRequester = navBarFocusRequester,
+                        screenContentFocusRequester = screenContentFocusRequester,
+                        onHeroVisibilityChanged = onHeroVisibilityChanged,
                         onMovieClick = onMovieClick,
                         onPlayClick = onPlayClick,
-                        onAtmosphereChange = { color -> atmosphereColor = color }
+                        onSearchClick = onSearchClick,
+                        onSettingsClick = onSettingsClick,
+                        onAtmosphereChange = { color -> atmosphereColor = color },
+                        onNavigationClick = onNavigationClick
                     )
                 }
-                is HomeUiState.Error -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                com.smartifly.tv.ui.theme.SmartiflyIcons.Error, 
-                                contentDescription = null, 
-                                tint = Color.Red, 
-                                modifier = Modifier.size(Dimensions.PlayerIconSizeLarge)
-                            )
-                            Spacer(modifier = Modifier.height(Dimensions.PaddingMedium))
-                            Text(text = state.message, color = Color.White, style = MaterialTheme.typography.headlineSmall)
-                        }
-                    }
-                }
-                else -> {}
+                is HomeUiState.Error -> HomeErrorState(message = state.message)
+                else -> Unit
             }
         }
     }
 }
 
+@Composable
+private fun PrimeHeroImage(
+    heroMovie: MovieMetadata?,
+    prefetchManager: RowPrefetchManager
+) {
+    LaunchedEffect(heroMovie?.id, heroMovie?.backdropUrl, heroMovie?.posterUrl) {
+        prefetchManager.primeHeroImage(heroMovie, debugTag = "home_hero")
+    }
+}
+
+@Composable
+private fun PrimeHomeAboveFold(
+    sections: List<HomeSection>,
+    prefetchManager: RowPrefetchManager,
+    tier: DeviceTier
+) {
+    LaunchedEffect(sections, tier) {
+        if (sections.isEmpty()) return@LaunchedEffect
+        if (!PrefetchBudgetController.allowAboveFold(PrefetchBudgetController.Screen.HOME)) return@LaunchedEffect
+        val (criticalRails, criticalItems, nearItems, warmItems) = when (tier) {
+            DeviceTier.LOW -> listOf(1, 2, 3, 4)
+            DeviceTier.MEDIUM -> listOf(1, 3, 4, 6)
+            DeviceTier.HIGH -> listOf(1, 4, 6, 8)
+        }
+        prefetchManager.primeHomeAboveFold(
+            sections = sections.map { it.items },
+            maxRails = 2,
+            itemsPerRail = nearItems,
+            criticalRails = criticalRails,
+            criticalItemsPerRail = criticalItems,
+            warmItemsPerRail = warmItems,
+            debugTag = "home_above_fold"
+        )
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun HomeContent(
-    heroMovie: MovieMetadata?,
-    sections: List<HomeSection>,
-    isDegraded: Boolean,
-    profileId: String,
-    prefetchManager: RowPrefetchManager,
-    onMovieClick: (MovieMetadata) -> Unit,
-    onPlayClick: (MovieMetadata) -> Unit,
-    onAtmosphereChange: (Color) -> Unit
+private fun rememberAtmosphereColor(): androidx.compose.runtime.MutableState<Color> {
+    val primary = MaterialTheme.colorScheme.primary
+    return remember(primary) { mutableStateOf(primary) }
+}
+
+@Composable
+private fun rememberFocusPrefetchEnabled(sections: List<HomeSection>): Boolean {
+    return remember(sections) {
+        sections.any { it.items.isNotEmpty() } &&
+            PrefetchBudgetController.allowFocusPrefetch(PrefetchBudgetController.Screen.HOME)
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HomeScreenShell(
+    atmosphereColor: Color,
+    tier: DeviceTier,
+    content: @Composable () -> Unit
 ) {
-    var isBrowsingRails by remember { mutableStateOf(false) }
-    val config = LocalPerformanceConfig.current
-    val (focusForwardPrefetch, focusBackPrefetch) = when (config.tier) {
-        DeviceTier.LOW -> 4 to 1
-        DeviceTier.MEDIUM -> 10 to 3
-        DeviceTier.HIGH -> 14 to 4
+    val ambientTransition = rememberInfiniteTransition(label = "homeAmbientGlow")
+    val glowRadius by if (tier == DeviceTier.HIGH) {
+        ambientTransition.animateFloat(
+            initialValue = 2000f,
+            targetValue = 2800f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(15000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glowRadius"
+        )
+    } else {
+        remember { mutableStateOf(2400f) }
     }
-    val resolvedHero = remember(heroMovie, sections) {
-        val candidate = heroMovie ?: sections.firstOrNull()?.items?.firstOrNull()
-        candidate?.let { movie ->
-            if (movie.backdropUrl.isBlank() && movie.posterUrl.isNotBlank()) {
-                movie.copy(backdropUrl = movie.posterUrl)
-            } else {
-                movie
-            }
-        }
+    val glowCenterX by if (tier == DeviceTier.HIGH) {
+        ambientTransition.animateFloat(
+            initialValue = -120f,
+            targetValue = 120f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(18000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glowCenterX"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
+    val glowCenterY by if (tier == DeviceTier.HIGH) {
+        ambientTransition.animateFloat(
+            initialValue = -120f,
+            targetValue = 120f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(21000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glowCenterY"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
     }
 
-    // Masterpiece Enhancement: Depth Perception (Hero recedes when browsing)
-    val heroScale by animateFloatAsState(
-        targetValue = if (isBrowsingRails) 0.96f else 1.0f,
-        animationSpec = tween(500),
-        label = "heroDepth"
-    )
-    val heroAlpha by animateFloatAsState(
-        targetValue = if (isBrowsingRails) 0.6f else 1.0f,
-        animationSpec = tween(500),
-        label = "heroDim"
-    )
-
-    TvLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = Dimensions.RowSpacing * 2)
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        if (isDegraded) {
-            item {
-                Text(
-                    text = "Some content is still loading. Results may be partial.",
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = Dimensions.PaddingExtraLarge, vertical = Dimensions.PaddingSmall)
-                )
-            }
-        }
-        item {
-            resolvedHero?.let { movie ->
-                HeroBanner(
-                    movie = movie,
-                    onPlayClick = { onPlayClick(it) },
-                    modifier = Modifier
-                        .graphicsLayer {
-                            val isLowEnd = config.tier == DeviceTier.LOW
-                            scaleX = if (isLowEnd) 1f else heroScale
-                            scaleY = if (isLowEnd) 1f else heroScale
-                            alpha = if (isLowEnd) 1f else heroAlpha
-                        }
-                        .padding(bottom = Dimensions.PaddingLarge)
-                        .onFocusChanged { state ->
-                            if (state.isFocused) {
-                                isBrowsingRails = false
-                                onAtmosphereChange(Color.Transparent) // Reset atmosphere on hero
-                            }
-                        }
-                )
-            } ?: Spacer(modifier = Modifier.height(300.dp))
-        }
-        
-        items(sections) { section ->
-            ContentRow(
-                section = section,
-                profileId = profileId,
-                onMovieClick = onMovieClick,
-                onMovieFocused = { movie, index -> 
-                    isBrowsingRails = true
-                    prefetchManager.onCardFocused(
-                        currentIndex = index,
-                        items = section.items,
-                        prefetchCount = focusForwardPrefetch,
-                        backwardBufferCount = focusBackPrefetch
+        if (tier != DeviceTier.LOW) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                atmosphereColor.copy(alpha = 0.28f),
+                                atmosphereColor.copy(alpha = 0.05f),
+                                Color.Transparent
+                            ),
+                            center = Offset(glowCenterX, glowCenterY),
+                            radius = glowRadius
+                        )
                     )
-                    
-                    if (config.tier != DeviceTier.LOW) {
-                        // Update atmosphere based on movie genre/vibe
-                        val vibeColor = when {
-                            section.title.contains("Action") || movie.title.contains("War", true) -> Color(0xFFE50914)
-                            section.title.contains("Sci-Fi") || movie.title.contains("Space", true) -> Color(0xFF00D1FF)
-                            section.title.contains("Trending") -> Color(0xFF6200EE) // Premium Purple
-                            section.title.contains("Continue") -> Color(0xFFFFA500)
-                            else -> Color(0xFF1F1F1F)
-                        }
-                        onAtmosphereChange(vibeColor)
-                    }
-                }
             )
+        }
+        content()
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HomeLoadingState() {
+    Column(modifier = Modifier.fillMaxSize().padding(Dimensions.PaddingExtraLarge)) {
+        com.smartifly.tv.ui.components.base.ShimmerHeroBanner()
+        Spacer(modifier = Modifier.height(Dimensions.RowSpacing))
+        repeat(2) {
+            Row {
+                repeat(6) {
+                    com.smartifly.tv.ui.components.base.ShimmerPosterCard()
+                    Spacer(modifier = Modifier.width(Dimensions.ItemSpacing))
+                }
+            }
             Spacer(modifier = Modifier.height(Dimensions.RowSpacing))
         }
     }
 }
 
-
-
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun ContentRow(
-    section: HomeSection,
-    profileId: String,
-    onMovieClick: (MovieMetadata) -> Unit,
-    onMovieFocused: (MovieMetadata, Int) -> Unit
-) {
-    val title = section.title
-    val movies = section.items
-    
-    Column {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(start = Dimensions.PaddingExtraLarge, bottom = Dimensions.PaddingMedium),
-            color = com.smartifly.tv.ui.theme.TextPrimary,
-            fontWeight = FontWeight.Bold
-        )
-        
-        TvLazyRow(
-            contentPadding = PaddingValues(horizontal = Dimensions.PaddingExtraLarge),
-            horizontalArrangement = Arrangement.spacedBy(Dimensions.ItemSpacing)
-        ) {
-            itemsIndexed(movies) { index, movie ->
-                if (title == "Continue Watching" && section.progressList != null) {
-                    com.smartifly.tv.ui.components.content.ContinueWatchingCard(
-                        imageUrl = if (movie.backdropUrl.isNotBlank()) movie.backdropUrl else movie.posterUrl,
-                        fallbackImageUrl = movie.posterUrl,
-                        progress = section.progressList[index],
-                        title = movie.title,
-                        profileId = profileId,
-                        contentId = movie.id,
-                        contentType = movie.type,
-                        onClick = { onMovieClick(movie) }
-                    )
-                } else {
-                    PosterCard(
-                        movie = movie,
-                        profileId = profileId,
-                        onFocus = { onMovieFocused(movie, index) },
-                        onClick = { onMovieClick(movie) }
-                    )
-                }
-            }
+private fun HomeErrorState(message: String) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                com.smartifly.tv.ui.theme.SmartiflyIcons.Error,
+                contentDescription = null,
+                tint = Color.Red,
+                modifier = Modifier.padding(bottom = Dimensions.PaddingMedium)
+            )
+            Text(
+                text = message,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall
+            )
         }
     }
 }

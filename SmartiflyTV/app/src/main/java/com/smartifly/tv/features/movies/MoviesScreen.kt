@@ -1,9 +1,21 @@
 package com.smartifly.tv.features.movies
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,20 +30,25 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.models.UserProfile
-import com.smartifly.tv.performance.ImagePreloader
-import com.smartifly.tv.performance.RowPrefetchManager
+import com.smartifly.tv.performance.PrefetchOrchestrator
+import com.smartifly.tv.performance.PrefetchBudgetController
 import com.smartifly.tv.performance.lowend.DeviceTier
 import com.smartifly.tv.performance.lowend.LocalPerformanceConfig
 import com.smartifly.tv.ui.components.base.ContentDetailsPanel
 import com.smartifly.tv.ui.components.base.PosterGrid
-import com.smartifly.tv.ui.components.base.SideCategoryRail
+import com.smartifly.tv.ui.components.base.SideRailCategoryItem
+import com.smartifly.tv.ui.components.base.TopCategoryChips
 import com.smartifly.tv.ui.theme.SmartiflyTheme
 import com.smartifly.tv.ui.components.dialogs.PinEntryDialog
 import com.smartifly.tv.data.repository.ParentalControlManager
 import androidx.compose.runtime.rememberCoroutineScope
-import com.smartifly.tv.features.profiles.ContentRestrictionManager
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.tv.foundation.lazy.list.TvLazyColumn
+import androidx.tv.foundation.lazy.list.items
+import com.smartifly.tv.ui.theme.Dimensions
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -42,6 +59,10 @@ fun MoviesScreen(
     onMovieClick: (MovieMetadata) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(viewModel) {
+        viewModel.ensureLoaded()
+    }
 
     SmartiflyTheme {
         when (val state = uiState) {
@@ -57,21 +78,18 @@ fun MoviesScreen(
                 var pendingCategory by remember { mutableStateOf<String?>(null) }
                 var pinError by remember { mutableStateOf<String?>(null) }
 
-                val filteredMovies = remember(state.movies, profile) {
-                    ContentRestrictionManager.filterMovies(profile, state.movies)
-                }
-
                 MoviesContent(
                     profileId = profile.id,
                     categories = state.categories,
-                    selectedCategory = state.selectedCategory,
-                    movies = filteredMovies,
-                    onCategorySelected = { category ->
-                        if (parentalControlManager.isCategoryLocked(category) && !isUnlocked) {
-                            pendingCategory = category
+                    selectedCategoryId = state.selectedCategoryId,
+                    movies = state.movies,
+                    onCategorySelected = { categoryId ->
+                        val categoryName = state.categories.firstOrNull { it.id == categoryId }?.title ?: ""
+                        if (parentalControlManager.isCategoryLocked(categoryName) && !isUnlocked) {
+                            pendingCategory = categoryId
                             showPinDialog = true
                         } else {
-                            viewModel.loadMoviesByCategory(if (category == "All") null else category)
+                            viewModel.loadMoviesByCategory(categoryId)
                         }
                     },
                     onMovieClick = onMovieClick
@@ -87,7 +105,7 @@ fun MoviesScreen(
                             scope.launch {
                                 if (parentalControlManager.validatePin(pin)) {
                                     showPinDialog = false
-                                    pendingCategory?.let { viewModel.loadMoviesByCategory(if (it == "All") null else it) }
+                                    pendingCategory?.let { viewModel.loadMoviesByCategory(it) }
                                     pendingCategory = null
                                     pinError = null
                                 } else {
@@ -104,9 +122,21 @@ fun MoviesScreen(
                     Text(text = "Error: ${state.message}", color = Color.Red)
                 }
             }
-            is MoviesUiState.Empty -> {
+            is MoviesUiState.EmptyCategory -> {
+                MoviesEmptyCategoryContent(
+                    categories = state.categories,
+                    selectedCategoryId = state.selectedCategoryId,
+                    message = state.message,
+                    onCategorySelected = viewModel::loadMoviesByCategory
+                )
+            }
+            is MoviesUiState.EmptyProvider -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = "No movies found.", color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "No movies available on this provider.", color = Color.Gray)
+                        Spacer(modifier = Modifier.height(Dimensions.PaddingSmall))
+                        Text(text = "Try Live TV or Series.", color = Color.Gray)
+                    }
                 }
             }
         }
@@ -115,26 +145,92 @@ fun MoviesScreen(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
+private fun MoviesEmptyCategoryContent(
+    categories: List<SideRailCategoryItem>,
+    selectedCategoryId: String,
+    message: String,
+    onCategorySelected: (String) -> Unit
+) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        TvLazyColumn(
+            modifier = Modifier
+                .width(220.dp)
+                .fillMaxHeight()
+                .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(16.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                .padding(vertical = 12.dp, horizontal = 8.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(categories, key = { it.id }) { category ->
+                val isSelected = category.id == selectedCategoryId
+                androidx.tv.material3.Button(
+                    onClick = { onCategorySelected(category.id) },
+                    shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp)),
+                    colors = androidx.tv.material3.ButtonDefaults.colors(
+                        containerColor = if (isSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                        focusedContainerColor = Color.White,
+                        focusedContentColor = Color.Black,
+                        contentColor = if (isSelected) androidx.tv.material3.MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.88f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 16.dp)
+                                .background(androidx.tv.material3.MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = category.title,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = message, color = Color.Gray)
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
 fun MoviesContent(
     profileId: String? = null,
-    categories: List<String>,
-    selectedCategory: String,
+    categories: List<SideRailCategoryItem>,
+    selectedCategoryId: String,
     movies: List<MovieMetadata>,
     onCategorySelected: (String) -> Unit,
     onMovieClick: (MovieMetadata) -> Unit
 ) {
     var focusedMovie by remember(movies) { mutableStateOf(movies.firstOrNull()) }
+    val focusPrefetchEnabled = remember(movies) {
+        movies.isNotEmpty() &&
+            PrefetchBudgetController.allowFocusPrefetch(PrefetchBudgetController.Screen.MOVIES)
+    }
     val context = LocalContext.current
-    val preloader = remember { ImagePreloader(context) }
-    val prefetchManager = remember { RowPrefetchManager(preloader) }
+    val prefetchManager = remember(context) { PrefetchOrchestrator.manager(context) }
     val config = LocalPerformanceConfig.current
     val (criticalItems, nearItems, warmItems, focusForward, focusBack) = when (config.tier) {
-        DeviceTier.LOW -> listOf(6, 12, 14, 6, 2)
-        DeviceTier.MEDIUM -> listOf(8, 18, 22, 10, 3)
-        DeviceTier.HIGH -> listOf(10, 24, 28, 14, 4)
+        DeviceTier.LOW -> listOf(4, 8, 10, 4, 1)
+        DeviceTier.MEDIUM -> listOf(6, 12, 16, 6, 2)
+        DeviceTier.HIGH -> listOf(8, 16, 20, 8, 2)
     }
 
     LaunchedEffect(movies) {
+        if (movies.isEmpty()) return@LaunchedEffect
+        if (!PrefetchBudgetController.allowAboveFold(PrefetchBudgetController.Screen.MOVIES)) return@LaunchedEffect
         prefetchManager.primeHomeAboveFold(
             sections = listOf(movies),
             maxRails = 1,
@@ -146,33 +242,79 @@ fun MoviesContent(
         )
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        SideCategoryRail(
-            categories = categories,
-            selectedCategory = selectedCategory,
-            onCategorySelected = { 
-                onCategorySelected(it)
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        // Left Column: Vertical Category List (EPG Sidebar styled)
+        TvLazyColumn(
+            modifier = Modifier
+                .width(220.dp)
+                .fillMaxHeight()
+                .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(16.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                .padding(vertical = 12.dp, horizontal = 8.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(categories, key = { it.id }) { category ->
+                val isSelected = category.id == selectedCategoryId
+                androidx.tv.material3.Button(
+                    onClick = { onCategorySelected(category.id) },
+                    shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp)),
+                    colors = androidx.tv.material3.ButtonDefaults.colors(
+                        containerColor = if (isSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                        focusedContainerColor = Color.White,
+                        focusedContentColor = Color.Black,
+                        contentColor = if (isSelected) androidx.tv.material3.MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.88f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 16.dp)
+                                .background(androidx.tv.material3.MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = category.title,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             }
-        )
-        
-        Column(modifier = Modifier.weight(1f)) {
-            focusedMovie?.let {
-                ContentDetailsPanel(movie = it)
-            }
-            
+        }
+
+        // Spacer
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Right Column: Focused Movie Details Panel & Poster Grid
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+        ) {
             PosterGrid(
                 items = movies,
                 profileId = profileId,
                 onItemFocused = { movie, index ->
                     focusedMovie = movie
-                    prefetchManager.onCardFocused(
-                        currentIndex = index,
-                        items = movies,
-                        prefetchCount = focusForward,
-                        backwardBufferCount = focusBack
-                    )
+                    if (focusPrefetchEnabled) {
+                        prefetchManager.onCardFocused(
+                            laneKey = "movies:$selectedCategoryId",
+                            currentIndex = index,
+                            items = movies,
+                            prefetchCount = focusForward,
+                            backwardBufferCount = focusBack
+                        )
+                    }
                 },
-                onItemClick = onMovieClick
+                onItemClick = onMovieClick,
+                modifier = Modifier.weight(1f),
+                columns = 4
             )
         }
     }

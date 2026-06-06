@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.smartifly.tv.data
 
 import android.content.Context
@@ -10,8 +12,10 @@ import com.smartifly.tv.data.hero.HeroImageResolver
 import com.smartifly.tv.data.onboarding.XtreamCredentials
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class UserProfile(
     val id: String,
@@ -77,6 +81,13 @@ class SessionManager(private val context: Context) {
         val creds = xtreamCredentialsFlow.firstOrNull()
         HeroImageResolver.setPortalBaseUrl(creds?.baseUrl)
         return creds
+    }
+
+    suspend fun waitUntilActivated(timeoutMs: Long = 5_000L): Boolean {
+        val activated = withTimeoutOrNull(timeoutMs) {
+            isActivated.first { it }
+        }
+        return activated == true
     }
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[KEY_DEVICE_ID] }

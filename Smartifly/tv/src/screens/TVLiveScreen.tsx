@@ -30,6 +30,7 @@ import { TVLiveScreenProps } from '../navigation/types';
 import TVLoadingState from './components/TVLoadingState';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import usePagedCatalog from './hooks/usePagedCatalog';
+import { resolveLiveImage } from '../utils/portalImage';
 
 // =============================================================================
 // TYPES
@@ -253,6 +254,7 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
 
     const liveLoaded = useStore((state) => state.content.live.loaded);
     const liveCategories = useStore((state) => state.content.live.categories);
+    const portalBaseUrl = useStore((state) => state.credentials?.serverUrl);
     const {
         selectedCategoryId,
         setSelectedCategoryId,
@@ -281,14 +283,14 @@ const TVLiveScreen: React.FC<TVLiveScreenProps> = ({ navigation, focusEntryRef }
 
     const renderChannel = useCallback(({ item }: { item: XtreamLiveStream }) => (
         <TVContentCard
-            item={{ id: String(item.stream_id), title: item.name, image: item.stream_icon, type: 'live', data: item }}
+            item={{ id: String(item.stream_id), title: item.name, image: resolveLiveImage(item, portalBaseUrl), type: 'live', data: item }}
             onPress={handleChannelPress}
             width={scale(250)}
             height={scale(192)}
             style={styles.channelCard}
             disableZoom={true}
         />
-    ), [handleChannelPress, styles.channelCard]);
+    ), [handleChannelPress, portalBaseUrl, styles.channelCard]);
 
     return (
         <View style={styles.container}>

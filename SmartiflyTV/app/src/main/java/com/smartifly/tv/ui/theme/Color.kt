@@ -7,14 +7,9 @@ import androidx.compose.ui.graphics.Color
 
 // Futuristic & Enterprise Color Palette
 val PrimaryRed = Color(0xFFE50914) // Classic Netflix Red
-val PrimaryRedGlow = Color(0xFFFF3232)
-val PrimaryGold = Color(0xFFFFD700)
-val PrimaryCyan = Color(0xFF00F3FF)
 
 // Semantic Surfaces (Dark Mode Focused)
-val BackgroundMetallic = Color(0xFF040507)
-val BackgroundGold = Color(0xFF000000)
-val BackgroundAether = Color(0xFF020408)
+val BackgroundMetallic = Color(0xFF000000)
 
 val SurfaceUltraDark = Color(0xFF080C14)
 val SurfaceDark = Color(0xFF121826)
@@ -35,11 +30,10 @@ val Error = Color(0xFFE50914)
 
 // Gradient Presets
 val PremiumGradient = Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))
-val FuturisticGradient = Brush.verticalGradient(listOf(PrimaryCyan.copy(alpha = 0.1f), Color.Transparent))
 val GlassGradient = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.1f), Color.White.copy(alpha = 0.02f)))
 
 // Onboarding Semantic Colors
-val OnboardingBg = Color(0xFF04070D)
+val OnboardingBg = Color(0xFF000000)
 val OnboardingGlow = PrimaryRed.copy(alpha = 0.15f)
 
 // Extension to parse hex strings safely

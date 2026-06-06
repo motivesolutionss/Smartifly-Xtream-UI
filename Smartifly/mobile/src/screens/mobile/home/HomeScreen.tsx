@@ -36,6 +36,7 @@ import { useWatchHistoryStore, WatchProgress } from '../../../store/watchHistory
 import { estimateRatingFromStars, useProfileStore } from '../../../store/profileStore';
 import useOfflineQueueStore from '../../../store/offlineQueueStore';
 import { prefetchImages } from '../../../utils/image';
+import { resolveLiveImage } from '../../../utils/portalImage';
 import { usePerfProfile } from '../../../utils/perf';
 import { useHeroCarousel } from '../../../utils/heroPicker';
 
@@ -190,6 +191,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     const lastFetchTime = useContentStore((state) => state.content.lastFetchTime);
     const userInfo = useAuthStore((state) => state.userInfo);
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
+    const portalBaseUrl = useContentStore((state) => state.credentials?.serverUrl);
     const forceRefresh = useContentStore((state) => state.forceRefresh);
     const isConnected = useContentStore((state) => state.isConnected);
     const fetchAnnouncements = useAppStatusStore((state) => state.fetchAnnouncements);
@@ -530,11 +532,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         return liveForRows.slice(0, RAIL_ITEM_LIMIT).map(ch => ({
             id: String(ch.stream_id),
             name: ch.name,
-            image: ch.stream_icon,
+            image: resolveLiveImage(ch, portalBaseUrl),
             type: 'live' as const,
             data: ch,
         }));
-    }, [liveForRows]);
+    }, [liveForRows, portalBaseUrl]);
 
     // Category rails logic
     const movieCategoryMap = useMemo(() => {
@@ -635,14 +637,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 items.push({
                     id: String(channel.stream_id),
                     name: channel.name,
-                    image: channel.stream_icon,
+                    image: resolveLiveImage(channel, portalBaseUrl),
                     type: 'live' as const,
                     data: channel,
                 });
             }
         }
         return map;
-    }, [liveLoaded, livePool]);
+    }, [liveLoaded, livePool, portalBaseUrl]);
 
     const liveCategoryRails = useMemo(() => {
         if (!liveLoaded || !liveCategories) return [];

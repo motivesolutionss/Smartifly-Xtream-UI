@@ -44,6 +44,9 @@ interface SmartiflyApi {
     @GET("public/announcements")
     suspend fun getAnnouncements(): List<Map<String, Any>>
 
+    @GET("public/hero-banners")
+    suspend fun getHeroBanners(): Map<String, Any>
+
     // ==========================================
     // INTELLIGENCE & TRACKING
     // ==========================================
@@ -52,7 +55,10 @@ interface SmartiflyApi {
     suspend fun trackPlayback(@Body event: Map<String, String>)
 
     @GET("public/analytics/trending")
-    suspend fun getTrendingIds(): Map<String, Any>
+    suspend fun getTrendingIds(
+        @Query("portalIdentity") portalIdentity: String? = null,
+        @Query("portalBaseUrl") portalBaseUrl: String? = null
+    ): Map<String, Any>
 
     @POST("public/analytics/resume")
     suspend fun syncResumeWatching(@Body body: Map<String, Any>): Map<String, Any>
@@ -61,7 +67,10 @@ interface SmartiflyApi {
     suspend fun fetchResumeWatching(@Path("profileId") profileId: String): Map<String, Any>
 
     @GET("public/analytics/discovery/suggestions")
-    suspend fun getSearchSuggestions(): Map<String, Any>
+    suspend fun getSearchSuggestions(
+        @Query("portalIdentity") portalIdentity: String? = null,
+        @Query("portalBaseUrl") portalBaseUrl: String? = null
+    ): Map<String, Any>
 
     @POST("public/analytics/parental/validate")
     suspend fun validateParentalPin(@Body body: Map<String, String>): Map<String, Any>
@@ -86,7 +95,11 @@ interface SmartiflyApi {
     suspend fun updateProfile(@Body body: Map<String, String?>): Map<String, Any>
 
     @GET("public/analytics/discovery/smart-rows")
-    suspend fun getSmartRows(@Query("profileId") profileId: String): Map<String, Any>
+    suspend fun getSmartRows(
+        @Query("profileId") profileId: String,
+        @Query("portalIdentity") portalIdentity: String? = null,
+        @Query("portalBaseUrl") portalBaseUrl: String? = null
+    ): Map<String, Any>
 
     @POST("public/telemetry/provider-health")
     suspend fun ingestProviderHealth(

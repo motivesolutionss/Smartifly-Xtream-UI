@@ -10,6 +10,8 @@ import com.smartifly.tv.data.models.MovieMetadata
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import retrofit2.HttpException
 
@@ -77,17 +79,19 @@ class WatchlistRepository(
     }
     
     suspend fun syncFromCloud(profileId: String) {
-        try {
-            val cloudItems = cloudRepository.fetchCloudWatchlist(profileId)
-            context.dataStore.edit { preferences ->
-                preferences[getWatchlistKey(profileId)] = gson.toJson(cloudItems)
+        withContext(Dispatchers.IO) {
+            try {
+                val cloudItems = cloudRepository.fetchCloudWatchlist(profileId)
+                context.dataStore.edit { preferences ->
+                    preferences[getWatchlistKey(profileId)] = gson.toJson(cloudItems)
+                }
+            } catch (e: IOException) {
+                Log.w(TAG, "cloud_sync_fetch_network_failed profile=$profileId", e)
+            } catch (e: HttpException) {
+                Log.w(TAG, "cloud_sync_fetch_http_failed profile=$profileId code=${e.code()}", e)
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "cloud_sync_fetch_failed profile=$profileId", e)
             }
-        } catch (e: IOException) {
-            Log.w(TAG, "cloud_sync_fetch_network_failed profile=$profileId", e)
-        } catch (e: HttpException) {
-            Log.w(TAG, "cloud_sync_fetch_http_failed profile=$profileId code=${e.code()}", e)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "cloud_sync_fetch_failed profile=$profileId", e)
         }
     }
 

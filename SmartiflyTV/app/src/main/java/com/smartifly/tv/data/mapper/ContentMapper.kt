@@ -94,6 +94,7 @@ fun XtreamCategory.toDomain(): MediaCategory {
 
 fun XtreamMovieInfo.toDomain(): ContentDetails {
     val movie = this.info
+    val movieMeta = this.movieData
     val poster = HeroImageResolver.normalizeImageUrl(movie?.movieImage) ?: ""
     val backdrop = HeroImageResolver.resolveForMovie(
         HeroImageSources(
@@ -114,7 +115,8 @@ fun XtreamMovieInfo.toDomain(): ContentDetails {
         director = movie?.director ?: "",
         genre = movie?.genre ?: "",
         duration = movie?.duration ?: "",
-        type = "movie"
+        type = "movie",
+        youtubeTrailer = movie?.youtubeTrailer ?: movieMeta?.youtubeTrailer
     )
 }
 
@@ -156,6 +158,7 @@ fun XtreamSeriesInfo.toDomain(): ContentDetails {
         genre = series?.genre ?: "",
         duration = "",
         type = "series",
+        youtubeTrailer = series?.youtubeTrailer,
         seasons = domainSeasons
     )
 }

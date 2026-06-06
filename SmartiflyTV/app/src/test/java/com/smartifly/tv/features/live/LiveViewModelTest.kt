@@ -1,6 +1,7 @@
 package com.smartifly.tv.features.live
 
 import com.smartifly.tv.data.models.MediaCategory
+import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.remote.models.XtreamLiveStream
 import com.smartifly.tv.data.repository.LiveDataSource
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -58,17 +60,59 @@ class LiveViewModelTest {
         assertEquals("Category fetch failed", (state as LiveUiState.Error).message)
     }
 
+    @Test
+    fun `snapshot-like first page disables load more to avoid repeated full fetch`() = runTest {
+        val largeSnapshot = (1..80).map {
+            XtreamLiveStream(
+                name = "Channel $it",
+                streamId = it,
+                categoryId = "10"
+            )
+        }
+        val fake = FakeLiveDataSource(
+            categories = flowOf(NetworkResult.Success(listOf(MediaCategory(id = "10", name = "Sports")))),
+            streams = flowOf(NetworkResult.Success(largeSnapshot))
+        )
+
+        val vm = LiveViewModel(fake)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state is LiveUiState.Success)
+        state as LiveUiState.Success
+        assertFalse(state.hasMore)
+        val callsBefore = fake.streamFetchCalls
+
+        vm.loadMoreCurrentCategory()
+        advanceUntilIdle()
+
+        assertEquals(callsBefore, fake.streamFetchCalls)
+    }
+
     private class FakeLiveDataSource(
         private val categories: Flow<NetworkResult<List<MediaCategory>>> = flowOf(NetworkResult.Loading),
-        private val streams: Flow<NetworkResult<List<XtreamLiveStream>>> = flowOf(NetworkResult.Success(emptyList()))
+        private val streams: Flow<NetworkResult<List<XtreamLiveStream>>> = flowOf(NetworkResult.Success(emptyList())),
+        private val favorites: Flow<NetworkResult<List<LiveStream>>> = flowOf(NetworkResult.Success(emptyList()))
     ) : LiveDataSource {
+        var streamFetchCalls: Int = 0
+            private set
+
         override fun getLiveCategories(): Flow<NetworkResult<List<MediaCategory>>> = categories
 
         override fun getLiveStreams(
             categoryId: String?,
             page: Int?,
             pageSize: Int
-        ): Flow<NetworkResult<List<XtreamLiveStream>>> = streams
+        ): Flow<NetworkResult<List<XtreamLiveStream>>> {
+            streamFetchCalls++
+            return streams
+        }
+
+        override fun getLiveFavorites(): Flow<NetworkResult<List<LiveStream>>> = favorites
+
+        override suspend fun setLiveFavorite(streamId: String, isFavorite: Boolean) = Unit
+
+        override suspend fun isLiveFavorite(streamId: String): Boolean = false
 
         override fun getShortEpg(streamId: Int): Flow<NetworkResult<List<EpgProgram>>> {
             return flowOf(NetworkResult.Success(emptyList()))

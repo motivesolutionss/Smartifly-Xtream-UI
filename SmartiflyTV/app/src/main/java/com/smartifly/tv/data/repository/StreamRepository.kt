@@ -1,10 +1,13 @@
 package com.smartifly.tv.data.repository
 
 import com.smartifly.tv.data.SessionManager
+import com.smartifly.tv.data.models.PlaybackRequest
 import com.smartifly.tv.data.remote.dto.StreamDto
 
 class StreamRepository(private val sessionManager: SessionManager) {
-    private val liveExtensions = listOf("m3u8", "ts")
+    class StreamResolutionException(message: String) : IllegalStateException(message)
+
+    private val liveExtensions = listOf("ts", "m3u8")
     private val movieExtensions = listOf("mp4", "mkv", "m3u8")
     private val seriesExtensions = listOf("mp4", "mkv", "m3u8")
 
@@ -13,24 +16,28 @@ class StreamRepository(private val sessionManager: SessionManager) {
      * 
      * [type] can be "live", "movie", or "series".
      */
-    suspend fun resolveStream(id: String, type: String): StreamDto {
+    suspend fun resolveStream(request: PlaybackRequest): StreamDto {
         val creds = sessionManager.getXtreamCredentials() 
-            ?: return StreamDto(id, "", type, "Unauthorized", "")
+            ?: throw StreamResolutionException("Session expired. Please sign in again.")
             
-        val typeLower = type.lowercase()
+        val typeLower = request.type.lowercase()
         val candidates = when (typeLower) {
-            "live" -> buildLiveCandidates(creds.baseUrl, creds.username, creds.password, id)
-            "series" -> buildVodLikeCandidates("series", creds.baseUrl, creds.username, creds.password, id, seriesExtensions)
-            else -> buildVodLikeCandidates("movie", creds.baseUrl, creds.username, creds.password, id, movieExtensions)
+            "live" -> buildLiveCandidates(creds.baseUrl, creds.username, creds.password, request.id)
+            "series" -> buildVodLikeCandidates("series", creds.baseUrl, creds.username, creds.password, request.id, seriesExtensions)
+            else -> buildVodLikeCandidates("movie", creds.baseUrl, creds.username, creds.password, request.id, movieExtensions)
         }
         val primary = candidates.firstOrNull().orEmpty()
         val fallbacks = if (candidates.size > 1) candidates.drop(1) else emptyList()
 
+        if (primary.isBlank()) {
+            throw StreamResolutionException("Unable to resolve playback URL for this content.")
+        }
+
         return StreamDto(
-            id = id,
+            id = request.id,
             url = primary,
-            type = type,
-            title = "Xtream $type Stream",
+            type = request.type,
+            title = request.title,
             backdropUrl = "",
             fallbackUrls = fallbacks
         )

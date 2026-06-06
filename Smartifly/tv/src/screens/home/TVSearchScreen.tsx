@@ -27,6 +27,7 @@ import TVLoadingState from '../components/TVLoadingState';
 import { usePerfProfile } from '@smartifly/shared/src/utils/perf';
 import { useDebounce } from '@smartifly/shared/src/hooks/useDebounce';
 import { logger } from '../../config';
+import { resolveLiveImage } from '../../utils/portalImage';
 
 // =============================================================================
 // TYPES
@@ -115,6 +116,7 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     const seriesCount = useStore((state) => state.content.series.items.length);
     const liveLoaded = useStore((state) => state.content.live.loaded);
     const liveCount = useStore((state) => state.content.live.items.length);
+    const portalBaseUrl = useStore((state) => state.credentials?.serverUrl);
     const { filterContent } = useContentFilter();
 
     // =========================================================================
@@ -307,9 +309,8 @@ const TVSearchScreen: React.FC<TVSearchScreenProps> = ({ focusEntryRef }) => {
     const getItemImage = useCallback((item: XtreamLiveStream | XtreamMovie | XtreamSeries): string => {
         if ('series_id' in item) return resolveSeriesImage(item);
         if ('container_extension' in item || 'rating_5based' in item) return resolveMovieImage(item);
-        if ('stream_icon' in item && item.stream_icon) return item.stream_icon;
-        return '';
-    }, []);
+        return resolveLiveImage(item, portalBaseUrl);
+    }, [portalBaseUrl]);
 
     const limitedResults = useMemo(() => ({
         movies: sanitizeNamedItems(results.movies).slice(0, SEARCH_RESULT_LIMIT),

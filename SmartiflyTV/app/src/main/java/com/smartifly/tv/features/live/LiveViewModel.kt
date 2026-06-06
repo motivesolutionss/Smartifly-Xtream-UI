@@ -3,6 +3,7 @@ package com.smartifly.tv.features.live
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartifly.tv.BuildConfig
+import com.smartifly.tv.data.cache.CacheBudgetPolicy
 import com.smartifly.tv.data.models.LiveStream
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.remote.NetworkResult
@@ -15,12 +16,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-private const val ALL_CATEGORY_ID = "all"
-private const val PAGE_SIZE = 120
-private const val INITIAL_PAGE_SIZE = 60
+private const val PAGE_SIZE = CacheBudgetPolicy.LIVE_PAGE_SIZE
+private const val INITIAL_PAGE_SIZE = CacheBudgetPolicy.LIVE_INITIAL_PAGE_SIZE
 private const val CATEGORY_TTL_MS = 3 * 60 * 1000L
 private const val EPG_TTL_MS = 60 * 1000L
 private const val STUCK_LOADING_TIMEOUT_MS = 15_000L
+private const val FAVORITES_CATEGORY_ID = "__favorites__"
 private val LIVE_DEBUG_TRACE = BuildConfig.LIVE_DEBUG_TRACE
 
 class LiveViewModel(
@@ -54,13 +55,16 @@ class LiveViewModel(
     private enum class PaginationMode { PAGED, SNAPSHOT }
 
     private var categoriesJob: Job? = null
+    private var favoritesJob: Job? = null
     private var loadJob: Job? = null
     private var epgJob: Job? = null
 
-    private var selectedCategoryId: String = ALL_CATEGORY_ID
-    private var categories: List<MediaCategory> = listOf(MediaCategory(id = ALL_CATEGORY_ID, name = "All"))
+    private var selectedCategoryId: String = ""
+    private var categories: List<MediaCategory> = emptyList()
+    private var backendCategories: List<MediaCategory> = emptyList()
     private val pagesByCategory = mutableMapOf<String, CategoryPageState>()
     private val epgCache = mutableMapOf<String, Pair<Long, List<com.smartifly.tv.features.live.epg.EpgProgram>>>()
+    private var favoriteChannels: List<LiveStream> = emptyList()
     private var portalKey: String = "unknown"
     private var focusedChannelId: String? = null
     private var requestSequence: Long = 0L
@@ -70,7 +74,35 @@ class LiveViewModel(
     init {
         cleanupExpiredPortalCapability()
         logLive("init", "LiveViewModel initialized")
+        observeFavorites()
         observeCategories()
+    }
+
+    private fun observeFavorites() {
+        favoritesJob?.cancel()
+        favoritesJob = viewModelScope.launch {
+            repository.getLiveFavorites().collect { result ->
+                when (result) {
+                    is NetworkResult.Success -> {
+                        favoriteChannels = result.data
+                            .distinctBy { it.id }
+                            .sortedBy { it.name.lowercase() }
+                        if (_uiState.value is LiveUiState.Success || selectedCategoryId == FAVORITES_CATEGORY_ID) {
+                            emitSuccess()
+                        }
+                    }
+                    is NetworkResult.Error -> {
+                        logLive("favorites_error", "message=${result.message}")
+                    }
+                    is NetworkResult.Loading -> Unit
+                }
+            }
+        }
+    }
+
+    private fun buildVisibleCategories(backend: List<MediaCategory>): List<MediaCategory> {
+        val favoriteCategory = MediaCategory(id = FAVORITES_CATEGORY_ID, name = "Favorites")
+        return listOf(favoriteCategory) + backend.filterNot { it.id == FAVORITES_CATEGORY_ID }
     }
 
     private fun observeCategories() {
@@ -80,33 +112,40 @@ class LiveViewModel(
                 when (result) {
                     is NetworkResult.Success -> {
                         val backend = result.data.distinctBy { it.id }.sortedBy { it.name.lowercase() }
-                        categories = listOf(MediaCategory(id = ALL_CATEGORY_ID, name = "All")) + backend
+                        backendCategories = backend
+                        categories = buildVisibleCategories(backend)
                         logLive("categories", "loaded=${backend.size} selected=$selectedCategoryId")
 
+                        if (backendCategories.isEmpty() && favoriteChannels.isEmpty()) {
+                            pagesByCategory.clear()
+                            selectedCategoryId = ""
+                            _uiState.value = LiveUiState.Empty
+                            return@collect
+                        }
+
                         if (categories.none { it.id == selectedCategoryId }) {
-                            selectedCategoryId = ALL_CATEGORY_ID
+                            selectedCategoryId = backendCategories.firstOrNull()?.id ?: FAVORITES_CATEGORY_ID
                         }
 
                         // First successful category snapshot selects once.
                         if (!startupCategorySelected) {
                             startupCategorySelected = true
-                            val firstRealCategory = backend.firstOrNull()?.id ?: ALL_CATEGORY_ID
-                            selectedCategoryId = firstRealCategory
+                            selectedCategoryId = backendCategories.firstOrNull()?.id ?: FAVORITES_CATEGORY_ID
                             logLive("startup_category", "selected=$selectedCategoryId")
-                            loadCategoryPage(
-                                categoryId = selectedCategoryId,
-                                page = 1,
-                                replace = true,
-                                forceRefresh = true
-                            )
+                            if (selectedCategoryId == FAVORITES_CATEGORY_ID) {
+                                emitSuccess()
+                            } else {
+                                loadCategoryPage(
+                                    categoryId = selectedCategoryId,
+                                    page = 1,
+                                    replace = true,
+                                    forceRefresh = true
+                                )
+                            }
                         } else {
-                            if (selectedCategoryId == ALL_CATEGORY_ID && backend.isNotEmpty()) {
-                                val allState = pagesByCategory[ALL_CATEGORY_ID]
-                                val allInitialized = allState?.initialized == true
-                                if (!allInitialized) {
-                                    selectedCategoryId = backend.first().id
-                                    logLive("startup_retarget", "all-not-ready -> selected=$selectedCategoryId")
-                                }
+                            if (selectedCategoryId == FAVORITES_CATEGORY_ID) {
+                                emitSuccess()
+                                return@collect
                             }
                             val currentState = pagesByCategory[selectedCategoryId]
                             val now = System.currentTimeMillis()
@@ -151,11 +190,16 @@ class LiveViewModel(
     }
 
     fun loadChannelsByCategory(categoryId: String) {
+        if (categoryId.isBlank()) return
         if (selectedCategoryId != categoryId) {
             focusedChannelId = null
         }
         logLive("category_select", "from=$selectedCategoryId to=$categoryId")
         selectedCategoryId = categoryId
+        if (categoryId == FAVORITES_CATEGORY_ID) {
+            emitSuccess()
+            return
+        }
         val current = pagesByCategory[categoryId]
         if (current?.initialized == true) {
             emitSuccess()
@@ -170,6 +214,7 @@ class LiveViewModel(
     }
 
     fun loadMoreCurrentCategory() {
+        if (selectedCategoryId == FAVORITES_CATEGORY_ID) return
         val current = pagesByCategory[selectedCategoryId] ?: return
         if (!current.initialized || current.loading || current.loadingMore || !current.hasMore) return
         loadCategoryPage(
@@ -186,6 +231,10 @@ class LiveViewModel(
         replace: Boolean,
         forceRefresh: Boolean
     ) {
+        if (categoryId == FAVORITES_CATEGORY_ID) {
+            emitSuccess()
+            return
+        }
         loadJob?.cancel()
         val existing = pagesByCategory[categoryId] ?: CategoryPageState()
         val portalMode = getPortalPaginationMode()
@@ -218,7 +267,7 @@ class LiveViewModel(
                 PAGE_SIZE
             }
             repository.getLiveStreams(
-                categoryId = if (categoryId == ALL_CATEGORY_ID) null else categoryId,
+                categoryId = categoryId,
                 page = page,
                 pageSize = requestedPageSize
             ).collect { result ->
@@ -233,7 +282,7 @@ class LiveViewModel(
                             dedupeById(mapped)
                         } else {
                             dedupeById(effectiveExisting.items + mapped)
-                        }
+                        }.take(CacheBudgetPolicy.LIVE_MAX_CHANNELS_PER_CATEGORY)
 
                         val hasMore = if (result.data.isEmpty()) {
                             false
@@ -290,9 +339,11 @@ class LiveViewModel(
 
     private fun emitSuccess() {
         val selected = pagesByCategory[selectedCategoryId] ?: CategoryPageState()
+        val favoriteIds = favoriteChannels.asSequence().map { it.id }.toSet()
+        val isFavoritesCategory = selectedCategoryId == FAVORITES_CATEGORY_ID
         val previousSuccess = _uiState.value as? LiveUiState.Success
         val retainedEpg = if (
-            focusedChannelId != null && selected.items.any { it.id == focusedChannelId }
+            focusedChannelId != null && (if (isFavoritesCategory) favoriteChannels else selected.items).any { it.id == focusedChannelId }
         ) {
             previousSuccess?.focusedChannelEpg ?: emptyList()
         } else {
@@ -301,11 +352,12 @@ class LiveViewModel(
         _uiState.value = LiveUiState.Success(
             categories = categories,
             selectedCategoryId = selectedCategoryId,
-            channels = selected.items,
-            isLoadingChannels = selected.loading,
-            isLoadingMore = selected.loadingMore,
-            hasMore = selected.hasMore,
-            categoryError = selected.error,
+            channels = if (isFavoritesCategory) favoriteChannels else selected.items,
+            isLoadingChannels = if (isFavoritesCategory) false else selected.loading,
+            isLoadingMore = if (isFavoritesCategory) false else selected.loadingMore,
+            hasMore = if (isFavoritesCategory) false else selected.hasMore,
+            categoryError = if (isFavoritesCategory) null else selected.error,
+            favoriteChannelIds = favoriteIds,
             focusedChannelEpg = retainedEpg
         )
     }
@@ -328,6 +380,10 @@ class LiveViewModel(
             kotlinx.coroutines.delay(300)
             repository.getShortEpg(channel.id.toIntOrNull() ?: return@launch).collect { result ->
                 if (result is NetworkResult.Success) {
+                    if (epgCache.size >= CacheBudgetPolicy.LIVE_EPG_MAX_CHANNELS) {
+                        val oldestKey = epgCache.minByOrNull { it.value.first }?.key
+                        if (oldestKey != null) epgCache.remove(oldestKey)
+                    }
                     epgCache[channel.id] = System.currentTimeMillis() to result.data
                     val latest = _uiState.value
                     if (latest is LiveUiState.Success) {
@@ -335,6 +391,20 @@ class LiveViewModel(
                     }
                 }
             }
+        }
+    }
+
+    fun toggleFavorite(channel: LiveStream, onToggled: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val isFavorite = favoriteChannels.any { it.id == channel.id }
+            val target = !isFavorite
+            runCatching { repository.setLiveFavorite(channel.id, target) }
+                .onSuccess {
+                    onToggled(target)
+                }
+                .onFailure { error ->
+                    logLive("favorite_error", "channel=${channel.id} message=${error.message}")
+                }
         }
     }
 
@@ -376,13 +446,17 @@ class LiveViewModel(
 
     fun disposeForScreenExit() {
         categoriesJob?.cancel()
+        favoritesJob?.cancel()
         loadJob?.cancel()
         epgJob?.cancel()
         activeRequestByCategory.clear()
         pagesByCategory.clear()
         epgCache.clear()
+        categories = emptyList()
+        backendCategories = emptyList()
+        favoriteChannels = emptyList()
         focusedChannelId = null
-        selectedCategoryId = ALL_CATEGORY_ID
+        selectedCategoryId = ""
         startupCategorySelected = false
         _uiState.value = LiveUiState.Loading
         logLive("lifecycle", "LiveViewModel disposed for screen exit")

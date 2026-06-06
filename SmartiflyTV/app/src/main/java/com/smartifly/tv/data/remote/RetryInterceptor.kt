@@ -32,7 +32,6 @@ class RetryInterceptor(
                     throw io
                 }
             }
-
             attempt++
         }
 

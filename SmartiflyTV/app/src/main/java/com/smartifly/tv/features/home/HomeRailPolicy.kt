@@ -1,6 +1,7 @@
 package com.smartifly.tv.features.home
 
 import com.smartifly.tv.performance.lowend.DeviceTier
+import com.smartifly.tv.data.cache.CacheBudgetPolicy
 
 data class HomeRailPolicy(
     val totalRailsCap: Int,
@@ -32,10 +33,10 @@ object HomeRailPolicyResolver {
                 trendingItems = 12,
                 liveItems = 10,
                 newReleaseItems = 12,
-                fetchMovieCategories = 2,
-                fetchSeriesCategories = 2,
+                fetchMovieCategories = 1,
+                fetchSeriesCategories = 1,
                 fetchLiveCategories = 1,
-                fetchItemsPerCategory = 24
+                fetchItemsPerCategory = 18
             )
             DeviceTier.MEDIUM -> HomeRailPolicy(
                 totalRailsCap = 9,
@@ -46,10 +47,10 @@ object HomeRailPolicyResolver {
                 trendingItems = 16,
                 liveItems = 12,
                 newReleaseItems = 16,
-                fetchMovieCategories = 3,
-                fetchSeriesCategories = 3,
-                fetchLiveCategories = 2,
-                fetchItemsPerCategory = 32
+                fetchMovieCategories = 2,
+                fetchSeriesCategories = 2,
+                fetchLiveCategories = 1,
+                fetchItemsPerCategory = 24
             )
             DeviceTier.HIGH -> HomeRailPolicy(
                 totalRailsCap = 12,
@@ -60,14 +61,14 @@ object HomeRailPolicyResolver {
                 trendingItems = 20,
                 liveItems = 15,
                 newReleaseItems = 20,
-                fetchMovieCategories = 4,
-                fetchSeriesCategories = 4,
-                fetchLiveCategories = 2,
-                fetchItemsPerCategory = 40
+                fetchMovieCategories = 2,
+                fetchSeriesCategories = 2,
+                fetchLiveCategories = 1,
+                fetchItemsPerCategory = 30
             )
         }
 
-        return when {
+        val resolved = when {
             estimatedCatalogSize <= 500 -> base.copy(
                 totalRailsCap = (base.totalRailsCap - 2).coerceAtLeast(4),
                 movieCategoryRails = 1,
@@ -84,6 +85,8 @@ object HomeRailPolicyResolver {
                 seriesCategoryRails = (base.seriesCategoryRails + 1).coerceAtMost(4)
             )
         }
+        return resolved.copy(
+            fetchItemsPerCategory = CacheBudgetPolicy.adjustedHomeFetchItems(resolved.fetchItemsPerCategory)
+        )
     }
 }
-

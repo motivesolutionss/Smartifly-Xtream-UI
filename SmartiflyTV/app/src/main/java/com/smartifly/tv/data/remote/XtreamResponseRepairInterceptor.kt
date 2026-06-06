@@ -1,6 +1,7 @@
 package com.smartifly.tv.data.remote
 
 import okhttp3.Interceptor
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 
@@ -11,11 +12,17 @@ import okhttp3.ResponseBody.Companion.toResponseBody
  * Ported from the React Native implementation in shared/src/api/xtream/client.ts.
  */
 class XtreamResponseRepairInterceptor : Interceptor {
+    companion object {
+        private const val MAX_REPAIR_PAYLOAD_BYTES = 1_000_000L
+        private val HEAVY_STREAM_ACTIONS = setOf("get_live_streams", "get_vod_streams", "get_series")
+    }
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val response = chain.proceed(chain.request())
+        val request = chain.request()
+        val response = chain.proceed(request)
 
         if (!response.isSuccessful) return response
+        if (shouldBypassRepair(request, response)) return response
 
         val rawBody = response.body?.string() ?: return response
         val contentType = response.body?.contentType()
@@ -78,6 +85,20 @@ class XtreamResponseRepairInterceptor : Interceptor {
                 .body(rawBody.toResponseBody(contentType))
                 .build()
         }
+    }
+
+    private fun shouldBypassRepair(request: Request, response: Response): Boolean {
+        val action = request.url.queryParameter("action")?.lowercase().orEmpty()
+        if (action in HEAVY_STREAM_ACTIONS) {
+            return true
+        }
+
+        val declaredLength = response.body?.contentLength() ?: -1L
+        if (declaredLength >= MAX_REPAIR_PAYLOAD_BYTES) {
+            return true
+        }
+
+        return false
     }
 
     /**

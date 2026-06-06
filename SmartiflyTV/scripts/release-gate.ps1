@@ -54,6 +54,5 @@ if (-not $SkipLint) {
 }
 
 Write-Host ""
-Write-Host "All selected release gates passed." -ForegroundColor Green
+Write-Host "Selected release gates passed." -ForegroundColor Green
 Write-Host "Next: run manual QA checklist in docs/release-gate-checklist.md"
-

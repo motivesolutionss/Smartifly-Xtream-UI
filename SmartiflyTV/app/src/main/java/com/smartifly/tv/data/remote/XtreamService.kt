@@ -1,16 +1,16 @@
 package com.smartifly.tv.data.remote
 
 import com.smartifly.tv.data.remote.models.*
-import com.google.gson.JsonElement
 import okhttp3.ResponseBody
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /**
  * Enterprise-grade Retrofit Service for Xtream UI API.
  * 
  * This interface defines the contract for communication with the Xtream server.
- * All media content (Live, VOD, Series) is orchestrated through these endpoints.
+ * Core media content (Live, VOD, Series) is orchestrated through these endpoints.
  */
 interface XtreamService {
 
@@ -34,21 +34,45 @@ interface XtreamService {
         @Query("username") user: String,
         @Query("password") pass: String,
         @Query("action") action: String = "get_live_categories"
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getLiveCategoriesRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_live_categories"
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getMovieCategories(
         @Query("username") user: String,
         @Query("password") pass: String,
         @Query("action") action: String = "get_vod_categories"
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getMovieCategoriesRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_vod_categories"
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getSeriesCategories(
         @Query("username") user: String,
         @Query("password") pass: String,
         @Query("action") action: String = "get_series_categories"
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getSeriesCategoriesRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_series_categories"
+    ): ResponseBody
 
     // ==========================================
     // STREAMS & CONTENT (Basic)
@@ -60,7 +84,16 @@ interface XtreamService {
         @Query("password") pass: String,
         @Query("action") action: String = "get_live_streams",
         @Query("category_id") categoryId: String? = null
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getLiveStreamsRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_live_streams",
+        @Query("category_id") categoryId: String? = null
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getMovies(
@@ -68,7 +101,16 @@ interface XtreamService {
         @Query("password") pass: String,
         @Query("action") action: String = "get_vod_streams",
         @Query("category_id") categoryId: String? = null
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getMoviesRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_vod_streams",
+        @Query("category_id") categoryId: String? = null
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getSeries(
@@ -76,7 +118,16 @@ interface XtreamService {
         @Query("password") pass: String,
         @Query("action") action: String = "get_series",
         @Query("category_id") categoryId: String? = null
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getSeriesRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_series",
+        @Query("category_id") categoryId: String? = null
+    ): ResponseBody
 
     // ==========================================
     // PAGINATION (Professional Scale)
@@ -93,7 +144,21 @@ interface XtreamService {
         @Query("per_page") perPage: Int? = null,
         @Query("offset") offset: Int? = null,
         @Query("start") start: Int? = null
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getLiveStreamsPageRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_live_streams",
+        @Query("category_id") categoryId: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 100,
+        @Query("per_page") perPage: Int? = null,
+        @Query("offset") offset: Int? = null,
+        @Query("start") start: Int? = null
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getMoviesPage(
@@ -103,7 +168,18 @@ interface XtreamService {
         @Query("category_id") categoryId: String? = null,
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 100
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getMoviesPageRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_vod_streams",
+        @Query("category_id") categoryId: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 100
+    ): ResponseBody
 
     @GET("player_api.php")
     suspend fun getSeriesPage(
@@ -113,7 +189,18 @@ interface XtreamService {
         @Query("category_id") categoryId: String? = null,
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 100
-    ): JsonElement
+    ): ResponseBody
+
+    @Streaming
+    @GET("player_api.php")
+    suspend fun getSeriesPageRaw(
+        @Query("username") user: String,
+        @Query("password") pass: String,
+        @Query("action") action: String = "get_series",
+        @Query("category_id") categoryId: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 100
+    ): ResponseBody
 
     // ==========================================
     // DETAILS & EPG

@@ -11,11 +11,13 @@ import com.smartifly.tv.data.onboarding.XtreamLoginResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class LoginViewModel(private val repository: OnboardingRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
+    private var activationPollingJob: Job? = null
 
     init {
         // In a real app, you would load a persisted deviceId
@@ -26,7 +28,8 @@ class LoginViewModel(private val repository: OnboardingRepository) : ViewModel()
     }
 
     fun startActivationPolling(onSuccess: () -> Unit) {
-        viewModelScope.launch {
+        activationPollingJob?.cancel()
+        activationPollingJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             
             // Step 1: Fetch fresh session from backend (Godfather style)
@@ -54,15 +57,22 @@ class LoginViewModel(private val repository: OnboardingRepository) : ViewModel()
             repository.pollStatusDetailed(_uiState.value.deviceId).collect { statusResult ->
                 if (statusResult.status == DeviceStatus.ACTIVATED) {
                     _uiState.value = _uiState.value.copy(isActivated = true)
+                    activationPollingJob?.cancel()
                     onSuccess()
                 } else if (statusResult.status == DeviceStatus.BLOCKED || statusResult.status == DeviceStatus.EXPIRED) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = statusResult.reason
                     )
+                    activationPollingJob?.cancel()
                 }
             }
         }
+    }
+
+    override fun onCleared() {
+        activationPollingJob?.cancel()
+        super.onCleared()
     }
 
     fun onUsernameChanged(name: String) {
@@ -109,7 +119,7 @@ class LoginViewModel(private val repository: OnboardingRepository) : ViewModel()
     fun performLogin(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.username.isBlank() || state.password.isBlank()) {
-            _uiState.value = _uiState.value.copy(error = "All fields are required")
+            _uiState.value = _uiState.value.copy(error = "Every field is required")
             return
         }
 

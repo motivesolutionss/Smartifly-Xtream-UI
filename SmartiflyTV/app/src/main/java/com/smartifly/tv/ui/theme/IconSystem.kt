@@ -13,6 +13,8 @@ object SmartiflyIcons {
     val Pause = Icons.Rounded.Pause
     val FastForward = Icons.Rounded.Forward10
     val FastRewind = Icons.Rounded.Replay10
+    val SkipNext = Icons.Rounded.SkipNext
+    val SkipPrevious = Icons.Rounded.SkipPrevious
     val Settings = Icons.Rounded.Settings
     val Subtitles = Icons.Rounded.Subtitles
     val Audio = Icons.AutoMirrored.Rounded.VolumeUp
@@ -35,6 +37,10 @@ object SmartiflyIcons {
 
     val ChevronRight = Icons.Rounded.ChevronRight
     val Check = Icons.Rounded.Check
+    val Add = Icons.Rounded.Add
     val Error = Icons.Rounded.ErrorOutline
     val Star = Icons.Rounded.Star
+    val Wifi = Icons.Rounded.Wifi
+    val WifiOff = Icons.Rounded.WifiOff
+    val Trailer = Icons.Rounded.PlayCircle
 }

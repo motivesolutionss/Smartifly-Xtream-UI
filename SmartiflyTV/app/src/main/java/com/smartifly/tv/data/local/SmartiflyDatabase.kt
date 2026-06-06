@@ -26,7 +26,7 @@ import com.smartifly.tv.data.local.entities.SyncStateEntity
         AccountEntity::class,
         SyncStateEntity::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = true
 )
 abstract class SmartiflyDatabase : RoomDatabase() {
@@ -112,7 +112,42 @@ abstract class SmartiflyDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_state_providerKey_lastSuccessAtMs ON sync_state(providerKey, lastSuccessAtMs)")
             }
         }
-
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS streams_new (
+                        providerKey TEXT NOT NULL,
+                        streamId INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        streamType TEXT NOT NULL,
+                        categoryId TEXT NOT NULL,
+                        streamIcon TEXT,
+                        rating TEXT,
+                        added TEXT,
+                        isFavorite INTEGER NOT NULL,
+                        lastWatched INTEGER NOT NULL,
+                        PRIMARY KEY(providerKey, streamType, categoryId, streamId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO streams_new(providerKey, streamId, name, streamType, categoryId, streamIcon, rating, added, isFavorite, lastWatched)
+                    SELECT providerKey, streamId, name, streamType, categoryId, streamIcon, rating, added, isFavorite, lastWatched FROM streams
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE streams")
+                db.execSQL("ALTER TABLE streams_new RENAME TO streams")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_streams_providerKey_streamType_categoryId ON streams(providerKey, streamType, categoryId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_streams_providerKey_isFavorite ON streams(providerKey, isFavorite)")
+            }
+        }
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_streams_providerKey_name ON streams(providerKey, name)")
+            }
+        }
         @Volatile
         private var INSTANCE: SmartiflyDatabase? = null
 
@@ -123,7 +158,7 @@ abstract class SmartiflyDatabase : RoomDatabase() {
                     SmartiflyDatabase::class.java,
                     "smartifly_tv_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 INSTANCE = instance
                 instance

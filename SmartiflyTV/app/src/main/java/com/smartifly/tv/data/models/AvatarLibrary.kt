@@ -2,26 +2,20 @@ package com.smartifly.tv.data.models
 
 data class AvatarItem(
     val id: String,
-    val url: String,
-    val category: String // "Kids" or "Adults"
+    val url: String
 )
 
 object AvatarLibrary {
     val avatars = listOf(
-        // Adults Set
-        AvatarItem("a1", "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix", "Adults"),
-        AvatarItem("a2", "https://api.dicebear.com/7.x/avataaars/svg?seed=Aria", "Adults"),
-        AvatarItem("a3", "https://api.dicebear.com/7.x/avataaars/svg?seed=Jack", "Adults"),
-        AvatarItem("a4", "https://api.dicebear.com/7.x/avataaars/svg?seed=Luna", "Adults"),
-        AvatarItem("a5", "https://api.dicebear.com/7.x/avataaars/svg?seed=Milo", "Adults"),
-        
-        // Kids Set
-        AvatarItem("k1", "https://api.dicebear.com/7.x/bottts/svg?seed=Robo", "Kids"),
-        AvatarItem("k2", "https://api.dicebear.com/7.x/bottts/svg?seed=Spark", "Kids"),
-        AvatarItem("k3", "https://api.dicebear.com/7.x/bottts/svg?seed=Zippy", "Kids"),
-        AvatarItem("k4", "https://api.dicebear.com/7.x/pixel-art/svg?seed=Hero", "Kids"),
-        AvatarItem("k5", "https://api.dicebear.com/7.x/pixel-art/svg?seed=Quest", "Kids")
+        AvatarItem("a1", "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"),
+        AvatarItem("a2", "https://api.dicebear.com/7.x/avataaars/svg?seed=Aria"),
+        AvatarItem("a3", "https://api.dicebear.com/7.x/avataaars/svg?seed=Jack"),
+        AvatarItem("a4", "https://api.dicebear.com/7.x/avataaars/svg?seed=Luna"),
+        AvatarItem("a5", "https://api.dicebear.com/7.x/avataaars/svg?seed=Milo"),
+        AvatarItem("a6", "https://api.dicebear.com/7.x/bottts/svg?seed=Robo"),
+        AvatarItem("a7", "https://api.dicebear.com/7.x/bottts/svg?seed=Spark"),
+        AvatarItem("a8", "https://api.dicebear.com/7.x/bottts/svg?seed=Zippy"),
+        AvatarItem("a9", "https://api.dicebear.com/7.x/pixel-art/svg?seed=Hero"),
+        AvatarItem("a10", "https://api.dicebear.com/7.x/pixel-art/svg?seed=Quest")
     )
-
-    fun getByCategory(category: String) = avatars.filter { it.category == category }
 }

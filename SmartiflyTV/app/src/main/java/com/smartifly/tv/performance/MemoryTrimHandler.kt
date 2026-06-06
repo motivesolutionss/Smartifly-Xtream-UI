@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.smartifly.tv.performance
 
 import android.content.ComponentCallbacks2
@@ -16,9 +18,10 @@ class MemoryTrimHandler(private val context: Context) : ComponentCallbacks2 {
     }
 
     override fun onTrimMemory(level: Int) {
+        RuntimeDownshiftManager.onMemoryPressure(level)
         when (level) {
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+            ComponentCallbacks2.TRIM_MEMORY_COMPLETE,
+            ComponentCallbacks2.TRIM_MEMORY_MODERATE -> {
                 // Clear image memory cache immediately
                 context.imageLoader.memoryCache?.clear()
             }
@@ -30,7 +33,9 @@ class MemoryTrimHandler(private val context: Context) : ComponentCallbacks2 {
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {}
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onLowMemory() {
+        RuntimeDownshiftManager.onMemoryPressure(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
         context.imageLoader.memoryCache?.clear()
     }
 }

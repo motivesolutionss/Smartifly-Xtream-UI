@@ -24,6 +24,7 @@ import {
   MAX_HOME_SERIES_CATEGORIES,
 } from '../HomeRailConfig';
 import { TVContentItem } from '../components/TVContentCard';
+import { resolveLiveImage } from '../../../utils/portalImage';
 
 export interface HomeRailsResult {
   rails: ResolvedRail[];
@@ -175,10 +176,10 @@ const resolveSeriesImage = (series: any): string => {
   );
 };
 
-const mapLiveItem = (channel: any): TVContentItem => ({
+const mapLiveItem = (channel: any, portalBaseUrl?: string | null): TVContentItem => ({
   id: String(channel.stream_id),
   title: channel.name,
-  image: channel.stream_icon,
+  image: resolveLiveImage(channel, portalBaseUrl),
   type: 'live' as const,
   data: channel,
 });
@@ -271,6 +272,7 @@ export const useHomeRails = (): HomeRailsResult => {
 
   const liveLoaded = useStore((s: StoreState) => s.content.live.loaded);
   const liveItems = useStore((s: StoreState) => s.content.live.items);
+  const portalBaseUrl = useStore((s: StoreState) => s.credentials?.serverUrl);
 
   const history = useWatchHistoryStore((s) => s.history);
   const getContinueWatching = useWatchHistoryStore((s) => s.getContinueWatching);
@@ -327,6 +329,7 @@ export const useHomeRails = (): HomeRailsResult => {
   const rails = useMemo(() => {
     const resolved: ResolvedRail[] = [];
     const usedIds = new Set<string>();
+    const mapLiveItemBound = (channel: any) => mapLiveItem(channel, portalBaseUrl);
 
     const content = {
       live: { loaded: liveLoaded, items: liveItems || [] },
@@ -363,7 +366,7 @@ export const useHomeRails = (): HomeRailsResult => {
             config.maxItems,
             usedIds,
             (channel) => getIdentity('live', channel),
-            mapLiveItem
+            mapLiveItemBound
           );
           if (items.length > 0) {
             resolved.push({ id: config.id, title: config.title, type: config.type, zone: config.zone, items });
@@ -552,6 +555,7 @@ export const useHomeRails = (): HomeRailsResult => {
     moviesLoaded,
     railSeedBase,
     homePoolLimit,
+    portalBaseUrl,
     seriesCategories,
     seriesLoaded,
   ]);

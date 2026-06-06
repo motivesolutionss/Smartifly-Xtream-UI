@@ -16,6 +16,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { scale, scaleFont } from '../../theme';
+import { fontFamily, fontWeight } from '../../theme/typography';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -242,24 +243,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: scaleFont(90),
-    fontWeight: '900',
-    color: '#E50914',
-    letterSpacing: scale(4),
+    fontSize: scaleFont(74),
+    fontFamily: fontFamily.bold,
+    fontWeight: fontWeight.bold,
+    color: '#EE0B18',
+    letterSpacing: scale(1.1),
   },
   glowInner: {
     position: 'absolute',
-    color: '#E50914',
-    textShadowColor: '#E50914',
-    textShadowRadius: 15,
-    opacity: 0.8,
+    color: '#F31220',
+    textShadowColor: 'rgba(243, 18, 32, 0.55)',
+    textShadowRadius: 8,
+    opacity: 0.34,
   },
   glowOuter: {
     position: 'absolute',
-    color: '#E50914',
-    textShadowColor: '#E50914',
-    textShadowRadius: 40,
-    opacity: 0.4,
+    color: '#F31220',
+    textShadowColor: 'rgba(243, 18, 32, 0.34)',
+    textShadowRadius: 18,
+    opacity: 0.16,
   },
   footer: {
     width: '100%',
@@ -294,10 +296,11 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: scale(15),
-    fontSize: scaleFont(10),
-    color: 'rgba(255, 255, 255, 0.4)',
-    letterSpacing: scale(6),
-    fontWeight: '600',
+    fontSize: scaleFont(10.5),
+    fontFamily: fontFamily.medium,
+    fontWeight: fontWeight.medium,
+    color: 'rgba(230, 236, 247, 0.62)',
+    letterSpacing: scale(4.2),
   },
 });
 

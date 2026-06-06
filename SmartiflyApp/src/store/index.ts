@@ -26,6 +26,7 @@ import XtreamAPI, {
 } from '../api/xtream';
 import { getAnnouncements } from '../api/backend';
 import { logger } from '../config';
+import { normalizeImageList, normalizeImageUrl } from '../utils/imageUrl';
 
 // Import filterStore for resetting on auth events
 import useFilterStore from './filterStore';
@@ -233,6 +234,7 @@ type Store = StoreState & StoreActions;
 // =============================================================================
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+const asRawImage = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 // =============================================================================
 // INITIAL STATE
@@ -656,6 +658,12 @@ const useStore = create<Store>()(
                         const safeLiveStreams = await api.getLiveStreams();
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchLiveContent: completed, ${safeLiveStreams.length} channels`);
+                        const liveRejected = safeLiveStreams.reduce((count, item) => {
+                            const raw = asRawImage(item.stream_icon);
+                            if (!raw) return count;
+                            return normalizeImageUrl(raw, credentials.serverUrl) ? count : count + 1;
+                        }, 0);
+                        logger.info(`[Store] live logos normalization rejected ${liveRejected}/${safeLiveStreams.length}`);
 
                         // ISOLATED WRITE: Live domain only
                         // FIX: Normalize category_id to string for consistent type matching
@@ -670,6 +678,7 @@ const useStore = create<Store>()(
                                     items: safeLiveStreams.map(item => ({
                                         ...item,
                                         category_id: String(item.category_id),
+                                        stream_icon: normalizeImageUrl(item.stream_icon, credentials.serverUrl) || asRawImage(item.stream_icon),
                                     })),
                                     loaded: true,
                                 },
@@ -682,6 +691,12 @@ const useStore = create<Store>()(
                         const safeVodStreams = await api.getVodStreams();
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchVodContent: completed, ${safeVodStreams.length} movies`);
+                        const movieRejected = safeVodStreams.reduce((count, item) => {
+                            const raw = asRawImage(item.stream_icon);
+                            if (!raw) return count;
+                            return normalizeImageUrl(raw, credentials.serverUrl) ? count : count + 1;
+                        }, 0);
+                        logger.info(`[Store] movie posters normalization rejected ${movieRejected}/${safeVodStreams.length}`);
 
                         // ISOLATED WRITE: Movies domain only
                         // FIX: Normalize category_id to string for consistent type matching
@@ -696,6 +711,14 @@ const useStore = create<Store>()(
                                     items: safeVodStreams.map(item => ({
                                         ...item,
                                         category_id: String(item.category_id),
+                                        stream_icon: normalizeImageUrl(item.stream_icon, credentials.serverUrl) || asRawImage(item.stream_icon),
+                                        backdrop_path: (() => {
+                                            const normalized = normalizeImageList(item.backdrop_path || [], credentials.serverUrl);
+                                            if (normalized.length > 0) return normalized;
+                                            return (item.backdrop_path || [])
+                                                .map((value) => asRawImage(value))
+                                                .filter((value) => value.length > 0);
+                                        })(),
                                     })),
                                     loaded: true,
                                 },
@@ -708,6 +731,12 @@ const useStore = create<Store>()(
                         const safeSeriesList = await api.getSeries();
                         // XtreamAPI.normalizeArrayResponse handles: {}, errors, wrapped arrays, etc.
                         logger.info(`[Store] fetchSeriesContent: completed, ${safeSeriesList.length} series`);
+                        const seriesRejected = safeSeriesList.reduce((count, item) => {
+                            const raw = asRawImage(item.cover);
+                            if (!raw) return count;
+                            return normalizeImageUrl(raw, credentials.serverUrl) ? count : count + 1;
+                        }, 0);
+                        logger.info(`[Store] series covers normalization rejected ${seriesRejected}/${safeSeriesList.length}`);
 
                         // ISOLATED WRITE: Series domain + lastFetchTime (all domains now loaded)
                         // FIX: Normalize category_id to string for consistent type matching
@@ -722,6 +751,14 @@ const useStore = create<Store>()(
                                     items: safeSeriesList.map(item => ({
                                         ...item,
                                         category_id: String(item.category_id),
+                                        cover: normalizeImageUrl(item.cover, credentials.serverUrl) || asRawImage(item.cover),
+                                        backdrop_path: (() => {
+                                            const normalized = normalizeImageList(item.backdrop_path || [], credentials.serverUrl);
+                                            if (normalized.length > 0) return normalized;
+                                            return (item.backdrop_path || [])
+                                                .map((value) => asRawImage(value))
+                                                .filter((value) => value.length > 0);
+                                        })(),
                                     })),
                                     loaded: true,
                                 },

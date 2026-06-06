@@ -78,9 +78,18 @@ object HeroImageResolver {
 
         return try {
             val uri = java.net.URI(cleaned)
-            val host = uri.host ?: return null
+            val host = uri.host?.lowercase() ?: return null
             if (host.isBlank()) return null
-            cleaned
+            val scheme = (uri.scheme ?: "https").lowercase()
+            val port = when {
+                uri.port <= 0 -> ""
+                scheme == "https" && uri.port == 443 -> ""
+                scheme == "http" && uri.port == 80 -> ""
+                else -> ":${uri.port}"
+            }
+            val path = uri.rawPath?.ifBlank { "/" } ?: "/"
+            val query = uri.rawQuery?.takeIf { it.isNotBlank() }?.let { "?$it" } ?: ""
+            "$scheme://$host$port$path$query"
         } catch (_: Exception) {
             android.util.Log.w("SmartiflyHero", "hero_reject_reason=invalid_url value=$cleaned")
             null

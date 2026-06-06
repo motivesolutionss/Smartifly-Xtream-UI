@@ -4,6 +4,7 @@ import android.content.Context
 import com.smartifly.tv.data.SettingsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 object AppInitializer {
@@ -11,31 +12,36 @@ object AppInitializer {
 
     fun initialize(context: Context, scope: CoroutineScope) {
         if (isInitialized) return
-        
-        // Critical startup tasks (Blocking/Main thread)
-        // Initialize Settings early for theme
+
         SettingsManager(context)
         com.smartifly.tv.performance.lowend.LowEndModeManager.initialize(context)
-        
-        // Initialize Analytics & Stability monitoring
-        com.smartifly.tv.analytics.TelemetryManager.initialize(context)
-        com.smartifly.tv.data.image.ProviderHealthTelemetry.initialize(context)
-        com.smartifly.tv.data.image.ImageHostPolicy.initialize(context)
-        val perfConfig = com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig()
-        com.smartifly.tv.analytics.TelemetryManager.setDeviceContext(
-            deviceId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown",
-            performanceTier = if (perfConfig.tier == com.smartifly.tv.performance.lowend.DeviceTier.LOW) "Low-End" else "High-End"
-        )
 
-        // Initialize TV Launcher Channels
-        com.smartifly.tv.tvlauncher.TvLauncherSyncWorker.schedule(context)
-        com.smartifly.tv.tvlauncher.TvLauncherSyncWorker.runOnce(context)
+        scope.launch(Dispatchers.Default) {
+            delay(350)
 
-        // Non-critical startup tasks (Background thread)
+            com.smartifly.tv.analytics.TelemetryManager.initialize(context)
+            com.smartifly.tv.data.image.ProviderHealthTelemetry.initialize(context)
+            com.smartifly.tv.data.image.ImageHostPolicy.initialize(context)
+            com.smartifly.tv.data.hero.HeroRemoteConfigManager.initialize(context, scope)
+
+            val perfConfig = com.smartifly.tv.performance.lowend.LowEndModeManager.getConfig()
+            com.smartifly.tv.analytics.TelemetryManager.setDeviceContext(
+                deviceId = android.provider.Settings.Secure.getString(
+                    context.contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID
+                ) ?: "unknown",
+                performanceTier = if (perfConfig.tier == com.smartifly.tv.performance.lowend.DeviceTier.LOW) {
+                    "Low-End"
+                } else {
+                    "High-End"
+                }
+            )
+
+            com.smartifly.tv.tvlauncher.TvLauncherSyncWorker.schedule(context)
+            com.smartifly.tv.tvlauncher.TvLauncherSyncWorker.runOnceDeferred(context)
+        }
+
         scope.launch(Dispatchers.IO) {
-            // 2. Pre-warm DataStore
-            // 3. Clear temp caches
-            // 4. Set up analytics/reporting if needed
         }
 
         isInitialized = true

@@ -12,6 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class HeroEnrichmentService(
     private val xtreamRepository: XtreamRepository
 ) : HomeHeroEnricher {
+    private val yearRegex = Regex("""\b(19|20)\d{2}\b""")
 
     override suspend fun enrich(base: MovieMetadata, timeoutMs: Long): MovieMetadata? {
         val id = base.id.toIntOrNull() ?: return null
@@ -45,7 +46,15 @@ class HeroEnrichmentService(
         return when (val result = xtreamRepository.getMovieInfo(movieId)) {
             is NetworkResult.Success -> {
                 val details = result.data.toDomain()
-                merge(base, details.posterUrl, details.backdropUrl, details.description, details.rating, details.releaseDate)
+                merge(
+                    base = base,
+                    detailPoster = details.posterUrl,
+                    detailBackdrop = details.backdropUrl,
+                    detailDescription = details.description,
+                    detailRating = details.rating,
+                    detailReleaseDate = details.releaseDate,
+                    detailGenre = details.genre
+                )
             }
             else -> null
         }
@@ -55,7 +64,15 @@ class HeroEnrichmentService(
         return when (val result = xtreamRepository.getSeriesInfo(seriesId)) {
             is NetworkResult.Success -> {
                 val details = result.data.toDomain()
-                merge(base, details.posterUrl, details.backdropUrl, details.description, details.rating, details.releaseDate)
+                merge(
+                    base = base,
+                    detailPoster = details.posterUrl,
+                    detailBackdrop = details.backdropUrl,
+                    detailDescription = details.description,
+                    detailRating = details.rating,
+                    detailReleaseDate = details.releaseDate,
+                    detailGenre = details.genre
+                )
             }
             else -> null
         }
@@ -67,7 +84,8 @@ class HeroEnrichmentService(
         detailBackdrop: String,
         detailDescription: String,
         detailRating: String,
-        detailReleaseDate: String
+        detailReleaseDate: String,
+        detailGenre: String
     ): MovieMetadata {
         val poster = HeroImageResolver.normalizeImageUrl(detailPoster)
             ?: HeroImageResolver.normalizeImageUrl(base.posterUrl)
@@ -75,18 +93,33 @@ class HeroEnrichmentService(
 
         val backdrop = HeroImageResolver.normalizeImageUrl(detailBackdrop)
             ?: HeroImageResolver.normalizeImageUrl(base.backdropUrl)
-            ?: poster
+            ?: ""
 
         val description = if (detailDescription.isNotBlank()) detailDescription else base.description
         val rating = if (detailRating.isNotBlank()) detailRating else base.rating
-        val year = detailReleaseDate.takeIf { it.isNotBlank() }?.take(4) ?: base.year
+        val year = extractYear(detailReleaseDate) ?: base.year
+        val genre = if (detailGenre.isNotBlank()) detailGenre else base.genre
 
         return base.copy(
             posterUrl = poster,
             backdropUrl = backdrop,
             description = description,
             rating = rating,
-            year = year
+            year = year,
+            genre = genre
         )
+    }
+
+    private fun extractYear(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val trimmed = raw.trim()
+
+        // Preferred: find canonical 4-digit year anywhere in the payload.
+        yearRegex.find(trimmed)?.value?.let { return it }
+
+        // Fallback: normalize separators and inspect end tokens like dd-mm-yyyy.
+        val parts = trimmed.split('-', '/', '.', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+        val candidate = parts.lastOrNull()
+        return if (candidate != null && candidate.length == 4 && candidate.all { it.isDigit() }) candidate else null
     }
 }

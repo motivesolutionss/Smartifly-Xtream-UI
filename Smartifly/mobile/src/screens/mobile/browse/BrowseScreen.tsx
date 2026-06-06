@@ -23,6 +23,7 @@ import { usePerfProfile } from '../../../utils/perf';
 import type { BrowseScreenProps } from '../../../navigation/types';
 import type { XtreamLiveStream, XtreamMovie, XtreamSeries } from '../../../api/xtream';
 import { config } from '../../../config';
+import { resolveLiveImage as resolvePortalLiveImage } from '../../../utils/portalImage';
 
 // =============================================================================
 // CONFIG
@@ -110,6 +111,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
     ));
     const ensureFullContent = useContentStore((state) => state.ensureFullContent);
     const getXtreamAPI = useContentStore((state) => state.getXtreamAPI);
+    const portalBaseUrl = useContentStore((state) => state.credentials?.serverUrl);
     const activeItems = activeDomain.items as Array<XtreamLiveStream | XtreamMovie | XtreamSeries>;
     const activeCategories = activeDomain.categories;
     const needsLocalFullDataset = deferredSearchQuery.trim().length > 0 || sortMode !== 'default';
@@ -194,7 +196,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
             return {
                 id: String(live.stream_id),
                 name: live.name,
-                image: live.stream_icon,
+                image: resolvePortalLiveImage(live, portalBaseUrl),
                 type: 'live',
                 data: live,
             };
@@ -221,7 +223,7 @@ const BrowseScreen: React.FC<BrowseScreenProps> = ({ navigation, route }) => {
             rating: series.rating_5based,
             data: series,
         };
-    }, [type]);
+    }, [portalBaseUrl, type]);
 
     const preferRemoteCatalog = useMemo(() => (
         SERVER_PAGING_ENABLED &&

@@ -59,4 +59,32 @@ class ProfilesViewModel(private val repository: ProfileRepository) : ViewModel()
             }
         }
     }
+
+    /**
+     * Creates a new profile and refreshes the list.
+     */
+    fun createProfile(name: String, pin: String?, avatarUrl: String = "", primaryColor: String? = null) {
+        viewModelScope.launch {
+            try {
+                repository.createProfile(name, pin, avatarUrl, primaryColor)
+                loadProfiles() // Refresh the list
+            } catch (e: Exception) {
+                // Log error
+            }
+        }
+    }
+
+    /**
+     * Deletes a profile and refreshes the list.
+     */
+    fun deleteProfile(profileId: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteProfile(profileId)
+                loadProfiles() // Refresh the list
+            } catch (e: Exception) {
+                // Log error
+            }
+        }
+    }
 }

@@ -9,17 +9,43 @@ object Dimensions {
     val PaddingMedium = 16.dp
     val PaddingLarge = 24.dp
     val PaddingExtraLarge = 32.dp
+    val ContentGutter = 24.dp
     
     // Gaps between items in a row
     val ItemSpacing = 16.dp
-    val RowSpacing = 32.dp
-    
+    val CardSpacing = 8.dp
+    val RowSpacing = 20.dp
+
+    // Home layout
+    val HomeHeroHeight = 410.dp
+    val HomeHeroContentTop = 56.dp
+    val HomeHeroContentWidth = 550.dp
+    val HomeHeroLogoSize = 38.dp
+    val HomeHeroLogoBottomGap = 14.dp
+    val HomeHeroUtilityTopInset = 20.dp
+    val HomeHeroUtilityEndInset = 28.dp
+    val HomeHeroCornerRadius = 28.dp
+    val HomeRailBottomPadding = RowSpacing * 2
+    val HomeRailStatusHorizontalPadding = 10.dp
+    val HomeRailStatusVerticalPadding = 2.dp
+    val HomeRailHeaderGap = 12.dp
+
+    // Sidebar layout
+    val SidebarOuterStart = 8.dp
+    val SidebarOuterVertical = 10.dp
+    val SidebarCollapsedWidth = 60.dp
+    val SidebarExpandedWidth = 228.dp
+    val SidebarCollapsedItemWidth = 42.dp
+    val SidebarExpandedItemWidth = 196.dp
+    val SidebarContentGap = 8.dp
+    val SidebarContentOffset = SidebarOuterStart + SidebarCollapsedWidth + SidebarContentGap
+
     // Card Sizes
     val PosterWidth = 160.dp
     val PosterHeight = 240.dp
     
-    val ContinueWatchingWidth = 280.dp
-    val ContinueWatchingHeight = 160.dp
+    val ContinueWatchingWidth = 200.dp
+    val ContinueWatchingHeight = 112.dp
     
     val LiveChannelWidth = 200.dp
     val LiveChannelHeight = 112.dp
@@ -33,7 +59,7 @@ object Dimensions {
     val PlayerIconSizeLarge = 48.dp
     
     // Borders & Focus
-    val FocusBorderWidth = 1.5.dp
+    val FocusBorderWidth = 3.dp
     val FocusCornerRadius = 12.dp
     val GlowRadius = 16.dp
     
@@ -52,4 +78,3 @@ object Dimensions {
     val OnboardingDescWidth = 380.dp
     val FocusScale = 1.05f
 }
-

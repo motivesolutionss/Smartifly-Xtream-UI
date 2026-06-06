@@ -13,6 +13,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import retrofit2.HttpException
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URISyntaxException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -272,6 +274,18 @@ class OnboardingRepository(
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             android.util.Log.e("SmartiflyHandshake", "Handshake TIMEOUT after 15s")
             XtreamLoginResult.Error("Connection timeout while contacting Xtream server", retryable = true)
+        } catch (e: SocketTimeoutException) {
+            android.util.Log.e("SmartiflyHandshake", "Handshake SOCKET TIMEOUT: ${e.message}", e)
+            XtreamLoginResult.Error("Xtream server took too long to respond", retryable = true)
+        } catch (e: UnknownHostException) {
+            android.util.Log.e("SmartiflyHandshake", "Handshake HOST ERROR: ${e.message}", e)
+            XtreamLoginResult.Error("Xtream server host could not be reached", retryable = true)
+        } catch (e: IOException) {
+            android.util.Log.e("SmartiflyHandshake", "Handshake IO ERROR: ${e.message}", e)
+            XtreamLoginResult.Error(
+                message = "Failed to connect to Xtream server: ${e.message ?: "Network unavailable"}",
+                retryable = true
+            )
         } catch (e: RuntimeException) {
             android.util.Log.e("SmartiflyHandshake", "Handshake CRITICAL ERROR: ${e::class.java.simpleName}: ${e.message}", e)
             XtreamLoginResult.Error(

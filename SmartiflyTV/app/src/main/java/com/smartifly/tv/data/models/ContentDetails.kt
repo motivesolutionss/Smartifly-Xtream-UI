@@ -19,6 +19,7 @@ data class ContentDetails(
     val duration: String,
     val type: String, // "movie" or "series"
     val categoryId: String = "",
+    val youtubeTrailer: String? = null,
     val seasons: List<Season>? = null
 ) {
     fun toMovieMetadata(): MovieMetadata {
@@ -32,7 +33,8 @@ data class ContentDetails(
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
             type = type,
-            categoryId = categoryId
+            categoryId = categoryId,
+            genre = genre
         )
     }
 }

@@ -4,7 +4,10 @@ import com.smartifly.tv.data.remote.SmartiflyApi
 import java.io.IOException
 import retrofit2.HttpException
 
-class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsDataSource, HomeAnalyticsDataSource {
+class AnalyticsRepository(
+    private val api: SmartiflyApi,
+    private val sessionManager: com.smartifly.tv.data.SessionManager
+) : SearchSuggestionsDataSource, HomeAnalyticsDataSource {
     private val blockedUntilMs = mutableMapOf<String, Long>()
     private val serverErrorCooldownMs = 90_000L
 
@@ -31,13 +34,23 @@ class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsData
             }
             ?: emptyList()
 
+    private suspend fun getPortalScope(): Pair<String?, String?> {
+        val credentials = sessionManager.getXtreamCredentials()
+        val portalIdentity = credentials?.operatorId?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+        val portalBaseUrl = credentials?.baseUrl?.trim()?.removeSuffix("/")?.takeIf { it.isNotBlank() }
+        return portalIdentity to portalBaseUrl
+    }
+
     suspend fun trackPlayback(movieId: String, type: String, profileId: String, status: String) {
         try {
+            val (portalIdentity, portalBaseUrl) = getPortalScope()
             val event = mapOf(
                 "movieId" to movieId,
                 "type" to type,
                 "profileId" to profileId,
-                "status" to status
+                "status" to status,
+                "portalIdentity" to (portalIdentity ?: ""),
+                "portalBaseUrl" to (portalBaseUrl ?: "")
             )
             api.trackPlayback(event)
         } catch (e: IOException) {
@@ -55,7 +68,8 @@ class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsData
         val key = "trending"
         if (isCoolingDown(key)) return emptyList()
         return try {
-            val response = api.getTrendingIds()
+            val (portalIdentity, portalBaseUrl) = getPortalScope()
+            val response = api.getTrendingIds(portalIdentity, portalBaseUrl)
             response["data"].asStringList()
         } catch (e: IOException) {
             android.util.Log.w("SmartiflyAnalytics", "Trending network issue: ${e.message}")
@@ -74,7 +88,8 @@ class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsData
         val key = "suggestions"
         if (isCoolingDown(key)) return emptyList()
         return try {
-            val response = api.getSearchSuggestions()
+            val (portalIdentity, portalBaseUrl) = getPortalScope()
+            val response = api.getSearchSuggestions(portalIdentity, portalBaseUrl)
             response["data"].asStringList()
         } catch (e: IOException) {
             android.util.Log.w("SmartiflyAnalytics", "Suggestions network issue: ${e.message}")
@@ -93,7 +108,8 @@ class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsData
         val key = "smart_rows:$profileId"
         if (isCoolingDown(key)) return emptyList()
         return try {
-            val response = api.getSmartRows(profileId)
+            val (portalIdentity, portalBaseUrl) = getPortalScope()
+            val response = api.getSmartRows(profileId, portalIdentity, portalBaseUrl)
             val rows = response["rows"].asMapList()
             rows.map { row ->
                 val title = row["title"] as? String ?: "Smart Row"
@@ -107,7 +123,9 @@ class AnalyticsRepository(private val api: SmartiflyApi) : SearchSuggestionsData
                         rating = (item["rating"] ?: "0.0").toString(),
                         year = item["releaseDate"] as? String ?: "",
                         duration = "N/A",
-                        type = "movie"
+                        type = "movie",
+                        genre = item["genre"] as? String ?: "",
+                        qualityLabel = (item["qualityLabel"] as? String)?.trim().orEmpty()
                     )
                 }
                 title to items

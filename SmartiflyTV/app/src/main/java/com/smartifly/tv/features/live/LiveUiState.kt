@@ -16,6 +16,7 @@ sealed class LiveUiState {
         val isLoadingMore: Boolean = false,
         val hasMore: Boolean = false,
         val categoryError: String? = null,
+        val favoriteChannelIds: Set<String> = emptySet(),
         val focusedChannelEpg: List<com.smartifly.tv.features.live.epg.EpgProgram> = emptyList()
     ) : LiveUiState()
     data class Error(val message: String) : LiveUiState()

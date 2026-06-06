@@ -1,9 +1,13 @@
 package com.smartifly.tv.features.search
 
 import com.smartifly.tv.data.models.MovieMetadata
+import com.smartifly.tv.data.models.SearchDiscoveryRow
 
 sealed class SearchUiState {
-    data class Idle(val suggestions: List<String> = emptyList()) : SearchUiState()
+    data class Idle(
+        val suggestions: List<String> = emptyList(),
+        val discoveryRows: List<SearchDiscoveryRow> = emptyList()
+    ) : SearchUiState()
     object Loading : SearchUiState()
     data class Success(
         val results: List<MovieMetadata>,

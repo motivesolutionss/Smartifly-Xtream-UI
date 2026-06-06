@@ -9,10 +9,17 @@ class RemoteDeviceControlManager(
     private val scope: CoroutineScope
 ) {
     private var pollingJob: Job? = null
+    private var activeDeviceId: String? = null
 
     fun startRemoteMonitoring(deviceId: String) {
+        if (activeDeviceId == deviceId && pollingJob?.isActive == true) {
+            return
+        }
+
         pollingJob?.cancel()
+        activeDeviceId = deviceId
         pollingJob = scope.launch {
+            delay(30000)
             while (isActive) {
                 try {
                     val remoteStatusResult = repository.checkActivationStatusDetailed(deviceId)
@@ -46,5 +53,7 @@ class RemoteDeviceControlManager(
 
     fun stopMonitoring() {
         pollingJob?.cancel()
+        pollingJob = null
+        activeDeviceId = null
     }
 }

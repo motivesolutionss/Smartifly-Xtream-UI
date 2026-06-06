@@ -13,6 +13,7 @@ import com.smartifly.tv.data.repository.HomeDataSource
 import com.smartifly.tv.performance.lowend.DeviceTier
 import com.smartifly.tv.performance.lowend.PerformanceConfig
 import com.smartifly.tv.testutil.MainDispatcherRule
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -61,6 +62,7 @@ class HomeViewModelTest {
             heroEnrichmentService = FakeHomeHeroEnricher(),
             performanceConfig = PerformanceConfig.fromTier(DeviceTier.MEDIUM),
             profileId = "profile-1",
+            loadDispatcher = Dispatchers.Main,
             logger = NoopHomeLogger
         )
 
@@ -69,8 +71,8 @@ class HomeViewModelTest {
         val state = vm.uiState.value as HomeUiState.Success
         val titles = state.sections.map { it.title }
         assertTrue(titles.contains("Live Channels"))
-        assertTrue(titles.contains("Movies"))
-        assertTrue(titles.contains("Series"))
+        assertTrue(titles.contains("New Movies"))
+        assertTrue(titles.contains("New Series"))
     }
 
     @Test
@@ -83,6 +85,7 @@ class HomeViewModelTest {
             heroEnrichmentService = FakeHomeHeroEnricher(),
             performanceConfig = PerformanceConfig.fromTier(DeviceTier.MEDIUM),
             profileId = "profile-1",
+            loadDispatcher = Dispatchers.Main,
             logger = NoopHomeLogger
         )
 

@@ -164,6 +164,108 @@ const CONTENT_CACHE_VERSION = 1;
 const SEARCH_INDEX_CHUNK_SIZE = 1200;
 const REFRESH_CHECK_DEBOUNCE_MS = 1500;
 
+const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const toPortalOrigin = (baseUrl?: string | null): string | null => {
+    const cleaned = asText(baseUrl);
+    if (!cleaned) return null;
+    const withScheme = /^https?:\/\//i.test(cleaned) ? cleaned : `http://${cleaned}`;
+    const match = withScheme.match(/^(https?:\/\/[^/?#]+)/i);
+    return match?.[1] || null;
+};
+
+const normalizePortalImageUrl = (raw: unknown, baseUrl?: string | null): string => {
+    let cleaned = asText(raw)
+        .replace(/[\u0000-\u001F]/g, '')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/^['"]+|['"]+$/g, '')
+        .replace(/\\/g, '/')
+        .trim();
+    if (!cleaned) return '';
+
+    if (cleaned.startsWith('//')) {
+        cleaned = `https:${cleaned}`;
+    } else if (cleaned.startsWith('/')) {
+        const origin = toPortalOrigin(baseUrl);
+        if (!origin) return '';
+        cleaned = `${origin}${cleaned}`;
+    } else if (!/^https?:\/\//i.test(cleaned)) {
+        const origin = toPortalOrigin(baseUrl);
+        if (!origin) return '';
+        cleaned = `${origin}/${cleaned.replace(/^\/+/, '')}`;
+    }
+
+    return /^https?:\/\/[^/?#]+/i.test(cleaned) ? cleaned : '';
+};
+
+const pickImageCandidate = (item: any, keys: string[]): string => {
+    for (const key of keys) {
+        const raw = asText(item?.[key]);
+        if (raw) return raw;
+    }
+    return '';
+};
+
+const normalizeLiveItem = (item: any, baseUrl?: string | null) => {
+    const raw = pickImageCandidate(item, [
+        'stream_icon',
+        'streamIcon',
+        'logo',
+        'logo_url',
+        'tvg_logo',
+        'channel_icon',
+        'icon',
+        'image',
+        'thumb',
+    ]);
+    return {
+        ...item,
+        category_id: String(item.category_id),
+        stream_icon: normalizePortalImageUrl(raw, baseUrl) || raw,
+    };
+};
+
+const normalizeMovieItem = (item: any, baseUrl?: string | null) => {
+    const rawPoster = pickImageCandidate(item, [
+        'stream_icon',
+        'streamIcon',
+        'movie_image',
+        'cover_big',
+        'cover',
+        'poster',
+        'poster_url',
+        'image',
+    ]);
+    const rawBackdrop = Array.isArray(item?.backdrop_path)
+        ? item.backdrop_path.map((entry: unknown) => asText(entry)).filter(Boolean)
+        : [];
+    return {
+        ...item,
+        category_id: String(item.category_id),
+        stream_icon: normalizePortalImageUrl(rawPoster, baseUrl) || rawPoster,
+        backdrop_path: rawBackdrop.map((entry: string) => normalizePortalImageUrl(entry, baseUrl) || entry),
+    };
+};
+
+const normalizeSeriesItem = (item: any, baseUrl?: string | null) => {
+    const rawCover = pickImageCandidate(item, [
+        'cover',
+        'cover_big',
+        'poster',
+        'poster_url',
+        'image',
+    ]);
+    const rawBackdrop = Array.isArray(item?.backdrop_path)
+        ? item.backdrop_path.map((entry: unknown) => asText(entry)).filter(Boolean)
+        : [];
+    return {
+        ...item,
+        category_id: String(item.category_id),
+        cover: normalizePortalImageUrl(rawCover, baseUrl) || rawCover,
+        backdrop_path: rawBackdrop.map((entry: string) => normalizePortalImageUrl(entry, baseUrl) || entry),
+    };
+};
+
 const initialContent: CachedContent = {
     live: { categories: [], items: [], loaded: false },
     movies: { categories: [], items: [], loaded: false },
@@ -643,18 +745,9 @@ const useContentStore = create<ContentStore>()((set, get) => ({
                 category_id: String(cat.category_id),
             }));
 
-            const normalizedLiveItems = liveItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
-            const normalizedMovieItems = movieItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
-            const normalizedSeriesItems = seriesItems.map((item) => ({
-                ...item,
-                category_id: String(item.category_id),
-            }));
+            const normalizedLiveItems = liveItems.map((item) => normalizeLiveItem(item, credentials.serverUrl));
+            const normalizedMovieItems = movieItems.map((item) => normalizeMovieItem(item, credentials.serverUrl));
+            const normalizedSeriesItems = seriesItems.map((item) => normalizeSeriesItem(item, credentials.serverUrl));
 
             logger.info(`[Store] fetchLiveContent: completed, ${safeLiveStreams.length} channels`);
             logger.info(`[Store] fetchVodContent: completed, ${safeVodStreams.length} movies`);
@@ -874,10 +967,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
             if (domain === 'live') {
                 const liveItems = await api.getLiveStreams();
-                const normalizedLiveItems = liveItems.map((item) => ({
-                    ...item,
-                    category_id: String(item.category_id),
-                }));
+                const normalizedLiveItems = liveItems.map((item) => normalizeLiveItem(item, get().credentials?.serverUrl));
                 set((state) => ({
                     content: {
                         ...state.content,
@@ -899,10 +989,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
             if (domain === 'movies') {
                 const movieItems = await api.getVodStreams();
-                const normalizedMovieItems = movieItems.map((item) => ({
-                    ...item,
-                    category_id: String(item.category_id),
-                }));
+                const normalizedMovieItems = movieItems.map((item) => normalizeMovieItem(item, get().credentials?.serverUrl));
                 set((state) => ({
                     content: {
                         ...state.content,
@@ -924,10 +1011,7 @@ const useContentStore = create<ContentStore>()((set, get) => ({
 
             if (domain === 'series') {
                 const seriesItems = await api.getSeries();
-                const normalizedSeriesItems = seriesItems.map((item) => ({
-                    ...item,
-                    category_id: String(item.category_id),
-                }));
+                const normalizedSeriesItems = seriesItems.map((item) => normalizeSeriesItem(item, get().credentials?.serverUrl));
                 set((state) => ({
                     content: {
                         ...state.content,

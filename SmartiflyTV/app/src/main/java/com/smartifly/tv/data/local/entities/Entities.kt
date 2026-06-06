@@ -30,10 +30,11 @@ data class CategoryEntity(
  */
 @Entity(
     tableName = "streams",
-    primaryKeys = ["providerKey", "streamType", "streamId"],
+    primaryKeys = ["providerKey", "streamType", "categoryId", "streamId"],
     indices = [
         Index(value = ["providerKey", "streamType", "categoryId"]),
-        Index(value = ["providerKey", "isFavorite"])
+        Index(value = ["providerKey", "isFavorite"]),
+        Index(value = ["providerKey", "name"])
     ]
 )
 data class StreamEntity(
@@ -76,7 +77,7 @@ data class SyncStateEntity(
     val providerKey: String,
     val domain: String, // "CATEGORY" | "STREAM"
     val type: String, // LIVE | VOD | SERIES
-    val categoryId: String, // "__ALL__" for category domain
+    val categoryId: String, // scope key for category/warmup domains
     val lastAttemptAtMs: Long,
     val lastSuccessAtMs: Long,
     val itemCount: Int,

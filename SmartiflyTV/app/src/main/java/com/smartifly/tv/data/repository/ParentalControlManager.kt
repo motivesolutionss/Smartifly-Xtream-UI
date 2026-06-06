@@ -7,6 +7,9 @@ import java.io.IOException
 import retrofit2.HttpException
 
 class ParentalControlManager(private val api: SmartiflyApi) {
+    private fun isRemoteBackendUser(id: String?): Boolean {
+        return !id.isNullOrBlank() && id.all { it.isDigit() }
+    }
     
     private val _isUnlocked = MutableStateFlow(false)
     val isUnlocked: StateFlow<Boolean> = _isUnlocked
@@ -23,6 +26,11 @@ class ParentalControlManager(private val api: SmartiflyApi) {
     suspend fun loadConfig() {
         if (isConfigLoaded) return
         val currentUserId = userId ?: return
+        if (!isRemoteBackendUser(currentUserId)) {
+            lockedCategories = emptyList()
+            isConfigLoaded = true
+            return
+        }
         try {
             val response = api.getParentalConfig(currentUserId)
             @Suppress("UNCHECKED_CAST")
@@ -43,6 +51,10 @@ class ParentalControlManager(private val api: SmartiflyApi) {
 
     suspend fun validatePin(pin: String): Boolean {
         val currentUserId = userId ?: return false
+        if (!isRemoteBackendUser(currentUserId)) {
+            _isUnlocked.value = true
+            return true
+        }
         return try {
             val response = api.validateParentalPin(mapOf("pin" to pin, "userId" to currentUserId))
             val success = response["success"] as? Boolean ?: false

@@ -119,8 +119,7 @@ class SearchViewModelTest {
     private fun adultProfile() = UserProfile(
         id = "u1",
         name = "Primary",
-        avatarUrl = "",
-        isKids = false
+        avatarUrl = ""
     )
 
     private class FakeSearchDataSource(

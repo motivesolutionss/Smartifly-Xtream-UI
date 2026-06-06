@@ -5,6 +5,7 @@ import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.remote.models.XtreamMovie
 import com.smartifly.tv.data.repository.MoviesDataSource
+import com.smartifly.tv.ui.components.base.SideRailCategoryItem
 import com.smartifly.tv.testutil.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -52,7 +53,8 @@ class MoviesViewModelTest {
         val state = vm.uiState.value
         assertTrue(state is MoviesUiState.Success)
         state as MoviesUiState.Success
-        assertEquals(listOf("All", "Action"), state.categories)
+        assertEquals(listOf(SideRailCategoryItem(id = "100", title = "Action")), state.categories)
+        assertEquals("100", state.selectedCategoryId)
         assertEquals(1, state.movies.size)
         assertEquals("Action One", state.movies.first().title)
     }
@@ -93,7 +95,11 @@ class MoviesViewModelTest {
         )
         val vm = MoviesViewModel(fake)
         advanceUntilIdle()
+
+        vm.loadMoviesByCategory("100")
+        advanceUntilIdle()
         val firstFetchCount = fake.cachedFetchCalls
+        assertTrue(firstFetchCount > 0)
 
         vm.loadMoviesByCategory("100")
         advanceUntilIdle()

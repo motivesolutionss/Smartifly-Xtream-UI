@@ -8,6 +8,26 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Package Visibility Queries for Android TV System Integrations -->
+    <queries>
+        <!-- Package visibility for Android TV Home / Launcher -->
+        <package android:name="com.google.android.tvlauncher" />
+        <!-- Package visibility for Android TV Recommendations / Watch Next -->
+        <package android:name="com.google.android.tvrecommendations" />
+        <!-- Package visibility for System TV app -->
+        <package android:name="com.android.tv" />
+        <!-- Package visibility for YouTube TV -->
+        <package android:name="com.google.android.youtube.tv" />
+        <!-- Package visibility for YouTube Music TV -->
+        <package android:name="com.google.android.youtube.tvmusic" />
+        <!-- Package visibility for Android TV Remote Service -->
+        <package android:name="com.google.android.tv.remote.service" />
+        <!-- Package visibility for Cast/MediaShell -->
+        <package android:name="com.google.android.apps.mediashell" />
+        <!-- Package visibility for Android System WebView -->
+        <package android:name="com.google.android.webview" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

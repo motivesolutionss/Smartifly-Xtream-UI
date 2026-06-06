@@ -34,7 +34,7 @@ Steps:
 3. Repeat sequence 3 times.
 
 Expected:
-- Live re-enters with valid state (not `All: 0 loaded (Loading...)` forever).
+- Live re-enters with valid state (not stuck in `0 loaded (Loading...)` forever).
 - Category sidebar remains responsive.
 - EPG belongs to currently focused channel only.
 
@@ -42,10 +42,10 @@ Pass/Fail:
 - `PASS` if all 3 loops are stable.
 - `FAIL` if any loop gets stuck or shows stale EPG/channel state.
 
-## Scenario 3: All Category + Load More on Unstable Provider
+## Scenario 3: Category Load More on Unstable Provider
 
 Steps:
-1. Select `All`.
+1. Select a high-volume category.
 2. Scroll until load-more is triggered multiple times.
 3. Continue until end-of-list condition.
 

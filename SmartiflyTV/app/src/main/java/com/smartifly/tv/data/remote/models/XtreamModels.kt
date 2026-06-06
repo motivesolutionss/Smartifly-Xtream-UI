@@ -148,7 +148,8 @@ data class XtreamMovieInfo(
  */
 data class XtreamMovieTechnicalData(
     @SerializedName("stream_id") val streamId: Int? = null,
-    @SerializedName("container_extension") val containerExtension: String? = null
+    @SerializedName("container_extension") val containerExtension: String? = null,
+    @SerializedName("youtube_trailer") val youtubeTrailer: String? = null
 )
 
 /**

@@ -21,6 +21,8 @@ import com.smartifly.tv.data.repository.ProfileRepository
 import com.smartifly.tv.data.repository.SearchRepository
 import com.smartifly.tv.data.repository.WatchlistRepository
 import com.smartifly.tv.data.repository.XtreamRepository
+import com.smartifly.tv.data.repository.HeroBannerFallbackRepository
+import com.smartifly.tv.data.repository.HeroBannerFallbackDataSource
 import com.smartifly.tv.data.hero.HeroEnrichmentService
 import com.smartifly.tv.data.hero.HeroRepository
 
@@ -38,6 +40,7 @@ data class AppGraph(
     val epgSearchRepository: com.smartifly.tv.data.epg.EpgSearchRepository,
     val searchRepository: SearchRepository,
     val analyticsRepository: AnalyticsRepository,
+    val heroBannerFallbackRepository: HeroBannerFallbackDataSource,
     val heroRepository: HeroRepository,
     val heroEnrichmentService: HeroEnrichmentService,
     val onboardingRepository: com.smartifly.tv.data.onboarding.OnboardingRepository,
@@ -62,7 +65,7 @@ fun createAppGraph(
 ): AppGraph {
     val settingsManager = SettingsManager(context)
     val cloudWatchlistRepo = com.smartifly.tv.data.cloud.CloudWatchlistRepository()
-    val profileRepository = ProfileRepository(api, sessionManager)
+    val profileRepository = ProfileRepository(context, api, sessionManager)
     val watchlistRepository = WatchlistRepository(context, cloudWatchlistRepo)
     val resumeRepository = ResumeWatchingRepository(context, api)
     val parentalControlManager = ParentalControlManager(api)
@@ -75,7 +78,8 @@ fun createAppGraph(
     val epgRepository = com.smartifly.tv.data.epg.EpgRepository(sessionManager)
     val epgSearchRepository = com.smartifly.tv.data.epg.EpgSearchRepository(epgRepository)
     val searchRepository = SearchRepository(xtreamRepository)
-    val analyticsRepository = AnalyticsRepository(api)
+    val analyticsRepository = AnalyticsRepository(api, sessionManager)
+    val heroBannerFallbackRepository = HeroBannerFallbackRepository(api)
     val heroRepository = HeroRepository()
     val heroEnrichmentService = HeroEnrichmentService(xtreamRepository)
     val onboardingRepository = com.smartifly.tv.data.onboarding.OnboardingRepository(
@@ -103,6 +107,7 @@ fun createAppGraph(
         epgSearchRepository = epgSearchRepository,
         searchRepository = searchRepository,
         analyticsRepository = analyticsRepository,
+        heroBannerFallbackRepository = heroBannerFallbackRepository,
         heroRepository = heroRepository,
         heroEnrichmentService = heroEnrichmentService,
         onboardingRepository = onboardingRepository,
@@ -118,7 +123,14 @@ fun rememberAuthenticatedScreenGraph(
     perfConfig: PerformanceConfig
 ): AuthenticatedScreenGraph {
     val profileId = profile.id
-    val watchlistViewModel = remember(profileId) { WatchlistViewModel(appGraph.watchlistRepository, profileId) }
+    val watchlistViewModel = remember(profileId) {
+        WatchlistViewModel(
+            appGraph.watchlistRepository,
+            appGraph.resumeRepository,
+            appGraph.xtreamRepository,
+            profileId
+        )
+    }
     val liveViewModel = remember(profileId) { LiveViewModel(appGraph.xtreamRepository) }
     val moviesViewModel = remember(profileId) { MoviesViewModel(appGraph.xtreamRepository) }
     val seriesViewModel = remember(profileId) { SeriesViewModel(appGraph.xtreamRepository) }
@@ -127,6 +139,7 @@ fun rememberAuthenticatedScreenGraph(
             repository = appGraph.xtreamRepository,
             resumeRepository = appGraph.resumeRepository,
             analyticsRepository = appGraph.analyticsRepository,
+            heroFallbackRepository = appGraph.heroBannerFallbackRepository,
             heroRepository = appGraph.heroRepository,
             heroEnrichmentService = appGraph.heroEnrichmentService,
             performanceConfig = perfConfig,

@@ -2,12 +2,14 @@ package com.smartifly.tv.features.series
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.smartifly.tv.data.mapper.toDomain
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.models.MediaCategory
+import com.smartifly.tv.data.cache.CacheBudgetPolicy
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.repository.XtreamRepository
+import com.smartifly.tv.ui.components.base.SideRailCategoryItem
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,28 +26,30 @@ class SeriesViewModel(
     private val repository: XtreamRepository
 ) : ViewModel() {
     private companion object {
-        const val ALL_CACHE_KEY = "__ALL__"
+        const val INITIAL_EMPTY_RETRY_COUNT = 2
+        const val INITIAL_EMPTY_RETRY_DELAY_MS = 900L
     }
 
     private val _uiState = MutableStateFlow<SeriesUiState>(SeriesUiState.Loading)
     val uiState: StateFlow<SeriesUiState> = _uiState.asStateFlow()
 
     private var cachedCategories = emptyList<MediaCategory>()
-    private var categoryNameToId = emptyMap<String, String>()
     private var selectedCategoryId: String? = null
-    private var selectedCategoryName: String = "All"
     private var categoriesJob: Job? = null
     private var streamsJob: Job? = null
     private var prefetchJob: Job? = null
     private var requestSequence: Long = 0L
-    private val cacheByCategoryKey = mutableMapOf<String, List<MovieMetadata>>()
+    private var initialLoadStarted = false
+    private val cacheByCategoryKey = object : LinkedHashMap<String, List<MovieMetadata>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<MovieMetadata>>): Boolean {
+            return size > CacheBudgetPolicy.SERIES_MEMORY_MAX_BUCKETS
+        }
+    }
     private var cachePortalKey: String? = null
 
-    init {
-        loadInitialData()
-    }
-
-    private fun loadInitialData() {
+    fun ensureLoaded(force: Boolean = false) {
+        if (initialLoadStarted && !force) return
+        initialLoadStarted = true
         categoriesJob?.cancel()
         categoriesJob = viewModelScope.launch {
             ensurePortalScopedCache()
@@ -53,11 +57,10 @@ class SeriesViewModel(
             when (val result = repository.getSeriesCategoriesCached().first { it !is NetworkResult.Loading }) {
                 is NetworkResult.Success -> {
                     cachedCategories = result.data
-                    categoryNameToId = cachedCategories.associate { it.name to it.id }
                     if (cachedCategories.isNotEmpty()) {
-                        loadSeriesByCategory(null)
+                        loadInitialCategoryContent()
                     } else {
-                        _uiState.value = SeriesUiState.Empty
+                        _uiState.value = SeriesUiState.EmptyProvider
                     }
                 }
                 is NetworkResult.Error -> _uiState.value = SeriesUiState.Error(result.message)
@@ -66,35 +69,69 @@ class SeriesViewModel(
         }
     }
 
+    private suspend fun loadInitialCategoryContent() {
+        val categories = cachedCategories
+        if (categories.isEmpty()) {
+            _uiState.value = SeriesUiState.EmptyProvider
+            return
+        }
+
+        val categoryItems = categories.map { SideRailCategoryItem(id = it.id, title = it.name) }
+        for ((index, category) in categories.withIndex()) {
+            val result = awaitSeriesResult(category.id, retryCount = INITIAL_EMPTY_RETRY_COUNT)
+            when (result) {
+                is NetworkResult.Success -> {
+                    if (result.data.isEmpty()) continue
+                    val bounded = cacheSeriesForCategory(
+                        categoryId = category.id,
+                        currentIndex = index,
+                        raw = result.data
+                    )
+                    selectedCategoryId = category.id
+                    _uiState.value = SeriesUiState.Success(
+                        categories = categoryItems,
+                        selectedCategoryId = category.id,
+                        series = bounded
+                    )
+                    return
+                }
+                is NetworkResult.Error -> continue
+                is NetworkResult.Loading -> Unit
+            }
+        }
+
+        selectedCategoryId = categories.first().id
+        _uiState.value = SeriesUiState.EmptyProvider
+    }
+
     /**
      * Loads series for a specific category ID.
      */
-    fun loadSeriesByCategory(categoryOrId: String?) {
+    fun loadSeriesByCategory(categoryId: String?) {
         streamsJob?.cancel()
         streamsJob = viewModelScope.launch {
             ensurePortalScopedCache()
-            if (categoryOrId == null) {
-                loadAllSeries()
+            val requestedCategoryId = categoryId ?: cachedCategories.firstOrNull()?.id
+            if (requestedCategoryId == null) {
+                _uiState.value = SeriesUiState.EmptyProvider
                 return@launch
             }
 
-            val currentIndex = when {
-                else -> cachedCategories.indexOfFirst { it.name == categoryOrId || it.id == categoryOrId }
+            val matchedCategory = cachedCategories.firstOrNull {
+                it.id == requestedCategoryId
             }
+            val resolvedCategoryId = matchedCategory?.id
+                ?: requestedCategoryId
 
-            val resolvedCategoryId = when {
-                categoryNameToId.containsKey(categoryOrId) -> categoryNameToId[categoryOrId]
-                else -> categoryOrId
-            } ?: return@launch
+            val currentIndex = cachedCategories.indexOfFirst { it.id == resolvedCategoryId }
 
             val categoryCacheKey = resolvedCategoryId
             val cached = cacheByCategoryKey[categoryCacheKey]
             if (!cached.isNullOrEmpty()) {
                 selectedCategoryId = resolvedCategoryId
-                selectedCategoryName = categoryOrId
                 _uiState.value = SeriesUiState.Success(
-                    categories = listOf("All") + cachedCategories.map { it.name },
-                    selectedCategory = selectedCategoryName,
+                    categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                    selectedCategoryId = selectedCategoryId ?: resolvedCategoryId,
                     series = cached
                 )
                 return@launch
@@ -102,27 +139,28 @@ class SeriesViewModel(
 
             if (selectedCategoryId == resolvedCategoryId && _uiState.value is SeriesUiState.Success) return@launch
             selectedCategoryId = resolvedCategoryId
-            selectedCategoryName = categoryOrId
             val requestId = ++requestSequence
+            _uiState.value = SeriesUiState.Loading
  
-            when (val result = repository.getSeriesCached(resolvedCategoryId).first { it !is NetworkResult.Loading }) {
+            when (val result = awaitSeriesResult(resolvedCategoryId)) {
                 is NetworkResult.Success -> {
                     if (requestId != requestSequence) return@launch
                     if (result.data.isEmpty()) {
-                        _uiState.value = SeriesUiState.Empty
+                        _uiState.value = SeriesUiState.EmptyCategory(
+                            categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                            selectedCategoryId = resolvedCategoryId
+                        )
                     } else {
-                        val audited = auditAndDedupeSeries(
-                            scope = "category",
-                            key = categoryCacheKey,
+                        val bounded = cacheSeriesForCategory(
+                            categoryId = categoryCacheKey,
+                            currentIndex = currentIndex,
                             raw = result.data
                         )
-                        cacheByCategoryKey[categoryCacheKey] = audited
                         _uiState.value = SeriesUiState.Success(
-                            categories = listOf("All") + cachedCategories.map { it.name },
-                            selectedCategory = selectedCategoryName,
-                            series = audited
+                            categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                            selectedCategoryId = selectedCategoryId ?: resolvedCategoryId,
+                            series = bounded
                         )
-                        prefetchNextCategories(currentIndex)
                     }
                 }
                 is NetworkResult.Error -> {
@@ -134,55 +172,10 @@ class SeriesViewModel(
         }
     }
 
-    private suspend fun loadAllSeries() {
-        val cachedAll = cacheByCategoryKey[ALL_CACHE_KEY]
-        if (!cachedAll.isNullOrEmpty()) {
-            selectedCategoryId = null
-            selectedCategoryName = "All"
-            _uiState.value = SeriesUiState.Success(
-                categories = listOf("All") + cachedCategories.map { it.name },
-                selectedCategory = selectedCategoryName,
-                series = cachedAll
-            )
-            return
-        }
-        if (selectedCategoryId == null && _uiState.value is SeriesUiState.Success) return
-        selectedCategoryId = null
-        selectedCategoryName = "All"
-        val requestId = ++requestSequence
-
-        when (val result = repository.getSeries(categoryId = null).first { it !is NetworkResult.Loading }) {
-            is NetworkResult.Success -> {
-                if (requestId != requestSequence) return
-                val mapped = result.data.map { it.toDomain() }
-                val allSeries = auditAndDedupeSeries(
-                    scope = "all",
-                    key = ALL_CACHE_KEY,
-                    raw = mapped
-                )
-                if (allSeries.isEmpty()) {
-                    _uiState.value = SeriesUiState.Empty
-                } else {
-                    cacheByCategoryKey[ALL_CACHE_KEY] = allSeries
-                    _uiState.value = SeriesUiState.Success(
-                        categories = listOf("All") + cachedCategories.map { it.name },
-                        selectedCategory = selectedCategoryName,
-                        series = allSeries
-                    )
-                }
-            }
-            is NetworkResult.Error -> {
-                if (requestId != requestSequence) return
-                _uiState.value = SeriesUiState.Error(result.message)
-            }
-            is NetworkResult.Loading -> Unit
-        }
-    }
-
     private fun prefetchNextCategories(currentIndex: Int) {
         prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            for (i in 1..2) {
+            for (i in 1..CacheBudgetPolicy.SERIES_PREFETCH_COUNT) {
                 val nextIndex = currentIndex + i
                 if (nextIndex < cachedCategories.size) {
                     val nextCategory = cachedCategories[nextIndex]
@@ -197,14 +190,55 @@ class SeriesViewModel(
         categoriesJob?.cancel()
         streamsJob?.cancel()
         prefetchJob?.cancel()
+        initialLoadStarted = false
+    }
+
+    private suspend fun awaitSeriesResult(
+        categoryId: String,
+        retryCount: Int = 0
+    ): NetworkResult<List<MovieMetadata>> {
+        repeat(retryCount + 1) { attempt ->
+            when (val result = repository.getSeriesCached(categoryId).first { it !is NetworkResult.Loading }) {
+                is NetworkResult.Success -> {
+                    if (result.data.isNotEmpty() || attempt >= retryCount) {
+                        return result
+                    }
+                    delay(INITIAL_EMPTY_RETRY_DELAY_MS)
+                }
+                is NetworkResult.Error -> return result
+                is NetworkResult.Loading -> Unit
+            }
+        }
+        return NetworkResult.Success(emptyList())
+    }
+
+    private fun cacheSeriesForCategory(
+        categoryId: String,
+        currentIndex: Int,
+        raw: List<MovieMetadata>
+    ): List<MovieMetadata> {
+        val audited = auditAndDedupeSeries(
+            scope = "category",
+            key = categoryId,
+            raw = raw
+        )
+        val bounded = audited.take(CacheBudgetPolicy.SERIES_CATEGORY_MAX_ITEMS)
+        cacheByCategoryKey[categoryId] = bounded
+        prefetchNextCategories(currentIndex)
+        return bounded
     }
 
     private suspend fun ensurePortalScopedCache() {
-        val currentPortalKey = runCatching { repository.getPortalCapabilityKey() }.getOrNull() ?: return
+        val currentPortalKey = runCatching { repository.getPortalCapabilityKey() }.getOrNull()
+        if (currentPortalKey == null) {
+            cacheByCategoryKey.clear()
+            selectedCategoryId = null
+            cachePortalKey = null
+            return
+        }
         if (cachePortalKey != currentPortalKey) {
             cacheByCategoryKey.clear()
             selectedCategoryId = null
-            selectedCategoryName = "All"
             cachePortalKey = currentPortalKey
         }
     }

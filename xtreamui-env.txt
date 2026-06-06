@@ -21,8 +21,8 @@ DATABASE_URL=mysql://xtream_user:Hockers06@123$@Motive$@xtream-db:3306/xtream_db
 JWT_SECRET=CHANGE_ME_LONG_RANDOM_JWT_SECRET_MIN_32_CHARS
 JWT_ACCESS_SECRET=CHANGE_ME_LONG_RANDOM_ACCESS_SECRET_MIN_32_CHARS
 JWT_REFRESH_SECRET=CHANGE_ME_LONG_RANDOM_REFRESH_SECRET_MIN_32_CHARS
-JWT_EXPIRES_IN=1h
-REFRESH_TOKEN_EXPIRES_IN=7d
+JWT_ACCESS_EXPIRES_IN=1h
+JWT_REFRESH_EXPIRES_IN_DAYS=7
 
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@smartifly-xtream.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
@@ -56,8 +56,8 @@ oP7eyNhlVpDdTKPnzsBfHYn6
 FIREBASE_PROJECT_ID=smartifly-xtream
 
 # API CORS
-CORS_ORIGINS=https://xtreamui.duckdns.org,https://admin.xtreamui.duckdns.org
-FRONTEND_URL=https://xtreamui.duckdns.org
+CORS_ORIGINS=https://smartifly.co,https://admin.smartifly.co
+FRONTEND_URL=https://smartifly.co
 
 # Email (Brevo/SMTP)
 BREVO_API_KEY=CHANGE_ME_BREVO_API_KEY

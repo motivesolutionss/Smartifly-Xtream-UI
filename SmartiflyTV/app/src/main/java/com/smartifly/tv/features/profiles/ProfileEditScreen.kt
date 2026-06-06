@@ -98,28 +98,25 @@ fun ProfileEditScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // PIN Input Mock
-                if (!profile.isKids) {
-                    Column(horizontalAlignment = Alignment.Start, modifier = Modifier.width(400.dp)) {
-                        Text("Profile PIN (4 digits)", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            onClick = { showPinPad = true },
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
-                            colors = ClickableSurfaceDefaults.colors(containerColor = Color.White.copy(alpha = 0.05f))
-                        ) {
-                            Text(
-                                text = if (pin.isEmpty()) "No PIN set" else "****",
-                                modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                                color = TextPrimary
-                            )
-                        }
+                Column(horizontalAlignment = Alignment.Start, modifier = Modifier.width(400.dp)) {
+                    Text("Profile PIN (4 digits)", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        onClick = { showPinPad = true },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                        colors = ClickableSurfaceDefaults.colors(containerColor = Color.White.copy(alpha = 0.05f))
+                    ) {
+                        Text(
+                            text = if (pin.isEmpty()) "No PIN set" else "****",
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            color = TextPrimary
+                        )
                     }
                 }
 
                 // Dialogs
                 if (showAvatarPicker) {
                     AvatarSelectionDialog(
-                        isKids = profile.isKids,
                         onAvatarSelected = { 
                             selectedAvatar = it
                             showAvatarPicker = false

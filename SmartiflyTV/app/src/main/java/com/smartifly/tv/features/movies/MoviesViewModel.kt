@@ -2,12 +2,14 @@ package com.smartifly.tv.features.movies
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.smartifly.tv.data.mapper.toDomain
 import com.smartifly.tv.data.models.MovieMetadata
 import com.smartifly.tv.data.models.MediaCategory
 import com.smartifly.tv.data.remote.NetworkResult
 import com.smartifly.tv.data.repository.MoviesDataSource
+import com.smartifly.tv.data.cache.CacheBudgetPolicy
+import com.smartifly.tv.ui.components.base.SideRailCategoryItem
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,30 +26,32 @@ class MoviesViewModel(
     private val repository: MoviesDataSource
 ) : ViewModel() {
     private companion object {
-        const val ALL_CACHE_KEY = "__ALL__"
         const val DEBUG_MOVIE_ID = "1604"
         const val DEBUG_MOVIE_TITLE = "thrissur pooram"
+        const val INITIAL_EMPTY_RETRY_COUNT = 2
+        const val INITIAL_EMPTY_RETRY_DELAY_MS = 900L
     }
 
     private val _uiState = MutableStateFlow<MoviesUiState>(MoviesUiState.Loading)
     val uiState: StateFlow<MoviesUiState> = _uiState.asStateFlow()
 
     private var cachedCategories = emptyList<MediaCategory>()
-    private var categoryNameToId = emptyMap<String, String>()
     private var selectedCategoryId: String? = null
-    private var selectedCategoryName: String = "All"
     private var categoriesJob: Job? = null
     private var moviesJob: Job? = null
     private var prefetchJob: Job? = null
     private var requestSequence: Long = 0L
-    private val cacheByCategoryKey = mutableMapOf<String, List<MovieMetadata>>()
+    private var initialLoadStarted = false
+    private val cacheByCategoryKey = object : LinkedHashMap<String, List<MovieMetadata>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<MovieMetadata>>): Boolean {
+            return size > CacheBudgetPolicy.MOVIES_MEMORY_MAX_BUCKETS
+        }
+    }
     private var cachePortalKey: String? = null
 
-    init {
-        loadInitialData()
-    }
-
-    private fun loadInitialData() {
+    fun ensureLoaded(force: Boolean = false) {
+        if (initialLoadStarted && !force) return
+        initialLoadStarted = true
         categoriesJob?.cancel()
         categoriesJob = viewModelScope.launch {
             ensurePortalScopedCache()
@@ -55,11 +59,10 @@ class MoviesViewModel(
             when (val result = repository.getVodCategories().first { it !is NetworkResult.Loading }) {
                 is NetworkResult.Success -> {
                     cachedCategories = result.data
-                    categoryNameToId = cachedCategories.associate { it.name to it.id }
                     if (cachedCategories.isNotEmpty()) {
-                        loadMoviesByCategory(null)
+                        loadInitialCategoryContent()
                     } else {
-                        _uiState.value = MoviesUiState.Empty
+                        _uiState.value = MoviesUiState.EmptyProvider
                     }
                 }
                 is NetworkResult.Error -> _uiState.value = MoviesUiState.Error(result.message)
@@ -68,35 +71,71 @@ class MoviesViewModel(
         }
     }
 
+    private suspend fun loadInitialCategoryContent() {
+        val categories = cachedCategories
+        if (categories.isEmpty()) {
+            _uiState.value = MoviesUiState.EmptyProvider
+            return
+        }
+
+        val categoryItems = categories.map { SideRailCategoryItem(id = it.id, title = it.name) }
+        for ((index, category) in categories.withIndex()) {
+            val result = awaitMoviesResult(category.id, retryCount = INITIAL_EMPTY_RETRY_COUNT)
+            when (result) {
+                is NetworkResult.Success -> {
+                    if (result.data.isEmpty()) continue
+                    val bounded = cacheMoviesForCategory(
+                        categoryId = category.id,
+                        currentIndex = index,
+                        raw = result.data
+                    )
+                    selectedCategoryId = category.id
+                    _uiState.value = MoviesUiState.Success(
+                        categories = categoryItems,
+                        selectedCategoryId = category.id,
+                        movies = bounded
+                    )
+                    return
+                }
+                is NetworkResult.Error -> {
+                    continue
+                }
+                is NetworkResult.Loading -> Unit
+            }
+        }
+
+        selectedCategoryId = categories.first().id
+        _uiState.value = MoviesUiState.EmptyProvider
+    }
+
     /**
      * Loads movies for a specific category ID.
      */
-    fun loadMoviesByCategory(categoryOrId: String?) {
+    fun loadMoviesByCategory(categoryId: String?) {
         moviesJob?.cancel()
         moviesJob = viewModelScope.launch {
             ensurePortalScopedCache()
-            if (categoryOrId == null) {
-                loadAllMovies()
+            val requestedCategoryId = categoryId ?: cachedCategories.firstOrNull()?.id
+            if (requestedCategoryId == null) {
+                _uiState.value = MoviesUiState.EmptyProvider
                 return@launch
             }
 
-            val currentIndex = when {
-                else -> cachedCategories.indexOfFirst { it.name == categoryOrId || it.id == categoryOrId }
+            val matchedCategory = cachedCategories.firstOrNull {
+                it.id == requestedCategoryId
             }
+            val targetId = matchedCategory?.id
+                ?: requestedCategoryId
 
-            val targetId = when {
-                categoryNameToId.containsKey(categoryOrId) -> categoryNameToId[categoryOrId]
-                else -> categoryOrId
-            } ?: return@launch
+            val currentIndex = cachedCategories.indexOfFirst { it.id == targetId }
 
             val categoryCacheKey = targetId
             val cached = cacheByCategoryKey[categoryCacheKey]
             if (!cached.isNullOrEmpty()) {
                 selectedCategoryId = targetId
-                selectedCategoryName = categoryOrId
                 _uiState.value = MoviesUiState.Success(
-                    categories = listOf("All") + cachedCategories.map { it.name },
-                    selectedCategory = selectedCategoryName,
+                    categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                    selectedCategoryId = selectedCategoryId ?: targetId,
                     movies = cached
                 )
                 return@launch
@@ -104,27 +143,28 @@ class MoviesViewModel(
 
             if (selectedCategoryId == targetId && _uiState.value is MoviesUiState.Success) return@launch
             selectedCategoryId = targetId
-            selectedCategoryName = categoryOrId
             val requestId = ++requestSequence
+            _uiState.value = MoviesUiState.Loading
             
-            when (val result = repository.getMoviesCached(targetId).first { it !is NetworkResult.Loading }) {
+            when (val result = awaitMoviesResult(targetId)) {
                 is NetworkResult.Success -> {
                     if (requestId != requestSequence) return@launch
                     if (result.data.isEmpty()) {
-                        _uiState.value = MoviesUiState.Empty
+                        _uiState.value = MoviesUiState.EmptyCategory(
+                            categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                            selectedCategoryId = targetId
+                        )
                     } else {
-                        val audited = auditAndDedupeMovies(
-                            scope = "category",
-                            key = categoryCacheKey,
+                        val bounded = cacheMoviesForCategory(
+                            categoryId = categoryCacheKey,
+                            currentIndex = currentIndex,
                             raw = result.data
                         )
-                        cacheByCategoryKey[categoryCacheKey] = audited
                         _uiState.value = MoviesUiState.Success(
-                            categories = listOf("All") + cachedCategories.map { it.name },
-                            selectedCategory = selectedCategoryName,
-                            movies = audited
+                            categories = cachedCategories.map { SideRailCategoryItem(id = it.id, title = it.name) },
+                            selectedCategoryId = selectedCategoryId ?: targetId,
+                            movies = bounded
                         )
-                        prefetchNextCategories(currentIndex)
                     }
                 }
                 is NetworkResult.Error -> {
@@ -136,55 +176,10 @@ class MoviesViewModel(
         }
     }
 
-    private suspend fun loadAllMovies() {
-        val cachedAll = cacheByCategoryKey[ALL_CACHE_KEY]
-        if (!cachedAll.isNullOrEmpty()) {
-            selectedCategoryId = null
-            selectedCategoryName = "All"
-            _uiState.value = MoviesUiState.Success(
-                categories = listOf("All") + cachedCategories.map { it.name },
-                selectedCategory = selectedCategoryName,
-                movies = cachedAll
-            )
-            return
-        }
-        if (selectedCategoryId == null && _uiState.value is MoviesUiState.Success) return
-        selectedCategoryId = null
-        selectedCategoryName = "All"
-        val requestId = ++requestSequence
-
-        when (val result = repository.getMovies(categoryId = null, page = null).first { it !is NetworkResult.Loading }) {
-            is NetworkResult.Success -> {
-                if (requestId != requestSequence) return
-                val mapped = result.data.map { it.toDomain() }
-                val allMovies = auditAndDedupeMovies(
-                    scope = "all",
-                    key = ALL_CACHE_KEY,
-                    raw = mapped
-                )
-                if (allMovies.isEmpty()) {
-                    _uiState.value = MoviesUiState.Empty
-                } else {
-                    cacheByCategoryKey[ALL_CACHE_KEY] = allMovies
-                    _uiState.value = MoviesUiState.Success(
-                        categories = listOf("All") + cachedCategories.map { it.name },
-                        selectedCategory = selectedCategoryName,
-                        movies = allMovies
-                    )
-                }
-            }
-            is NetworkResult.Error -> {
-                if (requestId != requestSequence) return
-                _uiState.value = MoviesUiState.Error(result.message)
-            }
-            is NetworkResult.Loading -> Unit
-        }
-    }
-
     private fun prefetchNextCategories(currentIndex: Int) {
         prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            for (i in 1..2) {
+            for (i in 1..CacheBudgetPolicy.MOVIES_PREFETCH_COUNT) {
                 val nextIndex = currentIndex + i
                 if (nextIndex < cachedCategories.size) {
                     val nextCategory = cachedCategories[nextIndex]
@@ -199,14 +194,55 @@ class MoviesViewModel(
         categoriesJob?.cancel()
         moviesJob?.cancel()
         prefetchJob?.cancel()
+        initialLoadStarted = false
+    }
+
+    private suspend fun awaitMoviesResult(
+        categoryId: String,
+        retryCount: Int = 0
+    ): NetworkResult<List<MovieMetadata>> {
+        repeat(retryCount + 1) { attempt ->
+            when (val result = repository.getMoviesCached(categoryId).first { it !is NetworkResult.Loading }) {
+                is NetworkResult.Success -> {
+                    if (result.data.isNotEmpty() || attempt >= retryCount) {
+                        return result
+                    }
+                    delay(INITIAL_EMPTY_RETRY_DELAY_MS)
+                }
+                is NetworkResult.Error -> return result
+                is NetworkResult.Loading -> Unit
+            }
+        }
+        return NetworkResult.Success(emptyList())
+    }
+
+    private fun cacheMoviesForCategory(
+        categoryId: String,
+        currentIndex: Int,
+        raw: List<MovieMetadata>
+    ): List<MovieMetadata> {
+        val audited = auditAndDedupeMovies(
+            scope = "category",
+            key = categoryId,
+            raw = raw
+        )
+        val bounded = audited.take(CacheBudgetPolicy.MOVIES_CATEGORY_MAX_ITEMS)
+        cacheByCategoryKey[categoryId] = bounded
+        prefetchNextCategories(currentIndex)
+        return bounded
     }
 
     private suspend fun ensurePortalScopedCache() {
-        val currentPortalKey = runCatching { repository.getPortalCapabilityKey() }.getOrNull() ?: return
+        val currentPortalKey = runCatching { repository.getPortalCapabilityKey() }.getOrNull()
+        if (currentPortalKey == null) {
+            cacheByCategoryKey.clear()
+            selectedCategoryId = null
+            cachePortalKey = null
+            return
+        }
         if (cachePortalKey != currentPortalKey) {
             cacheByCategoryKey.clear()
             selectedCategoryId = null
-            selectedCategoryName = "All"
             cachePortalKey = currentPortalKey
         }
     }

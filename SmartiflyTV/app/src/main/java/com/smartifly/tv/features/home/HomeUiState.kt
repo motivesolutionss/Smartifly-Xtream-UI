@@ -3,9 +3,13 @@ package com.smartifly.tv.features.home
 import com.smartifly.tv.data.models.MovieMetadata
 
 sealed class HomeUiState {
-    object Loading : HomeUiState()
+    data class Loading(
+        val heroMovie: MovieMetadata? = null,
+        val heroCarousel: List<MovieMetadata> = emptyList()
+    ) : HomeUiState()
     data class Success(
         val heroMovie: MovieMetadata? = null,
+        val heroCarousel: List<MovieMetadata> = emptyList(),
         val sections: List<HomeSection>,
         val isDegraded: Boolean = false
     ) : HomeUiState()

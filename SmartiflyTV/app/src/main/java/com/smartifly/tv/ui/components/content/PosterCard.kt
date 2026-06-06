@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import com.smartifly.tv.R
 import com.smartifly.tv.performance.PerformanceKpiMonitor
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -44,6 +50,8 @@ fun PosterCard(
     profileId: String? = null,
     onClick: () -> Unit,
     onFocus: () -> Unit,
+    cardWidth: Dp = Dimensions.PosterWidth,
+    cardHeight: Dp = Dimensions.PosterHeight,
     modifier: Modifier = Modifier
 ) {
     var showFallback by remember(movie.id, movie.posterUrl, movie.backdropUrl) { mutableStateOf(false) }
@@ -85,99 +93,116 @@ fun PosterCard(
         if (candidateIndex < candidates.size) showFallback = false
     }
 
-    BaseFocusableCard(
-        onClick = onClick,
-        onFocus = onFocus,
-        modifier = modifier
-            .size(Dimensions.PosterWidth, Dimensions.PosterHeight)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Dimensions.FocusCornerRadius))
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier.width(cardWidth),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Base layer / Placeholder
-        Box(
+        BaseFocusableCard(
+            onClick = onClick,
+            onFocus = onFocus,
             modifier = Modifier
-                .fillMaxSize()
-                .background(SurfaceDark),
-            contentAlignment = Alignment.Center
+                .size(cardWidth, cardHeight)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(Dimensions.FocusCornerRadius))
         ) {
-            if (!resolvedImage.isBlank() && !showFallback) {
-                AsyncImage(
-                    model = resolvedImage,
-                    contentDescription = movie.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    onError = {
-                        val classification = ImageErrorClassifier.classify(it.result.throwable)
-                        val temporaryTtl = classification.temporaryTtlMs
-                        if (temporaryTtl != null) {
-                            ImageFailureMemory.markTemporarilyBad(resolvedImage, ttlMs = temporaryTtl)
-                        } else {
-                            ImageFailureMemory.markBad(resolvedImage)
+            // Base layer / Placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(SurfaceDark),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!resolvedImage.isBlank() && !showFallback) {
+                    AsyncImage(
+                        model = resolvedImage,
+                        contentDescription = movie.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        onError = {
+                            val classification = ImageErrorClassifier.classify(it.result.throwable)
+                            val temporaryTtl = classification.temporaryTtlMs
+                            if (temporaryTtl != null) {
+                                ImageFailureMemory.markTemporarilyBad(resolvedImage, ttlMs = temporaryTtl)
+                            } else {
+                                ImageFailureMemory.markBad(resolvedImage)
+                            }
+                            ImageQualityMonitor.recordFailure(
+                                url = resolvedImage,
+                                context = ImageQualityMonitor.Context.HOME_POSTER,
+                                profileId = profileId,
+                                contentType = movie.type,
+                                contentId = movie.id
+                            )
+                            PerformanceKpiMonitor.recordImageLoad(
+                                context = ImageQualityMonitor.Context.HOME_POSTER,
+                                durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                                success = false
+                            )
+                            if (candidateIndex + 1 < candidates.size) {
+                                candidateIndex += 1
+                            } else {
+                                showFallback = true
+                            }
+                        },
+                        onSuccess = {
+                            ImageFailureMemory.markHostSuccess(resolvedImage)
+                            ImageQualityMonitor.recordSuccess(
+                                url = resolvedImage,
+                                context = ImageQualityMonitor.Context.HOME_POSTER,
+                                profileId = profileId,
+                                contentType = movie.type,
+                                contentId = movie.id
+                            )
+                            PerformanceKpiMonitor.recordImageLoad(
+                                context = ImageQualityMonitor.Context.HOME_POSTER,
+                                durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                                success = true
+                            )
                         }
-                        ImageQualityMonitor.recordFailure(
-                            url = resolvedImage,
-                            context = ImageQualityMonitor.Context.HOME_POSTER,
-                            profileId = profileId,
-                            contentType = movie.type,
-                            contentId = movie.id
-                        )
-                        PerformanceKpiMonitor.recordImageLoad(
-                            context = ImageQualityMonitor.Context.HOME_POSTER,
-                            durationMs = System.currentTimeMillis() - imageLoadStartedAt,
-                            success = false
-                        )
-                        if (candidateIndex + 1 < candidates.size) {
-                            candidateIndex += 1
-                        } else {
-                            showFallback = true
-                        }
-                    },
-                    onSuccess = {
-                        ImageFailureMemory.markHostSuccess(resolvedImage)
-                        ImageQualityMonitor.recordSuccess(
-                            url = resolvedImage,
-                            context = ImageQualityMonitor.Context.HOME_POSTER,
-                            profileId = profileId,
-                            contentType = movie.type,
-                            contentId = movie.id
-                        )
-                        PerformanceKpiMonitor.recordImageLoad(
-                            context = ImageQualityMonitor.Context.HOME_POSTER,
-                            durationMs = System.currentTimeMillis() - imageLoadStartedAt,
-                            success = true
+                    )
+                } else {
+                    Image(
+                        painter = fallbackPainter,
+                        contentDescription = movie.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.94f)
+                                    ),
+                                    startY = 0f,
+                                    endY = 220f
+                                )
+                            )
+                    ) {
+                        Text(
+                            text = movie.title.take(54),
+                            color = Color.White,
+                            modifier = Modifier
+                                .padding(horizontal = Dimensions.PaddingSmall, vertical = Dimensions.PaddingSmall)
                         )
                     }
-                )
-            } else {
-                Image(
-                    painter = fallbackPainter,
-                    contentDescription = movie.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.94f)
-                                ),
-                                startY = 0f,
-                                endY = 220f
-                            )
-                        )
-                ) {
-                    Text(
-                        text = movie.title.take(54),
-                        color = Color.White,
-                        modifier = Modifier
-                            .padding(horizontal = Dimensions.PaddingSmall, vertical = Dimensions.PaddingSmall)
-                    )
                 }
             }
         }
+        
+        Spacer(modifier = Modifier.height(6.dp))
+        
+        Text(
+            text = movie.title,
+            style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.85f),
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
     }
 }
 

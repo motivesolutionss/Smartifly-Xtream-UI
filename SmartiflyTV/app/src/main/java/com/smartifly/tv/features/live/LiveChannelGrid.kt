@@ -14,6 +14,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
@@ -30,9 +32,11 @@ import com.smartifly.tv.ui.theme.Dimensions
 fun LiveChannelGrid(
     channels: List<LiveStream>,
     profileId: String,
+    favoriteChannelIds: Set<String>,
     hasMore: Boolean,
     isLoadingMore: Boolean,
     onLoadMore: () -> Unit,
+    onChannelLongPress: (LiveStream) -> Unit,
     onChannelFocused: (LiveStream) -> Unit,
     onChannelClick: (LiveStream) -> Unit,
     modifier: Modifier = Modifier
@@ -65,9 +69,9 @@ fun LiveChannelGrid(
 
     TvLazyVerticalGrid(
         state = gridState,
-        columns = TvGridCells.Fixed(5),
+        columns = TvGridCells.Fixed(3),
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(Dimensions.PaddingExtraLarge),
+        contentPadding = PaddingValues(start = 8.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(Dimensions.ItemSpacing),
         horizontalArrangement = Arrangement.spacedBy(Dimensions.ItemSpacing)
     ) {
@@ -78,13 +82,16 @@ fun LiveChannelGrid(
                 logoUrl = channel.logoUrl,
                 contentId = channel.id,
                 contentType = channel.streamType,
+                isFavorite = favoriteChannelIds.contains(channel.id),
+                cardWidth = Dp.Unspecified,
                 onClick = { onChannelClick(channel) },
-                onFocus = { onChannelFocused(channel) }
+                onFocus = { onChannelFocused(channel) },
+                onLongPress = { onChannelLongPress(channel) }
             )
         }
 
         if (isLoadingMore || hasMore) {
-            items(1, span = { androidx.tv.foundation.lazy.grid.TvGridItemSpan(5) }) {
+            items(1, span = { androidx.tv.foundation.lazy.grid.TvGridItemSpan(3) }) {
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
                         .fillMaxWidth()

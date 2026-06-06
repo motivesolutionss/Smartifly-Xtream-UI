@@ -17,6 +17,7 @@ import { ContentItem } from '../home/components/ContentCard';
 import useContentStore from '../../../store/contentStore';
 import { useContentFilter } from '../../../store/profileStore';
 import { scheduleIdleWork } from '../../../utils/idle';
+import { resolveLiveImage } from '../../../utils/portalImage';
 import type { SearchScreenProps } from '../../../navigation/types';
 import type { XtreamLiveStream, XtreamMovie, XtreamSeries } from '../../../api/xtream';
 
@@ -122,6 +123,7 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const seriesCount = useContentStore((state) => state.content.series.items.length);
     const liveLoaded = useContentStore((state) => state.content.live.loaded);
     const liveCount = useContentStore((state) => state.content.live.items.length);
+    const portalBaseUrl = useContentStore((state) => state.credentials?.serverUrl);
     const { filterContent } = useContentFilter();
 
     const performSearch = useCallback((searchText: string) => {
@@ -289,11 +291,11 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         limitedResults.live.map((live) => ({
             id: String(live.stream_id),
             name: live.name,
-            image: live.stream_icon,
+            image: resolveLiveImage(live, portalBaseUrl),
             type: 'live',
             data: live,
         }))
-    ), [limitedResults.live]);
+    ), [limitedResults.live, portalBaseUrl]);
 
     const suggestedMovies = useMemo<ContentItem[]>(() => (
         suggestedContent.movies.map((movie) => ({
@@ -321,11 +323,11 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
         suggestedContent.live.map((live) => ({
             id: String(live.stream_id),
             name: live.name,
-            image: live.stream_icon,
+            image: resolveLiveImage(live, portalBaseUrl),
             type: 'live',
             data: live,
         }))
-    ), [suggestedContent.live]);
+    ), [suggestedContent.live, portalBaseUrl]);
 
     const hasResults = useMemo(() => (
         moviesResultItems.length > 0 || seriesResultItems.length > 0 || liveResultItems.length > 0

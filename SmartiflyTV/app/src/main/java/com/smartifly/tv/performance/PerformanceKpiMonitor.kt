@@ -6,6 +6,7 @@ import kotlin.math.ceil
 object PerformanceKpiMonitor {
     private const val MAX_IMAGE_SAMPLES = 400
     private const val MAX_PREFETCH_SAMPLES = 200
+    private const val MAX_CONTEXT_SNAPSHOTS = 8
 
     data class ImageSample(
         val context: String,
@@ -20,11 +21,20 @@ object PerformanceKpiMonitor {
         val durationMs: Long
     )
 
+    data class ImageContextSnapshot(
+        val context: String,
+        val samples: Int,
+        val successRatePct: Int,
+        val p50Ms: Long,
+        val p95Ms: Long
+    )
+
     data class Snapshot(
         val imageSamples: Int,
         val imageSuccessRatePct: Int,
         val imageP50Ms: Long,
         val imageP95Ms: Long,
+        val imageByContext: List<ImageContextSnapshot>,
         val prefetchSamples: Int,
         val prefetchAvgBatchMs: Long,
         val prefetchAvgFailRatePct: Int,
@@ -69,6 +79,22 @@ object PerformanceKpiMonitor {
         val successRate = if (imageCopy.isEmpty()) 0 else (successCount * 100 / imageCopy.size)
         val p50 = percentile(imageDurations, 0.50)
         val p95 = percentile(imageDurations, 0.95)
+        val imageByContext = imageCopy
+            .groupBy { it.context }
+            .map { (context, samples) ->
+                val durations = samples.map { it.durationMs }.sorted()
+                val contextSuccessCount = samples.count { it.success }
+                val contextSuccessRate = if (samples.isEmpty()) 0 else (contextSuccessCount * 100 / samples.size)
+                ImageContextSnapshot(
+                    context = context,
+                    samples = samples.size,
+                    successRatePct = contextSuccessRate,
+                    p50Ms = percentile(durations, 0.50),
+                    p95Ms = percentile(durations, 0.95)
+                )
+            }
+            .sortedByDescending { it.samples }
+            .take(MAX_CONTEXT_SNAPSHOTS)
 
         val avgBatchMs = if (prefetchCopy.isEmpty()) 0L else prefetchCopy.map { it.durationMs }.average().toLong()
         val avgFailRatePct = if (prefetchCopy.isEmpty()) 0 else {
@@ -83,6 +109,7 @@ object PerformanceKpiMonitor {
             imageSuccessRatePct = successRate,
             imageP50Ms = p50,
             imageP95Ms = p95,
+            imageByContext = imageByContext,
             prefetchSamples = prefetchCopy.size,
             prefetchAvgBatchMs = avgBatchMs,
             prefetchAvgFailRatePct = avgFailRatePct,

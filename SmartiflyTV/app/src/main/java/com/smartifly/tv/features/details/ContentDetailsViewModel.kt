@@ -96,9 +96,9 @@ class ContentDetailsViewModel(
         if (catId.isNullOrEmpty()) return emptyList()
         
         val result = if (contentType == "series") {
-            repository.getSeries(catId).firstOrNull()
+            repository.getSeries(catId).firstOrNull { it !is NetworkResult.Loading }
         } else {
-            repository.getMovies(catId).firstOrNull()
+            repository.getMovies(catId).firstOrNull { it !is NetworkResult.Loading }
         }
 
         return if (result is NetworkResult.Success<*>) {
