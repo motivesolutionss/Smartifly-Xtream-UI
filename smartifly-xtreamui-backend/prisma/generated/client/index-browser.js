@@ -229,6 +229,8 @@ exports.Prisma.PlaybackActivityScalarFieldEnum = {
   type: 'type',
   profileId: 'profileId',
   status: 'status',
+  portalIdentity: 'portalIdentity',
+  portalBaseUrl: 'portalBaseUrl',
   timestamp: 'timestamp'
 };
 
@@ -265,8 +267,9 @@ exports.Prisma.ProfileScalarFieldEnum = {
   userId: 'userId',
   name: 'name',
   avatarUrl: 'avatarUrl',
-  isKids: 'isKids',
   pin: 'pin',
+  primaryColor: 'primaryColor',
+  themeVariant: 'themeVariant',
   lastUsed: 'lastUsed'
 };
 
@@ -278,6 +281,7 @@ exports.Prisma.TmdbMetadataScalarFieldEnum = {
   overview: 'overview',
   posterPath: 'posterPath',
   backdropPath: 'backdropPath',
+  trailerUrl: 'trailerUrl',
   rating: 'rating',
   ageRating: 'ageRating',
   releaseDate: 'releaseDate',
@@ -286,9 +290,33 @@ exports.Prisma.TmdbMetadataScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.ProviderHealthEventScalarFieldEnum = {
+  id: 'id',
+  eventId: 'eventId',
+  deviceId: 'deviceId',
+  profileId: 'profileId',
+  portalIdentity: 'portalIdentity',
+  portalBaseUrl: 'portalBaseUrl',
+  host: 'host',
+  eventType: 'eventType',
+  context: 'context',
+  contentType: 'contentType',
+  contentId: 'contentId',
+  metadataJson: 'metadataJson',
+  occurredAt: 'occurredAt',
+  appVersion: 'appVersion',
+  platform: 'platform',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
+};
+
+exports.Prisma.NullableJsonNullValueInput = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull
 };
 
 exports.Prisma.NullsOrder = {
@@ -354,7 +382,9 @@ exports.Prisma.PlaybackActivityOrderByRelevanceFieldEnum = {
   movieId: 'movieId',
   type: 'type',
   profileId: 'profileId',
-  status: 'status'
+  status: 'status',
+  portalIdentity: 'portalIdentity',
+  portalBaseUrl: 'portalBaseUrl'
 };
 
 exports.Prisma.ResumeProgressOrderByRelevanceFieldEnum = {
@@ -379,7 +409,9 @@ exports.Prisma.ProfileOrderByRelevanceFieldEnum = {
   id: 'id',
   name: 'name',
   avatarUrl: 'avatarUrl',
-  pin: 'pin'
+  pin: 'pin',
+  primaryColor: 'primaryColor',
+  themeVariant: 'themeVariant'
 };
 
 exports.Prisma.TmdbMetadataOrderByRelevanceFieldEnum = {
@@ -388,10 +420,37 @@ exports.Prisma.TmdbMetadataOrderByRelevanceFieldEnum = {
   overview: 'overview',
   posterPath: 'posterPath',
   backdropPath: 'backdropPath',
+  trailerUrl: 'trailerUrl',
   ageRating: 'ageRating',
   releaseDate: 'releaseDate',
   genres: 'genres',
   cast: 'cast'
+};
+
+exports.Prisma.JsonNullValueFilter = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull,
+  AnyNull: Prisma.AnyNull
+};
+
+exports.Prisma.QueryMode = {
+  default: 'default',
+  insensitive: 'insensitive'
+};
+
+exports.Prisma.ProviderHealthEventOrderByRelevanceFieldEnum = {
+  eventId: 'eventId',
+  deviceId: 'deviceId',
+  profileId: 'profileId',
+  portalIdentity: 'portalIdentity',
+  portalBaseUrl: 'portalBaseUrl',
+  host: 'host',
+  eventType: 'eventType',
+  context: 'context',
+  contentType: 'contentType',
+  contentId: 'contentId',
+  appVersion: 'appVersion',
+  platform: 'platform'
 };
 exports.UserRole = exports.$Enums.UserRole = {
   ADMIN: 'ADMIN',
@@ -460,7 +519,8 @@ exports.Prisma.ModelName = {
   ParentalConfig: 'ParentalConfig',
   ThemeConfig: 'ThemeConfig',
   Profile: 'Profile',
-  TmdbMetadata: 'TmdbMetadata'
+  TmdbMetadata: 'TmdbMetadata',
+  ProviderHealthEvent: 'ProviderHealthEvent'
 };
 
 /**

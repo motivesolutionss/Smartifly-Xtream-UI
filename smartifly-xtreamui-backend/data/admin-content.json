@@ -1,5 +1,43 @@
 {
   "packages": [],
   "featureTemplates": [],
-  "announcements": []
+  "announcements": [],
+  "heroBanners": [
+    {
+      "id": "seed-hero-1",
+      "title": "Welcome to Smartifly TV",
+      "subtitle": "Your personalized streaming home",
+      "imageUrl": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1920&q=80",
+      "targetType": "custom",
+      "targetUrl": "/home",
+      "order": 0,
+      "isActive": true,
+      "createdAt": "2026-05-26T00:00:00.000Z",
+      "updatedAt": "2026-05-26T00:00:00.000Z"
+    },
+    {
+      "id": "seed-hero-2",
+      "title": "Top Live Channels",
+      "subtitle": "Watch trending live TV instantly",
+      "imageUrl": "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=1920&q=80",
+      "targetType": "live",
+      "targetId": "featured-live",
+      "order": 1,
+      "isActive": true,
+      "createdAt": "2026-05-26T00:00:00.000Z",
+      "updatedAt": "2026-05-26T00:00:00.000Z"
+    },
+    {
+      "id": "seed-hero-3",
+      "title": "Movie Night Picks",
+      "subtitle": "Handpicked favorites for tonight",
+      "imageUrl": "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=1920&q=80",
+      "targetType": "movie",
+      "targetId": "featured-movies",
+      "order": 2,
+      "isActive": true,
+      "createdAt": "2026-05-26T00:00:00.000Z",
+      "updatedAt": "2026-05-26T00:00:00.000Z"
+    }
+  ]
 }

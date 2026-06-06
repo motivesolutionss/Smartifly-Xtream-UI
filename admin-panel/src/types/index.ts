@@ -12,3 +12,4 @@ export * from './settings';
 export * from './notification';
 export * from './user';
 export * from './finance';
+export * from './heroBanner';

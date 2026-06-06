@@ -9,11 +9,14 @@ import {
   listAnnouncements,
   listFeatureTemplates,
   listPackages,
+  listHeroBanners,
   saveAnnouncements,
   saveFeatureTemplates,
   savePackages,
+  saveHeroBanners,
   type AnnouncementRecord,
   type FeatureTemplateRecord,
+  type HeroBannerRecord,
   type PackageRecord,
 } from '../../storage/adminContent.store';
 import {
@@ -534,6 +537,45 @@ router.delete('/announcements/:id', async (req, res) => {
   const announcements = await listAnnouncements();
   const next = announcements.filter((a) => a.id !== req.params.id);
   await saveAnnouncements(next);
+  return res.json({ success: true });
+});
+
+// Hero banners (fallback content for TV app when provider has no banner images)
+router.get('/hero-banners/admin', async (_req, res) => {
+  const heroBanners = await listHeroBanners();
+  return res.json(heroBanners.sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0)));
+});
+router.get('/hero-banners', async (_req, res) => {
+  const heroBanners = await listHeroBanners();
+  const active = heroBanners
+    .filter((b) => b.isActive !== false)
+    .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+  return res.json(active);
+});
+router.post('/hero-banners', async (req, res) => {
+  const heroBanners = await listHeroBanners();
+  const item = {
+    id: makeId(),
+    isActive: true,
+    order: heroBanners.length,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ...req.body,
+  };
+  heroBanners.unshift(item);
+  await saveHeroBanners(heroBanners as HeroBannerRecord[]);
+  return res.json(item);
+});
+router.put('/hero-banners/:id', async (req, res) => {
+  const heroBanners = await listHeroBanners();
+  const next = heroBanners.map((b) => (b.id === req.params.id ? { ...b, ...req.body, updatedAt: nowIso() } : b));
+  await saveHeroBanners(next as HeroBannerRecord[]);
+  return res.json(next.find((b) => b.id === req.params.id) ?? null);
+});
+router.delete('/hero-banners/:id', async (req, res) => {
+  const heroBanners = await listHeroBanners();
+  const next = heroBanners.filter((b) => b.id !== req.params.id);
+  await saveHeroBanners(next as HeroBannerRecord[]);
   return res.json({ success: true });
 });
 

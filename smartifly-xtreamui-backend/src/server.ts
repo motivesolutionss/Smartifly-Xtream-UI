@@ -25,6 +25,9 @@ async function bootstrap(): Promise<void> {
   // HTTP + Socket.io Integration
   // ---------------------------
   const server = http.createServer(app);
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+  server.requestTimeout = 70_000;
 
   // Socket.io
   const io = initSocket(server);

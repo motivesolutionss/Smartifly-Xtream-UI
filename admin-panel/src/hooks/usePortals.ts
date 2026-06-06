@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { portalsApi } from '@/lib/api';
 import type { Portal, CreatePortalDTO, UpdatePortalDTO } from '@/types';
 
@@ -58,7 +59,9 @@ function mapServerToPortal(server: BackendServer): Portal {
  * Hook to fetch all portals (admin view)
  */
 export function usePortals() {
-    return useQuery({
+    const queryClient = useQueryClient();
+    const inFlightRef = useRef<Set<string>>(new Set());
+    const query = useQuery({
         queryKey: portalKeys.lists(),
         queryFn: async () => {
             const response = await portalsApi.getAll();
@@ -66,6 +69,54 @@ export function usePortals() {
             return servers.map(mapServerToPortal);
         },
     });
+
+    useEffect(() => {
+        const portals = query.data ?? [];
+        const candidates = portals.filter((p) =>
+            p.isActive &&
+            (p.healthStatus === 'UNKNOWN' || p.latency == null || !p.serverIp) &&
+            !inFlightRef.current.has(p.id)
+        );
+        if (candidates.length === 0) return;
+
+        const ids = candidates.map((p) => p.id);
+        ids.forEach((id) => inFlightRef.current.add(id));
+
+        let cancelled = false;
+        const concurrency = 3;
+
+        const run = async () => {
+            for (let i = 0; i < ids.length; i += concurrency) {
+                if (cancelled) break;
+                const chunk = ids.slice(i, i + concurrency);
+                await Promise.all(
+                    chunk.map(async (id) => {
+                        try {
+                            const response = await portalsApi.checkHealth(id);
+                            const server = response.data?.server as BackendServer | undefined;
+                            if (!server || cancelled) return;
+                            const hydrated = mapServerToPortal(server);
+                            queryClient.setQueryData(portalKeys.lists(), (old: Portal[] = []) =>
+                                old.map((p) => (p.id === id ? { ...p, ...hydrated } : p))
+                            );
+                        } catch {
+                            // Keep instant list response intact even if a probe fails.
+                        } finally {
+                            inFlightRef.current.delete(id);
+                        }
+                    })
+                );
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [query.data, queryClient]);
+
+    return query;
 }
 
 /**

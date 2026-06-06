@@ -23,10 +23,19 @@ export interface AnnouncementRecord extends JsonObject {
   updatedAt?: string;
 }
 
+export interface HeroBannerRecord extends JsonObject {
+  id: string;
+  isActive?: boolean;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 interface ContentStoreState {
   packages: PackageRecord[];
   featureTemplates: FeatureTemplateRecord[];
   announcements: AnnouncementRecord[];
+  heroBanners: HeroBannerRecord[];
 }
 
 const STORE_DIR = path.resolve(process.cwd(), 'data');
@@ -36,6 +45,7 @@ const defaultState = (): ContentStoreState => ({
   packages: [],
   featureTemplates: [],
   announcements: [],
+  heroBanners: [],
 });
 
 let writeQueue: Promise<void> = Promise.resolve();
@@ -61,6 +71,9 @@ async function readState(): Promise<ContentStoreState> {
         : [],
       announcements: Array.isArray(parsed.announcements)
         ? (parsed.announcements as AnnouncementRecord[])
+        : [],
+      heroBanners: Array.isArray(parsed.heroBanners)
+        ? (parsed.heroBanners as HeroBannerRecord[])
         : [],
     };
   } catch {
@@ -104,4 +117,14 @@ export async function listAnnouncements(): Promise<AnnouncementRecord[]> {
 export async function saveAnnouncements(announcements: AnnouncementRecord[]): Promise<void> {
   const state = await readState();
   await queueWrite({ ...state, announcements });
+}
+
+export async function listHeroBanners(): Promise<HeroBannerRecord[]> {
+  const state = await readState();
+  return state.heroBanners;
+}
+
+export async function saveHeroBanners(heroBanners: HeroBannerRecord[]): Promise<void> {
+  const state = await readState();
+  await queueWrite({ ...state, heroBanners });
 }

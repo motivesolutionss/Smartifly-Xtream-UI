@@ -174,6 +174,24 @@ export const announcementsApi = {
     delete: (id: string) => api.delete(`/v1/admin/announcements/${id}`),
 };
 
+// Hero Banners API
+export const heroBannersApi = {
+    getAll: () => api.get('/v1/admin/hero-banners/admin'),
+    getPublic: () => api.get('/v1/admin/hero-banners'),
+    create: (data: {
+        title: string;
+        subtitle?: string;
+        imageUrl: string;
+        targetType?: 'movie' | 'series' | 'live' | 'custom';
+        targetId?: string;
+        targetUrl?: string;
+        order?: number;
+        isActive?: boolean;
+    }) => api.post('/v1/admin/hero-banners', data),
+    update: (id: string, data: Record<string, unknown>) => api.put(`/v1/admin/hero-banners/${id}`, data),
+    delete: (id: string) => api.delete(`/v1/admin/hero-banners/${id}`),
+};
+
 // Settings API
 export const settingsApi = {
     get: () => api.get('/v1/admin/settings/admin'),

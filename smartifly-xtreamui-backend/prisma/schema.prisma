@@ -272,15 +272,20 @@ model DeviceBlacklist {
 // ========================================================
 
 model PlaybackActivity {
-  id        Int      @id @default(autoincrement())
-  movieId   String
-  type      String   // MOVIE, SERIES, LIVE
-  profileId String?
-  status    String   // STARTED, COMPLETED
-  timestamp DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  movieId       String
+  type          String   // MOVIE, SERIES, LIVE
+  profileId     String?
+  status        String   // STARTED, COMPLETED
+  portalIdentity String?
+  portalBaseUrl String?
+  timestamp     DateTime @default(now())
 
   @@index([movieId])
   @@index([type])
+  @@index([portalIdentity])
+  @@index([portalBaseUrl])
+  @@index([portalIdentity, portalBaseUrl, status])
   @@map("playback_activity")
 }
 
@@ -327,7 +332,6 @@ model Profile {
   userId           Int
   name             String
   avatarUrl        String?
-  isKids           Boolean  @default(false)
   pin              String?  // Optional 4-digit PIN for adult profiles
   primaryColor     String   @default("#E50914") // Custom theme color
   themeVariant     String   @default("DARK")    // DARK, LIGHT, GLASS
