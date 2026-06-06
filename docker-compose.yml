@@ -108,9 +108,9 @@ services:
     tmpfs:
       - /tmp
     environment:
-      - VIRTUAL_HOST=xtreamui.duckdns.org
+      - VIRTUAL_HOST=smartifly.co
       - VIRTUAL_PORT=3000
-      - LETSENCRYPT_HOST=xtreamui.duckdns.org
+      - LETSENCRYPT_HOST=smartifly.co
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
       - HOSTNAME=0.0.0.0
       - PORT=3000
