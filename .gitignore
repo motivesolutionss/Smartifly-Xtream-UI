@@ -82,6 +82,7 @@ pnpm-debug.log*
 
 # Deployment/runtime artifacts
 *.sql
+!smartifly-xtreamui-backend/prisma/migrations/**/migration.sql
 *.sql.gz
 *.zip
 *.tar.gz

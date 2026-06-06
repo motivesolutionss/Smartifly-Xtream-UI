@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `provider_health_event` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `event_id` VARCHAR(100) NOT NULL,
+  `device_id` VARCHAR(255) NOT NULL,
+  `profile_id` VARCHAR(255) NULL,
+  `portal_identity` VARCHAR(100) NOT NULL,
+  `portal_base_url` VARCHAR(500) NOT NULL,
+  `host` VARCHAR(255) NOT NULL,
+  `event_type` VARCHAR(50) NOT NULL,
+  `context` VARCHAR(50) NOT NULL,
+  `content_type` VARCHAR(50) NULL,
+  `content_id` VARCHAR(255) NULL,
+  `metadata_json` JSON NULL,
+  `occurred_at` DATETIME(3) NOT NULL,
+  `app_version` VARCHAR(50) NOT NULL,
+  `platform` VARCHAR(50) NOT NULL,
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE INDEX `uq_provider_health_event_id`(`event_id`),
+  INDEX `idx_provider_health_event_occurred`(`occurred_at`),
+  INDEX `idx_provider_health_event_portal`(`portal_identity`),
+  INDEX `idx_provider_health_event_host`(`host`),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
