@@ -5,10 +5,16 @@ import { prisma } from '../../config/prisma';
 import { AuthService } from '../../services/auth.service';
 
 function error(res: Response, code: number, message: string) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   return res.status(code).json({ success: false, message });
 }
 
 function success(res: Response, data: unknown) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   return res.json({ success: true, ...(data as object) });
 }
 

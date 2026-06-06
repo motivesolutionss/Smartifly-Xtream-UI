@@ -3,9 +3,40 @@ import { prisma } from '../../prisma';
 
 const router = Router();
 
+function normalizePortalValue(raw: unknown): string | undefined {
+    if (typeof raw !== 'string') return undefined;
+    const value = raw.trim();
+    return value ? value : undefined;
+}
+
+function getPortalScope(raw: Record<string, unknown>) {
+    return {
+        portalIdentity: normalizePortalValue(raw.portalIdentity),
+        portalBaseUrl: normalizePortalValue(raw.portalBaseUrl)
+    };
+}
+
+function buildPortalWhere(portalIdentity?: string, portalBaseUrl?: string) {
+    return {
+        ...(portalIdentity ? { portalIdentity } : {}),
+        ...(portalBaseUrl ? { portalBaseUrl } : {})
+    };
+}
+
+function parseLockedCategories(raw: string | null | undefined): string[] {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
 // Track movie/series playback
 router.post('/playback', async (req, res) => {
     const { movieId, type, profileId, status } = req.body;
+    const { portalIdentity, portalBaseUrl } = getPortalScope(req.body as Record<string, unknown>);
     
     try {
         await prisma.playbackActivity.create({
@@ -13,7 +44,9 @@ router.post('/playback', async (req, res) => {
                 movieId: String(movieId),
                 type: String(type).toUpperCase(),
                 profileId: String(profileId),
-                status: String(status).toUpperCase()
+                status: String(status).toUpperCase(),
+                portalIdentity,
+                portalBaseUrl
             }
         });
         res.status(200).json({ success: true });
@@ -26,9 +59,13 @@ router.post('/playback', async (req, res) => {
 // Get trending content IDs based on cumulative view counts
 router.get('/trending', async (req, res) => {
     try {
+        const { portalIdentity, portalBaseUrl } = getPortalScope(req.query as Record<string, unknown>);
         const trending = await prisma.playbackActivity.groupBy({
             by: ['movieId'],
-            where: { status: 'STARTED' },
+            where: {
+                status: 'STARTED',
+                ...buildPortalWhere(portalIdentity, portalBaseUrl)
+            },
             _count: { movieId: true },
             orderBy: { _count: { movieId: 'desc' } },
             take: 20
@@ -92,10 +129,81 @@ router.get('/resume/:profileId', async (req, res) => {
 
 // Search Discovery & Suggestions
 router.get('/discovery/suggestions', async (req, res) => {
-    res.json({
-        success: true,
-        data: ["Action Movies", "Netflix Originals", "Marvel Cinematic Universe", "Live News", "Kids Shows"]
-    });
+    try {
+        const { portalIdentity, portalBaseUrl } = getPortalScope(req.query as Record<string, unknown>);
+        if (!portalIdentity && !portalBaseUrl) {
+            return res.json({ success: true, data: [] });
+        }
+
+        const history = await prisma.playbackActivity.findMany({
+            where: {
+                status: 'STARTED',
+                ...buildPortalWhere(portalIdentity, portalBaseUrl)
+            },
+            orderBy: { timestamp: 'desc' },
+            take: 120,
+            select: { movieId: true, type: true }
+        });
+
+        if (history.length === 0) {
+            return res.json({ success: true, data: [] });
+        }
+
+        const movieIds = [...new Set(history.map((item) => item.movieId))];
+        const metadata = await prisma.tmdbMetadata.findMany({
+            where: { contentId: { in: movieIds } },
+            select: { contentId: true, title: true, genres: true }
+        });
+
+        const metadataById = new Map(metadata.map((item) => [item.contentId, item]));
+        const titleCounts = new Map<string, number>();
+        const genreCounts = new Map<string, number>();
+        const typeCounts = new Map<string, number>();
+
+        history.forEach((item) => {
+            const normalizedType = item.type.trim().toUpperCase();
+            typeCounts.set(normalizedType, (typeCounts.get(normalizedType) ?? 0) + 1);
+
+            const meta = metadataById.get(item.movieId);
+            if (meta?.title) {
+                titleCounts.set(meta.title, (titleCounts.get(meta.title) ?? 0) + 1);
+            }
+            meta?.genres?.split(',').map((genre) => genre.trim()).filter(Boolean).forEach((genre) => {
+                genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
+            });
+        });
+
+        const genreSuggestions = [...genreCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([genre]) => genre);
+
+        const titleSuggestions = [...titleCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([title]) => title);
+
+        const typeSuggestions = [...typeCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([type]) => {
+                switch (type) {
+                    case 'LIVE':
+                        return 'Live Channels';
+                    case 'SERIES':
+                        return 'Popular Series';
+                    default:
+                        return 'Popular Movies';
+                }
+            });
+
+        const suggestions = [...genreSuggestions, ...typeSuggestions, ...titleSuggestions]
+            .filter((value, index, array) => array.indexOf(value) === index)
+            .slice(0, 8);
+
+        return res.json({ success: true, data: suggestions });
+    } catch (error) {
+        return res.status(500).json({ success: false, data: [] });
+    }
 });
 
 // Parental Control & Privacy
@@ -124,7 +232,7 @@ router.get('/parental/config', async (req, res) => {
     const userIdRaw = req.query.userId;
     const userId = Number(userIdRaw);
     if (!Number.isFinite(userId) || userId <= 0) {
-        return res.status(400).json({ success: false, message: 'userId is required', lockedCategories: [] });
+        return res.json({ success: true, lockedCategories: [] });
     }
     try {
         const config = await prisma.parentalConfig.findUnique({
@@ -133,7 +241,7 @@ router.get('/parental/config', async (req, res) => {
 
         return res.json({
             success: true,
-            lockedCategories: config?.lockedCategories ?? []
+            lockedCategories: parseLockedCategories(config?.lockedCategories)
         });
     } catch (error) {
         return res.status(500).json({ success: false, lockedCategories: [] });
@@ -144,11 +252,13 @@ router.get('/parental/config', async (req, res) => {
 router.get('/dashboard/stats', async (req, res) => {
     const { profileId } = req.query;
     try {
+        const { portalIdentity, portalBaseUrl } = getPortalScope(req.query as Record<string, unknown>);
         const topWatched = await prisma.playbackActivity.groupBy({
             by: ['movieId', 'type'],
             where: { 
                 profileId: profileId ? String(profileId) : undefined,
-                status: 'COMPLETED'
+                status: 'COMPLETED',
+                ...buildPortalWhere(portalIdentity, portalBaseUrl)
             },
             _count: { movieId: true },
             orderBy: { _count: { movieId: 'desc' } },
@@ -179,9 +289,14 @@ router.get('/dashboard/stats', async (req, res) => {
 router.get('/discovery/smart-rows', async (req, res) => {
     const { profileId } = req.query;
     try {
+        const { portalIdentity, portalBaseUrl } = getPortalScope(req.query as Record<string, unknown>);
         // 1. Get user's most watched genre
         const history = await prisma.playbackActivity.findMany({
-            where: { profileId: String(profileId), status: 'COMPLETED' },
+            where: {
+                profileId: String(profileId),
+                status: 'COMPLETED',
+                ...buildPortalWhere(portalIdentity, portalBaseUrl)
+            },
             take: 10
         });
 

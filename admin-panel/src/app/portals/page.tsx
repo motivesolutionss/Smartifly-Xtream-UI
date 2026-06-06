@@ -80,6 +80,35 @@ export default function PortalsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [categoryFilter, setCategoryFilter] = useState('All');
 
+    const upsertPortalFromHealth = (server: any) => {
+        const hydrated: Portal = {
+            id: String(server.id),
+            displayId: server.id,
+            serverIdentity: server.serverIdentity ?? '',
+            name: server.name,
+            url: server.url,
+            username: null,
+            password: null,
+            order: Number(server.order ?? 0),
+            isActive: !!server.isActive,
+            description: server.serverIdentity ?? null,
+            category: 'General',
+            healthStatus: server.healthStatus ?? 'UNKNOWN',
+            lastCheckAt: server.lastCheckAt ?? null,
+            latency: server.latency ?? undefined,
+            uptime: undefined,
+            activeConnections: server.activeConnections ?? 0,
+            errorCount: server.errorCount ?? 0,
+            serverIp: server.serverIp ?? null,
+            createdAt: server.createdAt,
+            updatedAt: server.updatedAt,
+        };
+
+        queryClient.setQueryData(['portals', 'list'], (old: Portal[] = []) =>
+            old.map((p) => (p.id === hydrated.id ? { ...p, ...hydrated } : p))
+        );
+    };
+
     // Derived state
     const uniqueCategories = useMemo(() =>
         ['All', ...Array.from(new Set(portals.map(p => p.category || 'General')))],
@@ -135,9 +164,11 @@ export default function PortalsPage() {
     const handleHealthCheck = async (id: string) => {
         setIsCheckingHealth(id);
         try {
-            await portalsApi.checkHealth(id);
+            const response = await portalsApi.checkHealth(id);
+            if (response.data?.server) {
+                upsertPortalFromHealth(response.data.server);
+            }
             toast.success('Health check completed');
-            queryClient.invalidateQueries({ queryKey: ['portals'] });
         } catch {
             toast.error('Health check failed');
         } finally {
@@ -149,9 +180,20 @@ export default function PortalsPage() {
     const handleRefreshAll = async () => {
         setIsRefreshingAll(true);
         try {
-            await Promise.all(portals.map(p => portalsApi.checkHealth(p.id)));
+            const ids = portals.map((p) => p.id);
+            const concurrency = 4;
+            for (let i = 0; i < ids.length; i += concurrency) {
+                const chunk = ids.slice(i, i + concurrency);
+                await Promise.all(
+                    chunk.map(async (id) => {
+                        const response = await portalsApi.checkHealth(id);
+                        if (response.data?.server) {
+                            upsertPortalFromHealth(response.data.server);
+                        }
+                    })
+                );
+            }
             toast.success('All portals refreshed');
-            queryClient.invalidateQueries({ queryKey: ['portals'] });
         } catch {
             toast.error('Some health checks failed');
         } finally {

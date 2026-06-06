@@ -10,6 +10,7 @@ export * from './useNotifications';
 export * from './useDashboard';
 export * from './useUsers';
 export * from './useFinance';
+export * from './useHeroBanners';
 
 // Utility hooks (uncomment as created)
 export { useSocket } from './useSocket';

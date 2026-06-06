@@ -16,10 +16,24 @@ function normalizeServerIdentity(input: string): string {
 
 type HealthStatus = 'ONLINE' | 'OFFLINE' | 'UNSTABLE' | 'UNKNOWN';
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function resolveIpFromUrl(rawUrl: string): Promise<string | null> {
   try {
     const hostname = new URL(rawUrl).hostname;
-    const lookup = await dns.lookup(hostname);
+    const lookup = await withTimeout(dns.lookup(hostname), 1200, { address: null } as { address: string | null });
     return lookup.address ?? null;
   } catch {
     return null;
@@ -27,13 +41,21 @@ async function resolveIpFromUrl(rawUrl: string): Promise<string | null> {
 }
 
 async function checkPortalHealth(url: string): Promise<{ healthStatus: HealthStatus; latency: number | null }> {
+  const protocol = (() => {
+    try {
+      return new URL(url).protocol;
+    } catch {
+      return 'http:';
+    }
+  })();
+  const timeoutMs = protocol === 'https:' ? 2500 : 1500;
   const started = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     const latency = Date.now() - started;
-    if (response.ok) return { healthStatus: latency > 2500 ? 'UNSTABLE' : 'ONLINE', latency };
+    if (response.ok) return { healthStatus: latency > 1200 ? 'UNSTABLE' : 'ONLINE', latency };
     return { healthStatus: 'UNSTABLE', latency };
   } catch {
     return { healthStatus: 'OFFLINE', latency: null };
@@ -51,8 +73,7 @@ async function enrichServer(server: {
   isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
-}) {
-  const orders = await getServerOrders();
+}, orders: Record<string, number>) {
   const order = orders[String(server.id)] ?? server.id;
   const [health, serverIp, totalLicenses, errorLicenses] = await Promise.all([
     checkPortalHealth(server.url),
@@ -79,6 +100,34 @@ async function enrichServer(server: {
   };
 }
 
+function enrichServerLite(
+  server: {
+    id: number;
+    name: string;
+    url: string;
+    serverIdentity: string;
+    isActive: boolean;
+    isDefault: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  orders: Record<string, number>,
+  countsByServerId: Map<number, { total: number; error: number }>
+) {
+  const order = orders[String(server.id)] ?? server.id;
+  const counts = countsByServerId.get(server.id) ?? { total: 0, error: 0 };
+  return {
+    ...server,
+    order,
+    healthStatus: 'UNKNOWN' as HealthStatus,
+    latency: null,
+    serverIp: null,
+    activeConnections: counts.total,
+    errorCount: counts.error,
+    lastCheckAt: null,
+  };
+}
+
 export const ServerController = {
   /**
    * List all Xtream servers
@@ -88,7 +137,42 @@ export const ServerController = {
       const servers = await prisma.xtreamServer.findMany({
         orderBy: { id: 'desc' }
       });
-      const enriched = await Promise.all(servers.map(enrichServer));
+      const orders = await getServerOrders();
+      const serverIds = servers.map((s) => s.id);
+      const [totalCounts, errorCounts] = await Promise.all([
+        prisma.license.groupBy({
+          by: ['serverId'],
+          where: { deletedAt: null, serverId: { in: serverIds } },
+          _count: { _all: true },
+        }),
+        prisma.license.groupBy({
+          by: ['serverId'],
+          where: {
+            deletedAt: null,
+            serverId: { in: serverIds },
+            status: { in: ['EXPIRED', 'BLOCKED', 'DISABLED'] },
+          },
+          _count: { _all: true },
+        }),
+      ]);
+      const totalMap = new Map<number, number>(
+        totalCounts
+          .filter((r) => r.serverId != null)
+          .map((r) => [r.serverId as number, r._count._all])
+      );
+      const errorMap = new Map<number, number>(
+        errorCounts
+          .filter((r) => r.serverId != null)
+          .map((r) => [r.serverId as number, r._count._all])
+      );
+      const countsByServerId = new Map<number, { total: number; error: number }>();
+      serverIds.forEach((id) => {
+        countsByServerId.set(id, {
+          total: totalMap.get(id) ?? 0,
+          error: errorMap.get(id) ?? 0,
+        });
+      });
+      const enriched = servers.map((server) => enrichServerLite(server, orders, countsByServerId));
       enriched.sort((a, b) => a.order - b.order);
       return res.json({ success: true, servers: enriched });
     } catch {
@@ -139,7 +223,8 @@ export const ServerController = {
       });
       await setServerOrder(server.id, Number.MAX_SAFE_INTEGER);
 
-      const enriched = await enrichServer(server);
+      const orders = await getServerOrders();
+      const enriched = await enrichServer(server, orders);
       return res.json({ success: true, server: enriched });
     } catch {
       return res.status(500).json({ success: false, message: 'Failed to create server' });
@@ -182,7 +267,8 @@ export const ServerController = {
         data: { name, url, isActive, isDefault, serverIdentity: normalizedIdentity }
       });
 
-      const enriched = await enrichServer(updated);
+      const orders = await getServerOrders();
+      const enriched = await enrichServer(updated, orders);
       return res.json({ success: true, server: enriched });
     } catch {
       return res.status(500).json({ success: false, message: 'Failed to update server' });
@@ -221,7 +307,8 @@ export const ServerController = {
       const id = Number(req.params.id);
       const server = await prisma.xtreamServer.findUnique({ where: { id } });
       if (!server) return res.status(404).json({ success: false, message: 'Server not found' });
-      const enriched = await enrichServer(server);
+      const orders = await getServerOrders();
+      const enriched = await enrichServer(server, orders);
       return res.json({ success: true, server: enriched });
     } catch {
       return res.status(500).json({ success: false, message: 'Failed to check server health' });

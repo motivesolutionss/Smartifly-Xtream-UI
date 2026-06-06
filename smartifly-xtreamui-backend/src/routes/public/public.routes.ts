@@ -3,6 +3,7 @@ import { Router } from "express";
 
 import { prisma } from "../../config/prisma";
 import { PublicDeviceCheckController } from "../../controllers/public/deviceCheck.controller";
+import { listHeroBanners } from "../../storage/adminContent.store";
 import { encryptConfig } from "../../utils/cryptoConfig";
 
 const router = Router();
@@ -19,6 +20,10 @@ router.get("/config", async (req, res) => {
   try {
     const { licenseKey } = req.query as { licenseKey?: string };
 
+    const fallbackHeroBanners = (await listHeroBanners())
+      .filter((b) => b.isActive !== false)
+      .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+
     if (!licenseKey) {
       return res.json({
         success: true,
@@ -33,6 +38,7 @@ router.get("/config", async (req, res) => {
             fastZapping: true,
             epgEnabled: true,
           },
+          fallbackHeroBanners,
         },
       });
     }
@@ -63,6 +69,7 @@ router.get("/config", async (req, res) => {
         fastZapping: true,
         epgEnabled: true,
       },
+      fallbackHeroBanners,
     };
 
     const encrypted = encryptConfig(config);
@@ -77,6 +84,16 @@ router.get("/config", async (req, res) => {
  */
 router.get("/announcements", async (_req, res) => {
   return res.json([]);
+});
+
+/**
+ * Hero banner fallback feed used when provider hero/banner images are missing.
+ */
+router.get("/hero-banners", async (_req, res) => {
+  const fallbackHeroBanners = (await listHeroBanners())
+    .filter((b) => b.isActive !== false)
+    .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+  return res.json({ success: true, data: fallbackHeroBanners });
 });
 
 export default router;
