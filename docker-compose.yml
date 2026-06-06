@@ -4,7 +4,7 @@ services:
     container_name: xtream-db
     restart: unless-stopped
     env_file:
-      - ${ENV_FILE:-.env.vps}
+      - ./.env.vps
     volumes:
       - xtream_db_data:/var/lib/mysql
     networks:
@@ -19,16 +19,16 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./smartifly-xtreamui-backend
       dockerfile: Dockerfile
     container_name: xtream-api
     restart: unless-stopped
     env_file:
-      - ${ENV_FILE:-.env.vps}
+      - ./.env.vps
     environment:
-      - VIRTUAL_HOST=api.xtreamui.duckdns.org
+      - VIRTUAL_HOST=api.smartifly.co
       - VIRTUAL_PORT=5000
-      - LETSENCRYPT_HOST=api.xtreamui.duckdns.org
+      - LETSENCRYPT_HOST=api.smartifly.co
       - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
     expose:
       - "5000"
@@ -61,7 +61,7 @@ services:
       context: ./admin-panel
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.xtreamui.duckdns.org}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.smartifly.co}
     container_name: xtream-admin
     restart: unless-stopped
     expose:
@@ -99,7 +99,7 @@ services:
       context: ./customer-portal
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.xtreamui.duckdns.org}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.smartifly.co}
     container_name: xtream-portal
     restart: unless-stopped
     expose:
