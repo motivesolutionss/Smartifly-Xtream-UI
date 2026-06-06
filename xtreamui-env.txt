@@ -56,8 +56,8 @@ oP7eyNhlVpDdTKPnzsBfHYn6
 FIREBASE_PROJECT_ID=smartifly-xtream
 
 # API CORS
-CORS_ORIGINS=https://smartifly.co,https://admin.smartifly.co
-FRONTEND_URL=https://smartifly.co
+CORS_ORIGINS=https://staging.smartifly.co,https://admin-staging.smartifly.co
+FRONTEND_URL=https://staging.smartifly.co
 
 # Email (Brevo/SMTP)
 BREVO_API_KEY=CHANGE_ME_BREVO_API_KEY
@@ -69,4 +69,4 @@ SMTP_FROM=motivesolutionz@gmail.com
 SMTP_SECURE=false
 
 # 3) FRONTEND BUILD-TIME
-NEXT_PUBLIC_API_URL=https://api.smartifly.co
+NEXT_PUBLIC_API_URL=https://api-staging.smartifly.co
