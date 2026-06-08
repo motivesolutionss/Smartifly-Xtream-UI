@@ -128,6 +128,7 @@ export const Vod: React.FC = () => {
     isFetchingMovies,
     isError,
     errorMessage,
+    prefetchCategory,
     refetch,
   } = useVodContent(selectedCategoryId);
 
@@ -416,6 +417,7 @@ export const Vod: React.FC = () => {
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleCategoryFocus = useCallback(
     (categoryId: string | undefined) => {
+      prefetchCategory(categoryId);
       setFocusedCategoryId(categoryId);
 
       if (sidebarFocusedRef.current) return;
@@ -428,7 +430,7 @@ export const Vod: React.FC = () => {
         });
       }
     },
-    [categoryOptions, effectiveSelectedCategoryId, setFocus]
+    [categoryOptions, effectiveSelectedCategoryId, prefetchCategory, setFocus]
   );
 
   const handleCategoryEnter = useCallback((categoryId: string | undefined) => {
@@ -843,6 +845,7 @@ export const Vod: React.FC = () => {
             <VirtualGrid
               key={`vod-grid-${effectiveSelectedCategoryId ?? "none"}-${isSearching ? "search" : "browse"}`}
               items={filteredMovies}
+              getItemKey={(movie) => movie.id}
               itemHeight={GRID_ITEM_HEIGHT}
               itemWidth={GRID_ITEM_WIDTH}
               columns={gridColumns}

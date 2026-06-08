@@ -74,12 +74,12 @@
 }
 
 /* ── Performance-reduced mode ─────────────────────────────────────────────── */
-/* The adaptive profile detects slow frames and sets data-perf="reduced" on
-   <html>. Kill the spring + scale so focus moves feel instant on slow TVs.   */
-:global(html[data-perf="reduced"]) .focusable {
+/* The adaptive profile toggles the perf-reduced class on <html>. Kill the
+   spring + scale so focus moves feel instant on slow TVs. */
+:global(.perf-reduced) .focusable {
   transition: none !important;
 }
 
-:global(html[data-perf="reduced"]) .focused {
+:global(.perf-reduced) .focused {
   transform: none !important;
 }

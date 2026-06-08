@@ -22,6 +22,7 @@ export type ScrollBehaviorMode = "adaptive" | "instant";
 export interface VirtualGridProps<T> {
   items: T[];
   renderItem: (item: T, index: number) => React.ReactNode;
+  getItemKey?: (item: T, index: number) => string | number;
   itemHeight: number;
   itemWidth: number;
   columns: number;
@@ -42,6 +43,7 @@ export interface VirtualGridProps<T> {
 export function VirtualGrid<T>({
   items,
   renderItem,
+  getItemKey,
   itemHeight,
   itemWidth: itemWidthProp,
   columns,
@@ -220,9 +222,10 @@ export function VirtualGrid<T>({
           const absoluteIndex = visibleRange.start + index;
           const row = Math.floor(absoluteIndex / columns);
           const col = absoluteIndex % columns;
+          const itemKey = getItemKey ? getItemKey(item, absoluteIndex) : absoluteIndex;
           return (
             <div
-              key={absoluteIndex}
+              key={itemKey}
               className={styles.itemWrapper}
               style={{
                 top: row * rowStride,

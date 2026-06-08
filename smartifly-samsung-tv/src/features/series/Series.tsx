@@ -849,6 +849,7 @@ export const Series: React.FC = () => {
             <VirtualGrid
               key={`series-grid-${effectiveSelectedCategoryId ?? "none"}-${isSearching ? "search" : "browse"}`}
               items={filteredSeries}
+              getItemKey={(seriesItem) => seriesItem.id}
               itemHeight={GRID_ITEM_HEIGHT}
               itemWidth={GRID_ITEM_WIDTH}
               columns={gridColumns}

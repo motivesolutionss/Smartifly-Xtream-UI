@@ -9,6 +9,10 @@ const EMPTY_SERIES: AppSeries[] = [];
 const MAX_CONCURRENT_PREFETCHES = 2;
 const PREFETCH_DEBOUNCE_MS = 300;
 
+const getSortableName = (name: string) => {
+  return name.replace(/^[^a-zA-Z0-9]+/, "").trim().toLowerCase();
+};
+
 export const useSeriesContent = (selectedCategoryId?: string) => {
   const categoriesQuery = useQuery<AppCategory[]>({
     queryKey: ["series-categories"],
@@ -76,8 +80,22 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     void seriesQuery.refetch();
   }, [categoriesQuery, seriesQuery]);
 
+  const sortedCategories = useMemo(() => {
+    const raw = categoriesQuery.data;
+    if (!raw || raw.length === 0) return EMPTY_CATEGORIES;
+    return [...raw].sort((a, b) => {
+      const nameA = getSortableName(a.name);
+      const nameB = getSortableName(b.name);
+      return (nameA || a.name.toLowerCase()).localeCompare(
+        nameB || b.name.toLowerCase(),
+        undefined,
+        { sensitivity: "base", numeric: true }
+      );
+    });
+  }, [categoriesQuery.data]);
+
   return useMemo(() => ({
-    categories: categoriesQuery.data ?? EMPTY_CATEGORIES,
+    categories: sortedCategories,
     series: seriesQuery.data ?? EMPTY_SERIES,
     isLoading: categoriesQuery.isLoading || seriesQuery.isLoading,
     isFetchingSeries: seriesQuery.isFetching,
@@ -86,7 +104,7 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     prefetchCategory,
     refetch,
   }), [
-    categoriesQuery.data,
+    sortedCategories,
     categoriesQuery.isLoading,
     categoriesQuery.isError,
     seriesQuery.data,
