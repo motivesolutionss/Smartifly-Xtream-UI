@@ -9,13 +9,13 @@ export default defineConfig({
     host: true,
     port: 5173,
     strictPort: true,
-    proxy: {
-      "/v1": {
-        target: "https://api.smartifly.co",
-        changeOrigin: true,
-        secure: true,
-      },
-    },
+    // proxy: {
+    //   "/v1": {
+    //     target: "https://api.smartifly.co",
+    //     changeOrigin: true,
+    //     secure: true,
+    //   },
+    // },
   },
   build: {
     // Target ES2017 for compatibility with older Tizen WebKit engines
