@@ -1,45 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AppEpgItem } from "../../../types/appModels";
-import { parseTimestampToSeconds } from "../epgTime";
-import { getShortEpgQueryOptionsWithOverrides } from "../epgQuery";
+import {
+  getShortEpgQueryOptionsWithOverrides,
+  type ParsedShortEpgItem,
+} from "../epgQuery";
 
-// ─── Shared parsed program model ─────────────────────────────────────────────
-// Used by both the mini-guide strip in LiveTv.tsx and the EpgGrid modal.
 export type ParsedProgram = {
   title: string;
   description?: string;
-  /** Unix timestamp in milliseconds (for display / Date construction). */
   startMs: number;
   endMs: number;
-  /** Playback progress 0–100. Only meaningful for the current program. */
   progress: number;
-  /** Convenience: next programs sorted by start time. */
   next: ParsedProgram[];
-};
-
-// ─── Internal normalised form (no circular refs) ──────────────────────────────
-type NormalisedProgram = {
-  title: string;
-  description?: string;
-  startMs: number;
-  endMs: number;
-};
-
-const normalise = (items: AppEpgItem[]): NormalisedProgram[] => {
-  const mapped = items.map((item) => {
-    const startSeconds = parseTimestampToSeconds(item.start);
-    const endSeconds = parseTimestampToSeconds(item.end);
-    if (startSeconds <= 0 || endSeconds <= 0 || endSeconds <= startSeconds) return null;
-    const prog: NormalisedProgram = {
-      title: item.title || "No Program Info",
-      description: item.description,
-      startMs: startSeconds * 1000,
-      endMs: endSeconds * 1000,
-    };
-    return prog;
-  });
-  return mapped.filter((item): item is NormalisedProgram => item !== null).sort((a, b) => a.startMs - b.startMs);
 };
 
 type UseEpgOptions = {
@@ -50,14 +22,13 @@ type UseEpgOptions = {
 
 export const useEpg = (streamId: string, options: UseEpgOptions = {}) => {
   const { enabled = !!streamId, refetchInterval, refreshClock = true } = options;
-  const { data: epgList, isLoading } = useQuery<AppEpgItem[]>(
+  const { data: epgList, isLoading } = useQuery<ParsedShortEpgItem[]>(
     getShortEpgQueryOptionsWithOverrides(streamId, {
       enabled,
       refetchInterval,
     })
   );
 
-  // Update "now" every minute — use a ref-based approach to avoid stale closures.
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -66,14 +37,11 @@ export const useEpg = (streamId: string, options: UseEpgOptions = {}) => {
     return () => window.clearInterval(id);
   }, [refreshClock]);
 
-  const normalisedPrograms = useMemo(
-    () => normalise(epgList ?? []),
-    [epgList]
-  );
+  const normalisedPrograms = useMemo(() => epgList ?? [], [epgList]);
 
   const currentProgram = useMemo<ParsedProgram | null>(() => {
     const current = normalisedPrograms.find(
-      (p) => nowMs >= p.startMs && nowMs < p.endMs
+      (program) => nowMs >= program.startMs && nowMs < program.endMs
     );
     if (!current) return null;
 
@@ -82,13 +50,13 @@ export const useEpg = (streamId: string, options: UseEpgOptions = {}) => {
     const progress = duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
 
     const next = normalisedPrograms
-      .filter((p) => p.startMs >= nowMs)
+      .filter((program) => program.startMs >= nowMs)
       .slice(0, 3)
-      .map((p) => ({
-        title: p.title,
-        description: p.description,
-        startMs: p.startMs,
-        endMs: p.endMs,
+      .map((program) => ({
+        title: program.title,
+        description: program.description,
+        startMs: program.startMs,
+        endMs: program.endMs,
         progress: 0,
         next: [],
       }));
@@ -103,11 +71,7 @@ export const useEpg = (streamId: string, options: UseEpgOptions = {}) => {
     };
   }, [normalisedPrograms, nowMs]);
 
-  // Convenience: next programs (up to 3) relative to now.
-  const nextPrograms = useMemo(
-    () => currentProgram?.next ?? [],
-    [currentProgram]
-  );
+  const nextPrograms = useMemo(() => currentProgram?.next ?? [], [currentProgram]);
 
   return {
     currentProgram,

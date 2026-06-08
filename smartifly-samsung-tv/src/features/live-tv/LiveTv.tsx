@@ -41,6 +41,31 @@ const EPG_PREVIEW_DEBOUNCE_MS = 140;
 const GRID_ITEM_HEIGHT = 296;
 const GRID_GAP = 16;
 const CATEGORY_ROW_HEIGHT = 80;
+const CATEGORY_SCROLL_THRESHOLD = 10;
+const CATEGORY_SCROLL_INSET = 14;
+
+const toSuggestionFocusId = (suggestion: string) =>
+  `search-sug-${suggestion.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+const getCategoryScrollTarget = (
+  currentScrollTop: number,
+  viewportHeight: number,
+  itemIndex: number
+) => {
+  const itemTop = itemIndex * CATEGORY_ROW_HEIGHT;
+  const itemBottom = itemTop + CATEGORY_ROW_HEIGHT;
+  const viewBottom = currentScrollTop + viewportHeight;
+
+  if (itemTop < currentScrollTop + CATEGORY_SCROLL_THRESHOLD) {
+    return Math.max(0, itemTop - CATEGORY_SCROLL_INSET);
+  }
+
+  if (itemBottom > viewBottom - CATEGORY_SCROLL_THRESHOLD) {
+    return Math.max(0, itemBottom - viewportHeight + CATEGORY_SCROLL_INSET);
+  }
+
+  return null;
+};
 
 const parseChannelTitle = (title: string) => {
   let cleanTitle = cleanChannelTitle(title);
@@ -126,11 +151,26 @@ export const LiveTv: React.FC = () => {
 
   // ── Category Sidebar Virtualization state & refs ────────────────────────────
   const [categoryScrollTop, setCategoryScrollTop] = useState(0);
+  const [sidebarHeight, setSidebarHeight] = useState(800);
   const categoryListRef = useRef<HTMLDivElement>(null);
 
   const handleCategoryListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setCategoryScrollTop(e.currentTarget.scrollTop);
   }, []);
+
+  // Measure sidebar height via ResizeObserver so windowing is resolution-independent.
+  useEffect(() => {
+    const el = categoryListRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSidebarHeight(Math.max(300, entry.contentRect.height));
+      }
+    });
+    observer.observe(el);
+    if (el.clientHeight > 0) setSidebarHeight(el.clientHeight);
+    return () => observer.disconnect();
+  }, [isSearching]);
 
   // Scroll category list to keep active/focused category visible
   useEffect(() => {
@@ -142,18 +182,14 @@ export const LiveTv: React.FC = () => {
     const idx = categories.findIndex((c) => c.id === focusedCatId);
     if (idx < 0) return;
 
-    const itemTop = idx * CATEGORY_ROW_HEIGHT;
-    const itemBottom = itemTop + CATEGORY_ROW_HEIGHT;
-    const viewTop = categoryListRef.current.scrollTop;
-    const viewBottom = viewTop + categoryListRef.current.clientHeight;
+    const nextScrollTop = getCategoryScrollTarget(
+      categoryListRef.current.scrollTop,
+      categoryListRef.current.clientHeight,
+      idx
+    );
 
-    if (itemTop < viewTop + 10) {
-      categoryListRef.current.scrollTo({ top: Math.max(0, itemTop - 14), behavior: "auto" });
-    } else if (itemBottom > viewBottom - 10) {
-      categoryListRef.current.scrollTo({
-        top: itemBottom - categoryListRef.current.clientHeight + 14,
-        behavior: "auto",
-      });
+    if (nextScrollTop !== null && categoryListRef.current.scrollTop !== nextScrollTop) {
+      categoryListRef.current.scrollTop = nextScrollTop;
     }
   }, [categories, focusedId, activeCategoryId, isSearching]);
 
@@ -350,6 +386,20 @@ export const LiveTv: React.FC = () => {
     activeCategoryId
       ? (state.gridScrollTopByCategory[activeCategoryId] ?? 0)
       : 0
+  );
+
+  const visibleCategoryStartIndex = useMemo(
+    () => Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3),
+    [categoryScrollTop]
+  );
+
+  const visibleCategoryEndIndex = useMemo(
+    () =>
+      Math.min(
+        categories.length,
+        Math.ceil((categoryScrollTop + sidebarHeight) / CATEGORY_ROW_HEIGHT) + 3
+      ),
+    [categories.length, categoryScrollTop, sidebarHeight]
   );
   const initialGridScrollTop = activeGridScrollTop;
   const gridRowStride = GRID_ITEM_HEIGHT + GRID_GAP;
@@ -640,8 +690,8 @@ export const LiveTv: React.FC = () => {
                 <div className={styles.suggestionsList}>
                   {suggestions.map((sug, sugIndex) => (
                     <Focusable
-                      key={`search-sug-${sugIndex}`}
-                      id={`search-sug-${sugIndex}`}
+                      key={toSuggestionFocusId(sug)}
+                      id={toSuggestionFocusId(sug)}
                       variant="pill"
                       className={styles.suggestionPill}
                       onKeyDown={(e) => {
@@ -654,14 +704,14 @@ export const LiveTv: React.FC = () => {
                         } else if (e.key === "ArrowLeft") {
                           if (sugIndex > 0) {
                             e.preventDefault();
-                            setFocus(`search-sug-${sugIndex - 1}`);
+                            setFocus(toSuggestionFocusId(suggestions[sugIndex - 1]));
                           } else {
                             e.preventDefault();
                           }
                         } else if (e.key === "ArrowRight") {
                           if (sugIndex < suggestions.length - 1) {
                             e.preventDefault();
-                            setFocus(`search-sug-${sugIndex + 1}`);
+                            setFocus(toSuggestionFocusId(suggestions[sugIndex + 1]));
                           } else if (filteredChannels.length > 0) {
                              e.preventDefault();
                              sidebarFocusedRef.current = false;
@@ -695,7 +745,7 @@ export const LiveTv: React.FC = () => {
                 if (e.key === "ArrowUp" && rowIndex === 0) {
                   e.preventDefault();
                   if (suggestions.length > 0) {
-                    setFocus("search-sug-0");
+                    setFocus(toSuggestionFocusId(suggestions[0]));
                   } else {
                     setFocus("live-search-input-wrapper");
                   }
@@ -760,12 +810,11 @@ export const LiveTv: React.FC = () => {
                 >
                   {categories
                     .slice(
-                      Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3),
-                      Math.min(categories.length, Math.ceil((categoryScrollTop + 800) / CATEGORY_ROW_HEIGHT) + 3)
+                      visibleCategoryStartIndex,
+                      visibleCategoryEndIndex
                     )
                     .map((category, index) => {
-                      const absIndex =
-                        Math.max(0, Math.floor(categoryScrollTop / CATEGORY_ROW_HEIGHT) - 3) + index;
+                      const absIndex = visibleCategoryStartIndex + index;
                       return (
                         <div
                           key={category.id}
@@ -880,7 +929,7 @@ export const LiveTv: React.FC = () => {
                   if (e.key === "ArrowDown") {
                     if (isSearching && suggestions.length > 0) {
                       e.preventDefault();
-                      setFocus("search-sug-0");
+                      setFocus(toSuggestionFocusId(suggestions[0]));
                     } else if (filteredChannels.length > 0) {
                       e.preventDefault();
                       setFocus(`card-live-${filteredChannels[0].id}`);
@@ -904,7 +953,7 @@ export const LiveTv: React.FC = () => {
                   setFocusedChannelId(null);
                   setTimeout(() => {
                     if (suggestions.length > 0) {
-                      setFocus("search-sug-0");
+                      setFocus(toSuggestionFocusId(suggestions[0]));
                     } else {
                       setFocus("tvkb-key-0-0");
                     }
@@ -974,6 +1023,7 @@ export const LiveTv: React.FC = () => {
             >
               <VirtualGrid
                 items={filteredChannels}
+                getItemKey={(channel) => channel.id}
                 itemHeight={GRID_ITEM_HEIGHT}
                 itemWidth={gridItemWidth}
                 columns={cols}

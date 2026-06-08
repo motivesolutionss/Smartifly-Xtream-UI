@@ -12,6 +12,10 @@ const MAX_CONCURRENT_PREFETCHES = 3;
 /** Minimum ms between prefetch calls for the same category. */
 const PREFETCH_DEBOUNCE_MS = 350;
 
+const getSortableName = (name: string) => {
+  return name.replace(/^[^a-zA-Z0-9]+/, "").trim().toLowerCase();
+};
+
 export const useLiveContent = (selectedCategoryId?: string) => {
   const categoriesQuery = useQuery<AppCategory[]>({
     queryKey: ["live-categories"],
@@ -87,9 +91,23 @@ export const useLiveContent = (selectedCategoryId?: string) => {
     void channelsQuery.refetch();
   }, [categoriesQuery, channelsQuery]);
 
+  const sortedCategories = useMemo(() => {
+    const raw = categoriesQuery.data;
+    if (!raw || raw.length === 0) return EMPTY_CATEGORIES;
+    return [...raw].sort((a, b) => {
+      const nameA = getSortableName(a.name);
+      const nameB = getSortableName(b.name);
+      return (nameA || a.name.toLowerCase()).localeCompare(
+        nameB || b.name.toLowerCase(),
+        undefined,
+        { sensitivity: "base", numeric: true }
+      );
+    });
+  }, [categoriesQuery.data]);
+
   return useMemo(
     () => ({
-      categories: categoriesQuery.data ?? EMPTY_CATEGORIES,
+      categories: sortedCategories,
       channels: channelsQuery.data ?? EMPTY_CHANNELS,
       isLoading: categoriesQuery.isLoading || channelsQuery.isLoading,
       isFetchingChannels: channelsQuery.isFetching,
@@ -101,7 +119,7 @@ export const useLiveContent = (selectedCategoryId?: string) => {
       refetch,
     }),
     [
-      categoriesQuery.data,
+      sortedCategories,
       categoriesQuery.isLoading,
       categoriesQuery.isError,
       channelsQuery.data,

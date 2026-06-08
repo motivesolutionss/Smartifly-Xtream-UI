@@ -8,14 +8,18 @@ import React, {
 } from "react";
 import { Focusable } from "../../components/tv/Focusable";
 import { useEpg } from "./hooks/useEpg";
-import type { AppChannel, AppEpgItem } from "../../types/appModels";
+import type { AppChannel } from "../../types/appModels";
 import styles from "./EpgGrid.module.css";
 import { X } from "lucide-react";
 import { useFocus } from "../../providers/useFocus";
 import { useTvBack } from "../../hooks/useTvBack";
-import { formatEpgTime, parseTimestampToSeconds } from "./epgTime";
+import { formatEpgTime } from "./epgTime";
 import { useQueries } from "@tanstack/react-query";
-import { getShortEpgQueryOptions, sliceShortEpgToWindow } from "./epgQuery";
+import {
+  getShortEpgQueryOptionsWithOverrides,
+  sliceShortEpgToWindow,
+  type ParsedShortEpgItem,
+} from "./epgQuery";
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 /** Must match .channelItem height in CSS */
@@ -33,6 +37,8 @@ const TIME_HEADER_HEIGHT = 54;
 /** Must match .detailsPanel min-height in CSS */
 const DETAILS_PANEL_HEIGHT = 160;
 const EPG_SCROLL_DEBOUNCE_MS = 120;
+const EPG_FETCH_OVERSCAN = 8;
+const EPG_FETCH_EDGE_BUFFER = 3;
 
 // Shared clock source for "now playing" highlighting without calling Date.now()
 // during render.
@@ -60,6 +66,15 @@ const subscribeNow = (listener: NowListener) => {
 };
 
 const getNowSnapshot = () => nowMsSnapshot;
+
+const expandEpgFetchRange = (
+  start: number,
+  end: number,
+  totalCount: number
+) => ({
+  start: Math.max(0, start - EPG_FETCH_OVERSCAN),
+  end: Math.min(totalCount, end + EPG_FETCH_OVERSCAN),
+});
 
 interface EpgGridProps {
   channels: AppChannel[];
@@ -182,32 +197,48 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
     Math.ceil((sidebarScrollTop + viewportHeight) / CHANNEL_ROW_HEIGHT) +
       SIDEBAR_OVERSCAN
   );
-  const [epgVisibleRange, setEpgVisibleRange] = useState(() => ({
-    start: visibleStart,
-    end: visibleEnd,
-  }));
+  const [epgFetchRange, setEpgFetchRange] = useState(() =>
+    expandEpgFetchRange(visibleStart, visibleEnd, channels.length)
+  );
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
-      setEpgVisibleRange((previous) => {
-        if (previous.start === visibleStart && previous.end === visibleEnd) {
+      setEpgFetchRange((previous) => {
+        const visibleFitsInsidePrevious =
+          visibleStart >= previous.start && visibleEnd <= previous.end;
+        const isNearLeadingEdge =
+          visibleStart <= previous.start + EPG_FETCH_EDGE_BUFFER;
+        const isNearTrailingEdge =
+          visibleEnd >= previous.end - EPG_FETCH_EDGE_BUFFER;
+
+        if (
+          visibleFitsInsidePrevious &&
+          !isNearLeadingEdge &&
+          !isNearTrailingEdge &&
+          previous.end <= channels.length
+        ) {
           return previous;
         }
 
-        return { start: visibleStart, end: visibleEnd };
+        const next = expandEpgFetchRange(visibleStart, visibleEnd, channels.length);
+        if (next.start === previous.start && next.end === previous.end) {
+          return previous;
+        }
+
+        return next;
       });
     }, EPG_SCROLL_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timerId);
-  }, [visibleEnd, visibleStart]);
+  }, [channels.length, visibleEnd, visibleStart]);
 
   const visibleChannels = useMemo(
     () => channels.slice(visibleStart, visibleEnd),
     [channels, visibleEnd, visibleStart]
   );
   const epgVisibleChannels = useMemo(
-    () => channels.slice(epgVisibleRange.start, epgVisibleRange.end),
-    [channels, epgVisibleRange.end, epgVisibleRange.start]
+    () => channels.slice(epgFetchRange.start, epgFetchRange.end),
+    [channels, epgFetchRange.end, epgFetchRange.start]
   );
 
   // ── Time window ───────────────────────────────────────────────────────────
@@ -227,16 +258,18 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
   // ── Batch EPG fetch for only the visible channel window ────────────────────
   const epgQueries = useQueries({
     queries: epgVisibleChannels.map((ch) => ({
-      ...getShortEpgQueryOptions(ch.id),
-      select: (items: AppEpgItem[]) =>
+      ...getShortEpgQueryOptionsWithOverrides(ch.id, {
+        refetchInterval: false,
+      }),
+      select: (items: ParsedShortEpgItem[]) =>
         sliceShortEpgToWindow(items, windowStartMs, windowEndMs),
     })),
   });
 
-  const channelEpgMap = useMemo<Record<string, AppEpgItem[]>>(() => {
-    const map: Record<string, AppEpgItem[]> = {};
+  const channelEpgMap = useMemo<Record<string, ParsedShortEpgItem[]>>(() => {
+    const map: Record<string, ParsedShortEpgItem[]> = {};
     epgVisibleChannels.forEach((ch, i) => {
-      map[ch.id] = (epgQueries[i]?.data as AppEpgItem[] | undefined) ?? [];
+      map[ch.id] = (epgQueries[i]?.data as ParsedShortEpgItem[] | undefined) ?? [];
     });
     return map;
   }, [epgQueries, epgVisibleChannels]);
@@ -392,10 +425,8 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
                       </div>
                     ) : (
                       epgItems.map((item, idx) => {
-                        const startSec = parseTimestampToSeconds(item.start);
-                        const endSec = parseTimestampToSeconds(item.end);
-                        const startMs = startSec * 1000;
-                        const endMs = endSec * 1000;
+                        const startMs = item.startMs;
+                        const endMs = item.endMs;
 
                         // Clip to visible window
                         const clampedStart = Math.max(startMs, windowStartMs);
