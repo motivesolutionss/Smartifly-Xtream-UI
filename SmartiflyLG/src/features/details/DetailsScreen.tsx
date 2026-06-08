@@ -74,6 +74,13 @@ import {
   mergeStyle
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
+import {
+  buildMovieInfoCacheKey,
+  buildSeriesInfoCacheKey,
+  DETAILS_CACHE_TTL_MS,
+  readFreshCacheValue,
+  writeCacheValue
+} from '../../services/cacheService';
 import useWatchlistStore, { buildWatchlistKey, buildWatchlistScope } from '../../store/watchlistStore';
 import useWatchHistoryStore from '../../store/watchHistoryStore';
 import { formatFallbackTitle } from '../../utils/fallbackText';
@@ -120,6 +127,7 @@ type DetailEpisode = {
 };
 
 type DetailFocusId = 'back' | 'play' | 'save' | `season:${string}` | `episode:${string}` | `similar:${string}`;
+
 
 function pickImage(...values: Array<string | string[] | undefined>) {
   for (const value of values) {
@@ -203,6 +211,7 @@ type ArtworkWithFallbackProps = {
   fallbackWords?: number;
   fallbackChars?: number;
   preferFallbackArtwork?: boolean;
+  showTitle?: boolean;
 };
 
 function ArtworkWithFallback({
@@ -213,69 +222,194 @@ function ArtworkWithFallback({
   fallbackStyle,
   fallbackWords = 4,
   fallbackChars = 34,
-  preferFallbackArtwork = false
+  preferFallbackArtwork = false,
+  showTitle = true
 }: ArtworkWithFallbackProps) {
-  const [currentSrc, setCurrentSrc] = useState<string | undefined>(artwork);
-  const [imageFailed, setImageFailed] = useState(false);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    setCurrentSrc(preferFallbackArtwork && fallbackArtwork?.trim() ? fallbackArtwork : artwork);
-    setImageFailed(false);
-  }, [artwork, fallbackArtwork, preferFallbackArtwork]);
+    setLoadedSrc(null);
+    setHasError(false);
 
-  useEffect(() => {
-    const primaryArtwork = artwork?.trim();
-    const fallbackSource = fallbackArtwork?.trim();
+    const primarySrc = artwork?.trim();
+    const backupSrc = fallbackArtwork?.trim();
 
-    if (!preferFallbackArtwork || !primaryArtwork) {
+    // Determine target URL to try loading first
+    const initialTarget = preferFallbackArtwork && backupSrc ? backupSrc : primarySrc;
+
+    if (!initialTarget) {
+      setHasError(true);
       return;
     }
 
-    if (fallbackSource && primaryArtwork === fallbackSource) {
-      return;
-    }
+    let active = true;
 
-    let cancelled = false;
+    // Single-request image probe
     const probe = new Image();
-
+    probe.src = initialTarget;
     probe.decoding = 'async';
     probe.onload = () => {
-      if (!cancelled) {
-        setCurrentSrc(primaryArtwork);
+      if (!active) return;
+      setLoadedSrc(initialTarget);
+
+      // If we initially loaded the fallback, and there is a primary artwork, probe it too
+      if (preferFallbackArtwork && initialTarget === backupSrc && primarySrc && primarySrc !== backupSrc) {
+        const primaryProbe = new Image();
+        primaryProbe.src = primarySrc;
+        primaryProbe.decoding = 'async';
+        primaryProbe.onload = () => {
+          if (active) {
+            setLoadedSrc(primarySrc);
+          }
+        };
+        primaryProbe.onerror = () => {
+          // If primary fails, we keep the backup loadedSrc
+        };
       }
     };
     probe.onerror = () => {
-      if (!cancelled && !fallbackSource) {
-        setImageFailed(true);
+      if (!active) return;
+
+      // If initial target failed, and it was the primary, try the backup
+      if (initialTarget === primarySrc && backupSrc && backupSrc !== primarySrc) {
+        const backupProbe = new Image();
+        backupProbe.src = backupSrc;
+        backupProbe.decoding = 'async';
+        backupProbe.onload = () => {
+          if (active) {
+            setLoadedSrc(backupSrc);
+          }
+        };
+        backupProbe.onerror = () => {
+          if (active) {
+            setHasError(true);
+          }
+        };
+      } else {
+        setHasError(true);
       }
     };
-    probe.src = primaryArtwork;
 
     return () => {
-      cancelled = true;
+      active = false;
       probe.onload = null;
       probe.onerror = null;
     };
   }, [artwork, fallbackArtwork, preferFallbackArtwork]);
 
-  const showImage = Boolean(currentSrc?.trim()) && !imageFailed;
+  const width = imageStyle.width || '100%';
+  const height = imageStyle.height || '100%';
+  const borderRadius = imageStyle.borderRadius || fallbackStyle.borderRadius || 'inherit';
 
-  return showImage ? (
-    <img
-      src={currentSrc}
-      alt=""
-      style={imageStyle}
-      onError={() => {
-        if (fallbackArtwork?.trim() && currentSrc !== fallbackArtwork) {
-          setCurrentSrc(fallbackArtwork);
-          return;
-        }
+  // Automatically determine if this is a large poster card or a small grid/similar/episode card
+  const isLargePoster = imageStyle.height && parseInt(imageStyle.height.toString()) > 350;
 
-        setImageFailed(true);
-      }}
-    />
-  ) : (
-    <div style={fallbackStyle}>{formatFallbackTitle(title, fallbackWords, fallbackChars)}</div>
+  return (
+    <div style={{ position: 'relative', width, height, overflow: 'hidden', borderRadius }}>
+      {/* 1. Instant Fallback Background Layer - Premium three-tone slate to deep black gradient */}
+      {!loadedSrc && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            background: 'linear-gradient(to bottom, #23293B 0%, #171B26 50%, #0B0D13 100%)',
+            zIndex: 1
+          }}
+        />
+      )}
+
+      {/* 2. Fallback Title/Text/Icon Layer */}
+      {!loadedSrc && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: isLargePoster ? '32px' : '16px',
+            textAlign: 'center',
+            boxSizing: 'border-box',
+            zIndex: 3
+          }}
+        >
+          {/* Custom Clapperboard SVG - Size fits the card context */}
+          <svg
+            viewBox="0 0 24 24"
+            width={isLargePoster ? '56' : '36'}
+            height={isLargePoster ? '56' : '36'}
+            fill="none"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ marginBottom: showTitle ? '14px' : '0' }}
+          >
+            <rect x="3" y="7" width="18" height="13" rx="2" ry="2" stroke="rgba(255, 255, 255, 0.6)" />
+            <path d="M3 11h18" stroke="rgba(255, 255, 255, 0.6)" />
+            <path d="M6 7l3-3" stroke="#E50914" strokeWidth="2" />
+            <path d="M11 7l3-3" stroke="#E50914" strokeWidth="2" />
+            <path d="M16 7l3-3" stroke="#E50914" strokeWidth="2" />
+            <polygon
+              points={isLargePoster ? '10.5 13 15 15.5 10.5 18' : '11 13.5 15 15.5 11 17.5'}
+              fill="#E50914"
+              stroke="#E50914"
+              strokeWidth="1"
+            />
+          </svg>
+
+          {/* Conditional Title Text Wrapping */}
+          {showTitle && (
+            <strong
+              style={{
+                color: '#FFFFFF',
+                fontSize: isLargePoster ? '22px' : '14px',
+                lineHeight: 1.3,
+                fontWeight: 700,
+                textAlign: 'center',
+                wordBreak: 'break-word',
+                letterSpacing: '-0.01em',
+                maxWidth: '100%',
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: isLargePoster ? 3 : 2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}
+            >
+              {formatFallbackTitle(title, fallbackWords, fallbackChars)}
+            </strong>
+          )}
+        </div>
+      )}
+
+      {/* 3. High-Quality Loaded Image */}
+      {loadedSrc && (
+        <img
+          src={loadedSrc}
+          alt=""
+          style={mergeStyle(imageStyle, {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 1,
+            transition: 'opacity 0.22s ease-in-out',
+            zIndex: 4
+          })}
+        />
+      )}
+    </div>
   );
 }
 
@@ -286,16 +420,18 @@ function buildMovieRecommendations(
   limit: number
 ) {
   const merged = new Map<number, XtreamMovie>();
+  const safeCategoryMovies = Array.isArray(categoryMovies) ? categoryMovies : [];
+  const safeAllMovies = Array.isArray(allMovies) ? allMovies : [];
 
-  for (const movie of categoryMovies) {
-    if (movie.stream_id !== currentMovieId && !merged.has(movie.stream_id)) {
+  for (const movie of safeCategoryMovies) {
+    if (movie && movie.stream_id !== currentMovieId && !merged.has(movie.stream_id)) {
       merged.set(movie.stream_id, movie);
     }
   }
 
   if (merged.size < limit) {
-    for (const movie of allMovies) {
-      if (movie.stream_id === currentMovieId || merged.has(movie.stream_id)) {
+    for (const movie of safeAllMovies) {
+      if (!movie || movie.stream_id === currentMovieId || merged.has(movie.stream_id)) {
         continue;
       }
 
@@ -309,36 +445,43 @@ function buildMovieRecommendations(
   return Array.from(merged.values()).slice(0, limit).map(mapMovieSimilar);
 }
 
+function safeTrim(value: any): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).trim();
+}
+
 function parseMovieInfo(info: XtreamMovieInfo, fallback: DetailState): DetailState {
   const movieInfo = info.info ?? {};
   return {
-    title: movieInfo.name?.trim() || fallback.title,
-    description: movieInfo.plot?.trim() || fallback.description,
+    title: safeTrim(movieInfo.name) || fallback.title,
+    description: safeTrim(movieInfo.plot) || fallback.description,
     posterUrl: pickImage(movieInfo.movie_image, fallback.posterUrl, movieInfo.backdrop_path),
     backdropUrl: pickImage(movieInfo.backdrop_path, fallback.backdropUrl, movieInfo.movie_image),
     year: getYearFromValue(movieInfo.releasedate) || fallback.year,
-    rating: movieInfo.rating?.trim() || fallback.rating,
-    genre: movieInfo.genre?.split(',')[0]?.trim() || fallback.genre,
-    cast: movieInfo.cast?.trim() || fallback.cast,
-    director: movieInfo.director?.trim() || fallback.director,
-    trailerUrl: movieInfo.youtube_trailer?.trim() || fallback.trailerUrl,
-    containerExtension: info.movie_data?.container_extension?.trim() || fallback.containerExtension
+    rating: safeTrim(movieInfo.rating) || fallback.rating,
+    genre: safeTrim(movieInfo.genre).split(',')[0]?.trim() || fallback.genre,
+    cast: safeTrim(movieInfo.cast) || fallback.cast,
+    director: safeTrim(movieInfo.director) || fallback.director,
+    trailerUrl: safeTrim(movieInfo.youtube_trailer) || fallback.trailerUrl,
+    containerExtension: safeTrim(info.movie_data?.container_extension) || fallback.containerExtension
   };
 }
 
 function parseSeriesInfo(info: XtreamSeriesInfo, fallback: DetailState): DetailState {
   const seriesInfo = info.info ?? {};
   return {
-    title: seriesInfo.name?.trim() || fallback.title,
-    description: seriesInfo.plot?.trim() || fallback.description,
+    title: safeTrim(seriesInfo.name) || fallback.title,
+    description: safeTrim(seriesInfo.plot) || fallback.description,
     posterUrl: pickImage(seriesInfo.cover, fallback.posterUrl, seriesInfo.backdrop_path),
     backdropUrl: pickImage(seriesInfo.backdrop_path, fallback.backdropUrl, seriesInfo.cover),
     year: getYearFromValue(seriesInfo.releaseDate) || fallback.year,
-    rating: seriesInfo.rating?.trim() || fallback.rating,
-    genre: seriesInfo.genre?.split(',')[0]?.trim() || fallback.genre,
-    cast: seriesInfo.cast?.trim() || fallback.cast,
-    director: seriesInfo.director?.trim() || fallback.director,
-    trailerUrl: seriesInfo.youtube_trailer?.trim() || fallback.trailerUrl
+    rating: safeTrim(seriesInfo.rating) || fallback.rating,
+    genre: safeTrim(seriesInfo.genre).split(',')[0]?.trim() || fallback.genre,
+    cast: safeTrim(seriesInfo.cast) || fallback.cast,
+    director: safeTrim(seriesInfo.director) || fallback.director,
+    trailerUrl: safeTrim(seriesInfo.youtube_trailer) || fallback.trailerUrl
   };
 }
 
@@ -391,6 +534,60 @@ function getSeriesSeasonOptions(info: XtreamSeriesInfo | null): DetailSeason[] {
   });
 }
 
+function getCachedMoviesFromStore(): XtreamMovie[] {
+  const store = useAppStore.getState();
+
+  if (Array.isArray(store.cachedMovies) && store.cachedMovies.length > 0) {
+    return store.cachedMovies;
+  }
+
+  const bootstrapData = store.homeBootstrapData;
+  if (!bootstrapData || !Array.isArray(bootstrapData.rails)) {
+    return [];
+  }
+
+  const movies: XtreamMovie[] = [];
+  const seenIds = new Set<number>();
+
+  for (const rail of bootstrapData.rails) {
+    if (rail && rail.kind === 'movie' && Array.isArray(rail.items)) {
+      for (const item of rail.items) {
+        const streamId = item.contentId;
+        if (streamId && !seenIds.has(streamId)) {
+          seenIds.add(streamId);
+          movies.push({
+            num: 0,
+            name: item.name || 'Movie Title',
+            stream_type: 'movie',
+            stream_id: streamId,
+            stream_icon: item.artwork || '',
+            category_id: item.categoryId || '',
+            backdrop_path: item.artwork ? [item.artwork] : []
+          });
+        }
+      }
+    }
+  }
+
+  return movies;
+}
+
+function getCachedMovieInfo(portalCode: string | undefined, username: string | undefined, streamId: number) {
+  if (!portalCode || !username || !streamId) {
+    return null;
+  }
+
+  return readFreshCacheValue<XtreamMovieInfo>(buildMovieInfoCacheKey(portalCode, username, streamId));
+}
+
+function getCachedSeriesInfo(portalCode: string | undefined, username: string | undefined, seriesId: number) {
+  if (!portalCode || !username || !seriesId) {
+    return null;
+  }
+
+  return readFreshCacheValue<XtreamSeriesInfo>(buildSeriesInfoCacheKey(portalCode, username, seriesId));
+}
+
 function DetailsScreen() {
   const session = useAppStore((state) => state.session);
   const selectedContent = useAppStore((state) => state.selectedContent);
@@ -419,6 +616,7 @@ function DetailsScreen() {
   const username = session?.username?.trim();
   const password = session?.userInfo?.password?.trim();
   const portalBaseUrl = session?.portalBaseUrl?.trim();
+  const portalCode = session?.portalCode?.trim();
   const watchlistScope = useMemo(
     () => buildWatchlistScope(session?.portalCode, session?.username),
     [session?.portalCode, session?.username]
@@ -445,10 +643,6 @@ function DetailsScreen() {
   };
 
   useEffect(() => {
-    setFocusId('play');
-  }, [selectedContent?.id]);
-
-  useEffect(() => {
     const content = selectedContent;
     if (!content || !username || !password || !portalBaseUrl) {
       setDetail(null);
@@ -458,6 +652,14 @@ function DetailsScreen() {
       setLoading(false);
       return;
     }
+
+    // Reset details screen to loading state and point focus to Back button immediately
+    setDetail(null);
+    setSimilar([]);
+    setSeriesInfo(null);
+    setSelectedSeason('');
+    setLoading(true);
+    setFocusId('back');
 
     const activeUsername = username;
     const activePassword = password;
@@ -482,8 +684,11 @@ function DetailsScreen() {
         setHasError(false);
 
         if (activeContent.kind === 'movie') {
+          const cachedMovieInfo = getCachedMovieInfo(portalCode, activeUsername, activeContent.contentId);
           const [infoResult, categoryMoviesResult, allMoviesResult] = await Promise.allSettled([
-            api.getMovieInfo(activeUsername, activePassword, activeContent.contentId),
+            cachedMovieInfo
+              ? Promise.resolve(cachedMovieInfo)
+              : api.getMovieInfo(activeUsername, activePassword, activeContent.contentId),
             api.getVodStreams(activeUsername, activePassword, activeContent.categoryId),
             api.getVodStreams(activeUsername, activePassword)
           ]);
@@ -493,8 +698,22 @@ function DetailsScreen() {
           }
 
           const info = infoResult.status === 'fulfilled' ? infoResult.value : null;
-          const categoryMovies = categoryMoviesResult.status === 'fulfilled' ? categoryMoviesResult.value : [];
-          const allMovies = allMoviesResult.status === 'fulfilled' ? allMoviesResult.value : [];
+          let categoryMovies = categoryMoviesResult.status === 'fulfilled' ? categoryMoviesResult.value : [];
+          let allMovies = allMoviesResult.status === 'fulfilled' ? allMoviesResult.value : [];
+
+          if (info && !cachedMovieInfo) {
+            writeCacheValue(buildMovieInfoCacheKey(portalCode || '', activeUsername, activeContent.contentId), info, DETAILS_CACHE_TTL_MS);
+          }
+
+          // If the allMovies list failed or is empty, use global cache fallback
+          if (!Array.isArray(allMovies) || allMovies.length === 0) {
+            allMovies = getCachedMoviesFromStore();
+          }
+
+          // If categoryMovies failed or is empty, try to get it from cached movies
+          if (!Array.isArray(categoryMovies) || categoryMovies.length === 0) {
+            categoryMovies = allMovies.filter((m) => m.category_id === activeContent.categoryId);
+          }
 
           const nextDetail = info ? parseMovieInfo(info, fallback) : fallback;
           const nextSimilar = buildMovieRecommendations(categoryMovies, allMovies, activeContent.contentId, 10);
@@ -503,9 +722,17 @@ function DetailsScreen() {
           setSimilar(nextSimilar);
           setSeriesInfo(null);
           setSelectedSeason('');
+          setFocusId('play');
+
+          if (!info) {
+            setHasError(true);
+          }
         } else {
+          const cachedSeriesInfo = getCachedSeriesInfo(portalCode, activeUsername, activeContent.contentId);
           const [infoResult, similarResult] = await Promise.allSettled([
-            api.getSeriesInfo(activeUsername, activePassword, activeContent.contentId),
+            cachedSeriesInfo
+              ? Promise.resolve(cachedSeriesInfo)
+              : api.getSeriesInfo(activeUsername, activePassword, activeContent.contentId),
             api.getSeries(activeUsername, activePassword, activeContent.categoryId)
           ]);
 
@@ -516,20 +743,31 @@ function DetailsScreen() {
           const info = infoResult.status === 'fulfilled' ? infoResult.value : null;
           const series = similarResult.status === 'fulfilled' ? similarResult.value : [];
 
+          if (info && !cachedSeriesInfo) {
+            writeCacheValue(buildSeriesInfoCacheKey(portalCode || '', activeUsername, activeContent.contentId), info, DETAILS_CACHE_TTL_MS);
+          }
+
           const nextDetail = info ? parseSeriesInfo(info, fallback) : fallback;
           setDetail(nextDetail);
           setSimilar([]);
           setSeriesInfo(info);
           const seasonIds = getSeriesSeasonOptions(info).map((season) => season.id);
           setSelectedSeason((current) => (seasonIds.includes(current) ? current : seasonIds[0] || ''));
+          setFocusId('play');
+
+          if (!info) {
+            setHasError(true);
+          }
         }
-      } catch {
+      } catch (err) {
+        console.error('[DEBUG] loadDetails error:', err);
         if (!cancelled) {
           setDetail(fallback);
           setSimilar([]);
           setSeriesInfo(null);
           setSelectedSeason('');
           setHasError(true);
+          setFocusId('play');
         }
       } finally {
         if (!cancelled) {
@@ -562,6 +800,38 @@ function DetailsScreen() {
     setPrevHeroArt(heroArt);
     setPrevContentId(selectedContent?.id);
   }
+
+  // Automatically sync/update favorite with full metadata (e.g. backdropUrl) once fetched
+  useEffect(() => {
+    if (detail && isSaved && selectedContent) {
+      const currentFavorite = watchlistEntries.find((entry) => entry.key === selectedFavoriteKey);
+      const currentBackdrop = (currentFavorite?.data as SelectedContent)?.backdropUrl;
+      const fetchedBackdrop = detail.backdropUrl;
+      
+      // Update if backdropUrl is missing or out of sync
+      if (fetchedBackdrop && currentBackdrop !== fetchedBackdrop) {
+        useWatchlistStore.getState().addFavorite({
+          key: selectedFavoriteKey,
+          scope: watchlistScope,
+          kind: selectedContent.kind,
+          entityId: String(selectedContent.contentId),
+          title: detail.title || selectedContent.title,
+          subtitle: detail.description || selectedContent.description,
+          image: detail.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl,
+          rating: detail.rating || selectedContent.rating,
+          year: detail.year || selectedContent.year,
+          data: {
+            ...selectedContent,
+            posterUrl: detail.posterUrl || selectedContent.posterUrl,
+            backdropUrl: detail.backdropUrl || selectedContent.backdropUrl,
+            description: detail.description || selectedContent.description,
+            year: detail.year || selectedContent.year,
+            rating: detail.rating || selectedContent.rating
+          }
+        });
+      }
+    }
+  }, [detail, isSaved, selectedContent, selectedFavoriteKey, watchlistScope, watchlistEntries]);
 
   const selectedSeasonEpisodes = useMemo(() => {
     if (selectedContent?.kind !== 'series' || !selectedSeason || !seriesInfo?.episodes) {
@@ -1012,6 +1282,7 @@ function DetailsScreen() {
               fallbackStyle={detailsPosterFallback}
               fallbackWords={4}
               fallbackChars={34}
+              showTitle={false}
             />
           </div>
 
@@ -1023,234 +1294,342 @@ function DetailsScreen() {
 
             <h1 style={detailsTitle}>{detail?.title ?? selectedContent.title}</h1>
 
-            <div style={detailsMeta}>
-              {metaBits.map((item) => (
-                <span key={item} style={detailsMetaItem}>
-                  {item}
-                </span>
-              ))}
-            </div>
+            {!loading ? (
+              <>
+                <div style={detailsMeta}>
+                  {metaBits.map((item) => (
+                    <span key={item} style={detailsMetaItem}>
+                      {item}
+                    </span>
+                  ))}
+                </div>
 
-            <p style={detailsDescription}>
-              {loading ? 'Loading details...' : detail?.description || selectedContent.description || 'No description available.'}
-            </p>
+                {(() => {
+                  const rawDesc = detail?.description?.trim() || selectedContent.description?.trim() || '';
+                  const title = selectedContent.title?.trim() || '';
+                  
+                  const isGeneric = 
+                    !rawDesc || 
+                    rawDesc === '—' || 
+                    rawDesc === 'No description available.' || 
+                    rawDesc === 'Plot summary is not available for this title.' ||
+                    rawDesc === title;
 
-            {hasError ? (
-              <p style={detailsHint}>Details loaded with a fallback because the info endpoint was not available.</p>
-            ) : null}
+                  return (
+                    <p
+                      style={mergeStyle(
+                        detailsDescription,
+                        isGeneric && {
+                          color: 'rgba(255, 255, 255, 0.45)',
+                          fontStyle: 'italic'
+                        }
+                      )}
+                    >
+                      {isGeneric
+                        ? 'Plot summary is not available for this title.'
+                        : rawDesc}
+                    </p>
+                  );
+                })()}
 
-            <div style={detailsActions}>
-              <button
-                ref={registerFocusRef('play')}
-                type="button"
-                style={mergeStyle(
-                  detailsButton,
-                  detailsButtonPrimary,
-                  focusId === 'play' && detailsButtonFocused
-                )}
-                onFocus={() => setFocusId('play')}
-                onClick={() => handlePlay()}
-              >
-                Play
-              </button>
-              <button
-                ref={registerFocusRef('save')}
-                type="button"
-                style={mergeStyle(
-                  detailsButton,
-                  detailsButtonSecondary,
-                  focusId === 'save' && detailsButtonFocused
-                )}
-                onFocus={() => setFocusId('save')}
-                onClick={() => {
-                  if (!selectedContent) {
-                    return;
-                  }
+                {hasError ? (
+                  <p style={detailsHint}>Details loaded with a fallback because the info endpoint was not available.</p>
+                ) : null}
 
-                  toggleFavorite({
-                    key: selectedFavoriteKey,
-                    scope: watchlistScope,
-                    kind: selectedContent.kind,
-                    entityId: String(selectedContent.contentId),
-                    title: selectedContent.title,
-                    subtitle: selectedContent.description,
-                    image: selectedContent.posterUrl || selectedContent.backdropUrl,
-                    rating: selectedContent.rating,
-                    year: selectedContent.year,
-                    data: selectedContent
-                  });
+                <div style={detailsActions}>
+                  <button
+                    ref={registerFocusRef('play')}
+                    type="button"
+                    style={mergeStyle(
+                      detailsButton,
+                      detailsButtonPrimary,
+                      focusId === 'play' && detailsButtonFocused
+                    )}
+                    onFocus={() => setFocusId('play')}
+                    onClick={() => handlePlay()}
+                  >
+                    Play
+                  </button>
+                  <button
+                    ref={registerFocusRef('save')}
+                    type="button"
+                    style={mergeStyle(
+                      detailsButton,
+                      detailsButtonSecondary,
+                      focusId === 'save' && detailsButtonFocused
+                    )}
+                    onFocus={() => setFocusId('save')}
+                    onClick={() => {
+                      if (!selectedContent) {
+                        return;
+                      }
 
-                  setStatusMessage(isSaved ? 'Removed from favorites' : 'Added to favorites');
-                }}
-              >
-                <span style={detailsButtonIcon} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="1em" height="1em" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 18.3l-6.7-6.1a4.2 4.2 0 0 1 0-6.2 4.5 4.5 0 0 1 6.7.4 4.5 4.5 0 0 1 6.7-.4 4.2 4.2 0 0 1 0 6.2L12 18.3z" />
-                  </svg>
-                </span>
-                <span>{isSaved ? 'Added to Favorites' : 'Add to Favorites'}</span>
-              </button>
-              <button
-                ref={registerFocusRef('back')}
-                type="button"
-                style={mergeStyle(
-                  detailsButton,
-                  detailsButtonGhost,
-                  focusId === 'back' && detailsButtonFocused
-                )}
-                onFocus={() => setFocusId('back')}
-                onClick={closeContentDetails}
-              >
-                Back
-              </button>
-            </div>
+                      toggleFavorite({
+                        key: selectedFavoriteKey,
+                        scope: watchlistScope,
+                        kind: selectedContent.kind,
+                        entityId: String(selectedContent.contentId),
+                        title: detail?.title || selectedContent.title,
+                        subtitle: detail?.description || selectedContent.description,
+                        image: detail?.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl,
+                        rating: detail?.rating || selectedContent.rating,
+                        year: detail?.year || selectedContent.year,
+                        data: {
+                          ...selectedContent,
+                          posterUrl: detail?.posterUrl || selectedContent.posterUrl,
+                          backdropUrl: detail?.backdropUrl || selectedContent.backdropUrl,
+                          description: detail?.description || selectedContent.description,
+                          year: detail?.year || selectedContent.year,
+                          rating: detail?.rating || selectedContent.rating
+                        }
+                      });
 
-            <div style={detailsFacts}>
-              <div style={mergeStyle(detailsFactCard, detailsFactCardFirst)}>
-                <span style={detailsFactLabel}>Director</span>
-                <strong style={detailsFactValue}>{detail?.director || '—'}</strong>
-              </div>
-              <div style={detailsFactCard}>
-                <span style={detailsFactLabel}>Cast</span>
-                <strong style={detailsFactValue}>{detail?.cast || '—'}</strong>
-              </div>
-            </div>
+                      setStatusMessage(isSaved ? 'Removed from favorites' : 'Added to favorites');
+                    }}
+                  >
+                    <span style={detailsButtonIcon} aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="1em" height="1em" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 18.3l-6.7-6.1a4.2 4.2 0 0 1 0-6.2 4.5 4.5 0 0 1 6.7.4 4.5 4.5 0 0 1 6.7-.4 4.2 4.2 0 0 1 0 6.2L12 18.3z" />
+                      </svg>
+                    </span>
+                    <span>{isSaved ? 'Added to Favorites' : 'Add to Favorites'}</span>
+                  </button>
+                  <button
+                    ref={registerFocusRef('back')}
+                    type="button"
+                    style={mergeStyle(
+                      detailsButton,
+                      detailsButtonGhost,
+                      focusId === 'back' && detailsButtonFocused
+                    )}
+                    onFocus={() => setFocusId('back')}
+                    onClick={closeContentDetails}
+                  >
+                    Back
+                  </button>
+                </div>
 
-            {selectedContent.kind === 'series' ? (
-              <div style={detailsSeriesPanel}>
-                {visibleSeasonOptions.length > 0 ? (
-                  <>
-                    <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
-                      <h2 style={detailsSectionTitle}>Seasons</h2>
-                      <p style={detailsSectionCopy}>{visibleSeasonOptions.length} seasons</p>
+                {(() => {
+                  const rawDirector = detail?.director?.trim();
+                  const hasDirector = rawDirector && rawDirector !== '—' && rawDirector !== '';
+                  const rawCast = detail?.cast?.trim();
+                  const hasCast = rawCast && rawCast !== '—' && rawCast !== '';
+
+                  return (
+                    <div style={detailsFacts}>
+                      <div style={mergeStyle(detailsFactCard, detailsFactCardFirst)}>
+                        <span style={detailsFactLabel}>Director</span>
+                        <strong
+                          style={mergeStyle(
+                            detailsFactValue,
+                            !hasDirector && { color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }
+                          )}
+                        >
+                          {hasDirector ? rawDirector : 'Not Available'}
+                        </strong>
+                      </div>
+                      <div style={detailsFactCard}>
+                        <span style={detailsFactLabel}>Cast</span>
+                        <strong
+                          style={mergeStyle(
+                            detailsFactValue,
+                            !hasCast && { color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }
+                          )}
+                        >
+                          {hasCast ? rawCast : 'Not Available'}
+                        </strong>
+                      </div>
                     </div>
+                  );
+                })()}
 
-                    <div className="lg-details-scroll-x" style={detailsSeasonRow} role="tablist" aria-label="Series seasons">
-                      {visibleSeasonOptions.map((season, index) => {
-                        const seasonFocusId = `season:${season.id}` as DetailFocusId;
-                        const isSelected = selectedSeason === season.id;
-                        const isFocused = focusId === seasonFocusId;
-                        const isActive = isSelected || isFocused;
+                {selectedContent.kind === 'series' ? (
+                  <div style={detailsSeriesPanel}>
+                    {visibleSeasonOptions.length > 0 ? (
+                      <>
+                        <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
+                          <h2 style={detailsSectionTitle}>Seasons</h2>
+                          <p style={detailsSectionCopy}>{visibleSeasonOptions.length} seasons</p>
+                        </div>
 
-                        return (
-                          <button
-                            key={season.id}
-                            ref={registerFocusRef(seasonFocusId)}
-                            type="button"
-                            role="tab"
-                            aria-selected={isSelected}
-                            style={mergeStyle(detailsSeasonChip, isActive && detailsSeasonChipActive)}
-                            onFocus={() => {
-                              setFocusId(seasonFocusId);
-                            }}
-                            onClick={() => setSelectedSeason(season.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault();
-                                setSelectedSeason(season.id);
-                              }
-                              if (event.key === 'ArrowDown') {
-                                event.preventDefault();
-                                focusEpisodeAt(0);
-                              }
-                              if (event.key === 'ArrowLeft' && index === 0) {
-                                event.preventDefault();
-                                focusContent('save');
-                              }
-                            }}
-                          >
-                            <span>{season.name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                        <div className="lg-details-scroll-x" style={detailsSeasonRow} role="tablist" aria-label="Series seasons">
+                          {visibleSeasonOptions.map((season, index) => {
+                            const seasonFocusId = `season:${season.id}` as DetailFocusId;
+                            const isSelected = selectedSeason === season.id;
+                            const isFocused = focusId === seasonFocusId;
+                            const isActive = isSelected || isFocused;
 
-                    <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
-                      <h2 style={detailsSectionTitle}>Episodes</h2>
-                      <p style={detailsSectionCopy}>{selectedSeasonEpisodes.length} titles</p>
-                    </div>
-
-                    {selectedSeasonEpisodes.length > 0 ? (
-                      <div style={detailsEpisodeGrid}>
-                        {selectedSeasonEpisodes.map((episode) => {
-                          const episodeFocusId = `episode:${episode.id}` as DetailFocusId;
-                          const isFocused = focusId === episodeFocusId;
-
-                          const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
-                          const progressKey = `${session?.portalCode || 'default'}::${session?.username?.trim().toLowerCase() || 'guest'}::${selectedProfile?.id || 'primary'}::series::${episodeId}`;
-                          const progressInfo = watchHistory[progressKey];
-
-                          return (
-                            <div key={episode.id} style={detailsEpisodeCardWrap}>
+                            return (
                               <button
-                                ref={registerFocusRef(episodeFocusId)}
+                                key={season.id}
+                                ref={registerFocusRef(seasonFocusId)}
                                 type="button"
-                                style={mergeStyle(detailsEpisodeCard, isFocused && detailsEpisodeCardActive)}
-                                onFocus={() => setFocusId(episodeFocusId)}
-                                onClick={() => handleEpisodePlay(episode)}
+                                role="tab"
+                                aria-selected={isSelected}
+                                style={mergeStyle(detailsSeasonChip, isActive && detailsSeasonChipActive)}
+                                onFocus={() => {
+                                  setFocusId(seasonFocusId);
+                                }}
+                                onClick={() => setSelectedSeason(season.id)}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter') {
                                     event.preventDefault();
-                                    handleEpisodePlay(episode);
+                                    setSelectedSeason(season.id);
+                                  }
+                                  if (event.key === 'ArrowDown') {
+                                    event.preventDefault();
+                                    focusEpisodeAt(0);
+                                  }
+                                  if (event.key === 'ArrowLeft' && index === 0) {
+                                    event.preventDefault();
+                                    focusContent('save');
                                   }
                                 }}
                               >
-                                <div style={detailsEpisodeArt}>
-                                  <ArtworkWithFallback
-                                    title={episode.title}
-                                    artwork={episode.artwork}
-                                    fallbackArtwork={episode.fallbackArtwork}
-                                    imageStyle={detailsEpisodeImg}
-                                    fallbackStyle={detailsEpisodeFallback}
-                                    fallbackWords={4}
-                                    fallbackChars={28}
-                                    preferFallbackArtwork
-                                  />
-                                  {progressInfo && progressInfo.progress > 0 && !progressInfo.completed && (
-                                    <div style={{
-                                      position: 'absolute',
-                                      bottom: 0,
-                                      left: 0,
-                                      right: 0,
-                                      height: '4px',
-                                      backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                                      zIndex: 10
-                                    }}>
-                                      <div style={{
-                                        width: `${progressInfo.progress}%`,
-                                        height: '100%',
-                                        backgroundColor: '#e50914'
-                                      }} />
-                                    </div>
-                                  )}
-                                </div>
-                                <div style={detailsEpisodeCopy}>
-                                  <div style={detailsEpisodeEyebrow}>
-                                    <span>{episode.episodeNumber ? `Episode ${episode.episodeNumber}` : 'Episode'}</span>
-                                    {episode.duration ? <span>{episode.duration}</span> : null}
-                                  </div>
-                                  <strong style={detailsEpisodeTitle}>{episode.title}</strong>
-                                  {episode.description ? <p style={detailsEpisodeDescription}>{episode.description}</p> : null}
-                                </div>
+                                <span>{season.name}</span>
                               </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+
+                        <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
+                          <h2 style={detailsSectionTitle}>Episodes</h2>
+                          <p style={detailsSectionCopy}>{selectedSeasonEpisodes.length} titles</p>
+                        </div>
+
+                        {selectedSeasonEpisodes.length > 0 ? (
+                          <div style={detailsEpisodeGrid}>
+                            {selectedSeasonEpisodes.map((episode) => {
+                              const episodeFocusId = `episode:${episode.id}` as DetailFocusId;
+                              const isFocused = focusId === episodeFocusId;
+
+                              const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
+                              const progressKey = `${session?.portalCode || 'default'}::${session?.username?.trim().toLowerCase() || 'guest'}::${selectedProfile?.id || 'primary'}::series::${episodeId}`;
+                              const progressInfo = watchHistory[progressKey];
+
+                              return (
+                                <div key={episode.id} style={detailsEpisodeCardWrap}>
+                                  <button
+                                    ref={registerFocusRef(episodeFocusId)}
+                                    type="button"
+                                    style={mergeStyle(detailsEpisodeCard, isFocused && detailsEpisodeCardActive)}
+                                    onFocus={() => setFocusId(episodeFocusId)}
+                                    onClick={() => handleEpisodePlay(episode)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        handleEpisodePlay(episode);
+                                      }
+                                    }}
+                                  >
+                                    <div style={detailsEpisodeArt}>
+                                      <ArtworkWithFallback
+                                        title={episode.title}
+                                        artwork={episode.artwork}
+                                        fallbackArtwork={episode.fallbackArtwork}
+                                        imageStyle={detailsEpisodeImg}
+                                        fallbackStyle={detailsEpisodeFallback}
+                                        fallbackWords={4}
+                                        fallbackChars={28}
+                                        preferFallbackArtwork
+                                      />
+                                      {progressInfo && progressInfo.progress > 0 && !progressInfo.completed && (
+                                        <div style={{
+                                          position: 'absolute',
+                                          bottom: 0,
+                                          left: 0,
+                                          right: 0,
+                                          height: '4px',
+                                          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                                          zIndex: 10
+                                        }}>
+                                          <div style={{
+                                            width: `${progressInfo.progress}%`,
+                                            height: '100%',
+                                            backgroundColor: '#e50914'
+                                          }} />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={detailsEpisodeCopy}>
+                                      <div style={detailsEpisodeEyebrow}>
+                                        <span>{episode.episodeNumber ? `Episode ${episode.episodeNumber}` : 'Episode'}</span>
+                                        {episode.duration ? <span>{episode.duration}</span> : null}
+                                      </div>
+                                      <strong style={detailsEpisodeTitle}>{episode.title}</strong>
+                                      {episode.description ? <p style={detailsEpisodeDescription}>{episode.description}</p> : null}
+                                    </div>
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p style={detailsHint}>This series has no episodes uploaded yet.</p>
+                        )}
+                      </>
                     ) : (
                       <p style={detailsHint}>This series has no episodes uploaded yet.</p>
                     )}
-                  </>
-                ) : (
-                  <p style={detailsHint}>This series has no episodes uploaded yet.</p>
-                )}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'flex-start',
+                height: '340px',
+                gap: '24px',
+                marginTop: '16px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '20px'
+                }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '999px',
+                    border: '4px solid rgba(255, 255, 255, 0.08)',
+                    borderTopColor: '#E50914',
+                    animation: 'spin 1s linear infinite',
+                    boxShadow: '0 0 24px rgba(229, 9, 20, 0.15)'
+                  }} />
+                  <p style={{
+                    color: 'rgba(255, 255, 255, 0.55)',
+                    fontSize: '20px',
+                    fontWeight: '500',
+                    margin: 0
+                  }}>
+                    Loading details...
+                  </p>
+                </div>
+
+                <div style={{ marginTop: '12px' }}>
+                  <button
+                    ref={registerFocusRef('back')}
+                    type="button"
+                    style={mergeStyle(
+                      detailsButton,
+                      detailsButtonGhost,
+                      focusId === 'back' && detailsButtonFocused
+                    )}
+                    onFocus={() => setFocusId('back')}
+                    onClick={closeContentDetails}
+                  >
+                    Back
+                  </button>
+                </div>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
 
-      {selectedContent.kind === 'movie' ? (
+      {!loading && selectedContent.kind === 'movie' ? (
         <section style={detailsSimilar} aria-label="More movies">
           <div style={detailsSectionHeader}>
             <h2 style={detailsSectionTitle}>More Movies</h2>

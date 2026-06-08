@@ -47,6 +47,7 @@ import {
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
+import { BrowsePosterArt } from '../../components/BrowsePosterArt';
 
 type SearchItem = {
   id: string;
@@ -113,6 +114,19 @@ function getYearFromValue(value?: string | number | null) {
 
   const parsed = String(value).split('-')[0];
   return parsed.length === 4 ? parsed : '';
+}
+
+function formatRating(value?: string | number | null) {
+  if (!value) {
+    return '';
+  }
+  const parsed = parseFloat(String(value));
+  if (isNaN(parsed)) {
+    return String(value);
+  }
+  // Standardize 100-based or 50-based ratings down to a 10-based scale if needed, or format normal ones.
+  const standard = parsed > 10 ? parsed / 10 : parsed;
+  return standard.toFixed(1);
 }
 
 function getInitials(name: string) {
@@ -865,15 +879,14 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                         onClick={() => handlePlayLiveChannel(item)}
                         onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
                       >
-                        <div style={liveChannelCardArt}>
-                          {item.artwork ? (
-                            <img src={item.artwork} alt="" style={liveChannelCardImg} />
-                          ) : (
-                            <div style={mergeStyle(movieCardFallback, { background: item.accent })}>
-                              {getInitials(item.title)}
-                            </div>
-                          )}
-                        </div>
+                        <BrowsePosterArt
+                          artwork={item.artwork}
+                          name={item.title}
+                          accent={item.accent}
+                          badge="LIVE"
+                          artStyle={liveChannelCardArt}
+                          imgStyle={liveChannelCardImg}
+                        />
                       </button>
                     );
                   }
@@ -893,21 +906,25 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                       onClick={() => openContentDetails(sharedDetails, 'search')}
                       onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
                     >
-                      <div style={movieCardArt}>
-                        {item.artwork ? (
-                          <img src={item.artwork} alt="" style={movieCardImg} />
-                        ) : (
-                          <div style={mergeStyle(movieCardFallback, { background: item.accent })}>
-                            <strong style={movieCardFallbackStrong}>{getInitials(item.title)}</strong>
-                            <span style={movieCardFallbackSpan}>{item.kind}</span>
-                          </div>
-                        )}
-                      </div>
+                      <BrowsePosterArt
+                        artwork={item.artwork}
+                        name={item.title}
+                        accent={item.accent}
+                        badge=""
+                        hideFallbackText={true}
+                      />
                       <div style={searchRailCardCopy}>
-                        <strong style={searchRailCardTitle}>{item.title}</strong>
-                        <div style={searchRailCardMeta}>
+                        <strong style={mergeStyle(searchRailCardTitle, { opacity: isFocused ? 1 : 0.82, transition: 'opacity 0.22s' })}>
+                          {item.title}
+                        </strong>
+                        <div style={mergeStyle(searchRailCardMeta, { color: isFocused ? 'rgba(255, 255, 255, 0.88)' : 'rgba(255, 255, 255, 0.54)', transition: 'color 0.22s' })}>
                           {item.year ? <span>{item.year}</span> : null}
-                          {item.rating ? <span>{item.rating}</span> : null}
+                          {item.year && item.rating ? <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>•</span> : null}
+                          {item.rating ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <span style={{ color: '#E50914' }}>★</span> {formatRating(item.rating)}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </button>

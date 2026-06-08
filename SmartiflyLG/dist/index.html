@@ -148,17 +148,106 @@
         });
 
         setStatus('Global handlers ready. Loading app.js...');
-        var bundleScript = document.createElement('script');
-        bundleScript.src = './app.js';
-        bundleScript.async = false;
-        bundleScript.onload = function () {
-          setStatus('app.js loaded successfully. Waiting for startup logs...');
+        function loadScript(src, onload, onerrorLabel) {
+          var script = document.createElement('script');
+          script.src = src;
+          script.async = false;
+          script.onload = onload;
+          script.onerror = function () {
+            setStatus("Failed to load " + src);
+            appendLog('script.onerror', onerrorLabel || ('The emulator could not load ' + src));
+          };
+          document.body.appendChild(script);
+        }
+        function loadAppBundle() {
+          var bundleScript = document.createElement('script');
+          bundleScript.src = './app.js';
+          bundleScript.async = false;
+          bundleScript.onload = function () {
+            setStatus('app.js loaded successfully. Waiting for startup logs...');
+          };
+          bundleScript.onerror = function () {
+            setStatus('Failed to load app.js');
+            appendLog('script.onerror', 'The emulator could not load ./app.js');
+          };
+          document.body.appendChild(bundleScript);
         };
-        bundleScript.onerror = function () {
-          setStatus('Failed to load app.js');
-          appendLog('script.onerror', 'The emulator could not load ./app.js');
+        setStatus('Loading vendor player bundles...');
+        loadScript('./vendor/hls.min.js', function () {
+          setStatus('hls.js loaded. Loading Shaka...');
+          loadScript('./vendor/shaka-player.compiled.js', function () {
+            setStatus('Shaka loaded. Loading app.js...');
+            loadAppBundle();
+          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');
+        }, 'The emulator could not load ./vendor/hls.min.js');
+
+        setStatus('Global handlers ready. Loading app.js...');
+        function loadScript(src, onload, onerrorLabel) {
+          var script = document.createElement('script');
+          script.src = src;
+          script.async = false;
+          script.onload = onload;
+          script.onerror = function () {
+            setStatus("Failed to load " + src);
+            appendLog('script.onerror', onerrorLabel || ('The emulator could not load ' + src));
+          };
+          document.body.appendChild(script);
+        }
+        function loadAppBundle() {
+          var bundleScript = document.createElement('script');
+          bundleScript.src = './app.js';
+          bundleScript.async = false;
+          bundleScript.onload = function () {
+            setStatus('app.js loaded successfully. Waiting for startup logs...');
+          };
+          bundleScript.onerror = function () {
+            setStatus('Failed to load app.js');
+            appendLog('script.onerror', 'The emulator could not load ./app.js');
+          };
+          document.body.appendChild(bundleScript);
         };
-        document.body.appendChild(bundleScript);
+        setStatus('Loading vendor player bundles...');
+        loadScript('./vendor/hls.min.js', function () {
+          setStatus('hls.js loaded. Loading Shaka...');
+          loadScript('./vendor/shaka-player.compiled.js', function () {
+            setStatus('Shaka loaded. Loading app.js...');
+            loadAppBundle();
+          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');
+        }, 'The emulator could not load ./vendor/hls.min.js');
+
+        setStatus('Global handlers ready. Loading app.js...');
+        function loadScript(src, onload, onerrorLabel) {
+          var script = document.createElement('script');
+          script.src = src;
+          script.async = false;
+          script.onload = onload;
+          script.onerror = function () {
+            setStatus("Failed to load " + src);
+            appendLog('script.onerror', onerrorLabel || ('The emulator could not load ' + src));
+          };
+          document.body.appendChild(script);
+        }
+        function loadAppBundle() {
+          var bundleScript = document.createElement('script');
+          bundleScript.src = './app.js';
+          bundleScript.async = false;
+          bundleScript.onload = function () {
+            setStatus('app.js loaded successfully. Waiting for startup logs...');
+          };
+          bundleScript.onerror = function () {
+            setStatus('Failed to load app.js');
+            appendLog('script.onerror', 'The emulator could not load ./app.js');
+          };
+          document.body.appendChild(bundleScript);
+        };
+        setStatus('Loading vendor player bundles...');
+        loadScript('./vendor/hls.min.js', function () {
+          setStatus('hls.js loaded. Loading Shaka...');
+          loadScript('./vendor/shaka-player.compiled.js', function () {
+            setStatus('Shaka loaded. Loading app.js...');
+            loadAppBundle();
+          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');
+        }, 'The emulator could not load ./vendor/hls.min.js');
       })();
     </script>
   </body>

@@ -49,16 +49,18 @@ export function buildLivePlaybackRequest({
 
   const api = createXtreamApi(portalBaseUrl);
   const liveExtensions = ['m3u8', 'ts'];
-  const liveQueue = channels.map((entry) => ({
-    id: entry.id,
-    title: entry.title,
-    streamId: entry.streamId,
-    streamUrl: api.getLiveStreamUrl(username, password, entry.streamId, liveExtensions[0]),
-    fallbackUrls: liveExtensions
-      .slice(1)
-      .map((extension) => api.getLiveStreamUrl(username, password, entry.streamId, extension)),
-    artwork: entry.artwork
-  }));
+  const liveQueue = channels.map((entry) => {
+    return {
+      id: entry.id,
+      title: entry.title,
+      streamId: entry.streamId,
+      streamUrl: api.getLiveStreamUrl(username, password, entry.streamId, liveExtensions[0]),
+      fallbackUrls: liveExtensions
+        .slice(1)
+        .map((extension) => api.getLiveStreamUrl(username, password, entry.streamId, extension)),
+      artwork: entry.artwork
+    };
+  });
 
   const liveIndex = liveQueue.findIndex((entry) => entry.id === selectedChannelId);
   if (liveIndex < 0) {

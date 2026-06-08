@@ -109,7 +109,7 @@ export const browseCategories: CSSProperties = {
 
 export const browseCategory: CSSProperties = {
   border: 0,
-  padding: '16px 18px',
+  padding: '22px 24px',
   borderRadius: '18px',
   background: 'transparent',
   color: 'rgba(255, 255, 255, 0.72)',
@@ -117,11 +117,11 @@ export const browseCategory: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   textAlign: 'left',
-  fontSize: '18px',
+  fontSize: '22px',
   fontWeight: 700,
   width: '100%',
   flexShrink: 0,
-  marginBottom: '8px',
+  marginBottom: '12px',
   boxSizing: 'border-box',
   cursor: 'pointer',
   WebkitAppearance: 'none',
@@ -136,7 +136,7 @@ export const browseCategoryActive: CSSProperties = {
 
 export const browseCategoryCount: CSSProperties = {
   color: 'rgba(255, 255, 255, 0.34)',
-  fontSize: '14px',
+  fontSize: '17px',
   fontWeight: 700
 };
 

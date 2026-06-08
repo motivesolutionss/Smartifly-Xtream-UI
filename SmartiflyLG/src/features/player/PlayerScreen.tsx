@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import shaka from 'shaka-player';
+import {
+  type HlsConfig,
+  type Loader,
+  type LoaderCallbacks,
+  type LoaderConfiguration,
+  type LoaderContext,
+  type LoaderStats,
+  type PlaylistLoaderConstructor
+} from 'hls.js';
 import {
   mergeStyle,
   playerButton,
@@ -49,22 +57,32 @@ import {
 import { useAppStore } from '../../store/appStore';
 import {
   clearLivePlayerSession,
+  clearLiveStreamMemory,
   getLiveHandoffDelayMs,
   getLiveSwitchContext,
+  hasExhaustedLiveCooldownRetry,
+  isLiveStreamForbidden,
   LIVE_CHANNEL_REVISIT_COOLDOWN_MS,
   LIVE_SWITCH_FORBIDDEN_RETRY_MS,
   liveStreamForbiddenUntil,
   liveStreamLastStopTimes,
-  hasExhaustedLiveCooldownRetry,
-  isLiveStreamForbidden,
   markLiveStreamForbidden,
-  performLiveChannelSwitch,
   setLiveSwitchContext,
   type LiveSwitchContext
 } from './livePlayerSession';
-import { choosePlaybackEngine, type PlaybackEngine } from './playbackEngine';
+import { performFreshLiveChannelSwitch } from './liveFreshOpenSwitch';
+import { isFreshLiveOpenIsolationActive, setFreshLiveOpenIsolationActive } from './liveFreshOpenTestState';
+import { buildLivePlaybackRequest } from '../live/livePlayback';
+import { choosePlaybackEngine, type PlaybackEngine, type PlaybackEngineDecision } from './playbackEngine';
 import useSettingsStore from '../../store/settingsStore';
 import useWatchHistoryStore, { useTrackProgress, generateWatchHistoryId } from '../../store/watchHistoryStore';
+
+declare global {
+  interface Window {
+    Hls?: typeof import('hls.js').default;
+    shaka?: typeof import('shaka-player').default;
+  }
+}
 
 type PlayerFocusId = 'back' | 'rewind' | 'play' | 'forward' | 'settings';
 type PlayerSettingsView = 'root' | 'speed' | 'aspect';
@@ -92,9 +110,19 @@ const ASPECT_OPTIONS = ['contain', 'cover', 'fill'] as const;
 const PLAYER_LOG_PREFIX = '[LG Player]';
 const WEBOS_HLS_MEDIA_OPTION_VALUE = JSON.stringify({ mediaTransportType: 'HLS' });
 const deadStreamUntilByUrl = new Map<string, number>();
+let manifestRequestTraceCounter = 0;
+const NATIVE_HLS_MIME_TYPES = [
+  'application/vnd.apple.mpegurl',
+  'application/x-mpegURL',
+  'audio/mpegurl'
+];
 
 function isM3u8Url(value: string) {
   return value.split('?')[0]?.toLowerCase().endsWith('.m3u8') ?? false;
+}
+
+function canPlayNativeHls(video: HTMLVideoElement) {
+  return NATIVE_HLS_MIME_TYPES.some((type) => video.canPlayType(type) !== '');
 }
 
 function clearVideoSources(video: HTMLVideoElement) {
@@ -196,6 +224,20 @@ function guessMimeTypeFromStreamUrl(streamUrl: string) {
   return '';
 }
 
+function setLastLiveUrlForDebug(url: string | null) {
+  const debugWindow = window as Window & {
+    __smartiflyLastLiveUrl?: string;
+    __smartiflySetLastLiveUrl?: (value: string | null) => void;
+  };
+
+  if (typeof debugWindow.__smartiflySetLastLiveUrl === 'function') {
+    debugWindow.__smartiflySetLastLiveUrl(url);
+    return;
+  }
+
+  debugWindow.__smartiflyLastLiveUrl = url ?? undefined;
+}
+
 function summarizeHeaders(headers: Headers) {
   const keys = [
     'content-type',
@@ -224,6 +266,32 @@ function summarizeHeaders(headers: Headers) {
 
 function formatHeaderRows(headers: Record<string, string>) {
   return Object.entries(headers).map(([header, value]) => ({ header, value }));
+}
+
+function summarizeCookieJar() {
+  const cookie = typeof document !== 'undefined' ? document.cookie : '';
+  if (!cookie) {
+    return {
+      hasCookie: false,
+      cookieCount: 0,
+      cookiePreview: '',
+      cookieLength: 0
+    };
+  }
+
+  const names = cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => entry.split('=')[0]?.trim() || '')
+    .filter(Boolean);
+
+  return {
+    hasCookie: true,
+    cookieCount: names.length,
+    cookiePreview: names.join('; '),
+    cookieLength: cookie.length
+  };
 }
 
 async function probeStreamHeaders(streamUrl: string) {
@@ -269,18 +337,44 @@ async function probeStreamHeaders(streamUrl: string) {
   }
 }
 
-async function resolveRedirectedStreamUrl(streamUrl: string) {
+async function resolveRedirectedStreamUrl(streamUrl: string, signal?: AbortSignal) {
   const controller = new AbortController();
+  const abortFromExternalSignal = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', abortFromExternalSignal, { once: true });
+    }
+  }
   const timeoutId = window.setTimeout(() => controller.abort(), 4500);
 
   try {
-    const response = await fetch(streamUrl, {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
-      redirect: 'follow',
-      signal: controller.signal
-    });
+    let response;
+    try {
+      response = await fetch(streamUrl, {
+        method: 'HEAD',
+        mode: 'cors',
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: controller.signal
+      });
+      if (!response.ok && response.status !== 403) {
+        throw new Error('HEAD failed');
+      }
+    } catch (headError) {
+      if (controller.signal.aborted) {
+        throw headError;
+      }
+      response = await fetch(streamUrl, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { Range: 'bytes=0-0' }
+      });
+    }
 
     if (!response.ok) {
       return streamUrl;
@@ -305,6 +399,7 @@ async function resolveRedirectedStreamUrl(streamUrl: string) {
     return streamUrl;
   } finally {
     window.clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortFromExternalSignal);
   }
 }
 
@@ -318,6 +413,83 @@ function getBufferedTime(video: HTMLVideoElement | null) {
   } catch {
     return 0;
   }
+}
+
+function getBufferedRanges(video: HTMLVideoElement | null) {
+  if (!video) {
+    return [] as Array<{ start: number; end: number }>;
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  try {
+    for (let i = 0; i < video.buffered.length; i++) {
+      ranges.push({
+        start: Number(video.buffered.start(i).toFixed(3)),
+        end: Number(video.buffered.end(i).toFixed(3))
+      });
+    }
+  } catch {
+    // Ignore buffer access error
+  }
+
+  return ranges;
+}
+
+function getFallbackDuration(video: HTMLVideoElement) {
+  if (Number.isFinite(video.duration) && video.duration > 0) {
+    return video.duration;
+  }
+
+  if (video.seekable.length > 0) {
+    try {
+      const end = video.seekable.end(video.seekable.length - 1);
+      if (Number.isFinite(end) && end > 0) {
+        return end;
+      }
+    } catch {
+      // Ignore seekable access errors and keep falling back.
+    }
+  }
+
+  if (video.buffered.length > 0) {
+    try {
+      const end = video.buffered.end(video.buffered.length - 1);
+      if (Number.isFinite(end) && end > 0) {
+        return end;
+      }
+    } catch {
+      // Ignore buffered access errors and keep the duration unset.
+    }
+  }
+
+  return 0;
+}
+
+function isPlaybackVisiblyActive(video: HTMLVideoElement, isLive: boolean) {
+  return !video.paused && !video.seeking && (isLive || video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+}
+
+function getReadyStateLabel(readyState: number) {
+  const readyStateLabels: Record<number, string> = {
+    0: 'HAVE_NOTHING',
+    1: 'HAVE_METADATA',
+    2: 'HAVE_CURRENT_DATA',
+    3: 'HAVE_FUTURE_DATA',
+    4: 'HAVE_ENOUGH_DATA'
+  };
+
+  return readyStateLabels[readyState] ?? 'UNKNOWN';
+}
+
+function getNetworkStateLabel(networkState: number) {
+  const networkStateLabels: Record<number, string> = {
+    0: 'NETWORK_EMPTY',
+    1: 'NETWORK_IDLE',
+    2: 'NETWORK_LOADING',
+    3: 'NETWORK_NO_SOURCE'
+  };
+
+  return networkStateLabels[networkState] ?? 'UNKNOWN';
 }
 
 async function awaitPlayWithTimeout(video: HTMLVideoElement, timeoutMs: number) {
@@ -336,6 +508,59 @@ async function awaitPlayWithTimeout(video: HTMLVideoElement, timeoutMs: number) 
   ]);
 }
 
+async function awaitPlaybackStartSignal(video: HTMLVideoElement, timeoutMs: number) {
+  const hasPlaybackStarted = () =>
+    !video.paused &&
+    (video.currentTime > 0 ||
+      getBufferedTime(video) > 0 ||
+      video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA);
+
+  if (hasPlaybackStarted()) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cleanupCallbacks: Array<() => void> = [];
+
+    const cleanup = () => {
+      while (cleanupCallbacks.length > 0) {
+        cleanupCallbacks.pop()?.();
+      }
+    };
+
+    const maybeResolve = () => {
+      if (hasPlaybackStarted()) {
+        cleanup();
+        resolve();
+      }
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`Playback produced no start signal after ${timeoutMs}ms`));
+    }, timeoutMs);
+    cleanupCallbacks.push(() => window.clearTimeout(timeoutId));
+
+    const bind = (eventName: keyof HTMLMediaElementEventMap) => {
+      const handler = () => {
+        maybeResolve();
+      };
+
+      video.addEventListener(eventName, handler);
+      cleanupCallbacks.push(() => video.removeEventListener(eventName, handler));
+    };
+
+    bind('playing');
+    bind('timeupdate');
+    bind('progress');
+    bind('loadeddata');
+    bind('canplay');
+    bind('canplaythrough');
+
+    maybeResolve();
+  });
+}
+
 function waitForMs(delayMs: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, delayMs);
@@ -352,7 +577,6 @@ function looksForbiddenLikeMessage(message: string | undefined) {
   );
 }
 
-
 function isActiveLiveSwitchTarget(
   playbackKind: string | undefined,
   currentLiveStreamId: number | null,
@@ -367,24 +591,7 @@ function isActiveLiveSwitchTarget(
 }
 
 function shouldDeferLiveSwitchFallback(switchContext: LiveSwitchContext, cooldownHoldActive: boolean) {
-  if (!switchContext.fromSwitch) {
-    return false;
-  }
-
-  return cooldownHoldActive || !switchContext.cooldownRetryUsed;
-}
-
-function isRecentlyStoppedStream(
-  streamId: number | null,
-  lastStopTimes: Map<number, number>,
-  withinMs: number
-) {
-  if (streamId == null) {
-    return false;
-  }
-
-  const lastStop = lastStopTimes.get(streamId) ?? 0;
-  return lastStop > 0 && Date.now() - lastStop < withinMs;
+  return false;
 }
 
 function hasInPlayerLiveQueue(playback: { kind?: string; liveQueue?: unknown[] } | null | undefined) {
@@ -410,23 +617,21 @@ function shouldHoldLiveReconnect({
   forbiddenUntilByStream: Map<number, number>;
   revisitCooldownMs: number;
 }) {
-  if (playbackKind !== 'live' || streamId == null || !hasLiveQueue) {
+  return false;
+}
+
+
+function isRecentlyStoppedStream(
+  streamId: number | null,
+  lastStopTimes: Map<number, number>,
+  withinMs: number
+) {
+  if (streamId == null) {
     return false;
   }
 
-  const forbiddenUntil = forbiddenUntilByStream.get(streamId) ?? 0;
-  if (forbiddenUntil > Date.now()) {
-    return true;
-  }
-
-  if (
-    isActiveLiveSwitchTarget(playbackKind, streamId, switchContext) &&
-    shouldDeferLiveSwitchFallback(switchContext, cooldownHoldActive)
-  ) {
-    return true;
-  }
-
-  return isRecentlyStoppedStream(streamId, lastStopTimes, revisitCooldownMs);
+  const lastStop = lastStopTimes.get(streamId) ?? 0;
+  return lastStop > 0 && Date.now() - lastStop < withinMs;
 }
 
 function looksLikeLiveReconnectFailure(message: string | undefined, mediaErrorMessage?: string | null) {
@@ -614,8 +819,12 @@ function PlayerScreen() {
   const webosNativeHlsMediaOption = useSettingsStore((state) => state.webosNativeHlsMediaOption);
   const hlsPlaylistRewrite = useSettingsStore((state) => state.hlsPlaylistRewrite);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const shakaPlayerRef = useRef<shaka.Player | null>(null);
+  const shakaPlayerRef = useRef<any>(null);
+  const hlsPlayerRef = useRef<any>(null);
+  const hlsRuntime = window.Hls;
+  const shakaRuntime = window.shaka;
   const loadGenerationRef = useRef(0);
+  const loadAbortControllerRef = useRef<AbortController | null>(null);
   const hudTimerRef = useRef<number | null>(null);
 
   const playbackRef = useRef(playback);
@@ -623,6 +832,8 @@ function PlayerScreen() {
   const lastProgressUpdateRef = useRef<number>(0);
   const liveNativeStartupRetryUsedRef = useRef(false);
   const liveShakaStartupRetryUsedRef = useRef(false);
+  const liveHlsJsStartupRetryUsedRef = useRef(false);
+  const liveHlsJsFallbackToShakaUsedRef = useRef(false);
   const { trackMovie, trackEpisode } = useTrackProgress();
 
   const reportPlaybackProgress = useCallback((force = false) => {
@@ -726,6 +937,15 @@ function PlayerScreen() {
     return playback.liveQueue.find((entry) => entry.id === playback.id) ?? null;
   }, [playback]);
   const currentLiveStreamId = currentLiveQueueEntry?.streamId ?? null;
+
+  useEffect(() => {
+    if (playback?.kind !== 'live' || !activeStreamUrl) {
+      return;
+    }
+
+    setLastLiveUrlForDebug(activeStreamUrl);
+  }, [activeStreamUrl, playback?.kind]);
+
   const isPlayingRef = useRef(isPlaying);
   const showSettingsRef = useRef(showSettings);
   const isMutedRef = useRef(isMuted);
@@ -741,6 +961,7 @@ function PlayerScreen() {
   const suppressHudRevealRef = useRef(false);
   const playbackStartedAtRef = useRef(0);
   const lastProgressAtRef = useRef(0);
+  const lastPlayTimeRef = useRef(0);
   const seekFeedbackTimerRef = useRef<number | null>(null);
   const isWebOS = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -866,6 +1087,26 @@ function PlayerScreen() {
     setRecoveryMessage(null);
   }, [clearRecoveryTimers, clearLiveNoProgressWatchdog, clearSilentSeekSuppression, clearStartupGuardRetry]);
 
+  const cancelActivePlaybackLoad = useCallback(
+    (reason: string) => {
+      loadGenerationRef.current += 1;
+      loadAbortControllerRef.current?.abort();
+      loadAbortControllerRef.current = null;
+      startupAttemptInFlightRef.current = false;
+      clearRecoveryTimers();
+      clearLiveNoProgressWatchdog();
+      clearStartupGuardRetry();
+
+      console.debug(`${PLAYER_LOG_PREFIX} cancel active playback load`, {
+        reason,
+        playbackId: playbackRef.current?.id ?? null,
+        streamUrl: activeStreamUrl,
+        engine: activeEngineRef.current
+      });
+    },
+    [activeStreamUrl, clearLiveNoProgressWatchdog, clearRecoveryTimers, clearStartupGuardRetry]
+  );
+
   const scheduleLiveNoProgressWatchdog = useCallback(
     (reason: string) => {
       if (!isLive || startupAttemptInFlightRef.current) {
@@ -873,7 +1114,7 @@ function PlayerScreen() {
       }
 
       const video = videoRef.current;
-      if (!video || video.paused || video.seeking) {
+      if (!video || video.paused) {
         return;
       }
 
@@ -882,7 +1123,7 @@ function PlayerScreen() {
         liveNoProgressWatchdogTimerRef.current = null;
 
         const activeVideo = videoRef.current;
-        if (!activeVideo || activeVideo.paused || activeVideo.seeking || startupAttemptInFlightRef.current) {
+        if (!activeVideo || activeVideo.paused || startupAttemptInFlightRef.current) {
           return;
         }
 
@@ -891,11 +1132,25 @@ function PlayerScreen() {
           return;
         }
 
+        const bufferedRanges: string[] = [];
+        if (activeVideo) {
+          try {
+            for (let i = 0; i < activeVideo.buffered.length; i++) {
+              bufferedRanges.push(
+                `[${activeVideo.buffered.start(i).toFixed(3)}, ${activeVideo.buffered.end(i).toFixed(3)}]`
+              );
+            }
+          } catch (e) {
+            bufferedRanges.push(`error: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
         console.warn(`${PLAYER_LOG_PREFIX} live no-progress watchdog fired`, {
           reason,
           stalledFor,
           currentTime: Number.isFinite(activeVideo.currentTime) ? Number(activeVideo.currentTime.toFixed(3)) : activeVideo.currentTime,
           buffered: getBufferedTime(activeVideo),
+          bufferedRanges,
           readyState: activeVideo.readyState,
           networkState: activeVideo.networkState,
           engine: activeEngineRef.current
@@ -927,13 +1182,36 @@ function PlayerScreen() {
         liveSessionEpochRef.current = nextEpoch;
         liveNoProgressRetryUsedRef.current = false;
         startupAttemptInFlightRef.current = true;
-        setEngineOverride(null);
+
+        let targetEngine: PlaybackEngine | null = null;
+        if (
+          activeEngineRef.current === 'hlsjs' &&
+          !liveHlsJsFallbackToShakaUsedRef.current &&
+          !isFreshLiveOpenIsolationActive()
+        ) {
+          liveHlsJsFallbackToShakaUsedRef.current = true;
+          targetEngine = 'shaka';
+        } else if (
+          activeEngineRef.current === 'shaka' &&
+          !liveShakaStartupRetryUsedRef.current &&
+          !isFreshLiveOpenIsolationActive()
+        ) {
+          liveShakaStartupRetryUsedRef.current = true;
+          targetEngine = 'native';
+        } else {
+          targetEngine = null;
+        }
+
+        console.warn(`${PLAYER_LOG_PREFIX} live no-progress full reload / escalation`, {
+          reason,
+          nextEpoch,
+          currentEngine: activeEngineRef.current,
+          escalatingTo: targetEngine || 'default'
+        });
+
+        setEngineOverride(targetEngine);
         setLiveSessionEpoch(nextEpoch);
         setLoadNonce((value) => value + 1);
-        console.warn(`${PLAYER_LOG_PREFIX} live no-progress full reload`, {
-          reason,
-          nextEpoch
-        });
       }, LIVE_NO_PROGRESS_WATCHDOG_MS);
     },
     [clearLiveNoProgressWatchdog, isLive, setStatusMessage]
@@ -984,7 +1262,10 @@ function PlayerScreen() {
   useEffect(() => {
     liveNativeStartupRetryUsedRef.current = false;
     liveShakaStartupRetryUsedRef.current = false;
+    liveHlsJsStartupRetryUsedRef.current = false;
+    liveHlsJsFallbackToShakaUsedRef.current = false;
     liveNoProgressRetryUsedRef.current = false;
+    lastPlayTimeRef.current = 0;
   }, [activeStreamUrl, playback?.id]);
 
   const teardownPlayer = useCallback(async () => {
@@ -998,86 +1279,38 @@ function PlayerScreen() {
     await player.destroy().catch(() => undefined);
   }, []);
 
+  const teardownHlsPlayer = useCallback(async () => {
+    const player = hlsPlayerRef.current;
+    if (!player) {
+      return;
+    }
+
+    console.debug(`${PLAYER_LOG_PREFIX} hls.js teardown`);
+    hlsPlayerRef.current = null;
+    try {
+      player.destroy();
+    } catch (destroyError) {
+      console.warn(`${PLAYER_LOG_PREFIX} hls.js destroy failed`, {
+        message: destroyError instanceof Error ? destroyError.message : String(destroyError)
+      });
+    }
+  }, []);
+
   const teardownPlaybackEngines = useCallback(async (video: HTMLVideoElement | null) => {
+    await teardownHlsPlayer();
     await teardownPlayer();
     resetVideoElement(video);
-  }, [resetVideoElement, teardownPlayer]);
+  }, [resetVideoElement, teardownHlsPlayer, teardownPlayer]);
 
   const scheduleLiveSwitchCooldownRetry = useCallback(
     (reason: string, cooldownMs: number, streamId: number | null) => {
-      if (!streamId) {
-        return;
-      }
-
-      if (hasExhaustedLiveCooldownRetry(streamId)) {
-        startupAttemptInFlightRef.current = false;
-        setIsReady(false);
-        setRecoveryMessage('Channel is busy. Wait a few seconds and change channel again.');
-        setStatusMessage('Channel temporarily unavailable');
-        console.warn(`${PLAYER_LOG_PREFIX} live switch cooldown exhausted`, { streamId, reason });
-        return;
-      }
-
-      if (liveSwitchCooldownHoldActiveRef.current && liveSwitchRetryTimerRef.current) {
-        console.debug(`${PLAYER_LOG_PREFIX} live switch cooldown already scheduled`, { streamId, reason });
-        return;
-      }
-
-      if (liveSwitchRetryTimerRef.current) {
-        window.clearTimeout(liveSwitchRetryTimerRef.current);
-        liveSwitchRetryTimerRef.current = null;
-      }
-
-      markLiveStreamForbidden(streamId, cooldownMs);
-      startupAttemptInFlightRef.current = true;
-      void teardownPlaybackEngines(videoRef.current);
-
-      clearRecoveryTimers();
-      clearHudTimer();
-      setIsReady(false);
-      setIsHudVisible(false);
-      suppressHudRevealRef.current = true;
-      setRecoveryMessage(`${reason} Retrying channel in ${Math.ceil(cooldownMs / 1000)}s...`);
-      setStatusMessage('Retrying live channel');
-      liveSwitchCooldownHoldActiveRef.current = true;
-      setLiveSwitchContext({
-        streamId,
-        fromSwitch: true,
-        nativeAttempt: 0,
-        cooldownMs,
-        cooldownRetryUsed: false
-      });
-
-      console.warn(`${PLAYER_LOG_PREFIX} live switch cooldown hold`, {
-        streamId,
-        cooldownMs,
+      void cooldownMs;
+      void streamId;
+      console.warn(`${PLAYER_LOG_PREFIX} live switch cooldown suppressed to match Samsung behavior`, {
         reason
       });
-
-      liveSwitchRetryTimerRef.current = window.setTimeout(() => {
-        liveSwitchRetryTimerRef.current = null;
-        liveSwitchCooldownHoldActiveRef.current = false;
-        const nextEpoch = liveSessionEpochRef.current + 1;
-        liveSessionEpochRef.current = nextEpoch;
-        setLiveSwitchContext({
-          streamId,
-          fromSwitch: true,
-          nativeAttempt: 0,
-          cooldownRetryUsed: true,
-          cooldownMs: getLiveHandoffDelayMs(streamId)
-        });
-        loadGenerationRef.current += 1;
-        startupAttemptInFlightRef.current = true;
-        setEngineOverride(null);
-        setLiveSessionEpoch(nextEpoch);
-        setLoadNonce((value) => value + 1);
-        console.debug(`${PLAYER_LOG_PREFIX} live switch retry`, {
-          streamId,
-          cooldownMs: getLiveHandoffDelayMs(streamId)
-        });
-      }, cooldownMs);
     },
-    [clearRecoveryTimers, setStatusMessage, teardownPlaybackEngines]
+    []
   );
 
   const applyVideoAudioState = useCallback((video: HTMLVideoElement | null, reason: string) => {
@@ -1290,24 +1523,45 @@ function PlayerScreen() {
 
   const logVideoSnapshot = useCallback(
     (eventName: string, video: HTMLVideoElement, extra: Record<string, unknown> = {}) => {
-      console.debug(`${PLAYER_LOG_PREFIX} event:${eventName}`, {
-        engine: activeEngineRef.current,
-        streamUrl: activeStreamUrl,
-        currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : video.currentTime,
-        duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : video.duration,
-        buffered: getBufferedTime(video),
-        readyState: video.readyState,
-        networkState: video.networkState,
-        paused: video.paused,
-        seeking: video.seeking,
-        ended: video.ended,
-        muted: video.muted,
-        volume: Number.isFinite(video.volume) ? Number(video.volume.toFixed(3)) : video.volume,
-        playbackRate: Number.isFinite(video.playbackRate) ? Number(video.playbackRate.toFixed(3)) : video.playbackRate,
-        mediaErrorCode: video.error?.code ?? null,
-        mediaErrorMessage: video.error?.message ?? null,
-        ...extra
-      });
+      const ranges = getBufferedRanges(video);
+
+      const isStandardVideoEvent = [
+        'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough',
+        'play', 'playing', 'pause', 'seeking', 'seeked', 'waiting',
+        'waiting-ignored-startup', 'stalled-ignored-startup', 'stalled',
+        'error', 'ended', 'ratechange'
+      ].includes(eventName);
+
+      const isHlsjsEvent = eventName.startsWith('hlsjs-');
+      const isShakaEvent = eventName.startsWith('shaka-');
+
+      if (!isStandardVideoEvent && !isHlsjsEvent && !isShakaEvent) {
+        console.warn(`${PLAYER_LOG_PREFIX} event:${eventName}`, {
+          engine: activeEngineRef.current,
+          streamUrl: activeStreamUrl,
+          currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : video.currentTime,
+          duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : video.duration,
+          buffered: getBufferedTime(video),
+          bufferedRanges: ranges,
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+          readyStateLabel: getReadyStateLabel(video.readyState),
+          networkState: video.networkState,
+          networkStateLabel: getNetworkStateLabel(video.networkState),
+          paused: video.paused,
+          seeking: video.seeking,
+          ended: video.ended,
+          muted: video.muted,
+          volume: Number.isFinite(video.volume) ? Number(video.volume.toFixed(3)) : video.volume,
+          playbackRate: Number.isFinite(video.playbackRate) ? Number(video.playbackRate.toFixed(3)) : video.playbackRate,
+          mediaErrorCode: video.error?.code ?? null,
+          mediaErrorMessage: video.error?.message ?? null,
+          currentSrc: video.currentSrc || null,
+          src: video.getAttribute('src'),
+          ...extra
+        });
+      }
     },
     [activeStreamUrl]
   );
@@ -1372,9 +1626,13 @@ function PlayerScreen() {
       getSelectedPlayback: () => useAppStore.getState().selectedPlayback,
       openPlayback: (playback: NonNullable<ReturnType<typeof useAppStore.getState>['selectedPlayback']>) =>
         useAppStore.getState().openPlayback(playback),
-      setStatusMessage: (message: string) => useAppStore.getState().setStatusMessage(message)
+      setStatusMessage: (message: string) => useAppStore.getState().setStatusMessage(message),
+      teardownPlaybackEngines: () => teardownPlaybackEngines(videoRef.current),
+      resetLiveSurface: () => {
+        setLiveSessionEpoch((value) => value + 1);
+      }
     }),
-    []
+    [teardownPlaybackEngines]
   );
 
   const switchLiveChannel = useCallback(
@@ -1383,14 +1641,14 @@ function PlayerScreen() {
       setIsHudVisible(false);
       suppressHudRevealRef.current = true;
       setFocusedId('play');
-      if (liveSwitchRetryTimerRef.current) {
-        window.clearTimeout(liveSwitchRetryTimerRef.current);
-        liveSwitchRetryTimerRef.current = null;
-      }
-      liveSwitchCooldownHoldActiveRef.current = false;
-      void performLiveChannelSwitch(delta, livePlaybackActions);
+      cancelActivePlaybackLoad('manual live channel switch');
+      console.warn('[LG Player] fresh live open enabled', {
+        delta,
+        currentId: playbackRef.current?.id ?? null
+      });
+      void performFreshLiveChannelSwitch(delta, livePlaybackActions);
     },
-    [livePlaybackActions]
+    [cancelActivePlaybackLoad, livePlaybackActions]
   );
 
   const togglePlayback = () => {
@@ -1400,9 +1658,14 @@ function PlayerScreen() {
     }
 
     if (video.paused) {
-      void video.play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise
+          .then(() => setIsPlaying(true))
+          .catch(() => setIsPlaying(false));
+      } else {
+        setIsPlaying(true);
+      }
     } else {
       video.pause();
       setIsPlaying(false);
@@ -1411,22 +1674,51 @@ function PlayerScreen() {
     showHUD();
   };
 
+  const getPlayerSessionId = () => {
+    const currentSession = sessionRef.current;
+    if (!currentSession) {
+      return null;
+    }
+
+    return currentSession.authenticatedAt || `${currentSession.portalCode}:${currentSession.username}`;
+  };
+
+  const getRevisitDebugInfo = () => ({
+    channelId: playbackRef.current?.streamId ?? playbackRef.current?.id ?? null,
+    channelTitle: playbackRef.current?.title ?? null,
+    streamUrl: activeStreamUrl || null,
+    playerSessionId: getPlayerSessionId(),
+    liveStreamId: currentLiveStreamId
+  });
+
   const closePlayer = () => {
     // Force final progress report before closing
     reportPlaybackProgress(true);
+
+    const revisitInfo = getRevisitDebugInfo();
+    window.__smartiflyRevisitDebug?.logCloseStart(revisitInfo);
+
+    console.warn(`${PLAYER_LOG_PREFIX} player closing`, {
+      currentPlaybackId: playbackRef.current?.id ?? null,
+      currentPlaybackTitle: playbackRef.current?.title ?? null,
+      currentPlaybackKind: playbackRef.current?.kind ?? null,
+      currentStreamUrl: activeStreamUrl || null,
+      currentLiveStreamId
+    });
 
     clearHudTimer();
     clearRecoveryState();
     clearSilentSeekSuppression();
     setEngineOverride(null);
+    setFreshLiveOpenIsolationActive(false);
     void teardownPlaybackEngines(videoRef.current);
 
-    if (currentLiveStreamId) {
-      liveStreamLastStopTimes.set(currentLiveStreamId, Date.now());
-    }
+    clearLiveStreamMemory(currentLiveStreamId);
 
     clearLivePlayerSession();
     closePlayback();
+
+    window.__smartiflyRevisitDebug?.logCloseDone(revisitInfo);
   };
 
   useEffect(() => {
@@ -1459,9 +1751,13 @@ function PlayerScreen() {
     // Holds the Blob URL for the rewritten HLS playlist so the cleanup can revoke it.
     async function load() {
       const loadGeneration = ++loadGenerationRef.current;
+      loadAbortControllerRef.current?.abort();
+      const loadAbortController = new AbortController();
+      loadAbortControllerRef.current = loadAbortController;
       startupAttemptInFlightRef.current = true;
       const liveSwitchContext = getLiveSwitchContext();
       const isCurrentSwitchTarget = isActiveLiveSwitchTarget(playback.kind, currentLiveStreamId, liveSwitchContext);
+      const isManualLiveSwitchStartup = isCurrentSwitchTarget && liveSwitchContext.fromSwitch;
       const deferLiveSwitchFallback = shouldDeferLiveSwitchFallback(
         liveSwitchContext,
         liveSwitchCooldownHoldActiveRef.current
@@ -1475,13 +1771,10 @@ function PlayerScreen() {
       }
 
       const handoffMs =
-        playback.kind === 'live' && currentLiveStreamId != null
+        playback.kind === 'live' && currentLiveStreamId != null && !isManualLiveSwitchStartup
           ? Math.max(playback.liveHandoffMs ?? 0, getLiveHandoffDelayMs(currentLiveStreamId))
           : 0;
-      const resolvedStreamUrl =
-        playback.kind === 'live' && activeStreamUrl.startsWith('http')
-          ? await resolveRedirectedStreamUrl(activeStreamUrl)
-          : activeStreamUrl;
+      let resolvedStreamUrl = activeStreamUrl;
 
       // HLS playlist rewrite: fetch the playlist ourselves, follow the redirect,
       // rewrite all root-relative and relative segment paths to absolute URLs,
@@ -1500,64 +1793,155 @@ function PlayerScreen() {
         hlsPlaylistRewrite,
         activeStreamUrl
       });
-      if (isLiveM3u8 && hlsPlaylistRewrite) {
-        const rewritten = await fetchAndRewriteHlsPlaylist(activeStreamUrl);
-        if (rewritten) {
-          // nativeSourceUrl stays as resolvedStreamUrl — Shaka fetches it normally
-          // and the response filter below rewrites the body on every refresh.
-          console.warn(`${PLAYER_LOG_PREFIX} hls playlist rewritten`, {
-            from: activeStreamUrl,
-            finalCdnUrl: rewritten.finalUrl,
-            resolvedUrlKey: resolvedStreamUrl
-          });
-        } else {
-          console.warn(`${PLAYER_LOG_PREFIX} hls playlist rewrite failed, using fallback`, {
-            streamUrl: activeStreamUrl
-          });
-        }
-      }
-
-      // Live HLS should prefer the native webOS pipeline first.
-      // Shaka is still used for non-HLS or explicit fallback cases, but live
-      // IPTV streams on LG have been more stable when webOS handles playlist
-      // refreshes and segment fetching directly.
-      const preferShakaForLiveHls = true;
-
-      const useWebOSNativeHlsMediaOption =
-        isWebOS &&
+      // For live M3U8 with playlist rewrite enabled, we pre-fetch and rewrite
+      // the manifest text so segment URIs are absolute. The rewritten text is
+      // injected into hls.js via a custom pLoader on the first manifest load,
+      // while all subsequent live playlist polls go to the real origin URL
+      // (with User-Agent set via xhrSetup so the server doesn't return 403).
+      // hlsSourceUrl always stays as resolvedStreamUrl — hls.js is pointed at
+      // the real URL so live polling works normally after the first load.
+      let hlsSourceUrl = resolvedStreamUrl;
+      const preferShakaForLiveHls = false;
+      const preferNativeHlsForLiveM3u8 =
         playback.kind === 'live' &&
-        webosNativeHlsMediaOption &&
-        isM3u8Url(resolvedStreamUrl);
-
-      const engineDecision = choosePlaybackEngine({
-        playback,
-        streamUrl: resolvedStreamUrl,
-        overrideEngine: engineOverride,
-        preferShakaForLiveHls
-      });
-
-      activeEngineRef.current = engineDecision.engine;
-
-      if (engineDecision.engine === 'shaka' && !shaka.Player.isBrowserSupported()) {
-        startupAttemptInFlightRef.current = false;
-        setStatusMessage('Playback is not supported in this browser');
-        return;
-      }
-
-      if (!isLive && isStreamTemporarilyUnavailable(activeStreamUrl)) {
-        console.warn(`${PLAYER_LOG_PREFIX} stream is temporarily marked unavailable`, {
-          streamUrl: activeStreamUrl,
-          engine: engineDecision.engine
-        });
-        startupAttemptInFlightRef.current = false;
-        clearRecoveryTimers();
-        setIsReady(false);
-        setRecoveryMessage('Stream unavailable');
-        setStatusMessage('Stream unavailable');
-        return;
-      }
+        isM3u8Url(activeStreamUrl) &&
+        engineOverride == null &&
+        canPlayNativeHls(attachedVideo);
+      let useWebOSNativeHlsMediaOption = false;
+      let engineDecision: PlaybackEngineDecision = {
+        engine: 'native',
+        reason: 'Playback engine pending resolution',
+        allowShakaFallback: false
+      };
+      let selectedEngine: PlaybackEngine = engineOverride === 'hlsjs' ? 'hlsjs' : 'native';
 
       try {
+        setIsReady(false);
+        setRecoveryMessage('Loading...');
+        setStatusMessage('Loading...');
+
+        if (handoffMs > 0) {
+          setRecoveryMessage('Switching channel...');
+          await waitForMs(handoffMs);
+          if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
+            return;
+          }
+        }
+
+        if (!isManualLiveSwitchStartup) {
+          await teardownPlaybackEngines(attachedVideo);
+        }
+
+        if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
+          return;
+        }
+
+        engineDecision = choosePlaybackEngine({
+          playback,
+          streamUrl: activeStreamUrl,
+          overrideEngine: engineOverride,
+          preferNativeHlsForLiveM3u8,
+          preferShakaForLiveHls
+        });
+
+        selectedEngine = engineOverride === 'hlsjs' ? 'hlsjs' : engineDecision.engine;
+        activeEngineRef.current = selectedEngine;
+
+        const shouldSkipRedirectResolution =
+          isManualLiveSwitchStartup ||
+          (playback.kind === 'live' && (selectedEngine === 'hlsjs' || selectedEngine === 'shaka'));
+
+        if (shouldSkipRedirectResolution) {
+          resolvedStreamUrl = activeStreamUrl;
+        } else {
+          resolvedStreamUrl = activeStreamUrl.startsWith('http')
+            ? await resolveRedirectedStreamUrl(activeStreamUrl, loadAbortController.signal)
+            : activeStreamUrl;
+
+          if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
+            return;
+          }
+        }
+
+        nativeSourceUrl = resolvedStreamUrl;
+        hlsSourceUrl = resolvedStreamUrl;
+
+        window.__smartiflyRevisitDebug?.logOpenStart({
+          channelId: playback.kind === 'live' ? currentLiveStreamId ?? playback.id : playback.id,
+          channelTitle: playback.title,
+          streamUrl: resolvedStreamUrl,
+          playerSessionId: getPlayerSessionId(),
+          liveStreamId: currentLiveStreamId
+        });
+
+        // Live HLS prefers the native webOS pipeline first for MPEG-audio TS
+        // channels, with Shaka kept as a fallback if native cannot sustain it.
+        useWebOSNativeHlsMediaOption =
+          isWebOS &&
+          playback.kind === 'live' &&
+          webosNativeHlsMediaOption &&
+          isM3u8Url(resolvedStreamUrl);
+
+        // Pre-fetch playlist rewriting is disabled because:
+        // 1. For hls.js: it does not need it (it resolves paths using responseURL).
+        // 2. For Shaka: it has an on-the-fly response filter to rewrite playlists during playback.
+        // 3. For native: it does not support Blob source URLs anyway (useBlobSource = false).
+        // Disabling it prevents redundant network connections to the IPTV server on initial load.
+        const shouldRewriteLivePlaylistForEngine = false;
+
+        if (isLiveM3u8 && hlsPlaylistRewrite && isManualLiveSwitchStartup) {
+          // skipping live playlist rewrite for manual live switch log removed
+        } else if (isLiveM3u8 && hlsPlaylistRewrite && shouldRewriteLivePlaylistForEngine) {
+          const rewritten = await fetchAndRewriteHlsPlaylist(activeStreamUrl, loadAbortController.signal);
+          if (rewritten) {
+            // Store the rewritten playlist text; the pLoader below will serve it
+            // on the first manifest fetch and then let hls.js poll the real URL.
+            hlsSourceUrl = rewritten.playlistText;
+            console.warn(`${PLAYER_LOG_PREFIX} hls playlist rewritten`, {
+              from: activeStreamUrl,
+              finalCdnUrl: rewritten.finalUrl,
+              resolvedUrlKey: resolvedStreamUrl,
+              rewrittenForPLoader: true
+            });
+          } else {
+            console.warn(`${PLAYER_LOG_PREFIX} hls playlist rewrite failed, using fallback`, {
+              streamUrl: activeStreamUrl
+            });
+          }
+        } else if (isLiveM3u8 && hlsPlaylistRewrite && !shouldRewriteLivePlaylistForEngine) {
+          // skipping live playlist rewrite log removed
+        }
+
+        if (selectedEngine === 'shaka' && (!shakaRuntime || !shakaRuntime.Player.isBrowserSupported())) {
+          startupAttemptInFlightRef.current = false;
+          setStatusMessage('Playback is not supported in this browser');
+          return;
+        }
+
+        if (selectedEngine === 'hlsjs' && (!hlsRuntime || !hlsRuntime.isSupported())) {
+          startupAttemptInFlightRef.current = false;
+          setStatusMessage('Playback is not supported in this browser');
+          return;
+        }
+
+        if (!isLive && isStreamTemporarilyUnavailable(activeStreamUrl)) {
+          console.warn(`${PLAYER_LOG_PREFIX} stream is temporarily marked unavailable`, {
+            streamUrl: activeStreamUrl,
+            engine: selectedEngine
+          });
+          startupAttemptInFlightRef.current = false;
+          clearRecoveryTimers();
+          setIsReady(false);
+          setRecoveryMessage('Stream unavailable');
+          setStatusMessage('Stream unavailable');
+          return;
+        }
+
+        if (!isLive && playbackStartupGuard) {
+          setRecoveryMessage('Buffering...');
+          setStatusMessage('Buffering...');
+        }
+
         console.warn(`${PLAYER_LOG_PREFIX} load start`, {
           id: playback.id,
           title: playback.title,
@@ -1568,35 +1952,605 @@ function PlayerScreen() {
           liveIndex: playback.liveIndex,
           loadNonce,
           handoffMs,
-          engine: engineDecision.engine,
+          engine: selectedEngine,
           engineReason: engineDecision.reason,
+          preferNativeHlsForLiveM3u8,
           useWebOSNativeHlsMediaOption
         });
 
-        setIsReady(false);
-        setRecoveryMessage('Loading...');
-        setStatusMessage('Loading...');
+        if (selectedEngine === 'hlsjs') {
+          const hlsStartupTimeoutMs = Math.max(NATIVE_LOAD_TIMEOUT_MS, startupGraceMs);
 
-        if (handoffMs > 0) {
-          setRecoveryMessage('Switching channel...');
-          await waitForMs(handoffMs);
-          if (cancelled || loadGeneration !== loadGenerationRef.current) {
-            return;
+          // Build a custom playlist loader that serves the pre-rewritten manifest
+          // text on the very first fetch, then falls back to normal XHR for all
+          // subsequent live playlist polls (with User-Agent forwarded on every
+          // request so the server never returns 403).
+          //
+          // A closure boolean (not an instance flag) is used because hls.js may
+          // construct multiple loader instances across retries, but we only want
+          // to intercept the very first manifest load once per playback session.
+          const rewrittenPlaylistText = hlsSourceUrl !== resolvedStreamUrl ? hlsSourceUrl : null;
+          let firstManifestServed = false;
+          const DefaultLoader = hlsRuntime.DefaultConfig.loader as new (config: HlsConfig) => Loader<LoaderContext>;
+          const mediaSourceCtor = typeof window !== 'undefined' ? (window as Window & typeof globalThis).MediaSource : undefined;
+          const mediaSourceProto = mediaSourceCtor?.prototype as any;
+          const originalAddSourceBuffer = mediaSourceProto?.addSourceBuffer;
+          const mediaSourceInstances = new WeakSet<MediaSource>();
+          const sourceBufferInstances = new WeakSet<SourceBuffer>();
+          let restoreMediaSourceDebugging = () => undefined;
+
+          const logHlsVideoState = (eventName: string, extra: Record<string, unknown> = {}) => {
+            logVideoSnapshot(`hlsjs-${eventName}`, attachedVideo, extra);
+          };
+
+          if (mediaSourceProto && originalAddSourceBuffer) {
+            const patchedAddSourceBuffer: typeof MediaSource.prototype.addSourceBuffer = function (
+              this: MediaSource,
+              mimeType: string
+            ): SourceBuffer {
+              if (!mediaSourceInstances.has(this)) {
+                mediaSourceInstances.add(this);
+                this.addEventListener('sourceopen', () => {
+                  logHlsVideoState('mediasource-sourceopen', {
+                    mediaSourceReadyState: this.readyState,
+                    mediaSourceDuration: Number.isFinite(this.duration) ? Number(this.duration.toFixed(3)) : this.duration
+                  });
+                });
+                this.addEventListener('sourceended', () => {
+                  logHlsVideoState('mediasource-sourceended', {
+                    mediaSourceReadyState: this.readyState
+                  });
+                });
+                this.addEventListener('sourceclose', () => {
+                  logHlsVideoState('mediasource-sourceclose', {
+                    mediaSourceReadyState: this.readyState
+                  });
+                });
+              }
+
+              logHlsVideoState('mediasource-add-source-buffer', {
+                mimeType,
+                mediaSourceReadyState: this.readyState,
+                mediaSourceDuration: Number.isFinite(this.duration) ? Number(this.duration.toFixed(3)) : this.duration,
+                sourceBufferCount: this.sourceBuffers.length
+              });
+
+              const sourceBuffer = originalAddSourceBuffer.call(this, mimeType);
+
+              if (!sourceBufferInstances.has(sourceBuffer)) {
+                sourceBufferInstances.add(sourceBuffer);
+                sourceBuffer.addEventListener('updatestart', () => {
+                  logHlsVideoState('sourcebuffer-updatestart', {
+                    mimeType,
+                    updating: sourceBuffer.updating,
+                    bufferedRanges: getBufferedRanges(attachedVideo)
+                  });
+                });
+                sourceBuffer.addEventListener('update', () => {
+                  logHlsVideoState('sourcebuffer-update', {
+                    mimeType,
+                    updating: sourceBuffer.updating,
+                    bufferedRanges: getBufferedRanges(attachedVideo)
+                  });
+                });
+                sourceBuffer.addEventListener('updateend', () => {
+                  logHlsVideoState('sourcebuffer-updateend', {
+                    mimeType,
+                    updating: sourceBuffer.updating,
+                    bufferedRanges: getBufferedRanges(attachedVideo)
+                  });
+                });
+                sourceBuffer.addEventListener('error', () => {
+                  logHlsVideoState('sourcebuffer-error', {
+                    mimeType,
+                    updating: sourceBuffer.updating,
+                    bufferedRanges: getBufferedRanges(attachedVideo)
+                  });
+                });
+                sourceBuffer.addEventListener('abort', () => {
+                  logHlsVideoState('sourcebuffer-abort', {
+                    mimeType,
+                    updating: sourceBuffer.updating,
+                    bufferedRanges: getBufferedRanges(attachedVideo)
+                  });
+                });
+              }
+
+              return sourceBuffer;
+            };
+            mediaSourceProto.addSourceBuffer = patchedAddSourceBuffer;
+
+            restoreMediaSourceDebugging = () => {
+              if (mediaSourceProto.addSourceBuffer === patchedAddSourceBuffer) {
+                mediaSourceProto.addSourceBuffer = originalAddSourceBuffer;
+              }
+            };
           }
-        }
 
-        if (!isLive && playbackStartupGuard) {
-          setRecoveryMessage('Buffering...');
-          setStatusMessage('Buffering...');
-        }
+          class PatchedPlaylistLoader extends DefaultLoader {
+            load(
+              context: LoaderContext,
+              config: LoaderConfiguration,
+              callbacks: LoaderCallbacks<LoaderContext>
+            ) {
+              // Serve the pre-rewritten text in-memory for the first manifest
+              // request so segment URIs are absolute. All subsequent live
+              // playlist polls go through normal XHR to the real origin.
+              if (!firstManifestServed && rewrittenPlaylistText) {
+                firstManifestServed = true;
+                const now = performance.now();
+                const stats: LoaderStats = {
+                  aborted: false,
+                  loaded: rewrittenPlaylistText.length,
+                  retry: 0,
+                  total: rewrittenPlaylistText.length,
+                  chunkCount: 0,
+                  bwEstimate: 5000000,
+                  loading: { start: now - 50, first: now - 20, end: now },
+                  parsing: { start: now, end: now + 5 },
+                  buffering: { start: now + 5, first: now + 10, end: now + 15 }
+                };
+                // Defer onSuccess by one tick so hls.js finishes its internal
+                // setup after load() returns before we fire the callback.
+                // Calling onSuccess synchronously inside load() causes hls.js
+                // to emit MANIFEST_LOADED before its internal state is ready,
+                // which triggers an immediate second loadSource() that aborts
+                // the first play() call and leaves readyState at 0 forever.
+                window.setTimeout(() => {
+                  callbacks.onSuccess(
+                    { data: rewrittenPlaylistText, url: resolvedStreamUrl, code: 200 },
+                    stats,
+                    context,
+                    null
+                  );
+                }, 0);
+                return;
+              }
 
-        await teardownPlaybackEngines(attachedVideo);
+              super.load(context, config, callbacks);
+            }
+          }
 
-        if (cancelled || loadGeneration !== loadGenerationRef.current) {
-          return;
-        }
+          const hlsPlayer = new hlsRuntime({
+            enableWorker: !isWebOS,
+            lowLatencyMode: false,
+            // Disable automatic load start so hls.js doesn't begin live
+            // playlist polling before we've attached to the video element
+            // and had a chance to buffer the first fragment. Without this,
+            // the live refresh cycle fires _onMediaSourceOpen on every poll,
+            // resetting the SourceBuffer and discarding buffered data.
+            autoStartLoad: false,
+            backBufferLength: isLive ? 20 : 30,
+            maxBufferLength: isLive ? 30 : 60,
+            liveBackBufferLength: isLive ? 30 : 60,
+            manifestLoadingTimeOut: 5000,
+            levelLoadingTimeOut: 5000,
+            fragLoadingTimeOut: 5000,
+            manifestLoadingMaxRetry: 4,
+            levelLoadingMaxRetry: 4,
+            fragLoadingMaxRetry: 4,
+            pLoader: rewrittenPlaylistText ? (PatchedPlaylistLoader as unknown as PlaylistLoaderConstructor) : undefined,
+            // Forward the browser/TV User-Agent on every XHR so live playlist
+            // polling is not rejected by servers that enforce UA-based access
+            // control (e.g. Xtream Codes returning 403 without a proper UA).
+            xhrSetup: (xhr) => {
+              const ua = window.navigator.userAgent;
+              const requestTrace = {
+                streamUrl: resolvedStreamUrl,
+                currentSrc: attachedVideo.currentSrc || null
+              };
+              const revisitInfo = {
+                ...getRevisitDebugInfo(),
+                streamUrl: resolvedStreamUrl
+              };
+              const originalOpen = xhr.open.bind(xhr);
+              const originalSend = xhr.send.bind(xhr);
+              const originalSetRequestHeader = xhr.setRequestHeader.bind(xhr);
+              const requestStartedAt = Date.now();
+              const readXhrPreview = () => {
+                try {
+                  if (xhr.responseType && xhr.responseType !== 'text' && xhr.responseType !== '') {
+                    return null;
+                  }
+                  const responseText = xhr.responseText;
+                  return typeof responseText === 'string' ? responseText.slice(0, 160) : null;
+                } catch {
+                  return null;
+                }
+              };
+              const shouldTraceRequest = (url: string | null | undefined) =>
+                typeof url === 'string' && /\.m3u8(?:\?|$)/i.test(url);
+              const traceRequestId = `manifest-${Date.now()}-${++manifestRequestTraceCounter}`;
 
-        if (engineDecision.engine === 'native') {
+              xhr.open = ((method: string, url: string, async?: boolean, username?: string | null, password?: string | null) => {
+                (xhr as typeof xhr & { __smartiflyRequestUrl?: string }).__smartiflyRequestUrl = url;
+                if (shouldTraceRequest(url)) {
+                  window.__smartiflyRevisitDebug?.logHlsRequestStart({
+                    requestId: traceRequestId,
+                    url,
+                    info: revisitInfo
+                  });
+                  console.warn(`${PLAYER_LOG_PREFIX} hls manifest xhr open`, {
+                    requestId: traceRequestId,
+                    ...requestTrace,
+                    method,
+                    url,
+                    async,
+                    username: username ?? null,
+                    password: password ? '[redacted]' : null
+                  });
+                  console.warn(`${PLAYER_LOG_PREFIX} hls manifest request context`, {
+                    requestId: traceRequestId,
+                    ...requestTrace,
+                    withCredentials: xhr.withCredentials,
+                    ...summarizeCookieJar(),
+                    locationHref: window.location.href,
+                    userAgent: ua
+                  });
+                }
+                return originalOpen(method, url, async, username ?? undefined, password ?? undefined);
+              }) as typeof xhr.open;
+
+              xhr.setRequestHeader = ((header: string, value: string) => {
+                const requestUrl = (xhr as typeof xhr & { __smartiflyRequestUrl?: string }).__smartiflyRequestUrl;
+                const normalizedHeader = header.toLowerCase();
+                if (shouldTraceRequest(requestUrl) && (normalizedHeader === 'cookie' || normalizedHeader === 'authorization')) {
+                  console.warn(`${PLAYER_LOG_PREFIX} hls manifest xhr header`, {
+                    ...requestTrace,
+                    header,
+                    value: normalizedHeader === 'cookie' ? '[redacted]' : value
+                  });
+                }
+                return originalSetRequestHeader(header, value);
+              }) as typeof xhr.setRequestHeader;
+
+              xhr.send = ((body?: Document | XMLHttpRequestBodyInit | null) => {
+                const requestUrl = (xhr as typeof xhr & { __smartiflyRequestUrl?: string }).__smartiflyRequestUrl;
+                const tracedRequest = shouldTraceRequest(requestUrl);
+                if (tracedRequest) {
+                  console.warn(`${PLAYER_LOG_PREFIX} hls manifest xhr send`, {
+                    requestId: traceRequestId,
+                    ...requestTrace,
+                    bodyType: body == null ? 'none' : body instanceof FormData ? 'formdata' : typeof body
+                  });
+                }
+                xhr.addEventListener('readystatechange', () => {
+                  if (xhr.readyState === XMLHttpRequest.DONE && tracedRequest) {
+                    console.warn(`${PLAYER_LOG_PREFIX} hls manifest xhr done`, {
+                      requestId: traceRequestId,
+                      ...requestTrace,
+                      status: xhr.status,
+                      responseURL: xhr.responseURL || null,
+                      responseTextPreview: readXhrPreview()
+                    });
+                    window.__smartiflyRevisitDebug?.logHlsRequestDone({
+                      requestId: traceRequestId,
+                      url: requestUrl || resolvedStreamUrl,
+                      responseUrl: xhr.responseURL || undefined,
+                      status: xhr.status,
+                      durationMs: Date.now() - requestStartedAt,
+                      info: revisitInfo
+                    });
+                  }
+                });
+                xhr.addEventListener('abort', () => {
+                  if (!tracedRequest) {
+                    return;
+                  }
+                  window.__smartiflyRevisitDebug?.logHlsRequestAbort({
+                    requestId: traceRequestId,
+                    url: requestUrl || resolvedStreamUrl,
+                    info: revisitInfo
+                  });
+                });
+                xhr.addEventListener('error', () => {
+                  if (!tracedRequest) {
+                    return;
+                  }
+                  window.__smartiflyRevisitDebug?.logHlsRequestError({
+                    requestId: traceRequestId,
+                    url: requestUrl || resolvedStreamUrl,
+                    status: xhr.status,
+                    error: 'xhr error',
+                    info: revisitInfo
+                  });
+                });
+                return originalSend(body);
+              }) as typeof xhr.send;
+              if (ua) {
+                try {
+                  xhr.setRequestHeader('User-Agent', ua);
+                } catch {
+                  // Some environments block setting User-Agent via XHR — ignore.
+                }
+              }
+            }
+          });
+          hlsPlayerRef.current = hlsPlayer;
+
+          // hls.js startup monitor armed log removed
+
+          await new Promise<void>((resolve, reject) => {
+            const hlsStartupStartedAt = Date.now();
+            let settled = false;
+            const finish = () => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              cleanup();
+              resolve();
+            };
+
+            const fail = (message: string) => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              cleanup();
+              reject(new Error(message));
+            };
+
+            const cleanup = () => {
+              window.clearTimeout(timeoutId);
+              window.clearInterval(diagnosticTimerId);
+              hlsPlayer.off(hlsRuntime.Events.MEDIA_ATTACHED, onMediaAttached);
+              hlsPlayer.off(hlsRuntime.Events.MEDIA_ATTACHING, onMediaAttaching);
+              hlsPlayer.off(hlsRuntime.Events.MANIFEST_PARSED, onManifestParsed);
+              hlsPlayer.off(hlsRuntime.Events.FRAG_BUFFERED, onFirstFragBuffered);
+              hlsPlayer.off(hlsRuntime.Events.BUFFER_CREATED, onBufferCreated);
+              hlsPlayer.off(hlsRuntime.Events.BUFFER_APPENDING, onBufferAppending);
+              hlsPlayer.off(hlsRuntime.Events.BUFFER_APPENDED, onBufferAppended);
+              hlsPlayer.off(hlsRuntime.Events.BUFFER_FLUSHING, onBufferFlushing);
+              hlsPlayer.off(hlsRuntime.Events.BUFFER_EOS, onBufferEos);
+              restoreMediaSourceDebugging();
+              // Keep the ERROR listener active so we receive logs and run recovery/escalation during playback.
+            };
+            const escalateToShaka = (reason: string) => {
+              if (liveHlsJsFallbackToShakaUsedRef.current) {
+                return;
+              }
+
+              liveHlsJsFallbackToShakaUsedRef.current = true;
+              startupAttemptInFlightRef.current = false;
+              clearRecoveryTimers();
+              setIsReady(false);
+              setRecoveryMessage('Retrying with fallback engine...');
+              setStatusMessage('Retrying with fallback engine');
+              setEngineOverride('shaka');
+              setLoadNonce((value) => value + 1);
+              console.warn(`${PLAYER_LOG_PREFIX} escalating hls.js to shaka fallback`, {
+                from: activeStreamUrl,
+                reason
+              });
+              void teardownHlsPlayer();
+            };
+
+            const onMediaAttaching = () => {
+              logHlsVideoState('media-attaching');
+            };
+
+            const onMediaAttached = () => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+
+              hlsPlayer.loadSource(resolvedStreamUrl);
+              // With autoStartLoad: false, we must call startLoad() explicitly.
+              // This gives us control: the manifest is fetched (via loadSource),
+              // but fragment loading only begins after we call startLoad(), which
+              // prevents the live playlist poll cycle from firing _onMediaSourceOpen
+              // before the SourceBuffer is ready.
+              hlsPlayer.startLoad();
+            };
+
+            const onBufferCreated = (_event: string, data: { tracks?: Record<string, { id?: string; codec?: string; container?: string; levelCodec?: string }> }) => {
+              logHlsVideoState('buffer-created', {
+                tracks: Object.entries(data.tracks ?? {}).map(([name, track]) => ({
+                  name,
+                  id: track?.id ?? null,
+                  codec: track?.codec ?? null,
+                  container: track?.container ?? null,
+                  levelCodec: track?.levelCodec ?? null
+                }))
+              });
+            };
+
+            const onBufferAppending = (
+              _event: string,
+              data: { type?: string; parent?: string; data?: Uint8Array | ArrayBuffer; content?: string }
+            ) => {
+              const byteLength =
+                data.data instanceof Uint8Array
+                  ? data.data.byteLength
+                  : data.data instanceof ArrayBuffer
+                    ? data.data.byteLength
+                    : null;
+              logHlsVideoState('buffer-appending', {
+                type: data.type ?? null,
+                parent: data.parent ?? null,
+                content: data.content ?? null,
+                byteLength
+              });
+            };
+
+            const onBufferAppended = (_event: string, data: { parent?: string; pending?: number; timeRanges?: unknown }) => {
+              logHlsVideoState('buffer-appended', {
+                parent: data.parent ?? null,
+                pending: data.pending ?? null,
+                timeRanges: data.timeRanges ?? null
+              });
+            };
+
+            const onBufferFlushing = (
+              _event: any,
+              data: any
+            ) => {
+              logHlsVideoState('buffer-flushing', {
+                type: data.type ?? null,
+                startOffset: data.startOffset ?? null,
+                endOffset: data.endOffset ?? null
+              });
+            };
+
+            const onBufferEos = (_event: string, data: { type?: string }) => {
+              logHlsVideoState('buffer-eos', {
+                type: data.type ?? null
+              });
+            };
+
+            const onManifestParsed = () => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+
+              // hls.js manifest parsed log removed
+              applyVideoAudioState(attachedVideo, 'hlsjs-manifest-parsed');
+              // Don't finish() here — wait for FRAG_BUFFERED so the startup
+              // promise resolves only after play() has been called with real
+              // data in the buffer. Finishing here would call setIsReady(true)
+              // before play(), causing the live watchdog to fire immediately.
+              //
+              // Reset the startup timer from this point so hls.js gets a fresh
+              // full window to buffer the first frag and call play(). Without
+              // this the original 15s can expire before FRAG_BUFFERED if the
+              // pLoader or manifest fetch took several seconds already.
+              window.clearTimeout(timeoutId);
+              timeoutId = window.setTimeout(() => {
+                fail(`hls.js startup timed out after ${hlsStartupTimeoutMs}ms`);
+              }, hlsStartupTimeoutMs);
+            };
+
+            const onFirstFragBuffered = () => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+
+              hlsPlayer.off(hlsRuntime.Events.FRAG_BUFFERED, onFirstFragBuffered);
+
+              // hls.js first frag buffered log removed
+              applyVideoAudioState(attachedVideo, 'hlsjs-first-frag-buffered');
+
+              // On webOS MSE streams video.play() may never settle or gets
+              // interrupted by hls.js's internal live playlist reload. Treat
+              // FRAG_BUFFERED itself as the startup success signal and call
+              // finish() immediately, then fire play() in the background.
+              // This unblocks setIsReady(true) without waiting for a promise
+              // that may never resolve on this platform.
+              finish();
+
+              void (async () => {
+                try {
+                  await awaitPlayWithTimeout(attachedVideo, Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs));
+                } catch (error) {
+                  console.warn(`${PLAYER_LOG_PREFIX} hls.js play promise did not resolve in time`, {
+                    message: error instanceof Error ? error.message : String(error),
+                    startupGraceMs,
+                    timeoutMs: Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs)
+                  });
+                }
+              })();
+            };
+
+            const onHlsError = (
+              _event: string,
+              data: { type?: string; details?: string; fatal?: boolean; response?: { code?: number; text?: string } }
+            ) => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+
+              console.warn(`${PLAYER_LOG_PREFIX} hls.js error event`, {
+                type: data.type,
+                details: data.details,
+                fatal: data.fatal,
+                responseCode: data.response?.code ?? null
+              });
+              window.__smartiflyRevisitDebug?.logHlsError({
+                errorType: data.type,
+                errorDetails: data,
+                info: {
+                  ...getRevisitDebugInfo(),
+                  streamUrl: resolvedStreamUrl
+                }
+              });
+
+              if (!data.fatal) {
+                return;
+              }
+
+              const isFatalManifestStartupError =
+                data.type === hlsRuntime.ErrorTypes.NETWORK_ERROR &&
+                (data.details === 'manifestLoadError' ||
+                  data.details === 'manifestLoadTimeOut' ||
+                  data.details === 'manifestParsingError');
+
+              if (isFatalManifestStartupError) {
+                fail(
+                  data.response?.code
+                    ? `manifest request failed with ${data.response.code}`
+                    : data.details || data.type || 'hls.js fatal manifest error'
+                );
+                return;
+              }
+
+              if (data.type === hlsRuntime.ErrorTypes.NETWORK_ERROR) {
+                hlsPlayer.startLoad();
+                return;
+              }
+
+              if (data.type === hlsRuntime.ErrorTypes.MEDIA_ERROR) {
+                try {
+                  hlsPlayer.recoverMediaError();
+                  return;
+                } catch (recoverError) {
+                  console.warn(`${PLAYER_LOG_PREFIX} hls.js media recovery failed`, {
+                    message: recoverError instanceof Error ? recoverError.message : String(recoverError)
+                  });
+                }
+              }
+
+              if (playback.kind === 'live' && !liveHlsJsFallbackToShakaUsedRef.current) {
+                escalateToShaka(data.details || data.type || 'hls.js fatal error');
+                fail(data.details || data.type || 'hls.js fatal error');
+                return;
+              }
+
+              fail(data.details || data.type || 'hls.js fatal error');
+            };
+
+            // Two-phase timeout: a longer grace period before the first fragment
+            // buffers, then a tighter window for play() to resolve after that.
+            // This prevents the 15s timer from firing before FRAG_BUFFERED when
+            // hls.js is still fetching the first segment.
+            let timeoutId = window.setTimeout(() => {
+              fail(`hls.js startup timed out after ${hlsStartupTimeoutMs}ms`);
+            }, hlsStartupTimeoutMs);
+            const diagnosticTimerId = window.setInterval(() => {
+              logHlsVideoState('startup-poll', {
+                elapsedMs: Date.now() - hlsStartupStartedAt,
+                mediaErrorCode: attachedVideo.error?.code ?? null,
+                mediaErrorMessage: attachedVideo.error?.message ?? null
+              });
+            }, 2000);
+
+            hlsPlayer.on(hlsRuntime.Events.MEDIA_ATTACHING, onMediaAttaching);
+            hlsPlayer.on(hlsRuntime.Events.MEDIA_ATTACHED, onMediaAttached);
+            hlsPlayer.on(hlsRuntime.Events.MANIFEST_PARSED, onManifestParsed);
+            hlsPlayer.on(hlsRuntime.Events.FRAG_BUFFERED, onFirstFragBuffered);
+            hlsPlayer.on(hlsRuntime.Events.BUFFER_CREATED, onBufferCreated);
+            hlsPlayer.on(hlsRuntime.Events.BUFFER_APPENDING, onBufferAppending);
+            hlsPlayer.on(hlsRuntime.Events.BUFFER_APPENDED, onBufferAppended);
+            hlsPlayer.on(hlsRuntime.Events.BUFFER_FLUSHING, onBufferFlushing);
+            hlsPlayer.on(hlsRuntime.Events.BUFFER_EOS, onBufferEos);
+            hlsPlayer.on(hlsRuntime.Events.ERROR, onHlsError);
+
+            // hls.js level/frag logs removed
+
+            applyVideoAudioState(attachedVideo, 'hlsjs-before-attach');
+            hlsPlayer.attachMedia(attachedVideo);
+          });
+        } else if (selectedEngine === 'native') {
           // Native path: use the resolved CDN URL with webOS HLS media option.
           // The webOS native pipeline fetches from the CDN and resolves relative
           // segment paths against the CDN origin — which is correct.
@@ -1615,77 +2569,12 @@ function PlayerScreen() {
             clearVideoSources(attachedVideo);
             attachedVideo.src = nativeSourceUrl;
           }
-          console.warn(`${PLAYER_LOG_PREFIX} native source attached`, {
-            mode: sourceAttachmentMode,
-            currentSrc: attachedVideo.currentSrc || null,
-            srcAttr: attachedVideo.getAttribute('src'),
-            sourceCount: attachedVideo.querySelectorAll('source').length,
-            hasWebOSMediaOption: useWebOSNativeHlsMediaOption,
-            preferPlainSrcForLiveDiagnostics,
-            nativeSourceUrl
-          });
           attachedVideo.load();
           applyVideoAudioState(attachedVideo, 'native-before-play');
-          console.warn(`${PLAYER_LOG_PREFIX} native startup monitor armed`, {
-            timeoutMs: nativeStartupTimeoutMs,
-            startupGraceMs,
-            kind: playback.kind,
-            engine: engineDecision.engine
-          });
 
           if (!isLive) {
-            await new Promise<void>((resolve, reject) => {
-            const diagnosticTimerId = window.setInterval(() => {
-              const readyStateLabels: Record<number, string> = {
-                0: 'HAVE_NOTHING',
-                1: 'HAVE_METADATA',
-                2: 'HAVE_CURRENT_DATA',
-                3: 'HAVE_FUTURE_DATA',
-                4: 'HAVE_ENOUGH_DATA'
-              };
-              const networkStateLabels: Record<number, string> = {
-                0: 'NETWORK_EMPTY',
-                1: 'NETWORK_IDLE',
-                2: 'NETWORK_LOADING',
-                3: 'NETWORK_NO_SOURCE'
-              };
-
-              console.warn(`${PLAYER_LOG_PREFIX} native-startup-poll`, {
-                engine: activeEngineRef.current,
-                streamUrl: activeStreamUrl,
-                liveChannel: playback.kind === 'live',
-                currentTime: Number.isFinite(attachedVideo.currentTime)
-                  ? Number(attachedVideo.currentTime.toFixed(3))
-                  : attachedVideo.currentTime,
-                duration:
-                  playback.kind === 'live'
-                    ? null
-                    : Number.isFinite(attachedVideo.duration)
-                      ? Number(attachedVideo.duration.toFixed(3))
-                      : null,
-                durationNote: playback.kind === 'live' ? 'duration is not a useful live startup signal' : null,
-                buffered: getBufferedTime(attachedVideo),
-                readyState: attachedVideo.readyState,
-                readyStateLabel: readyStateLabels[attachedVideo.readyState] ?? 'UNKNOWN',
-                networkState: attachedVideo.networkState,
-                networkStateLabel: networkStateLabels[attachedVideo.networkState] ?? 'UNKNOWN',
-                paused: attachedVideo.paused,
-                seeking: attachedVideo.seeking,
-                ended: attachedVideo.ended,
-                muted: attachedVideo.muted,
-                volume: Number.isFinite(attachedVideo.volume)
-                  ? Number(attachedVideo.volume.toFixed(3))
-                  : attachedVideo.volume,
-                playbackRate: Number.isFinite(attachedVideo.playbackRate)
-                  ? Number(attachedVideo.playbackRate.toFixed(3))
-                  : attachedVideo.playbackRate,
-                mediaError: {
-                  code: attachedVideo.error?.code ?? null,
-                  message: attachedVideo.error?.message ?? null
-                },
-                elapsedMs: Date.now() - nativeStartupStartedAt
-              });
-            }, 2000);
+          await new Promise<void>((resolve, reject) => {
+            const diagnosticTimerId: any = undefined;
 
             const timeoutId = window.setTimeout(() => {
               cleanup();
@@ -1734,14 +2623,15 @@ function PlayerScreen() {
           }
 
           if (isLive) {
-            await awaitPlayWithTimeout(attachedVideo, Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs))
-              .catch((error) => {
-                console.warn(`${PLAYER_LOG_PREFIX} live play promise did not resolve in time`, {
-                  message: error instanceof Error ? error.message : String(error),
-                  startupGraceMs,
-                  timeoutMs: Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs)
-                });
+            try {
+              await awaitPlayWithTimeout(attachedVideo, Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs));
+            } catch (error) {
+              console.warn(`${PLAYER_LOG_PREFIX} live play promise did not resolve in time`, {
+                message: error instanceof Error ? error.message : String(error),
+                startupGraceMs,
+                timeoutMs: Math.max(NATIVE_PLAY_TIMEOUT_MS, startupGraceMs)
               });
+            }
           }
 
           if ((playback.resumePosition ?? 0) > 0 && !isLive) {
@@ -1749,12 +2639,14 @@ function PlayerScreen() {
           }
 
           if (isLive) {
-            await awaitPlayWithTimeout(attachedVideo, NATIVE_PLAY_TIMEOUT_MS).catch((error) => {
+            try {
+              await awaitPlayWithTimeout(attachedVideo, NATIVE_PLAY_TIMEOUT_MS);
+            } catch (error) {
               console.warn(`${PLAYER_LOG_PREFIX} live play promise did not resolve in time`, {
                 message: error instanceof Error ? error.message : String(error),
                 timeoutMs: NATIVE_PLAY_TIMEOUT_MS
               });
-            });
+            }
           } else {
             await awaitPlayWithTimeout(attachedVideo, NATIVE_PLAY_TIMEOUT_MS);
 
@@ -1795,11 +2687,49 @@ function PlayerScreen() {
             });
           }
         } else {
-          const player = new shaka.Player();
+          const player = new shakaRuntime.Player();
           shakaPlayerRef.current = player;
+
+          // Shaka loading/buffering diagnostics removed
+
+          player.addEventListener('manifestparsed', () => {
+            console.warn(`${PLAYER_LOG_PREFIX} shaka manifestparsed event`);
+          });
+
+          player.addEventListener('trackschanged', () => {
+            try {
+              const tracks = player.getVariantTracks();
+              console.warn(`${PLAYER_LOG_PREFIX} shaka tracks changed`, {
+                count: tracks.length,
+                variants: tracks.map((t) => ({
+                  id: t.id,
+                  active: t.active,
+                  type: t.type,
+                  videoCodec: t.videoCodec,
+                  audioCodec: t.audioCodec,
+                  codecs: t.codecs,
+                  bandwidth: t.bandwidth,
+                  width: t.width,
+                  height: t.height
+                }))
+              });
+            } catch (err) {
+              console.warn(`${PLAYER_LOG_PREFIX} shaka failed to read tracks on trackschanged`, {
+                error: err instanceof Error ? err.message : String(err)
+              });
+            }
+          });
+
+          player.addEventListener('adaptation', () => {
+            console.warn(`${PLAYER_LOG_PREFIX} shaka adaptation event`);
+          });
 
           await player.attach(attachedVideo);
           applyVideoAudioState(attachedVideo, 'after-attach');
+          logVideoSnapshot('shaka-after-attach', attachedVideo, {
+            currentSrc: attachedVideo.currentSrc || null,
+            src: attachedVideo.getAttribute('src')
+          });
           player.configure({
             manifest: {
               retryParameters: isLive
@@ -1859,11 +2789,12 @@ function PlayerScreen() {
 
           // Log all requests so we can see segment fetches and any failures
           player.getNetworkingEngine()?.registerRequestFilter((type, request) => {
-            if (type === 2) { // SEGMENT type
-              console.warn(`${PLAYER_LOG_PREFIX} shaka segment request`, {
-                uri: request.uris[0]?.slice(0, 120)
-              });
-            }
+            console.warn(`${PLAYER_LOG_PREFIX} shaka request`, {
+              type,
+              method: request.method ?? null,
+              uris: (request.uris ?? []).map((uri) => uri.slice(0, 200)),
+              headers: request.headers ?? null
+            });
           });
 
           player.addEventListener('error', (event: Event) => {
@@ -1892,41 +2823,7 @@ function PlayerScreen() {
               forbiddenLike
             });
 
-            if (holdReconnect && currentLiveStreamId != null) {
-              const revisitMs = isRecentlyStoppedStream(
-                currentLiveStreamId,
-                liveStreamLastStopTimes,
-                LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-              )
-                ? LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-                : 0;
-              const retryDelay = Math.max(switchContext.cooldownMs, LIVE_SWITCH_FORBIDDEN_RETRY_MS, revisitMs);
-              if (forbiddenLike || looksLikeLiveReconnectFailure(detail?.message)) {
-                markLiveStreamForbidden(currentLiveStreamId, retryDelay);
-              }
-              console.warn(`${PLAYER_LOG_PREFIX} shaka live reconnect cooldown hold`, {
-                streamId: currentLiveStreamId,
-                retryDelay,
-                reason: detail?.message
-              });
-              scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
-              return;
-            }
-
             if (playback.kind === 'live' && detail?.code === 1001) {
-              if (holdReconnect && currentLiveStreamId != null) {
-                const revisitMs = isRecentlyStoppedStream(
-                  currentLiveStreamId,
-                  liveStreamLastStopTimes,
-                  LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-                )
-                  ? LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-                  : 0;
-                const retryDelay = Math.max(switchContext.cooldownMs, LIVE_SWITCH_FORBIDDEN_RETRY_MS, revisitMs);
-                scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
-                return;
-              }
-
               requestRetry(detail?.message || 'Live playlist refresh failed');
               return;
             }
@@ -1956,6 +2853,10 @@ function PlayerScreen() {
             id: playback.id,
             title: playback.title
           });
+          logVideoSnapshot('shaka-after-load', attachedVideo, {
+            currentSrc: attachedVideo.currentSrc || null,
+            src: attachedVideo.getAttribute('src')
+          });
 
           if (cancelled) {
             await player.destroy().catch(() => undefined);
@@ -1970,14 +2871,28 @@ function PlayerScreen() {
           }
 
           applyVideoAudioState(attachedVideo, 'before-play');
-          await awaitPlayWithTimeout(attachedVideo, NATIVE_PLAY_TIMEOUT_MS).catch(() => undefined);
+          logVideoSnapshot('shaka-before-play', attachedVideo, {
+            currentSrc: attachedVideo.currentSrc || null,
+            src: attachedVideo.getAttribute('src')
+          });
+          await awaitPlayWithTimeout(attachedVideo, NATIVE_PLAY_TIMEOUT_MS);
+          logVideoSnapshot('shaka-after-play', attachedVideo, {
+            currentSrc: attachedVideo.currentSrc || null,
+            src: attachedVideo.getAttribute('src')
+          });
+
+          if (attachedVideo.paused) {
+            throw new Error('Shaka play() resolved but the video element remained paused');
+          }
+
+          await awaitPlaybackStartSignal(attachedVideo, NATIVE_PROGRESS_TIMEOUT_MS);
+          logVideoSnapshot('shaka-start-confirmed', attachedVideo, {
+            currentSrc: attachedVideo.currentSrc || null,
+            src: attachedVideo.getAttribute('src')
+          });
         }
 
-        console.warn(`${PLAYER_LOG_PREFIX} video.play resolved`, {
-          paused: attachedVideo.paused,
-          currentTime: attachedVideo.currentTime,
-          engine: engineDecision.engine
-        });
+          // video.play resolved log removed
 
         if (cancelled) {
           return;
@@ -1988,6 +2903,15 @@ function PlayerScreen() {
         playbackStartedAtRef.current = Date.now();
         lastProgressAtRef.current = playbackStartedAtRef.current;
         startupAttemptInFlightRef.current = false;
+        console.warn(`${PLAYER_LOG_PREFIX} player opened`, {
+          id: playback.id,
+          title: playback.title,
+          kind: playback.kind,
+          streamUrl: activeStreamUrl,
+          resolvedStreamUrl,
+          engine: selectedEngine,
+          liveStreamId: currentLiveStreamId
+        });
         if (playback.kind === 'live' && currentLiveStreamId != null && getLiveSwitchContext().streamId === currentLiveStreamId) {
           setLiveSwitchContext({ fromSwitch: false });
         }
@@ -1995,8 +2919,14 @@ function PlayerScreen() {
           showHUD();
         } else {
           suppressHudRevealRef.current = true;
+          scheduleLiveNoProgressWatchdog('Live startup armed');
         }
       } catch (error) {
+        if (loadAbortController.signal.aborted) {
+          startupAttemptInFlightRef.current = false;
+          return;
+        }
+
         if (!cancelled && loadGeneration === loadGenerationRef.current) {
           const message = error instanceof Error ? error.message : 'Playback failed to start';
           const errorCode = error instanceof Error ? (error as { code?: number }).code ?? null : null;
@@ -2009,6 +2939,7 @@ function PlayerScreen() {
           const reconnectFailure =
             looksLikeLiveReconnectFailure(message) ||
             (currentLiveStreamId != null && isLive && isLiveStreamForbidden(currentLiveStreamId));
+          const isManualSwitchFailure = isCurrentSwitchTarget && switchContext.fromSwitch;
           const holdReconnect = shouldHoldLiveReconnect({
             playbackKind: playback.kind,
             streamId: currentLiveStreamId,
@@ -2019,20 +2950,16 @@ function PlayerScreen() {
             forbiddenUntilByStream: liveStreamForbiddenUntil,
             revisitCooldownMs: LIVE_CHANNEL_REVISIT_COOLDOWN_MS
           });
-          const shouldCooldownLiveFailure =
-            holdReconnect ||
-            (isLive &&
-              hasInPlayerLiveQueue(playback) &&
-              currentLiveStreamId != null &&
-              (isCurrentSwitchTarget || recentRevisit || reconnectFailure));
+          const shouldCooldownLiveFailure = false;
           console.warn(`${PLAYER_LOG_PREFIX} load failed`, {
             message,
             errorCode,
-            engine: engineDecision.engine,
+            engine: selectedEngine,
             streamUrl: activeStreamUrl,
             resolvedStreamUrl,
             fallbackIndex: activeStreamIndex,
             hasMoreFallbacks: activeStreamIndex + 1 < playbackSources.length,
+            isManualSwitchFailure,
             holdReconnect,
             recentRevisit,
             reconnectFailure,
@@ -2040,9 +2967,14 @@ function PlayerScreen() {
             preferShakaForLiveHls
           });
 
+          if (selectedEngine === 'hlsjs' && liveHlsJsFallbackToShakaUsedRef.current) {
+            startupAttemptInFlightRef.current = false;
+            return;
+          }
+
           if (
             playback.kind === 'live' &&
-            engineDecision.engine === 'native' &&
+            selectedEngine === 'native' &&
             isUnsupportedNativeDemuxError(message, errorCode)
           ) {
             startupAttemptInFlightRef.current = false;
@@ -2058,29 +2990,17 @@ function PlayerScreen() {
             return;
           }
 
-          if (shouldCooldownLiveFailure && currentLiveStreamId != null) {
-            if (hasExhaustedLiveCooldownRetry(currentLiveStreamId)) {
-              startupAttemptInFlightRef.current = false;
-              setIsReady(false);
-              setRecoveryMessage('Channel is busy. Wait a few seconds and change channel again.');
-              setStatusMessage('Channel temporarily unavailable');
-              return;
-            }
-
-            const revisitMs = recentRevisit ? LIVE_CHANNEL_REVISIT_COOLDOWN_MS : 0;
-            const retryDelay = Math.max(
-              getLiveHandoffDelayMs(currentLiveStreamId),
-              switchContext.cooldownMs,
-              LIVE_SWITCH_FORBIDDEN_RETRY_MS,
-              revisitMs
-            );
-            markLiveStreamForbidden(currentLiveStreamId, retryDelay);
-            console.warn(`${PLAYER_LOG_PREFIX} live reconnect cooldown hold`, {
+          if (isManualSwitchFailure && looksForbiddenLikeMessage(message)) {
+            console.warn(`${PLAYER_LOG_PREFIX} manual live switch forbidden, skipping reconnect cooldown`, {
               streamId: currentLiveStreamId,
-              retryDelay,
+              streamUrl: activeStreamUrl,
               reason: message
             });
-            scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
+            startupAttemptInFlightRef.current = false;
+            clearRecoveryTimers();
+            setIsReady(false);
+            setRecoveryMessage('Channel unavailable');
+            setStatusMessage('Channel unavailable');
             return;
           }
 
@@ -2092,27 +3012,29 @@ function PlayerScreen() {
 
           if (
             playback.kind === 'live' &&
-            engineDecision.engine === 'native' &&
+            selectedEngine === 'native' &&
             engineOverride == null &&
             !liveNativeStartupRetryUsedRef.current
           ) {
             liveNativeStartupRetryUsedRef.current = true;
-            console.warn(`${PLAYER_LOG_PREFIX} retrying live native startup once`, {
+            console.warn(`${PLAYER_LOG_PREFIX} retrying live hls.js startup once`, {
               from: activeStreamUrl,
               reason: message
             });
             setRecoveryMessage('Buffering...');
             setStatusMessage('Buffering...');
             setIsReady(false);
+            setEngineOverride('hlsjs');
             setLoadNonce((value) => value + 1);
             return;
           }
 
           if (
-            engineDecision.engine === 'native' &&
+            selectedEngine === 'native' &&
             engineDecision.allowShakaFallback &&
             engineOverride !== 'shaka' &&
-            !preferShakaForLiveHls
+            !preferShakaForLiveHls &&
+            !isFreshLiveOpenIsolationActive()
           ) {
             console.warn(`${PLAYER_LOG_PREFIX} escalating to shaka fallback`, {
               from: activeStreamUrl
@@ -2127,9 +3049,28 @@ function PlayerScreen() {
 
           if (
             playback.kind === 'live' &&
-            engineDecision.engine === 'shaka' &&
+            selectedEngine === 'hlsjs' &&
+            !liveHlsJsFallbackToShakaUsedRef.current &&
+            !isFreshLiveOpenIsolationActive()
+          ) {
+            liveHlsJsFallbackToShakaUsedRef.current = true;
+            console.warn(`${PLAYER_LOG_PREFIX} escalating hls.js live startup to shaka fallback`, {
+              from: activeStreamUrl,
+              reason: message
+            });
+            setRecoveryMessage('Retrying with fallback engine...');
+            setStatusMessage('Retrying with fallback engine');
+            setIsReady(false);
+            setEngineOverride('shaka');
+            setLoadNonce((value) => value + 1);
+            return;
+          }
+
+          if (
+            selectedEngine === 'shaka' &&
             engineOverride == null &&
-            !liveShakaStartupRetryUsedRef.current
+            !liveShakaStartupRetryUsedRef.current &&
+            !isFreshLiveOpenIsolationActive()
           ) {
             liveShakaStartupRetryUsedRef.current = true;
             console.warn(`${PLAYER_LOG_PREFIX} retrying live shaka startup once`, {
@@ -2144,7 +3085,7 @@ function PlayerScreen() {
             return;
           }
 
-          if (engineDecision.engine === 'shaka' && !holdReconnect) {
+          if (selectedEngine === 'shaka' && !holdReconnect && !isFreshLiveOpenIsolationActive()) {
             const nextFallbackIndex = activeStreamIndex + 1;
             const nextFallbackUrl = playbackSources[nextFallbackIndex];
             const allowTsFallback = !(isLive && isWebOS);
@@ -2160,13 +3101,6 @@ function PlayerScreen() {
               setIsReady(false);
               setEngineOverride(null);
               setActiveStreamIndex(nextFallbackIndex);
-              return;
-            }
-
-            if (isLive && isWebOS && currentLiveStreamId != null && (recentRevisit || reconnectFailure)) {
-              const retryDelay = Math.max(switchContext.cooldownMs, LIVE_SWITCH_FORBIDDEN_RETRY_MS, LIVE_CHANNEL_REVISIT_COOLDOWN_MS);
-              markLiveStreamForbidden(currentLiveStreamId, retryDelay);
-              scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
               return;
             }
 
@@ -2193,12 +3127,6 @@ function PlayerScreen() {
           });
           startupAttemptInFlightRef.current = false;
           if (playback.kind === 'live') {
-            if (isWebOS && currentLiveStreamId != null && (recentRevisit || reconnectFailure)) {
-              const retryDelay = Math.max(LIVE_SWITCH_FORBIDDEN_RETRY_MS, LIVE_CHANNEL_REVISIT_COOLDOWN_MS);
-              markLiveStreamForbidden(currentLiveStreamId, retryDelay);
-              scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
-              return;
-            }
             requestRetry(message);
             return;
           }
@@ -2212,6 +3140,8 @@ function PlayerScreen() {
     return () => {
       cancelled = true;
       loadGenerationRef.current += 1;
+      loadAbortControllerRef.current?.abort();
+      loadAbortControllerRef.current = null;
       console.debug(`${PLAYER_LOG_PREFIX} cleanup`, {
         id: playback.id,
         title: playback.title,
@@ -2289,13 +3219,30 @@ function PlayerScreen() {
     }
 
     const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime || 0);
+      const curTime = video.currentTime || 0;
+      setCurrentTime(curTime);
       setBufferedTime(getBufferedTime(video));
-      lastProgressAtRef.current = Date.now();
+      setDuration((currentDuration) => currentDuration || getFallbackDuration(video));
+
+      const prevTime = lastPlayTimeRef.current || 0;
+      lastPlayTimeRef.current = curTime;
+
+      const timeDiff = curTime - prevTime;
+      // Normal progression: currentTime is moving forward normally, not seeking, and not a large jump.
+      const isNormalProgress = !video.seeking && timeDiff > 0 && timeDiff < 2.0;
+
+      if (isNormalProgress || playback?.kind !== 'live') {
+        lastProgressAtRef.current = Date.now();
+      }
+
       if (playback?.kind === 'live') {
-        liveNoProgressRetryUsedRef.current = false;
-        clearLiveNoProgressWatchdog();
-        scheduleLiveNoProgressWatchdog('Live playback stalled');
+        if (isNormalProgress) {
+          if (curTime > 0) {
+            liveNoProgressRetryUsedRef.current = false;
+          }
+          clearLiveNoProgressWatchdog();
+          scheduleLiveNoProgressWatchdog('Live playback stalled');
+        }
       }
       if (!video.paused) {
         playbackStartedAtRef.current = playbackStartedAtRef.current || Date.now();
@@ -2305,7 +3252,7 @@ function PlayerScreen() {
       setIsReady(true);
       clearStallWatchdog();
 
-      const isPlaybackActive = !video.paused && !video.seeking && (isLive || (video.duration > 0 && video.currentTime > 0));
+      const isPlaybackActive = isPlaybackVisiblyActive(video, isLive);
       if (isPlaybackActive) {
         setRecoveryMessage(null);
         setStartupOverlayMessage(null);
@@ -2313,7 +3260,7 @@ function PlayerScreen() {
     };
 
     const handleDurationChange = () => {
-      setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+      setDuration(getFallbackDuration(video));
       setBufferedTime(getBufferedTime(video));
     };
 
@@ -2323,6 +3270,10 @@ function PlayerScreen() {
       });
       handleDurationChange();
       applyVideoAudioState(video, 'loadedmetadata');
+      if (isPlaybackVisiblyActive(video, isLive)) {
+        setRecoveryMessage(null);
+        setStartupOverlayMessage(null);
+      }
     };
 
     const handleLoadedData = () => {
@@ -2347,11 +3298,10 @@ function PlayerScreen() {
       clearStallWatchdog();
       clearRecoveryState();
       if (playback?.kind === 'live') {
-        liveNoProgressRetryUsedRef.current = false;
         scheduleLiveNoProgressWatchdog('Live playback active');
       }
       
-      const isPlaybackActive = !video.paused && !video.seeking && (isLive || (video.duration > 0 && video.currentTime > 0));
+      const isPlaybackActive = isPlaybackVisiblyActive(video, isLive);
       if (isPlaybackActive) {
         setRecoveryMessage(null);
         setStartupOverlayMessage(null);
@@ -2378,7 +3328,7 @@ function PlayerScreen() {
 
     const handleSeekedState = () => {
       logVideoSnapshot('seeked', video);
-      const isPlaybackActive = !video.paused && !video.seeking && (isLive || (video.duration > 0 && video.currentTime > 0));
+      const isPlaybackActive = isPlaybackVisiblyActive(video, isLive);
       if (isPlaybackActive) {
         setRecoveryMessage(null);
         setStartupOverlayMessage(null);
@@ -2457,42 +3407,6 @@ function PlayerScreen() {
       }
 
       const switchContext = getLiveSwitchContext();
-      const holdReconnect =
-        isLive &&
-        currentLiveStreamId != null &&
-        shouldHoldLiveReconnect({
-          playbackKind: playback?.kind,
-          streamId: currentLiveStreamId,
-          hasLiveQueue: hasInPlayerLiveQueue(playback),
-          switchContext,
-          cooldownHoldActive: liveSwitchCooldownHoldActiveRef.current,
-          lastStopTimes: liveStreamLastStopTimes,
-          forbiddenUntilByStream: liveStreamForbiddenUntil,
-          revisitCooldownMs: LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-        });
-
-      if (holdReconnect && currentLiveStreamId != null) {
-        const revisitMs = isRecentlyStoppedStream(
-          currentLiveStreamId,
-          liveStreamLastStopTimes,
-          LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-        )
-          ? LIVE_CHANNEL_REVISIT_COOLDOWN_MS
-          : 0;
-        const retryDelay = Math.max(switchContext.cooldownMs, LIVE_SWITCH_FORBIDDEN_RETRY_MS, revisitMs);
-        if (looksLikeLiveReconnectFailure(undefined, mediaError.message)) {
-          markLiveStreamForbidden(currentLiveStreamId, retryDelay);
-        }
-        console.warn(`${PLAYER_LOG_PREFIX} video error live reconnect cooldown hold`, {
-          streamId: currentLiveStreamId,
-          code: mediaError.code,
-          message: mediaError.message,
-          retryDelay
-        });
-        scheduleLiveSwitchCooldownRetry('Channel busy or reconnecting.', retryDelay, currentLiveStreamId);
-        return;
-      }
-
       if (startupAttemptInFlightRef.current) {
         console.warn(`${PLAYER_LOG_PREFIX} startup video error observed`, {
           code: mediaError?.code,

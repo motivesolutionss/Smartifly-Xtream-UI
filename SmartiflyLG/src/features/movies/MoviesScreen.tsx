@@ -266,6 +266,7 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
 
         setCategories(nextCategories);
         setMovies(mappedMovies);
+        useAppStore.getState().setCachedMovies(vodStreams);
         setSelectedCategoryId(nextSelectedCategoryId);
         setFocusId(nextFocusId);
         pendingRestoreFocusId.current = nextFocusId;

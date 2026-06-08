@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
 import { cardDebugOverlay } from '../../styles/lgTvStyles';
 import { fallbackHero, type ChannelItem, type RailSection, type HeroItem } from './homeBootstrap';
-import useWatchHistoryStore, { type WatchProgress } from '../../store/watchHistoryStore';
+import useWatchHistoryStore, { buildWatchHistoryScope } from '../../store/watchHistoryStore';
 
 /** Sized for 10-foot UI on webOS (avoid clamp/grid; fixed px). */
 const HOME_RAIL_CARD = {
@@ -106,35 +106,269 @@ interface SafeCardImageProps {
   src: string;
   isLiveRail: boolean;
   fallback: React.ReactNode;
+  name?: string;
+  accent?: string;
+  objectFit?: 'cover' | 'contain';
+  priority?: boolean;
 }
 
-function SafeCardImage({ src, isLiveRail, fallback }: SafeCardImageProps) {
+function SafeCardImage({ src, isLiveRail, fallback, name, accent, objectFit, priority = false }: SafeCardImageProps) {
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [hasError, setHasError] = useState(false);
 
-  if (hasError || !src) {
-    return <>{fallback}</>;
-  }
+  useEffect(() => {
+    setLoadedSrc(null);
+    setHasError(false);
+
+    const url = src?.trim();
+    if (!url) {
+      setHasError(true);
+      return;
+    }
+
+    let active = true;
+    const img = new Image();
+    img.decoding = 'async';
+    img.fetchPriority = priority ? 'high' : 'auto';
+    img.src = url;
+    img.onload = () => {
+      if (active) {
+        setLoadedSrc(url);
+      }
+    };
+    img.onerror = () => {
+      if (active) {
+        setHasError(true);
+      }
+    };
+
+    return () => {
+      active = false;
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [priority, src]);
+
+  const isLive = isLiveRail;
+  const fit = objectFit || (isLiveRail ? 'contain' : 'cover');
 
   return (
-    <img
-      src={src}
-      alt=""
-      onError={() => setHasError(true)}
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        borderRadius: 'inherit',
-        objectFit: isLiveRail ? 'contain' : 'cover',
-        display: 'block',
-        padding: isLiveRail ? '18px' : undefined,
-        boxSizing: 'border-box'
-      }}
-    />
+    <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 'inherit', overflow: 'hidden' }}>
+      {isLive ? (
+        /* Base Light Card Background - with subtle depth shadow and thin border */
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F7FA 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.05)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.04)',
+            boxSizing: 'border-box',
+            borderRadius: 'inherit',
+            opacity: loadedSrc ? 0.35 : 1,
+            transition: 'opacity 0.25s ease-in-out',
+            zIndex: 1
+          }}
+        />
+      ) : (
+        /* Base Dark Cinematic Card Background - Premium three-tone slate to deep black gradient */
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            background: 'linear-gradient(to bottom, #23293B 0%, #171B26 50%, #0B0D13 100%)',
+            boxSizing: 'border-box',
+            borderRadius: 'inherit',
+            opacity: loadedSrc ? 0.35 : 1,
+            transition: 'opacity 0.25s ease-in-out',
+            zIndex: 1
+          }}
+        />
+      )}
+
+      {/* Floating LIVE badge sticker in the top-left */}
+      {isLive && (
+        <span
+          style={{
+            position: 'absolute',
+            top: '12px',
+            left: '12px',
+            backgroundColor: '#E50914',
+            color: '#FFFFFF',
+            fontSize: '10px',
+            fontWeight: 900,
+            letterSpacing: '0.08em',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            textTransform: 'uppercase',
+            zIndex: 5,
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.15)'
+          }}
+        >
+          Live
+        </span>
+      )}
+
+      {/* 2. Text Overlay/Initials Layer */}
+      {!loadedSrc && (
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 3 }}>
+          {isLive ? (
+            <div style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              textAlign: 'center',
+              boxSizing: 'border-box'
+            }}>
+              {/* Retro-Modern TV Screen SVG Icon - Charcoal frame with Red play button */}
+              <svg
+                viewBox="0 0 24 24"
+                width="34"
+                height="34"
+                fill="none"
+                stroke="#1E2230"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ marginBottom: '8px' }}
+              >
+                <rect x="2" y="6" width="20" height="13" rx="2" ry="2" />
+                <path d="M17 2l-5 4-5-4" />
+                <polygon points="10 9.5 15 12.5 10 15.5" fill="#E50914" stroke="#E50914" strokeWidth="1" />
+              </svg>
+              {/* Centered Bold Charcoal Title Text */}
+              <strong style={{
+                color: '#1E2230',
+                fontSize: '18px',
+                lineHeight: 1.25,
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                maxWidth: '95%',
+                marginTop: '6px',
+                textAlign: 'center',
+                wordBreak: 'break-word'
+              }}>
+                {name || ''}
+              </strong>
+            </div>
+          ) : (
+            /* Premium Cinematic Movie/Series Fallback */
+            <div style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              textAlign: 'center',
+              boxSizing: 'border-box'
+            }}>
+              {/* Premium Clapperboard SVG Icon - Red highlights on all diagonal slats & central play button */}
+              <svg
+                viewBox="0 0 24 24"
+                width="40"
+                height="40"
+                fill="none"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ marginBottom: '16px' }}
+              >
+                {/* Main clapper base box - Silver */}
+                <rect x="3" y="7" width="18" height="13" rx="2" ry="2" stroke="rgba(255, 255, 255, 0.6)" />
+                {/* Middle horizontal line - Silver */}
+                <path d="M3 11h18" stroke="rgba(255, 255, 255, 0.6)" />
+                {/* All three top clapper bar stripes colored in brand red */}
+                <path d="M6 7l3-3" stroke="#E50914" strokeWidth="2" />
+                <path d="M11 7l3-3" stroke="#E50914" strokeWidth="2" />
+                <path d="M16 7l3-3" stroke="#E50914" strokeWidth="2" />
+                {/* Central Play Triangle - Solid Red */}
+                <polygon points="11 13.5 15 15.5 11 17.5" fill="#E50914" stroke="#E50914" strokeWidth="1" />
+              </svg>
+              {/* Centered Bold Movie/Series Title (Wrapped up to 3 lines) */}
+              <strong style={{
+                color: '#FFFFFF',
+                fontSize: '18px',
+                lineHeight: 1.3,
+                fontWeight: 700,
+                textAlign: 'center',
+                wordBreak: 'break-word',
+                letterSpacing: '-0.01em',
+                maxWidth: '95%',
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                {name || ''}
+              </strong>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. High-Quality Loaded Image */}
+      {loadedSrc && (
+        <>
+          {/* Blurred Background Poster to fill letterbox bars */}
+          {fit === 'contain' && !isLiveRail && (
+            <img
+              src={loadedSrc}
+              alt=""
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                filter: 'blur(20px) brightness(0.4)',
+                opacity: 0.85,
+                zIndex: 3
+              }}
+            />
+          )}
+
+          {/* Sharp Centered Poster */}
+          <img
+            src={loadedSrc}
+            alt=""
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              borderRadius: 'inherit',
+              objectFit: fit,
+              display: 'block',
+              padding: isLiveRail ? '18px' : undefined,
+              backgroundColor: isLiveRail ? '#FFFFFF' : undefined,
+              boxSizing: 'border-box',
+              opacity: 1,
+              transition: 'opacity 0.22s ease-in-out',
+              zIndex: 4
+            }}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -145,6 +379,7 @@ type HomeScreenProps = {
 
 function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
   const session = useAppStore((state) => state.session);
+  const selectedProfile = useAppStore((state) => state.selectedProfile);
   const currentDestination = useAppStore((state) => state.currentDestination);
   const homeFocusId = useAppStore((state) => state.homeFocusId);
   const openContentDetails = useAppStore((state) => state.openContentDetails);
@@ -189,10 +424,18 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
 
   const watchHistory = useWatchHistoryStore((state) => state.history);
   const continueWatchingItems = useMemo(() => {
+    const scope = buildWatchHistoryScope(
+      session?.portalCode,
+      session?.username,
+      selectedProfile?.id
+    );
+
     return Object.values(watchHistory)
-      .filter((item) => item.progress > 0 && !item.completed)
-      .sort((a, b) => b.lastWatched - a.lastWatched);
-  }, [watchHistory]);
+      .filter((item) => item.id.startsWith(scope))
+      .filter((item) => !item.completed && item.progress > 0)
+      .sort((a, b) => b.lastWatched - a.lastWatched)
+      .slice(0, 8);
+  }, [selectedProfile?.id, session?.portalCode, session?.username, watchHistory]);
 
   const rails = useMemo(() => {
     const rawRails = homeBootstrapData?.rails ?? [];
@@ -208,7 +451,7 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
         id: `continue-${item.type}-${item.streamId}`,
         contentId: item.streamId,
         name: item.title,
-        artwork: item.thumbnail || '',
+        artwork: item.data?.backdropUrl || item.data?.backdrop || item.thumbnail || '',
         kind: (item.type === 'series' ? 'series' : 'movie') as any,
         fallbackLabel: item.title.slice(0, 2).toUpperCase(),
         accent: '#e50914',
@@ -221,7 +464,7 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
     return [continueRail, ...rawRails] as RailSection[];
   }, [homeBootstrapData?.rails, continueWatchingItems]);
   const notice = homeBootstrapData?.notice ?? (
-    bootstrapStatus === 'loading'
+      bootstrapStatus === 'loading'
       ? {
           title: 'Loading home content',
           body: 'Fetching hero, live channels, series, and movie rails.'
@@ -674,6 +917,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
             <img
               src={heroItem.artwork}
               alt=""
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
               onError={() => {
                 setHeroImageFailed(true);
                 if (heroItem.id !== 'fallback-hero') {
@@ -951,7 +1197,7 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
       </section>
 
       <section className="lg-home__rails" aria-label="Home sections">
-        {rails.map((rail) => {
+        {rails.map((rail, railIndex) => {
           const isLiveRail = rail.kind === 'live';
           const isLandscape = isLiveRail || rail.id === 'continue-watching';
           const cardSize = isLandscape ? HOME_RAIL_CARD.live : HOME_RAIL_CARD.poster;
@@ -1003,13 +1249,16 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                   paddingTop: '16px',
                   paddingLeft: '24px',
                   paddingRight: '24px',
-                  paddingBottom: `${RAIL_SCROLLBAR_HIDE}px`
+                  paddingBottom: `${RAIL_SCROLLBAR_HIDE}px`,
+                  scrollPaddingLeft: '60px',
+                  scrollPaddingRight: '150px'
                 }}
               >
               {rail.items.map((item, itemIndex) => {
                 const contentFocusId = makeFocusId(rail.id, item.id);
                 const isFocused = focusId === contentFocusId;
                 const isLast = itemIndex === rail.items.length - 1;
+                const isPriorityArtwork = railIndex === 0 && itemIndex < 8;
 
                 return (
                   <button
@@ -1028,7 +1277,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                       flex: '0 0 auto',
                       width: `${cardSize.width}px`,
                       height: `${cardSize.height}px`,
-                      marginRight: isLast ? 0 : `${RAIL_CARD_GAP}px`,
+                      marginRight: isLast ? '60px' : `${RAIL_CARD_GAP}px`,
+                      scrollMarginLeft: '60px',
+                      scrollMarginRight: '150px',
                       boxSizing: 'border-box',
                       padding: 0,
                       border: 0,
@@ -1070,50 +1321,61 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                         <SafeCardImage
                           src={item.artwork || ''}
                           isLiveRail={isLiveRail}
-                          fallback={
-                            <div
-                              style={{
-                                position: 'relative',
-                                zIndex: 1,
-                                width: '100%',
-                                height: '100%',
-                                borderRadius: 'inherit',
-                                background: item.accent,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '18px',
-                                textAlign: 'center',
-                                boxSizing: 'border-box'
-                              }}
-                            >
-                              <strong
-                                style={{
-                                  color: '#ffffff',
-                                  fontSize: isLiveRail ? '56px' : '64px',
-                                  lineHeight: 0.92,
-                                  fontWeight: 900,
-                                  textTransform: 'uppercase'
-                                }}
-                              >
-                                {item.fallbackLabel}
-                              </strong>
-                              <span
-                                style={{
-                                  marginTop: '12px',
-                                  color: '#ffffff',
-                                  fontSize: isLiveRail ? '26px' : '30px',
-                                  lineHeight: 0.98,
-                                  fontWeight: 900,
-                                  textTransform: 'uppercase'
-                                }}
-                              >
-                                {item.subtitle ?? item.name.split(' ').slice(-1)[0] ?? item.name}
-                              </span>
-                            </div>
-                          }
+                          name={item.name}
+                          accent={item.accent}
+                          fallback={null}
+                          priority={isPriorityArtwork}
                         />
+
+                        {/* Play Button Overlay (Continue Watching cards only) */}
+                        {rail.id === 'continue-watching' && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '46px',
+                            height: '46px',
+                            borderRadius: '999px',
+                            backgroundColor: isFocused ? '#E50914' : 'rgba(0, 0, 0, 0.55)',
+                            border: isFocused ? 'none' : '2.2px solid rgba(255, 255, 255, 0.85)',
+                            boxShadow: isFocused ? '0 0 16px rgba(229, 9, 20, 0.6)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.22s ease-in-out',
+                            zIndex: 16,
+                            pointerEvents: 'none'
+                          }}>
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="#ffffff" style={{ marginLeft: '2px' }}>
+                              <polygon points="8 5 19 12 8 19" />
+                            </svg>
+                          </div>
+                        )}
+
+                        {/* Content Type Badge (Movie/Series) in the top-right corner (Continue Watching cards only) */}
+                        {rail.id === 'continue-watching' && (
+                          <span style={{
+                            position: 'absolute',
+                            top: '12px',
+                            right: '12px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            color: '#FFFFFF',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            letterSpacing: '0.06em',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            textTransform: 'uppercase',
+                            zIndex: 16,
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)'
+                          }}>
+                            {item.kind === 'series' ? 'Series' : 'Movie'}
+                          </span>
+                        )}
+
                         {rail.id === 'continue-watching' && (
                           <div style={{
                             position: 'absolute',
@@ -1182,6 +1444,8 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                   </button>
                 );
               })}
+              {/* Spacer to prevent WebKit scroll clipping and ensure the last card is fully visible */}
+              <div style={{ flex: '0 0 auto', width: '120px', height: '10px' }} />
               </div>
             </div>
           </section>

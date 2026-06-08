@@ -1,11 +1,12 @@
 import type { PlaybackRequest } from '../../store/appStore';
 
-export type PlaybackEngine = 'native' | 'shaka';
+export type PlaybackEngine = 'native' | 'shaka' | 'hlsjs';
 
 type ChoosePlaybackEngineArgs = {
   playback: PlaybackRequest;
   streamUrl: string;
   overrideEngine?: PlaybackEngine | null;
+  preferNativeHlsForLiveM3u8?: boolean;
   /** webOS live HLS: native demux often fails; one Shaka open avoids double-hitting the server */
   preferShakaForLiveHls?: boolean;
 };
@@ -38,6 +39,7 @@ export function choosePlaybackEngine({
   playback,
   streamUrl,
   overrideEngine,
+  preferNativeHlsForLiveM3u8 = false,
   preferShakaForLiveHls = false
 }: ChoosePlaybackEngineArgs): PlaybackEngineDecision {
   if (overrideEngine === 'shaka') {
@@ -62,11 +64,19 @@ export function choosePlaybackEngine({
     };
   }
 
-  if (playback.kind === 'live' && (extension === 'm3u8' || extension === 'ts')) {
+  if (playback.kind === 'live' && extension === 'm3u8' && preferNativeHlsForLiveM3u8) {
     return {
       engine: 'native',
-      reason: `Live ${extension.toUpperCase()} without DRM prefers native video`,
-      allowShakaFallback: false
+      reason: 'Live HLS prefers the native video pipeline first when the device advertises HLS support',
+      allowShakaFallback: true
+    };
+  }
+
+  if (playback.kind === 'live' && (extension === 'm3u8' || extension === 'ts')) {
+    return {
+      engine: 'hlsjs',
+      reason: `Live ${extension.toUpperCase()} uses hls.js for reliable segment buffering on webOS`,
+      allowShakaFallback: extension === 'm3u8'
     };
   }
 

@@ -35,6 +35,17 @@ function installLegacyRandomUuidPolyfill() {
 
 try {
   installLegacyRandomUuidPolyfill();
+
+  if (import.meta.env.DEV) {
+    void import('./features/player/debug/iptvReleaseTimingDebug').then(({ installIptvDebugTools }) => {
+      installIptvDebugTools();
+    });
+
+    void import('./debug/iptvRevisitDebug').then(({ installIptvRevisitDebug }) => {
+      installIptvRevisitDebug();
+    });
+  }
+
   bootDebug?.setStatus('Bundle loaded. Preparing React root...');
 
   const rootElement = document.getElementById('root');

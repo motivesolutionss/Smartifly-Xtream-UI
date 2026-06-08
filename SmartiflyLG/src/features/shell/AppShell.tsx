@@ -983,6 +983,7 @@ function AppShell() {
           <PlayerScreen key={`${selectedPlayback?.id ?? 'player'}:${selectedPlayback?.streamUrl ?? 'empty'}`} />
         ) : currentDestination === 'watchlist' ? (
           <WatchlistScreen
+            isActive={isContentDestination}
             onRequestSidebarFocus={() => {
               setFocusRegion('sidebar');
               setFocusId(getSidebarFocusTarget());

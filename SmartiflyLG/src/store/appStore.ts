@@ -8,6 +8,14 @@ import {
   validatePortalCode
 } from '../services/api';
 import { loadHomeBootstrapData, type HomeBootstrapData } from '../features/home/homeBootstrap';
+import {
+  buildHomeBootstrapCacheKey,
+  clearCacheByPrefix,
+  readCacheEntry,
+  readFreshCacheValue,
+  writeCacheValue,
+  HOME_BOOTSTRAP_CACHE_TTL_MS
+} from '../services/cacheService';
 
 export type Session = {
   portalCode: string;
@@ -55,6 +63,7 @@ export type LivePlaybackChannel = {
   title: string;
   streamId: number;
   streamUrl: string;
+  fallbackUrls?: string[];
   artwork?: string;
 };
 
@@ -100,6 +109,7 @@ type AppState = {
   bootstrapStatus: BootstrapStatus;
   bootstrapError: string | null;
   homeBootstrapData: HomeBootstrapData | null;
+  cachedMovies: any[];
   currentDestination: AppDestination;
   sidebarDestination: AppDestination;
   sidebarFocusTarget: 'profile' | AppDestination | 'settings';
@@ -125,6 +135,7 @@ type AppState = {
   signIn: (input: LoginInput) => Promise<boolean>;
   completeDeviceActivation: (license: DeviceActivationLicense, deviceId: string) => Promise<boolean>;
   bootstrapHomeData: () => Promise<void>;
+  refreshHomeBootstrapData: () => Promise<void>;
   resetBootstrap: () => void;
   selectProfile: (profileId: string) => void;
   clearSelectedProfile: () => void;
@@ -143,6 +154,7 @@ type AppState = {
   closePlayback: () => void;
   closeContentDetails: () => void;
   changePortal: () => void;
+  setCachedMovies: (movies: any[]) => void;
   signOut: () => void;
 };
 
@@ -230,6 +242,15 @@ function createDefaultProfiles(username: string): UserProfile[] {
   ];
 }
 
+function readInitialHomeBootstrapData(session: Session | null, selectedProfile: UserProfile | null) {
+  if (!session || !selectedProfile) {
+    return null;
+  }
+
+  const cacheKey = buildHomeBootstrapCacheKey(session.portalCode, session.username, selectedProfile.id);
+  return readFreshCacheValue<HomeBootstrapData>(cacheKey);
+}
+
 function persistSessionState(session: Session, profiles: UserProfile[]) {
   writeJson(SESSION_KEY, session);
   writeJson(PROFILES_KEY, profiles);
@@ -249,6 +270,7 @@ function applyAuthenticatedState(setter: Parameters<typeof create<AppState>>[0],
     bootstrapStatus: 'idle',
     bootstrapError: null,
     homeBootstrapData: null,
+    cachedMovies: [],
     currentDestination: 'home',
     sidebarDestination: 'home',
     sidebarFocusTarget: 'home',
@@ -301,12 +323,62 @@ function normalizeStoredSession(raw: Session | (Partial<Session> & { portal?: st
   };
 }
 
+async function loadAndStoreHomeBootstrapData(
+  session: Session,
+  selectedProfile: UserProfile,
+  options: {
+    onCached?: (data: HomeBootstrapData) => void;
+    onLoaded?: (data: HomeBootstrapData) => void;
+    onError?: (message: string) => void;
+    silent?: boolean;
+  } = {}
+) {
+  const { onCached, onLoaded, onError, silent = false } = options;
+  const cacheKey = buildHomeBootstrapCacheKey(session.portalCode, session.username, selectedProfile.id);
+  const cachedHomeBootstrapData = readFreshCacheValue<HomeBootstrapData>(cacheKey);
+
+  if (cachedHomeBootstrapData) {
+    onCached?.(cachedHomeBootstrapData);
+    if (!silent) {
+      return;
+    }
+  }
+
+  try {
+    const homeBootstrapData = await loadHomeBootstrapData(session);
+    const latestState = useAppStore.getState();
+
+    if (latestState.session !== session || latestState.selectedProfile?.id !== selectedProfile.id) {
+      return;
+    }
+
+    writeCacheValue(cacheKey, homeBootstrapData, HOME_BOOTSTRAP_CACHE_TTL_MS);
+    onLoaded?.(homeBootstrapData);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'The portal request failed. Check the server URL, network, and credentials, then try again.';
+
+    const staleCachedHomeBootstrapData = readCacheEntry<HomeBootstrapData>(cacheKey)?.value ?? null;
+    if (staleCachedHomeBootstrapData) {
+      onCached?.(staleCachedHomeBootstrapData);
+      if (!silent) {
+        return;
+      }
+    }
+
+    onError?.(message);
+  }
+}
+
 const initialSession = normalizeStoredSession(readJson<Session | (Partial<Session> & { portal?: string })>(SESSION_KEY));
 const initialPortal = initialSession?.portalCode ?? readString(PORTAL_KEY, 'Default Server');
 const initialProfiles = readProfiles();
 const initialSelectedProfileId = readString(SELECTED_PROFILE_KEY, '');
 const initialSelectedProfile =
   initialProfiles.find((profile) => profile.id === initialSelectedProfileId) ?? null;
+const initialHomeBootstrapData = readInitialHomeBootstrapData(initialSession, initialSelectedProfile);
 
 export const useAppStore = create<AppState>((set) => ({
   onboardingScreen: initialSession ? 'login' : 'welcome',
@@ -315,9 +387,10 @@ export const useAppStore = create<AppState>((set) => ({
   profiles: initialProfiles,
   selectedProfile: initialSelectedProfile,
   profileSelectionSource: 'post-login',
-  bootstrapStatus: initialSession && initialSelectedProfile ? 'idle' : 'idle',
+  bootstrapStatus: initialHomeBootstrapData ? 'ready' : 'idle',
   bootstrapError: null,
-  homeBootstrapData: null,
+  homeBootstrapData: initialHomeBootstrapData,
+  cachedMovies: [],
   currentDestination: 'home',
   sidebarDestination: 'home',
   sidebarFocusTarget: 'home',
@@ -340,6 +413,7 @@ export const useAppStore = create<AppState>((set) => ({
   isAuthenticating: false,
   setOnboardingScreen: (screen) => set({ onboardingScreen: screen }),
   setStatusMessage: (message) => set({ statusMessage: message }),
+  setCachedMovies: (movies) => set({ cachedMovies: movies }),
   signIn: async ({ portalCode, username, password }) => {
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
@@ -469,38 +543,64 @@ export const useAppStore = create<AppState>((set) => ({
       statusMessage: `Loading home for ${selectedProfile.name}...`
     });
 
-    try {
-      const homeBootstrapData = await loadHomeBootstrapData(session);
-      const latestState = useAppStore.getState();
-
-      if (latestState.session !== session || latestState.selectedProfile?.id !== selectedProfile.id) {
-        return;
+    await loadAndStoreHomeBootstrapData(session, selectedProfile, {
+      onCached: (homeBootstrapData) => {
+        set({
+          bootstrapStatus: 'ready',
+          bootstrapError: null,
+          homeBootstrapData,
+          statusMessage: `Home ready for ${selectedProfile.name}`
+        });
+      },
+      onLoaded: (homeBootstrapData) => {
+        set({
+          bootstrapStatus: 'ready',
+          bootstrapError: null,
+          homeBootstrapData,
+          statusMessage: `Home ready for ${selectedProfile.name}`
+        });
+      },
+      onError: (message) => {
+        set({
+          bootstrapStatus: 'error',
+          bootstrapError: message,
+          homeBootstrapData: null,
+          statusMessage: message
+        });
       }
+    });
+  },
+  refreshHomeBootstrapData: async () => {
+    const { session, selectedProfile, homeBootstrapData } = useAppStore.getState();
 
-      set({
-        bootstrapStatus: 'ready',
-        bootstrapError: null,
-        homeBootstrapData,
-        statusMessage: `Home ready for ${selectedProfile.name}`
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'The portal request failed. Check the server URL, network, and credentials, then try again.';
-      set({
-        bootstrapStatus: 'error',
-        bootstrapError: message,
-        homeBootstrapData: null,
-        statusMessage: message
-      });
+    if (!session || !selectedProfile || !homeBootstrapData) {
+      return;
     }
+
+    await loadAndStoreHomeBootstrapData(session, selectedProfile, {
+      silent: true,
+      onLoaded: (nextHomeBootstrapData) => {
+        set({
+          bootstrapStatus: 'ready',
+          bootstrapError: null,
+          homeBootstrapData: nextHomeBootstrapData
+        });
+      },
+      onCached: (cachedHomeBootstrapData) => {
+        set({
+          bootstrapStatus: 'ready',
+          bootstrapError: null,
+          homeBootstrapData: cachedHomeBootstrapData
+        });
+      }
+    });
   },
   resetBootstrap: () =>
     set({
       bootstrapStatus: 'idle',
       bootstrapError: null,
-      homeBootstrapData: null
+      homeBootstrapData: null,
+      cachedMovies: []
     }),
   selectProfile: (profileId) =>
     set((state) => {
@@ -511,9 +611,10 @@ export const useAppStore = create<AppState>((set) => ({
         selectedProfile,
       profileSelectionSource: 'post-login',
       bootstrapStatus: selectedProfile ? 'idle' : state.bootstrapStatus,
-      bootstrapError: null,
-      homeBootstrapData: null,
-      sidebarFocusTarget: 'home',
+        bootstrapError: null,
+        homeBootstrapData: null,
+        cachedMovies: [],
+        sidebarFocusTarget: 'home',
       statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage
       };
     }),
@@ -523,7 +624,8 @@ export const useAppStore = create<AppState>((set) => ({
       profileSelectionSource: 'post-login',
       bootstrapStatus: 'idle',
       bootstrapError: null,
-      homeBootstrapData: null
+      homeBootstrapData: null,
+      cachedMovies: []
     }),
   openProfileSelectionFromHome: () =>
     set({
@@ -550,6 +652,7 @@ export const useAppStore = create<AppState>((set) => ({
           window.localStorage.removeItem(SESSION_KEY);
           window.localStorage.removeItem(PROFILES_KEY);
           window.localStorage.removeItem(SELECTED_PROFILE_KEY);
+          clearCacheByPrefix('smartifly-lg-cache:');
         } catch {
           // Ignore storage failures on restricted browsers or private modes.
         }
@@ -564,6 +667,7 @@ export const useAppStore = create<AppState>((set) => ({
         bootstrapStatus: 'idle',
         bootstrapError: null,
         homeBootstrapData: null,
+        cachedMovies: [],
         statusMessage: 'Return to sign in'
       };
     }),
@@ -640,6 +744,7 @@ export const useAppStore = create<AppState>((set) => ({
         window.localStorage.removeItem(PROFILES_KEY);
         window.localStorage.removeItem(SELECTED_PROFILE_KEY);
         window.localStorage.removeItem(PORTAL_KEY);
+        clearCacheByPrefix('smartifly-lg-cache:');
       } catch {
         // Ignore storage failures on restricted browsers or private modes.
       }
@@ -655,6 +760,7 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapStatus: 'idle',
       bootstrapError: null,
       homeBootstrapData: null,
+      cachedMovies: [],
       currentDestination: 'home',
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',
@@ -684,6 +790,7 @@ export const useAppStore = create<AppState>((set) => ({
         window.localStorage.removeItem(PROFILES_KEY);
         window.localStorage.removeItem(SELECTED_PROFILE_KEY);
         window.localStorage.removeItem(SEARCH_QUERY_KEY);
+        clearCacheByPrefix('smartifly-lg-cache:');
       } catch {
         // Ignore storage failures on restricted browsers or private modes.
       }
@@ -698,6 +805,7 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapStatus: 'idle',
       bootstrapError: null,
       homeBootstrapData: null,
+      cachedMovies: [],
       currentDestination: 'home',
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',

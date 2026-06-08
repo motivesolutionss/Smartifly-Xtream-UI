@@ -1,3 +1,10 @@
+import {
+  buildCacheKey,
+  readCacheEntry,
+  readFreshCacheValue,
+  writeCacheValue
+} from './cacheService';
+
 export type XtreamCredentials = {
   portalUrl: string;
   username: string;
@@ -254,6 +261,10 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.DEV ? 'http://localhost:5000/v1' : 'https://api.xtreamui.duckdns.org/v1');
 
+const CATALOG_CACHE_TTL_MS = 30 * 60 * 1000;
+const DETAILS_CACHE_TTL_MS = 15 * 60 * 1000;
+const inFlightCatalogRequests = new Map<string, Promise<unknown>>();
+
 function buildActivationMac(deviceId: string) {
   const normalized = deviceId.replace(/[^a-z0-9]/gi, '').toUpperCase();
   return `00:1A:79:${normalized.slice(-6).padStart(6, '0')}`;
@@ -298,6 +309,49 @@ async function requestJson<T>(baseUrl: string, params: Record<string, string | n
   } catch {
     throw new Error('Xtream returned invalid JSON');
   }
+}
+
+function buildCatalogCacheKey(scope: string, portalUrl: string, username: string, categoryId?: string | number, itemId?: string | number) {
+  return buildCacheKey(
+    'api',
+    scope,
+    normalizeBaseUrl(portalUrl),
+    username.trim().toLowerCase(),
+    categoryId ?? '',
+    itemId ?? ''
+  );
+}
+
+async function requestCached<T>(cacheKey: string, ttlMs: number, fetcher: () => Promise<T>) {
+  const fresh = readFreshCacheValue<T>(cacheKey);
+  if (fresh !== null) {
+    return fresh;
+  }
+
+  const inFlight = inFlightCatalogRequests.get(cacheKey);
+  if (inFlight) {
+    return inFlight as Promise<T>;
+  }
+
+  const request = (async () => {
+    try {
+      const value = await fetcher();
+      writeCacheValue(cacheKey, value, ttlMs);
+      return value;
+    } catch (error) {
+      const stale = readCacheEntry<T>(cacheKey)?.value ?? null;
+      if (stale !== null) {
+        return stale;
+      }
+
+      throw error;
+    } finally {
+      inFlightCatalogRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightCatalogRequests.set(cacheKey, request);
+  return request;
 }
 
 function readArray<T>(data: unknown, keys: string[]) {
@@ -467,58 +521,116 @@ export function createXtreamApi(portalUrl: string) {
       return payload.data;
     },
     getLiveCategories: (username: string, password: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_live_categories'
-      }).then((data) => readArray<XtreamCategory>(data, ['categories', 'live_categories'])),
+      requestCached(
+        buildCatalogCacheKey('live-categories', portalUrl, username),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamCategory>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_live_categories'
+            }),
+            ['categories', 'live_categories']
+          )
+      ),
     getVodCategories: (username: string, password: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_vod_categories'
-      }).then((data) => readArray<XtreamCategory>(data, ['categories', 'vod_categories'])),
+      requestCached(
+        buildCatalogCacheKey('vod-categories', portalUrl, username),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamCategory>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_vod_categories'
+            }),
+            ['categories', 'vod_categories']
+          )
+      ),
     getSeriesCategories: (username: string, password: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_series_categories'
-      }).then((data) => readArray<XtreamCategory>(data, ['categories', 'series_categories'])),
+      requestCached(
+        buildCatalogCacheKey('series-categories', portalUrl, username),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamCategory>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_series_categories'
+            }),
+            ['categories', 'series_categories']
+          )
+      ),
     getLiveStreams: (username: string, password: string, categoryId?: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_live_streams',
-        category_id: categoryId
-      }).then((data) => readArray<XtreamLiveStream>(data, ['live_streams', 'channels', 'streams'])),
+      requestCached(
+        buildCatalogCacheKey('live-streams', portalUrl, username, categoryId),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamLiveStream>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_live_streams',
+              category_id: categoryId
+            }),
+            ['live_streams', 'channels', 'streams']
+          )
+      ),
     getVodStreams: (username: string, password: string, categoryId?: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_vod_streams',
-        category_id: categoryId
-      }).then((data) => readArray<XtreamMovie>(data, ['vod_streams', 'movies', 'vod'])),
+      requestCached(
+        buildCatalogCacheKey('vod-streams', portalUrl, username, categoryId),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamMovie>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_vod_streams',
+              category_id: categoryId
+            }),
+            ['vod_streams', 'movies', 'vod']
+          )
+      ),
     getSeries: (username: string, password: string, categoryId?: string) =>
-      requestJson<unknown>(portalUrl, {
-        username,
-        password,
-        action: 'get_series',
-        category_id: categoryId
-      }).then((data) => readArray<XtreamSeries>(data, ['series', 'series_list'])),
+      requestCached(
+        buildCatalogCacheKey('series', portalUrl, username, categoryId),
+        CATALOG_CACHE_TTL_MS,
+        async () =>
+          readArray<XtreamSeries>(
+            await requestJson<unknown>(portalUrl, {
+              username,
+              password,
+              action: 'get_series',
+              category_id: categoryId
+            }),
+            ['series', 'series_list']
+          )
+      ),
     getMovieInfo: (username: string, password: string, vodId: number) =>
-      requestJson<XtreamMovieInfo>(portalUrl, {
-        username,
-        password,
-        action: 'get_vod_info',
-        vod_id: vodId
-      }),
+      requestCached(
+        buildCatalogCacheKey('movie-info', portalUrl, username, '', vodId),
+        DETAILS_CACHE_TTL_MS,
+        async () =>
+          await requestJson<XtreamMovieInfo>(portalUrl, {
+            username,
+            password,
+            action: 'get_vod_info',
+            vod_id: vodId
+          })
+      ),
     getSeriesInfo: (username: string, password: string, seriesId: number) =>
-      requestJson<XtreamSeriesInfo>(portalUrl, {
-        username,
-        password,
-        action: 'get_series_info',
-        series_id: seriesId
-      }),
+      requestCached(
+        buildCatalogCacheKey('series-info', portalUrl, username, '', seriesId),
+        DETAILS_CACHE_TTL_MS,
+        async () =>
+          await requestJson<XtreamSeriesInfo>(portalUrl, {
+            username,
+            password,
+            action: 'get_series_info',
+            series_id: seriesId
+          })
+      ),
     getLiveStreamUrl: (username: string, password: string, streamId: number, format = 'ts') => {
       const user = encodeURIComponent(username);
       const pass = encodeURIComponent(password);

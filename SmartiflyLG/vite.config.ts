@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -11,6 +11,22 @@ export default defineConfig({
       closeBundle() {
         const indexPath = join(process.cwd(), 'dist', 'index.html');
         const html = readFileSync(indexPath, 'utf8');
+        const distDir = join(process.cwd(), 'dist');
+        const vendorDir = join(distDir, 'vendor');
+
+        try {
+          mkdirSync(vendorDir, { recursive: true });
+          copyFileSync(
+            join(process.cwd(), 'node_modules', 'hls.js', 'dist', 'hls.min.js'),
+            join(vendorDir, 'hls.min.js')
+          );
+          copyFileSync(
+            join(process.cwd(), 'node_modules', 'shaka-player', 'dist', 'shaka-player.compiled.js'),
+            join(vendorDir, 'shaka-player.compiled.js')
+          );
+        } catch (e) {
+          console.error('Failed to copy vendor player bundles:', e);
+        }
 
         // Inline the CSS file content to avoid webOS CORS file:// blocks
         const cssPath = join(process.cwd(), 'dist', 'styles.css');
@@ -44,17 +60,38 @@ export default defineConfig({
           '        });',
           '',
           "        setStatus('Global handlers ready. Loading app.js...');",
-          "        var bundleScript = document.createElement('script');",
-          "        bundleScript.src = './app.js';",
-          '        bundleScript.async = false;',
-          "        bundleScript.onload = function () {",
-          "          setStatus('app.js loaded successfully. Waiting for startup logs...');",
+          "        function loadScript(src, onload, onerrorLabel) {",
+          "          var script = document.createElement('script');",
+          "          script.src = src;",
+          '          script.async = false;',
+          '          script.onload = onload;',
+          "          script.onerror = function () {",
+          '            setStatus("Failed to load " + src);',
+          "            appendLog('script.onerror', onerrorLabel || ('The emulator could not load ' + src));",
+          '          };',
+          '          document.body.appendChild(script);',
+          '        }',
+          "        function loadAppBundle() {",
+          "          var bundleScript = document.createElement('script');",
+          "          bundleScript.src = './app.js';",
+          '          bundleScript.async = false;',
+          "          bundleScript.onload = function () {",
+          "            setStatus('app.js loaded successfully. Waiting for startup logs...');",
+          '          };',
+          "          bundleScript.onerror = function () {",
+          "            setStatus('Failed to load app.js');",
+          "            appendLog('script.onerror', 'The emulator could not load ./app.js');",
+          '          };',
+          '          document.body.appendChild(bundleScript);',
           '        };',
-          "        bundleScript.onerror = function () {",
-          "          setStatus('Failed to load app.js');",
-          "          appendLog('script.onerror', 'The emulator could not load ./app.js');",
-          '        };',
-          '        document.body.appendChild(bundleScript);'
+          "        setStatus('Loading vendor player bundles...');",
+          "        loadScript('./vendor/hls.min.js', function () {",
+          "          setStatus('hls.js loaded. Loading Shaka...');",
+          "          loadScript('./vendor/shaka-player.compiled.js', function () {",
+          "            setStatus('Shaka loaded. Loading app.js...');",
+          '            loadAppBundle();',
+          "          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');",
+          "        }, 'The emulator could not load ./vendor/hls.min.js');"
         ].join('\n');
 
         const patched = withoutAppScript.replace(
