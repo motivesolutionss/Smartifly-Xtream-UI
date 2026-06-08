@@ -128,6 +128,25 @@ export class XtreamClient implements AccountService, ContentService, PlaybackSer
     return data.map(xtreamMapper.toAppChannel);
   }
 
+  async searchLiveStreams(query: string, categoryId?: string): Promise<AppChannel[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const params: Record<string, string> = {
+      search: trimmedQuery,
+    };
+    if (categoryId) {
+      params.category_id = categoryId;
+    }
+
+    const url = this.buildUrl("get_live_streams", params);
+    const data = await httpClient.get<XtreamLiveStream[]>(url, 1);
+    if (!Array.isArray(data)) {
+      throw new AppError("INVALID_RESPONSE", "Expected live search array");
+    }
+    return data.map(xtreamMapper.toAppChannel);
+  }
+
   async getVodCategories(): Promise<AppCategory[]> {
     const url = this.buildUrl("get_vod_categories");
     const data = await httpClient.get<XtreamCategory[]>(url);
@@ -145,6 +164,25 @@ export class XtreamClient implements AccountService, ContentService, PlaybackSer
     const data = await httpClient.get<XtreamVodStream[]>(url);
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected VOD streams array");
+    }
+    return data.map(xtreamMapper.toAppMovie);
+  }
+
+  async searchVodStreams(query: string, categoryId?: string): Promise<AppMovie[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const params: Record<string, string> = {
+      search: trimmedQuery,
+    };
+    if (categoryId) {
+      params.category_id = categoryId;
+    }
+
+    const url = this.buildUrl("get_vod_streams", params);
+    const data = await httpClient.get<XtreamVodStream[]>(url, 1);
+    if (!Array.isArray(data)) {
+      throw new AppError("INVALID_RESPONSE", "Expected VOD search array");
     }
     return data.map(xtreamMapper.toAppMovie);
   }
@@ -175,6 +213,25 @@ export class XtreamClient implements AccountService, ContentService, PlaybackSer
     const data = await httpClient.get<XtreamSeries[]>(url);
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected series array");
+    }
+    return data.map(xtreamMapper.toAppSeries);
+  }
+
+  async searchSeries(query: string, categoryId?: string): Promise<AppSeries[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const params: Record<string, string> = {
+      search: trimmedQuery,
+    };
+    if (categoryId) {
+      params.category_id = categoryId;
+    }
+
+    const url = this.buildUrl("get_series", params);
+    const data = await httpClient.get<XtreamSeries[]>(url, 1);
+    if (!Array.isArray(data)) {
+      throw new AppError("INVALID_RESPONSE", "Expected series search array");
     }
     return data.map(xtreamMapper.toAppSeries);
   }

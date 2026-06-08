@@ -27,10 +27,16 @@ export class BackendContentService implements ContentService {
   getLiveStreams(): Promise<AppChannel[]> {
     return backendNotImplemented();
   }
+  searchLiveStreams(): Promise<AppChannel[]> {
+    return backendNotImplemented();
+  }
   getVodCategories(): Promise<AppCategory[]> {
     return backendNotImplemented();
   }
   getVodStreams(): Promise<AppMovie[]> {
+    return backendNotImplemented();
+  }
+  searchVodStreams(): Promise<AppMovie[]> {
     return backendNotImplemented();
   }
   getVodInfo(): Promise<AppMovieDetails> {
@@ -40,6 +46,9 @@ export class BackendContentService implements ContentService {
     return backendNotImplemented();
   }
   getSeries(): Promise<AppSeries[]> {
+    return backendNotImplemented();
+  }
+  searchSeries(): Promise<AppSeries[]> {
     return backendNotImplemented();
   }
   getSeriesInfo(): Promise<AppSeriesDetails> {
