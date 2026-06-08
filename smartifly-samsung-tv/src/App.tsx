@@ -15,11 +15,15 @@ import { useAdaptiveProfile } from "./hooks/useAdaptiveProfile";
 import { useProfileStore } from "./store/profileStore";
 import { useSettingsStore } from "./store/settingsStore";
 import { contentCategoryStorage } from "./storage/contentCategoryStorage";
+import { recentlyWatchedStorage } from "./storage/recentlyWatchedStorage";
+import { useBudgetedImagePreload } from "./hooks/useBudgetedImagePreload";
 import { Loader } from "./components/ui/Loader";
 import {
+  getHomePreparationImageUrls,
   hasFreshHomeSnapshotInCache,
   preloadHomeSnapshot,
 } from "./features/home/useHomeSnapshot";
+import type { PersistedHomeSnapshot } from "./storage/homeSnapshotStorage";
 import type { UserProfile } from "./storage/profileStorage";
 import "./App.css";
 
@@ -143,6 +147,7 @@ function App() {
   const [isLoginView, setIsLoginView] = useState(false);
   const [isActivationView, setIsActivationView] = useState(false);
   const [isPreparingHome, setIsPreparingHome] = useState(false);
+  const [homePreparationImageUrls, setHomePreparationImageUrls] = useState<string[]>([]);
   const [hasPlaylist, setHasPlaylist] = useState<boolean>(() => {
     const activePlaylist = playlistStorage.getActivePlaylist();
     if (activePlaylist) {
@@ -157,6 +162,12 @@ function App() {
   const rehydrateSettingsForScope = useSettingsStore((store) => store.rehydrateForScope);
   const queryClient = useQueryClient();
   const { activePlaybackItem, setActivePlaybackItem } = usePlayerStore();
+
+  useBudgetedImagePreload(homePreparationImageUrls, {
+    enabled: isPreparingHome,
+    maxConcurrent: 3,
+    maxUrls: 18,
+  });
 
   // Auto-adaptive visual profile is useful for content browsing, but during
   // playback it becomes an extra per-frame observer competing with the player.
@@ -312,17 +323,35 @@ function App() {
       preloadHomeSnapshot(queryClient, activePlaylistId, activeProfile.id),
     ]);
 
+    void preloadPromise.then(() => {
+      if (isCancelled || homeTransitionRequestRef.current !== transitionRequestId) {
+        return;
+      }
+
+      const preparedSnapshot = queryClient.getQueryData<PersistedHomeSnapshot>([
+        "home-snapshot",
+        activePlaylistId,
+        activeProfile.id,
+      ]);
+      const continueWatching = recentlyWatchedStorage.getContinueWatching();
+      setHomePreparationImageUrls(
+        getHomePreparationImageUrls(preparedSnapshot, continueWatching)
+      );
+    });
+
     void Promise.race([preloadPromise, timeoutPromise]).finally(() => {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
       }
       if (!isCancelled && homeTransitionRequestRef.current === transitionRequestId) {
         setIsPreparingHome(false);
+        setHomePreparationImageUrls([]);
       }
     });
 
     return () => {
       isCancelled = true;
+      setHomePreparationImageUrls([]);
       if (timeoutId) {
         window.clearTimeout(timeoutId);
       }

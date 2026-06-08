@@ -55,7 +55,7 @@ export class BackendClient {
     deviceIdentity: DeviceIdentityPayload
   ): Promise<DeviceQrSession> {
     const response = await httpClient.post<DeviceQrResponse>(
-      new URL("/v1/public/device/qr", this.baseUrl).toString(),
+      new URL("/v1/public/qr/generate", this.baseUrl).toString(),
       deviceIdentity,
       1
     );

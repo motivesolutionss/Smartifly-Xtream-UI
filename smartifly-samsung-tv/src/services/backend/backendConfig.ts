@@ -18,6 +18,10 @@ const isTizenRuntime = () => {
 };
 
 export const getBackendBaseUrl = () => {
+  if (import.meta.env.DEV && typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
   const browserBaseUrl = import.meta.env.VITE_SMARTIFLY_BACKEND_URL?.trim();
   const emulatorBaseUrl =
     import.meta.env.VITE_SMARTIFLY_BACKEND_URL_EMULATOR?.trim();
