@@ -8,6 +8,13 @@ type FailureEntry = {
 };
 
 const failedImages = new Map<string, FailureEntry>();
+const listeners = new Set<() => void>();
+let revision = 0;
+
+const emitChange = () => {
+  revision += 1;
+  listeners.forEach((listener) => listener());
+};
 
 const getCooldownMs = (failureCount: number) =>
   Math.min(
@@ -16,6 +23,15 @@ const getCooldownMs = (failureCount: number) =>
   );
 
 export const imageFailureMemory = {
+  subscribe(listener: () => void) {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+  getRevision() {
+    return revision;
+  },
   hasFailed(url?: string) {
     if (!url) return false;
     const entry = failedImages.get(url);
@@ -23,6 +39,7 @@ export const imageFailureMemory = {
 
     if (Date.now() - entry.failedAt >= getCooldownMs(entry.failureCount)) {
       failedImages.delete(url);
+      emitChange();
       return false;
     }
 
@@ -35,6 +52,7 @@ export const imageFailureMemory = {
 
     if (!previousEntry || now - previousEntry.failedAt > FAILURE_RESET_WINDOW_MS) {
       failedImages.set(url, { failedAt: now, failureCount: 1 });
+      emitChange();
       return;
     }
 
@@ -42,12 +60,17 @@ export const imageFailureMemory = {
       failedAt: now,
       failureCount: previousEntry.failureCount + 1,
     });
+    emitChange();
   },
   markLoaded(url?: string) {
     if (!url) return;
-    failedImages.delete(url);
+    if (failedImages.delete(url)) {
+      emitChange();
+    }
   },
   clear() {
+    if (failedImages.size === 0) return;
     failedImages.clear();
+    emitChange();
   },
 };

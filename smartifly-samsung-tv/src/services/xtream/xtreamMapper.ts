@@ -101,7 +101,7 @@ export const xtreamMapper = {
     categoryId: stringValue(series.category_id) || undefined,
     description: stringValue(series.plot) || undefined,
     rating: stringValue(series.rating) || undefined,
-    year: stringValue(series.releaseDate) || undefined,
+    year: parseYear(stringValue(series.releaseDate)) || undefined,
     genre: stringValue(series.genre) || undefined,
     duration: stringValue(series.episode_run_time) || undefined,
   }),

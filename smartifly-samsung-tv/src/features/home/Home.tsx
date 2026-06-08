@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "../../store/playerStore";
-import { Card } from "../../components/ui/Card";
 import { HeroBanner, type HeroItem } from "../../components/common/HeroBanner";
 import { TopBar } from "../../components/common/TopBar";
 import { ErrorView } from "../../components/common/ErrorView";
@@ -26,36 +25,18 @@ import type {
 import type { HomeRail, HomeRailItem } from "./homeTypes";
 import { recentlyWatchedStorage } from "../../storage/recentlyWatchedStorage";
 import { getResumePositionSeconds } from "../../utils/resumePosition";
+import { useBudgetedImagePreload } from "../../hooks/useBudgetedImagePreload";
 import { useHomeSnapshot } from "./useHomeSnapshot";
 import { services } from "../../services";
+import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import { HomeRailSection } from "./components/HomeRailSection";
 import styles from "./Home.module.css";
 
 const EMPTY_HERO_ITEMS: HeroItem[] = [];
 const EMPTY_RAILS: HomeRail[] = [];
-
-const getOffsetTopWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
-  let offsetTop = 0;
-  let current: HTMLElement | null = element;
-
-  while (current && current !== ancestor) {
-    offsetTop += current.offsetTop;
-    current = current.offsetParent as HTMLElement | null;
-  }
-
-  return offsetTop;
-};
-
-const getOffsetLeftWithinAncestor = (element: HTMLElement, ancestor: HTMLElement) => {
-  let offsetLeft = 0;
-  let current: HTMLElement | null = element;
-
-  while (current && current !== ancestor) {
-    offsetLeft += current.offsetLeft;
-    current = current.offsetParent as HTMLElement | null;
-  }
-
-  return offsetLeft;
-};
+const INITIAL_HOME_IMAGE_RAIL_COUNT = 3;
+const HOME_ACTIVE_IMAGE_WINDOW_BEFORE = 1;
+const HOME_ACTIVE_IMAGE_WINDOW_AFTER = 2;
 
 type HomeScreenId =
   | "HOME"
@@ -82,11 +63,17 @@ export const Home: React.FC<HomeProps> = memo(function Home({
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
   const [isHeroDetailEnabled, setIsHeroDetailEnabled] = useState(false);
+  const [activeRailIndex, setActiveRailIndex] = useState(0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const recentlyWatchedRevision = useSyncExternalStore(
     recentlyWatchedStorage.subscribe,
     recentlyWatchedStorage.getRevision,
+    () => 0
+  );
+  const imageFailureRevision = useSyncExternalStore(
+    imageFailureMemory.subscribe,
+    imageFailureMemory.getRevision,
     () => 0
   );
   const heroItems = snapshot?.heroItems ?? EMPTY_HERO_ITEMS;
@@ -98,11 +85,11 @@ export const Home: React.FC<HomeProps> = memo(function Home({
   const lastHomeFocusedIdRef = useRef("hero-play");
   const wasInDetailsRef = useRef(false);
 
-  const scrollHomeToTop = () => {
+  const scrollHomeToTop = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  };
+  }, []);
 
   const handleFocusCapture = useCallback(
     (event: React.FocusEvent<HTMLDivElement>) => {
@@ -165,12 +152,15 @@ export const Home: React.FC<HomeProps> = memo(function Home({
     const [firstHero, ...restHeroes] = heroItems;
     if (!firstHero) return heroItems;
 
+    const hydratedBackdropUrlCandidates = [
+      activeHeroDetail.backdropUrl,
+      activeHeroDetail.posterUrl,
+      firstHero.backdropUrl,
+    ].filter((url): url is string => Boolean(url) && !imageFailureMemory.hasFailed(url));
+
     const mergedFirstHero: HeroItem = {
       ...firstHero,
-      backdropUrl:
-        activeHeroDetail.backdropUrl ||
-        activeHeroDetail.posterUrl ||
-        firstHero.backdropUrl,
+      backdropUrl: hydratedBackdropUrlCandidates[0] || firstHero.backdropUrl,
       description: activeHeroDetail.description || firstHero.description,
       rating: activeHeroDetail.rating || firstHero.rating,
       year:
@@ -184,7 +174,7 @@ export const Home: React.FC<HomeProps> = memo(function Home({
     };
 
     return [mergedFirstHero, ...restHeroes];
-  }, [activeHero, activeHeroDetail, heroItems]);
+  }, [activeHero, activeHeroDetail, heroItems, imageFailureRevision]);
 
   useEffect(() => {
     if (activePlaybackItem) {
@@ -247,63 +237,40 @@ export const Home: React.FC<HomeProps> = memo(function Home({
     };
   }, [selectedMovieId, selectedSeriesId, setFocus]);
 
-  if (selectedMovieId) {
-    return (
-      <VodDetails 
-        movieId={selectedMovieId} 
-        categoryName={selectedCategoryName || undefined}
-        onBack={() => {
-          setSelectedMovieId(null);
-          setSelectedCategoryName(null);
-        }} 
-      />
-    );
-  }
+  const homeRailImageWindow = useMemo(() => {
+    if (rails.length === 0) {
+      return {
+        startIndex: 0,
+        endIndex: INITIAL_HOME_IMAGE_RAIL_COUNT,
+      };
+    }
 
-  if (selectedSeriesId) {
-    return (
-      <SeriesDetails 
-        seriesId={selectedSeriesId} 
-        categoryName={selectedCategoryName || undefined}
-        onBack={() => {
-          setSelectedSeriesId(null);
-          setSelectedCategoryName(null);
-        }} 
-      />
+    const startIndex = Math.max(0, activeRailIndex - HOME_ACTIVE_IMAGE_WINDOW_BEFORE);
+    const endIndex = Math.min(
+      rails.length,
+      Math.max(INITIAL_HOME_IMAGE_RAIL_COUNT, activeRailIndex + HOME_ACTIVE_IMAGE_WINDOW_AFTER + 1)
     );
-  }
 
-  if (isBooting) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.scrollContent}>
-          <HeroSkeleton />
-          <div className={styles.rows}>
-            <div className={styles.row}>
-              <div style={{ height: '32px', width: '300px', background: 'rgba(255,255,255,0.05)', marginBottom: '24px', borderRadius: '4px' }} />
-              <div className={styles.rail}>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <CardSkeleton key={i} aspectRatio="landscape" />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    return { startIndex, endIndex };
+  }, [activeRailIndex, rails.length]);
 
-  if (isError && !snapshot) {
-    return (
-      <ErrorView
-        message="Unable to load home content right now."
-        onRetry={() => {
-          void refresh();
-        }}
-        showBackToLogin
-      />
-    );
-  }
+  const preloadedHomeRailUrls = useMemo(
+    () =>
+      rails
+        .slice(homeRailImageWindow.startIndex, homeRailImageWindow.endIndex)
+        .flatMap((rail) =>
+          rail.items
+            .map((item) => item.imageUrl || item.backdropUrl)
+            .filter((url): url is string => Boolean(url))
+        ),
+    [homeRailImageWindow.endIndex, homeRailImageWindow.startIndex, rails]
+  );
+
+  useBudgetedImagePreload(preloadedHomeRailUrls, {
+    enabled: rails.length > 0,
+    maxConcurrent: 3,
+    maxUrls: 18,
+  });
 
   const handleHeroPlay = (item: HeroItem) => {
     const rawId = item.data.id;
@@ -348,7 +315,7 @@ export const Home: React.FC<HomeProps> = memo(function Home({
     }
   };
 
-  const handleCardClick = (item: HomeRailItem, categoryName?: string) => {
+  const handleCardClick = useCallback((item: HomeRailItem, categoryName?: string) => {
     const imageUrl = item.imageUrl || item.backdropUrl;
 
     const backdropUrl = item.backdropUrl;
@@ -375,119 +342,118 @@ export const Home: React.FC<HomeProps> = memo(function Home({
       setSelectedSeriesId(item.id);
       setSelectedCategoryName(categoryName || null);
     }
-  };
+  }, [setActivePlaybackItem]);
 
   const heroStyle = {
     marginBottom: "56px",
   };
 
-  return (
-    <div className={styles.container} onFocusCapture={handleFocusCapture}>
-      {/* Immersive Background Layers */}
-      <div className={styles.wallpaper} />
-      <div className={styles.atmosphere} />
+  let content: React.ReactNode;
 
-      <TopBar onNavigate={onNavigate} />
-
-      <div ref={scrollRef} className={styles.scrollContent}>
-        {hydratedHeroItems.length > 0 && (
-          <div style={heroStyle}>
-            <HeroBanner
-              items={hydratedHeroItems}
-              onPlay={handleHeroPlay}
-              onInfo={(item) => {
-                setSelectedCategoryName("Featured");
-                if (item.type === "vod") setSelectedMovieId(item.data.id);
-                else if (item.type === "series") setSelectedSeriesId(item.data.id);
-              }}
-              onFocus={() => {
-                window.requestAnimationFrame(scrollHomeToTop);
-              }}
-            />
-          </div>
-        )}
-
-        <div className={styles.rows}>
-          {rails.map((rail) => (
-            <section key={rail.id} className={styles.row}>
-              <h2 className={styles.rowTitle}>{rail.title}</h2>
-              <div id={`rail-${rail.id}`} className={styles.rail}>
-                {rail.items.map((item) => (
-                  <Card
-                    key={`${rail.id}-${item.type}-${item.id}`}
-                    id={`card-${rail.id}-${item.type}-${item.id}`}
-                    title={item.title}
-                    imageUrl={item.imageUrl || item.backdropUrl}
-                    variant={rail.variant || "poster"}
-                    aspectRatio={(rail.variant === "live" || rail.variant === "continue") ? "landscape" : undefined}
-                    contentType={item.contentType}
-                    progressText={item.progressText}
-                    progress={item.progress}
-                    className={rail.id === "continue-watching" ? styles.continueCard : undefined}
-                    disableAutoScroll={true}
-                    onFocus={() => {
-                      const railElement = document.getElementById(`rail-${rail.id}`);
-                      const itemIndex = rail.items.findIndex(it => it.id === item.id);
-                      if (railElement && itemIndex !== -1) {
-                        // 1. Align the focused rail at a fixed vertical anchor without layout reads.
-                        const scrollContainer = scrollRef.current;
-                        if (scrollContainer) {
-                          const railTopInContainer = getOffsetTopWithinAncestor(
-                            railElement,
-                            scrollContainer
-                          );
-                          const fontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
-                          const targetScrollTop = Math.max(0, railTopInContainer - 15 * fontSize);
-
-                          if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 1) {
-                            scrollContainer.scrollTop = targetScrollTop;
-                          }
-                        }
-
-                        // 2. Edge-aware horizontal scroll (enterprise behavior): only scroll when card hits rail edges.
-                        if (itemIndex === 0) {
-                          if (railElement.scrollLeft !== 0) {
-                            railElement.scrollLeft = 0;
-                          }
-                        } else {
-                          const cardElement = document.getElementById(`card-${rail.id}-${item.type}-${item.id}`);
-                          const cardContainer = cardElement?.parentElement as HTMLElement | null;
-                          if (cardContainer) {
-                            const railStyles = window.getComputedStyle(railElement);
-                            const leftInset = parseFloat(railStyles.paddingLeft) || 24;
-                            const rightInset = parseFloat(railStyles.paddingRight) || 24;
-                            const viewportWidth = railElement.clientWidth;
-                            const currentScroll = railElement.scrollLeft;
-                            const cardLeftInRail = getOffsetLeftWithinAncestor(cardContainer, railElement);
-                            const cardWidth = cardContainer.offsetWidth;
-                            
-                            // Scroll right only when card exits right safety inset.
-                            if (cardLeftInRail + cardWidth > currentScroll + viewportWidth - rightInset) {
-                              const nextLeft =
-                                cardLeftInRail + cardWidth - viewportWidth + rightInset;
-                              if (Math.abs(currentScroll - nextLeft) > 1) {
-                                railElement.scrollLeft = nextLeft;
-                              }
-                            } 
-                            // Scroll left only when card exits left safety inset.
-                            else if (cardLeftInRail < currentScroll + leftInset) {
-                              const nextLeft = Math.max(0, cardLeftInRail - leftInset);
-                              if (Math.abs(currentScroll - nextLeft) > 1) {
-                                railElement.scrollLeft = nextLeft;
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }}
-                    onClick={() => handleCardClick(item, rail.title)}
-                  />
+  if (selectedMovieId) {
+    content = (
+      <VodDetails
+        movieId={selectedMovieId}
+        categoryName={selectedCategoryName || undefined}
+        onBack={() => {
+          setSelectedMovieId(null);
+          setSelectedCategoryName(null);
+        }}
+      />
+    );
+  } else if (selectedSeriesId) {
+    content = (
+      <SeriesDetails
+        seriesId={selectedSeriesId}
+        categoryName={selectedCategoryName || undefined}
+        onBack={() => {
+          setSelectedSeriesId(null);
+          setSelectedCategoryName(null);
+        }}
+      />
+    );
+  } else if (isBooting) {
+    content = (
+      <div className={styles.container}>
+        <div className={styles.scrollContent}>
+          <HeroSkeleton />
+          <div className={styles.rows}>
+            <div className={styles.row}>
+              <div
+                style={{
+                  height: "32px",
+                  width: "300px",
+                  background: "rgba(255,255,255,0.05)",
+                  marginBottom: "24px",
+                  borderRadius: "4px",
+                }}
+              />
+              <div className={styles.rail}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <CardSkeleton key={i} aspectRatio="landscape" />
                 ))}
               </div>
-            </section>
-          ))}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  } else if (isError && !snapshot) {
+    content = (
+      <ErrorView
+        message="Unable to load home content right now."
+        onRetry={() => {
+          void refresh();
+        }}
+        showBackToLogin
+      />
+    );
+  } else {
+    content = (
+      <div className={styles.container} onFocusCapture={handleFocusCapture}>
+        <div className={styles.wallpaper} />
+        <div className={styles.atmosphere} />
+
+        <TopBar onNavigate={onNavigate} />
+
+        <div ref={scrollRef} className={styles.scrollContent}>
+          {hydratedHeroItems.length > 0 && (
+            <div style={heroStyle}>
+              <HeroBanner
+                items={hydratedHeroItems}
+                onPlay={handleHeroPlay}
+                onInfo={(item) => {
+                  setSelectedCategoryName("Featured");
+                  if (item.type === "vod") setSelectedMovieId(item.data.id);
+                  else if (item.type === "series") setSelectedSeriesId(item.data.id);
+                }}
+                onFocus={() => {
+                  window.requestAnimationFrame(scrollHomeToTop);
+                }}
+              />
+            </div>
+          )}
+
+          <div className={styles.rows}>
+            {rails.map((rail, railIndex) => (
+              <HomeRailSection
+                key={rail.id}
+                rail={rail}
+                scrollContainerRef={scrollRef}
+                shouldLoadImages={
+                  rails.length <= INITIAL_HOME_IMAGE_RAIL_COUNT ||
+                  (railIndex >= homeRailImageWindow.startIndex &&
+                    railIndex < homeRailImageWindow.endIndex)
+                }
+                onCardClick={handleCardClick}
+                onCardFocus={() => setActiveRailIndex(railIndex)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{content}</>;
 });

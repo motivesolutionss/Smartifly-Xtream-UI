@@ -7,7 +7,6 @@ import { DotSeparator } from "../ui/DotSeparator";
 import styles from "./HeroBanner.module.css";
 import { detectVideoResolution } from "../../utils/resolutionDetector";
 
-
 export type HeroItem = {
   id: string;
   title: string;

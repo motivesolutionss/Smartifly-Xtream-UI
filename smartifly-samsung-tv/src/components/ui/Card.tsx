@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { Focusable } from "../tv/Focusable";
 import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import { imageWarmMemory } from "../../utils/imageWarmMemory";
 import styles from "./Card.module.css";
 
 /** Simple deterministic hash → unique gradient per channel title. */
@@ -17,6 +18,7 @@ interface CardProps {
   id: string;
   title: string;
   imageUrl?: string;
+  fallbackImageUrl?: string;
   subtitle?: string;
   progress?: number;
   badge?: string;
@@ -28,6 +30,8 @@ interface CardProps {
   onFocus?: () => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   className?: string;
+  containerRef?: React.Ref<HTMLDivElement>;
+  shouldLoadImage?: boolean;
   scrollOptions?: ScrollIntoViewOptions;
   disableAutoScroll?: boolean;
 }
@@ -37,6 +41,7 @@ export const Card: React.FC<CardProps> = ({
   title,
   subtitle,
   imageUrl,
+  fallbackImageUrl,
   progress,
   badge,
   contentType,
@@ -47,18 +52,45 @@ export const Card: React.FC<CardProps> = ({
   onFocus,
   onKeyDown,
   className = "",
+  containerRef,
+  shouldLoadImage = true,
   scrollOptions,
   disableAutoScroll,
 }) => {
-  const [failedImageUrls, setFailedImageUrls] = useState<Record<string, true>>({});
-  const shouldRenderImage = useMemo(() => {
-    if (!imageUrl) return false;
-    if (imageFailureMemory.hasFailed(imageUrl)) return false;
-    return !failedImageUrls[imageUrl];
-  }, [failedImageUrls, imageUrl]);
+  const [failedPrimaryImage, setFailedPrimaryImage] = useState(false);
+  const [failedFallbackImage, setFailedFallbackImage] = useState(false);
+
+  useEffect(() => {
+    setFailedPrimaryImage(false);
+    setFailedFallbackImage(false);
+  }, [fallbackImageUrl, imageUrl]);
+
+  const canUseImageUrl = (url?: string) => {
+    if (!url) return false;
+    if (!shouldLoadImage && !imageWarmMemory.hasWarm(url)) return false;
+    if (imageFailureMemory.hasFailed(url)) return false;
+    return true;
+  };
+
+  const resolvedImageUrl = useMemo(() => {
+    if (!failedPrimaryImage && canUseImageUrl(imageUrl)) {
+      return imageUrl;
+    }
+
+    if (
+      fallbackImageUrl &&
+      fallbackImageUrl !== imageUrl &&
+      !failedFallbackImage &&
+      canUseImageUrl(fallbackImageUrl)
+    ) {
+      return fallbackImageUrl;
+    }
+
+    return undefined;
+  }, [failedFallbackImage, failedPrimaryImage, fallbackImageUrl, imageUrl, shouldLoadImage]);
 
   return (
-    <div className={`${styles.cardContainer} ${styles[variant]} ${className}`}>
+    <div ref={containerRef} className={`${styles.cardContainer} ${styles[variant]} ${className}`}>
       <Focusable
         id={id}
         onEnter={onClick}
@@ -70,17 +102,28 @@ export const Card: React.FC<CardProps> = ({
         className={`${styles.card} ${styles[variant]} ${styles[aspectRatio]}`}
       >
         <div className={styles.imageContainer}>
-          {shouldRenderImage ? (
+          {resolvedImageUrl ? (
             <img
-              src={imageUrl}
+              src={resolvedImageUrl}
               alt={title}
               loading="lazy"
               decoding="async"
               className={styles.image}
+              onLoad={() => {
+                imageFailureMemory.markLoaded(resolvedImageUrl);
+                imageWarmMemory.markWarm(resolvedImageUrl);
+              }}
               onError={() => {
-                if (!imageUrl) return;
-                imageFailureMemory.markFailed(imageUrl);
-                setFailedImageUrls((previous) => ({ ...previous, [imageUrl]: true }));
+                imageFailureMemory.markFailed(resolvedImageUrl);
+
+                if (resolvedImageUrl === imageUrl) {
+                  setFailedPrimaryImage(true);
+                  return;
+                }
+
+                if (resolvedImageUrl === fallbackImageUrl) {
+                  setFailedFallbackImage(true);
+                }
               }}
             />
           ) : (

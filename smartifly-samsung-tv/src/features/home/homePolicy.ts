@@ -1,5 +1,6 @@
 import type { AppMovie, AppSeries, AppChannel, AppCategory } from "../../types/appModels";
 import { stableHash } from "../../utils/imagePolicy";
+import { imageFailureMemory } from "../../utils/imageFailureMemory";
 import type { HeroItem } from "../../components/common/HeroBanner";
 import type { RecentlyWatchedItem } from "../../storage/recentlyWatchedStorage";
 import type {
@@ -17,6 +18,7 @@ export const HOME_POLICY = {
   continueWatchingCap: 12,
   vodRailCap: 20,
   seriesRailCap: 20,
+  categoryRailMinUsableItems: 5,
 };
 
 const isMovie = (item: AppMovie | AppSeries): item is AppMovie => {
@@ -29,9 +31,105 @@ const scoreMovie = (item: AppMovie) => {
   return hasBackdrop + hasPoster + (stableHash(item.id) % 100);
 };
 
+const parseMovieYear = (item: AppMovie) => {
+  const parsedYear = Number.parseInt(item.year ?? "", 10);
+  if (Number.isFinite(parsedYear)) {
+    return parsedYear;
+  }
+
+  const titleYearMatch = item.title.match(/\b(19|20)\d{2}\b/);
+  if (!titleYearMatch) {
+    return 0;
+  }
+
+  const parsedTitleYear = Number.parseInt(titleYearMatch[0], 10);
+  return Number.isFinite(parsedTitleYear) ? parsedTitleYear : 0;
+};
+
 const scoreSeries = (item: AppSeries) => {
-  const hasPoster = item.posterUrl ? 500 : 0;
-  return hasPoster + (stableHash(item.id) % 100);
+  const hasBackdrop = item.backdropUrl ? 900 : 0;
+  const hasPoster = item.posterUrl ? 300 : 0;
+  const hasMetadata =
+    (item.description ? 40 : 0) +
+    (item.rating ? 20 : 0) +
+    (item.genre ? 10 : 0);
+  return hasBackdrop + hasPoster + hasMetadata + (stableHash(item.id) % 100);
+};
+
+const parseSeriesYear = (item: AppSeries) => {
+  const parsedYear = Number.parseInt(item.year ?? "", 10);
+  return Number.isFinite(parsedYear) ? parsedYear : 0;
+};
+
+const getUsableArtworkUrl = (item: {
+  posterUrl?: string;
+  backdropUrl?: string;
+}) => {
+  const posterAvailable =
+    item.posterUrl && !imageFailureMemory.hasFailed(item.posterUrl)
+      ? item.posterUrl
+      : undefined;
+  const backdropAvailable =
+    item.backdropUrl && !imageFailureMemory.hasFailed(item.backdropUrl)
+      ? item.backdropUrl
+      : undefined;
+
+  return posterAvailable || backdropAvailable;
+};
+
+const hasUsableArtwork = (item: { posterUrl?: string; backdropUrl?: string }) =>
+  Boolean(getUsableArtworkUrl(item));
+
+type HomeCategoryGroup<T> = {
+  category: AppCategory;
+  items: T[];
+  totalCount: number;
+  usableCount: number;
+};
+
+const selectHomeCategoryGroups = <T extends { categoryId?: string; posterUrl?: string; backdropUrl?: string }>(
+  categories: AppCategory[],
+  items: T[],
+  maxCategories: number
+) => {
+  const candidates: HomeCategoryGroup<T>[] = categories
+    .map((category) => {
+      const categoryItems = items.filter((item) => item.categoryId === category.id);
+      return {
+        category,
+        items: categoryItems,
+        totalCount: categoryItems.length,
+        usableCount: categoryItems.filter(hasUsableArtwork).length,
+      };
+    })
+    .filter((group) => group.totalCount >= HOME_POLICY.categoryRailMinUsableItems);
+
+  const strongCandidates = candidates
+    .filter((group) => group.usableCount >= HOME_POLICY.categoryRailMinUsableItems)
+    .sort((left, right) => {
+      if (right.usableCount !== left.usableCount) {
+        return right.usableCount - left.usableCount;
+      }
+
+      return right.totalCount - left.totalCount;
+    });
+
+  if (strongCandidates.length >= maxCategories) {
+    return strongCandidates.slice(0, maxCategories);
+  }
+
+  const usedCategoryIds = new Set(strongCandidates.map((group) => group.category.id));
+  const fallbackCandidates = candidates
+    .filter((group) => !usedCategoryIds.has(group.category.id))
+    .sort((left, right) => {
+      if (right.usableCount !== left.usableCount) {
+        return right.usableCount - left.usableCount;
+      }
+
+      return right.totalCount - left.totalCount;
+    });
+
+  return [...strongCandidates, ...fallbackCandidates].slice(0, maxCategories);
 };
 
 export const buildHomeRails = (
@@ -111,7 +209,7 @@ export const buildHomeRails = (
 
   // ── 2. Push Trending for You ───────────────────────────────────────────────
   const trending = [...movies, ...series]
-    .filter((item) => !!item.posterUrl)
+    .filter(hasUsableArtwork)
     .sort((left, right) => {
       const leftScore = isMovie(left) ? scoreMovie(left) : scoreSeries(left);
       const rightScore = isMovie(right) ? scoreMovie(right) : scoreSeries(right);
@@ -127,7 +225,8 @@ export const buildHomeRails = (
             title: item.title,
             type: "vod",
             contentType: "MOVIE",
-            imageUrl: item.posterUrl,
+            imageUrl: getUsableArtworkUrl(item),
+            backdropUrl: item.backdropUrl,
           } satisfies HomeMovieRailItem)
         : ({
             ...item,
@@ -135,7 +234,8 @@ export const buildHomeRails = (
             title: item.title,
             type: "series",
             contentType: "SERIES",
-            imageUrl: item.posterUrl,
+            imageUrl: getUsableArtworkUrl(item),
+            backdropUrl: item.backdropUrl,
           } satisfies HomeSeriesRailItem)
     );
 
@@ -147,24 +247,22 @@ export const buildHomeRails = (
   }
 
   // ── 3. Map Dynamic VOD Categories ─────────────────────────────────────────
-  const topVodCategories = [...vodCategories]
-    .map((category) => {
-      const items = movies.filter((m) => m.categoryId === category.id);
-      return { category, items, count: items.length };
-    })
-    .filter((group) => group.count >= 5) // Only keep categories with a solid count
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 2);
+  const topVodCategories = selectHomeCategoryGroups(vodCategories, movies, 2);
 
   const vodCategoryRails = topVodCategories.map((group) => {
-    const railItems: HomeRailItem[] = group.items.slice(0, 15).map((movie) => ({
-      ...movie,
-      id: movie.id,
-      title: movie.title,
-      type: "vod",
-      contentType: "MOVIE",
-      imageUrl: movie.posterUrl,
-    } satisfies HomeMovieRailItem));
+    const railItems: HomeRailItem[] = [...group.items]
+      .filter(hasUsableArtwork)
+      .sort((left, right) => scoreMovie(right) - scoreMovie(left))
+      .slice(0, 15)
+      .map((movie) => ({
+        ...movie,
+        id: movie.id,
+        title: movie.title,
+        type: "vod",
+        contentType: "MOVIE",
+        imageUrl: getUsableArtworkUrl(movie),
+        backdropUrl: movie.backdropUrl,
+      } satisfies HomeMovieRailItem));
 
     return {
       id: `category-vod-${group.category.id}`,
@@ -174,24 +272,22 @@ export const buildHomeRails = (
   });
 
   // ── 4. Map Dynamic Series Categories ──────────────────────────────────────
-  const topSeriesCategories = [...seriesCategories]
-    .map((category) => {
-      const items = series.filter((s) => s.categoryId === category.id);
-      return { category, items, count: items.length };
-    })
-    .filter((group) => group.count >= 5)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 2);
+  const topSeriesCategories = selectHomeCategoryGroups(seriesCategories, series, 2);
 
   const seriesCategoryRails = topSeriesCategories.map((group) => {
-    const railItems: HomeRailItem[] = group.items.slice(0, 15).map((s) => ({
-      ...s,
-      id: s.id,
-      title: s.title,
-      type: "series",
-      contentType: "SERIES",
-      imageUrl: s.posterUrl,
-    } satisfies HomeSeriesRailItem));
+    const railItems: HomeRailItem[] = [...group.items]
+      .filter(hasUsableArtwork)
+      .sort((left, right) => scoreSeries(right) - scoreSeries(left))
+      .slice(0, 15)
+      .map((s) => ({
+        ...s,
+        id: s.id,
+        title: s.title,
+        type: "series",
+        contentType: "SERIES",
+        imageUrl: getUsableArtworkUrl(s),
+        backdropUrl: s.backdropUrl,
+      } satisfies HomeSeriesRailItem));
 
     return {
       id: `category-series-${group.category.id}`,
@@ -224,15 +320,35 @@ export const buildHomeRails = (
 
   // ── 6. Push New Movies ────────────────────────────────────────────────────
   if (movies.length > 0) {
-    const sortedMovies = [...movies].filter((movie) => movie.posterUrl).reverse();
+    const yearRankedMovies = [...movies]
+      .filter((movie) => hasUsableArtwork(movie) && parseMovieYear(movie) > 0)
+      .sort((left, right) => {
+        const yearDelta = parseMovieYear(right) - parseMovieYear(left);
+        if (yearDelta !== 0) {
+          return yearDelta;
+        }
+
+        return scoreMovie(right) - scoreMovie(left);
+      });
+
+    const fallbackMovies = [...movies]
+      .filter(hasUsableArtwork)
+      .sort((left, right) => scoreMovie(right) - scoreMovie(left));
+
+    const sortedMovies =
+      yearRankedMovies.length > 0 ? yearRankedMovies : fallbackMovies;
+
     if (sortedMovies.length > 0) {
-      const items: HomeMovieRailItem[] = getDedupped(sortedMovies, 15).map((movie) => ({
+      const dedupedItems = getDedupped(sortedMovies, 15);
+      const selectedMovies = dedupedItems.length > 0 ? dedupedItems : sortedMovies.slice(0, 15);
+      const items: HomeMovieRailItem[] = selectedMovies.map((movie) => ({
         ...movie,
         id: movie.id,
         title: movie.title,
         type: "vod",
         contentType: "MOVIE",
-        imageUrl: movie.posterUrl,
+        imageUrl: getUsableArtworkUrl(movie),
+        backdropUrl: movie.backdropUrl,
       }));
 
       rails.push({
@@ -253,20 +369,42 @@ export const buildHomeRails = (
 
   // ── 8. Push Series Spotlight ──────────────────────────────────────────────
   if (series.length > 0) {
-    const sortedSeries = [...series].filter((seriesItem) => seriesItem.posterUrl);
+    const yearRankedSeries = [...series]
+      .filter(
+        (seriesItem) => hasUsableArtwork(seriesItem) && parseSeriesYear(seriesItem) > 0
+      )
+      .sort((left, right) => {
+        const yearDelta = parseSeriesYear(right) - parseSeriesYear(left);
+        if (yearDelta !== 0) {
+          return yearDelta;
+        }
+
+        return scoreSeries(right) - scoreSeries(left);
+      });
+
+    const fallbackSeries = [...series]
+      .filter(hasUsableArtwork)
+      .sort((left, right) => scoreSeries(right) - scoreSeries(left));
+
+    const sortedSeries =
+      yearRankedSeries.length > 0 ? yearRankedSeries : fallbackSeries;
+
     if (sortedSeries.length > 0) {
-      const items: HomeSeriesRailItem[] = getDedupped(sortedSeries, 15).map((seriesItem) => ({
+      const dedupedItems = getDedupped(sortedSeries, 15);
+      const selectedSeries = dedupedItems.length > 0 ? dedupedItems : sortedSeries.slice(0, 15);
+      const items: HomeSeriesRailItem[] = selectedSeries.map((seriesItem) => ({
         ...seriesItem,
         id: seriesItem.id,
         title: seriesItem.title,
         type: "series",
         contentType: "SERIES",
-        imageUrl: seriesItem.posterUrl,
+        imageUrl: getUsableArtworkUrl(seriesItem),
+        backdropUrl: seriesItem.backdropUrl,
       }));
 
       rails.push({
         id: "series-spotlight",
-        title: "Series Spotlight",
+        title: "New Series",
         items,
       });
     }
@@ -299,7 +437,7 @@ export const buildHomeHeroItems = (
   };
 
   const pushMovieHero = (movie: AppMovie, description?: string) => {
-    const backdropUrl = movie.backdropUrl || movie.posterUrl;
+    const backdropUrl = getUsableArtworkUrl(movie);
     if (!backdropUrl) return;
     if (!canPushHero(`vod:${movie.id}`)) return;
     heroItems.push({
@@ -317,7 +455,7 @@ export const buildHomeHeroItems = (
   };
 
   const pushSeriesHero = (seriesItem: AppSeries, description?: string) => {
-    const backdropUrl = seriesItem.backdropUrl || seriesItem.posterUrl;
+    const backdropUrl = getUsableArtworkUrl(seriesItem);
     if (!backdropUrl) return;
     if (!canPushHero(`series:${seriesItem.id}`)) return;
     heroItems.push({
@@ -406,7 +544,7 @@ export const buildHomeHeroItems = (
   }
 
   const sortedMovies = [...movies]
-    .filter((item) => item.backdropUrl || item.posterUrl)
+    .filter(hasUsableArtwork)
     .sort((left, right) => scoreMovie(right) - scoreMovie(left))
     .slice(0, 3);
 
@@ -415,7 +553,7 @@ export const buildHomeHeroItems = (
   }
 
   const sortedSeries = [...series]
-    .filter((item) => item.posterUrl)
+    .filter(hasUsableArtwork)
     .sort((left, right) => scoreSeries(right) - scoreSeries(left))
     .slice(0, 2);
 

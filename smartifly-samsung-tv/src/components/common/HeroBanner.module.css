@@ -84,11 +84,13 @@
   z-index: 20;
   height: 100%;
   padding-left: 14.5rem; /* Clear sidebar and perfectly align with the rail titles */
+  padding-right: 4rem;
   padding-top: 4.5rem; /* Raised to position brand logo higher and provide vertical breathing room */
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  width: 58.75rem;
+  width: min(72rem, calc(100% - 18.5rem));
+  box-sizing: border-box;
 }
 
 /* Reference Meta Row */
@@ -125,6 +127,8 @@
   letter-spacing: -3px;
   margin-bottom: 12px;
   padding-bottom: 0.2rem; /* Add padding to accommodate letter descenders on line-clamp */
+  padding-right: 0.75rem;
+  box-sizing: border-box;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;

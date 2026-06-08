@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import type { HeroItem } from "../../components/common/HeroBanner";
 import { services } from "../../services";
@@ -9,22 +9,23 @@ import { useProfileStore } from "../../store/profileStore";
 import type { AppCategory, AppChannel, AppMovie, AppSeries } from "../../types/appModels";
 import { logger } from "../../utils/logger";
 import { stableHash } from "../../utils/imagePolicy";
+import { imageFailureMemory } from "../../utils/imageFailureMemory";
 import { buildHomeHeroItems, buildHomeRails, HOME_POLICY } from "./homePolicy";
 import type { HomeRail } from "./homeTypes";
 
 const HOME_SNAPSHOT_STALE_MS = 5 * 60 * 1000;
 const HOME_SNAPSHOT_GC_MS = 2 * 60 * 60 * 1000;
-const HOME_BOOTSTRAP_VOD_CATEGORY_COUNT = 1;
-const HOME_BOOTSTRAP_SERIES_CATEGORY_COUNT = 1;
+const HOME_PRELOAD_RAIL_COUNT = 3;
+const HOME_PRELOAD_ITEMS_PER_RAIL = 6;
+const HOME_BOOTSTRAP_VOD_CATEGORY_COUNT = 2;
+const HOME_BOOTSTRAP_SERIES_CATEGORY_COUNT = 2;
 const HOME_BOOTSTRAP_LIVE_CATEGORY_COUNT = 1;
-const HOME_VOD_CATEGORY_COUNT = 2;
-const HOME_SERIES_CATEGORY_COUNT = 2;
+const HOME_VOD_CATEGORY_COUNT = 4;
+const HOME_SERIES_CATEGORY_COUNT = 4;
 const HOME_LIVE_CATEGORY_COUNT = 1;
 const HOME_MOVIE_FALLBACK_MIN = 18;
 const HOME_SERIES_FALLBACK_MIN = 18;
 const HOME_LIVE_FALLBACK_MIN = 10;
-const HOME_MOVIE_CACHE_CAP = 40;
-const HOME_SERIES_CACHE_CAP = 40;
 const HOME_LIVE_CACHE_CAP = 24;
 type HomeSnapshotMode = "bootstrap" | "full";
 
@@ -101,8 +102,76 @@ const rankChannel = (item: AppChannel) => {
   return hasLogo + (stableHash(item.id) % 100);
 };
 
+const hasUsableArtwork = (item: { posterUrl?: string; backdropUrl?: string }) => {
+  const posterAvailable =
+    item.posterUrl && !imageFailureMemory.hasFailed(item.posterUrl);
+  const backdropAvailable =
+    item.backdropUrl && !imageFailureMemory.hasFailed(item.backdropUrl);
+  return Boolean(posterAvailable || backdropAvailable);
+};
+
+const isRichMovieCandidate = (item: AppMovie) => {
+  if (!hasUsableArtwork(item)) return false;
+
+  const metadataSignals = [
+    item.description,
+    item.rating,
+    item.genre,
+    item.year,
+    item.tmdbId,
+    item.director,
+    item.cast,
+  ].filter(Boolean).length;
+
+  return metadataSignals >= 2 || Boolean(item.backdropUrl && item.posterUrl);
+};
+
+const isRichSeriesCandidate = (item: AppSeries) => {
+  if (!hasUsableArtwork(item)) return false;
+
+  const metadataSignals = [
+    item.description,
+    item.rating,
+    item.genre,
+    item.year,
+    item.tmdbId,
+    item.director,
+    item.cast,
+  ].filter(Boolean).length;
+
+  return metadataSignals >= 2 || Boolean(item.backdropUrl && item.posterUrl);
+};
+
 const sampleItems = <T>(items: T[], limit: number, rank: (item: T) => number) => {
   return [...items].sort((left, right) => rank(right) - rank(left)).slice(0, limit);
+};
+
+const sampleRichItems = <T>(
+  items: T[],
+  limit: number,
+  rank: (item: T) => number,
+  isRichCandidate: (item: T) => boolean
+) => {
+  const richItems = items.filter(isRichCandidate);
+  if (richItems.length >= limit) {
+    return sampleItems(richItems, limit, rank);
+  }
+
+  if (richItems.length > 0) {
+    const richIds = new Set(
+      richItems.map((item) => (item as { id?: string }).id).filter(Boolean)
+    );
+    const fillerItems = items.filter(
+      (item) => !richIds.has((item as { id?: string }).id)
+    );
+
+    return [
+      ...sampleItems(richItems, richItems.length, rank),
+      ...sampleItems(fillerItems, Math.max(0, limit - richItems.length), rank),
+    ].slice(0, limit);
+  }
+
+  return sampleItems(items, limit, rank);
 };
 
 const dedupeById = <T extends { id: string }>(items: T[]) => {
@@ -187,18 +256,20 @@ const fetchHomeSnapshot = async (mode: HomeSnapshotMode): Promise<PersistedHomeS
   ]);
 
   let movies = fulfilledGroups(vodResults).flatMap((items) =>
-    sampleItems(
-      items.filter((item) => item.posterUrl || item.backdropUrl),
+    sampleRichItems(
+      items.filter(hasUsableArtwork),
       HOME_POLICY.vodRailCap,
-      rankMovie
+      rankMovie,
+      isRichMovieCandidate
     )
   );
 
   let series = fulfilledGroups(seriesResults).flatMap((items) =>
-    sampleItems(
-      items.filter((item) => item.posterUrl || item.backdropUrl),
+    sampleRichItems(
+      items.filter(hasUsableArtwork),
       HOME_POLICY.seriesRailCap,
-      rankSeries
+      rankSeries,
+      isRichSeriesCandidate
     )
   );
 
@@ -210,49 +281,9 @@ const fetchHomeSnapshot = async (mode: HomeSnapshotMode): Promise<PersistedHomeS
     )
   );
 
-  if (config.includeFallbackFetches && movies.length < HOME_MOVIE_FALLBACK_MIN) {
-    try {
-      const previousCount = movies.length;
-      const fallbackMovies = await services.content.getVodStreams();
-      movies = sampleItems(
-        dedupeById(
-          fallbackMovies.filter((item) => item.posterUrl || item.backdropUrl)
-        ),
-        HOME_MOVIE_CACHE_CAP,
-        rankMovie
-      );
-      logger.info("home_snapshot_movie_fallback", {
-        previousCount,
-        fallbackCount: fallbackMovies.length,
-      });
-    } catch (error) {
-      logger.warn("Home movie fallback fetch failed", error);
-    }
-  } else {
-    movies = dedupeById(movies);
-  }
+  movies = dedupeById(movies);
 
-  if (config.includeFallbackFetches && series.length < HOME_SERIES_FALLBACK_MIN) {
-    try {
-      const previousCount = series.length;
-      const fallbackSeries = await services.content.getSeries();
-      series = sampleItems(
-        dedupeById(
-          fallbackSeries.filter((item) => item.posterUrl || item.backdropUrl)
-        ),
-        HOME_SERIES_CACHE_CAP,
-        rankSeries
-      );
-      logger.info("home_snapshot_series_fallback", {
-        previousCount,
-        fallbackCount: fallbackSeries.length,
-      });
-    } catch (error) {
-      logger.warn("Home series fallback fetch failed", error);
-    }
-  } else {
-    series = dedupeById(series);
-  }
+  series = dedupeById(series);
 
   if (config.includeFallbackFetches && liveStreams.length < HOME_LIVE_FALLBACK_MIN) {
     try {
@@ -373,9 +404,55 @@ export const preloadHomeSnapshot = (
   });
 };
 
+export const getHomePreparationImageUrls = (
+  snapshot: PersistedHomeSnapshot | null | undefined,
+  continueWatching: RecentlyWatchedItem[] = []
+) => {
+  if (!snapshot) return [];
+
+  const heroItems = buildHomeHeroItems(
+    snapshot.movies,
+    snapshot.series,
+    snapshot.liveStreams,
+    continueWatching
+  );
+  const rails = buildHomeRails(
+    snapshot.movies,
+    snapshot.series,
+    snapshot.liveStreams,
+    continueWatching,
+    snapshot.vodCategories,
+    snapshot.seriesCategories
+  );
+
+  const urls = new Set<string>();
+  const activeHero = heroItems[0];
+  if (activeHero?.backdropUrl) {
+    urls.add(activeHero.backdropUrl);
+  }
+
+  rails
+    .slice(0, HOME_PRELOAD_RAIL_COUNT)
+    .forEach((rail) => {
+      rail.items.slice(0, HOME_PRELOAD_ITEMS_PER_RAIL).forEach((item) => {
+        const url = item.imageUrl || item.backdropUrl;
+        if (url) {
+          urls.add(url);
+        }
+      });
+    });
+
+  return [...urls];
+};
+
 export const useHomeSnapshot = (continueWatching: RecentlyWatchedItem[]) => {
   const playlistId = playlistStorage.getActivePlaylistId();
   const profileId = useProfileStore((state) => state.activeProfile?.id ?? null);
+  const imageFailureRevision = useSyncExternalStore(
+    imageFailureMemory.subscribe,
+    imageFailureMemory.getRevision,
+    () => 0
+  );
 
   const persistedSnapshot = useMemo(
     () => homeSnapshotStorage.getSnapshot(playlistId, profileId),
@@ -432,7 +509,7 @@ export const useHomeSnapshot = (continueWatching: RecentlyWatchedItem[]) => {
       heroItems,
       rails,
     };
-  }, [continueWatching, query.data]);
+  }, [continueWatching, imageFailureRevision, query.data]);
 
   return {
     snapshot,

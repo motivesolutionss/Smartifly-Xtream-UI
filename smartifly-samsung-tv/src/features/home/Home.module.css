@@ -66,8 +66,9 @@
 }
 
 .rail {
+  --home-rail-gap: 2.5rem;
   display: flex;
-  gap: 2.5rem; /* Spacious cinematic gap to prevent focused cards from overlapping neighbors */
+  gap: var(--home-rail-gap); /* Spacious cinematic gap to prevent focused cards from overlapping neighbors */
   overflow-x: auto;
   overflow-y: visible;
   padding-top: 1.5rem; /* 24px */
@@ -77,6 +78,11 @@
   margin-top: -1.5rem;
   scroll-behavior: auto;
   scrollbar-width: none;
+}
+
+.railSpacer {
+  flex: 0 0 auto;
+  pointer-events: none;
 }
 
 .rail::-webkit-scrollbar {
