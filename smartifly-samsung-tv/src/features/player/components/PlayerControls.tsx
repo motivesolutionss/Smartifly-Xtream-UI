@@ -1,57 +1,77 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { ArrowLeft, Pause, Play, Settings, Rewind, FastForward } from "lucide-react";
 import { Focusable } from "../../../components/tv/Focusable";
 import { useFocus } from "../../../providers/useFocus";
+import type { TrackSelectionManager } from "../../../playback/trackSelectionManager";
 import styles from "./PlayerControls.module.css";
 import { detectVideoResolution } from "../../../utils/resolutionDetector";
 
+// PlayerControls is the VOD/Series player controls overlay.
+// Live TV uses LivePlayerOverlay instead — there are no live-specific
+// props here by design.
 
 type PlayerControlsProps = {
   isVisible: boolean;
   title: string;
   isPlaying: boolean;
-  isLive: boolean;
   progress: number;
   currentTimeLabel: string;
   durationLabel: string;
   onPlayPause: () => void;
   onBack: () => void;
   onSettingsClick: () => void;
-  liveChannelLabel?: string;
-  liveProgramLabel?: string;
-  liveProgramTimeLabel?: string;
-  nextProgramLabel?: string;
-  nextProgramTimeLabel?: string;
-  liveClockLabel?: string;
   seasonNumber?: number;
   episodeNumber?: number;
   onSeekBackward?: () => void;
   onSeekForward?: () => void;
+  /** Pass the track manager so audio/quality badges reflect actual stream tracks. */
+  trackSelectionManager?: TrackSelectionManager | null;
 };
 
 const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
   isVisible,
   title,
   isPlaying,
-  isLive,
   progress,
   currentTimeLabel,
   durationLabel,
   onPlayPause,
   onBack,
   onSettingsClick,
-  liveChannelLabel,
-  liveProgramLabel,
-  liveProgramTimeLabel,
-  nextProgramLabel,
-  nextProgramTimeLabel,
-  liveClockLabel,
   seasonNumber,
   episodeNumber,
   onSeekBackward,
   onSeekForward,
+  trackSelectionManager,
 }) => {
   const { setFocus } = useFocus();
+
+  // ── Derive real track metadata from AVPlay ───────────────────────────────
+  const streamMetaBadges = useMemo(() => {
+    if (!trackSelectionManager) return null;
+
+    const caps = trackSelectionManager.getCapabilities();
+
+    // Quality badge — prefer the selected video track label (e.g. "1080P", "720P"),
+    // fall back to title-string heuristic.
+    let qualityLabel: string | null = null;
+    if (caps.canSelectTracks && caps.qualityTrackCount > 0) {
+      const videoTracks = trackSelectionManager.getVideoTracks();
+      const selected = videoTracks.find((t) => t.isSelected && t.trackIndex >= 0);
+      if (selected) qualityLabel = selected.label;
+    }
+    if (!qualityLabel) qualityLabel = detectVideoResolution(title);
+
+    // Audio badge — only shown when the stream has multiple audio tracks.
+    let audioLabel: string | null = null;
+    if (caps.canSelectTracks && caps.audioTrackCount > 1) {
+      const audioTracks = trackSelectionManager.getAudioTracks();
+      const selected = audioTracks.find((t) => t.isSelected);
+      if (selected) audioLabel = selected.label;
+    }
+
+    return { qualityLabel, audioLabel };
+  }, [trackSelectionManager, title]);
 
   useEffect(() => {
     if (!isVisible) return;
@@ -63,7 +83,8 @@ const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
 
   if (!isVisible) return null;
 
-  // D-pad Navigation key handlers
+  // ── D-pad key handlers ───────────────────────────────────────────────────
+
   const handleBackKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowRight") {
       e.preventDefault();
@@ -122,6 +143,7 @@ const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
 
   return (
     <div className={styles.overlay}>
+      {/* ── Top bar: back button / title / settings ── */}
       <div className={styles.topBar}>
         <Focusable
           id="player-back"
@@ -135,89 +157,51 @@ const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
 
         <div className={styles.topMeta}>
           <h2 className={styles.title}>{title}</h2>
-          {isLive ? (
-            <div className={styles.liveMetaRow}>
-              <div className={styles.liveBadge}>
-                <span className={styles.liveDot} />
-                <span>LIVE</span>
-              </div>
-              {liveChannelLabel ? <span className={styles.liveMetaChip}>{liveChannelLabel}</span> : null}
-              {liveProgramTimeLabel ? <span className={styles.liveMetaText}>{liveProgramTimeLabel}</span> : null}
-            </div>
-          ) : null}
         </div>
 
-        <div className={styles.topRightGroup}>
-          {isLive && liveClockLabel ? (
-            <div className={styles.clockPill}>
-              <span>{liveClockLabel}</span>
-            </div>
-          ) : null}
-          <Focusable
-            id="player-settings"
-            onEnter={onSettingsClick}
-            onKeyDown={handleSettingsKeyDown}
-            disableFocusEffects
-            className={styles.settingsButton}
-          >
-            <Settings size={22} />
-          </Focusable>
-        </div>
+        <Focusable
+          id="player-settings"
+          onEnter={onSettingsClick}
+          onKeyDown={handleSettingsKeyDown}
+          disableFocusEffects
+          className={styles.settingsButton}
+        >
+          <Settings size={22} />
+        </Focusable>
       </div>
 
+      {/* ── Bottom area: metadata, seek bar, buttons ── */}
       <div className={styles.bottomArea}>
-        {/* Now / Next Live TV EPG Card (only shown for Live playback) */}
-        {isLive && (liveProgramLabel || nextProgramLabel) ? (
-          <div className={styles.liveProgramCard}>
-            <div className={styles.liveProgramColumn}>
-              <span className={styles.liveProgramEyebrow}>Now</span>
-              <span className={styles.liveProgramTitle}>{liveProgramLabel || title}</span>
-              {liveProgramTimeLabel ? (
-                <span className={styles.liveProgramMeta}>{liveProgramTimeLabel}</span>
-              ) : null}
-            </div>
-            <div className={styles.liveProgramDivider} />
-            <div className={styles.liveProgramColumn}>
-              <span className={styles.liveProgramEyebrow}>Next</span>
-              <span className={styles.liveProgramTitle}>{nextProgramLabel || "Program info unavailable"}</span>
-              {nextProgramTimeLabel ? (
-                <span className={styles.liveProgramMeta}>{nextProgramTimeLabel}</span>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {/* VOD / Series metadata directly above the seek bar */}
-        {!isLive && (
-          <div className={styles.vodMetaRow}>
-            {seasonNumber !== undefined && (
-              <span className={styles.episodeBadge}>
-                Season {seasonNumber} • Episode {episodeNumber}
-              </span>
-            )}
-            <span className={styles.qualityBadge}>{detectVideoResolution(title)}</span>
-            <span className={styles.qualityBadge}>HDR10+</span>
-            <span className={styles.audioBadge}>Dolby Atmos</span>
-          </div>
-        )}
-
-        {/* Seek track timeline (only shown for VOD/Series playback) */}
-        {!isLive && (
-          <div className={styles.seekRow}>
-            <span className={styles.timeLabel}>{currentTimeLabel}</span>
-            <div className={styles.seekTrack}>
-              <div
-                className={styles.seekProgress}
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
-            </div>
-            <span className={`${styles.timeLabel} ${styles.timeLabelRight}`}>
-              {durationLabel}
+        {/* Episode + stream quality/audio badges */}
+        <div className={styles.vodMetaRow}>
+          {seasonNumber !== undefined && (
+            <span className={styles.episodeBadge}>
+              Season {seasonNumber} • Episode {episodeNumber}
             </span>
-          </div>
-        )}
+          )}
+          {streamMetaBadges?.qualityLabel && (
+            <span className={styles.qualityBadge}>{streamMetaBadges.qualityLabel}</span>
+          )}
+          {streamMetaBadges?.audioLabel && (
+            <span className={styles.audioBadge}>{streamMetaBadges.audioLabel}</span>
+          )}
+        </div>
 
-        {/* Control Button Row (Rewind, Play/Pause, FastForward) */}
+        {/* Seek bar */}
+        <div className={styles.seekRow}>
+          <span className={styles.timeLabel}>{currentTimeLabel}</span>
+          <div className={styles.seekTrack}>
+            <div
+              className={styles.seekProgress}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+          <span className={`${styles.timeLabel} ${styles.timeLabelRight}`}>
+            {durationLabel}
+          </span>
+        </div>
+
+        {/* Rewind / Play-Pause / Forward */}
         <div className={styles.controlRow}>
           {onSeekBackward && (
             <div className={styles.buttonGroup}>
@@ -263,8 +247,6 @@ const PlayerControlsComponent: React.FC<PlayerControlsProps> = ({
             </div>
           )}
         </div>
-
-
       </div>
     </div>
   );

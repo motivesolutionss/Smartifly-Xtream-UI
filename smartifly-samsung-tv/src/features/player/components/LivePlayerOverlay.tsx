@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
+import { ArrowLeft, Play, Pause, Settings, Loader2 } from "lucide-react";
 import { Focusable } from "../../../components/tv/Focusable";
 import { useFocus } from "../../../providers/useFocus";
 import { imageFailureMemory } from "../../../utils/imageFailureMemory";
@@ -27,6 +27,8 @@ interface LivePlayerOverlayProps {
     logoUrl?: string;
   };
   isPlaying: boolean;
+  /** True while the player is LOADING or BUFFERING the current channel. */
+  isBuffering: boolean;
   currentProgram: EpgProgram | null;
   nextProgram: EpgProgram | null;
   liveClockLabel?: string;
@@ -48,6 +50,7 @@ const LivePlayerOverlayComponent: React.FC<LivePlayerOverlayProps> = ({
   controlsVisible,
   channel,
   isPlaying,
+  isBuffering,
   currentProgram,
   nextProgram,
   liveClockLabel,
@@ -145,9 +148,14 @@ const LivePlayerOverlayComponent: React.FC<LivePlayerOverlayProps> = ({
           </div>
         </div>
 
-        {/* EPG Info Column */}
+        {/* EPG Info Column — replaced by a buffering indicator while the stream loads */}
         <div className={styles.epgSection}>
-          {currentProgram ? (
+          {isBuffering ? (
+            <div className={styles.bufferingRow}>
+              <Loader2 size={20} className={styles.bufferingSpinner} />
+              <span className={styles.bufferingLabel}>Loading stream…</span>
+            </div>
+          ) : currentProgram ? (
             <div className={styles.epgDetail}>
               <div className={styles.programRow}>
                 <span className={styles.nowLabel}>NOW:</span>

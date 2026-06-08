@@ -41,13 +41,8 @@ const selectorToTrackType: Record<Exclude<ActiveView, "main">, TrackType> = {
   quality: "video",
 };
 
-// Main menu item IDs in order
-const MAIN_MENU_IDS = [
-  "player-settings-subtitles",
-  "player-settings-audio",
-  "player-settings-quality",
-  "player-settings-close",
-];
+// "Close Settings" always sits after the menu entries.
+const CLOSE_ID = "player-settings-close";
 
 export const PlayerSettingsOverlay: React.FC<PlayerSettingsOverlayProps> = ({
   isVisible,
@@ -114,7 +109,7 @@ export const PlayerSettingsOverlay: React.FC<PlayerSettingsOverlayProps> = ({
     if (!isVisible) return;
     const frame = window.requestAnimationFrame(() => {
       if (activeView === "main") {
-        setFocus(menuEntries[0]?.id || "player-settings-close");
+        setFocus(menuEntries[0]?.id ?? CLOSE_ID);
       } else {
         setFocus("player-settings-back");
       }
@@ -156,10 +151,22 @@ export const PlayerSettingsOverlay: React.FC<PlayerSettingsOverlayProps> = ({
   const makeMainMenuKeyDown = (index: number) => (e: React.KeyboardEvent) => {
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (index > 0) setFocus(MAIN_MENU_IDS[index - 1]);
+      if (index > 0) setFocus(menuEntries[index - 1].id);
+      // index 0 — already at top, nowhere to go
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (index < MAIN_MENU_IDS.length - 1) setFocus(MAIN_MENU_IDS[index + 1]);
+      if (index < menuEntries.length - 1) setFocus(menuEntries[index + 1].id);
+      else setFocus(CLOSE_ID);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onClose();
+    }
+  };
+
+  const closeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (menuEntries.length > 0) setFocus(menuEntries[menuEntries.length - 1].id);
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       onClose();
@@ -208,83 +215,30 @@ export const PlayerSettingsOverlay: React.FC<PlayerSettingsOverlayProps> = ({
           <h3 className={styles.title}>{title}</h3>
         </div>
 
-        {/* Main menu */}
+        {/* Main menu — mapped from menuEntries, no manual indexing */}
         {activeView === "main" && (
           <div className={styles.mainMenu}>
-            <Focusable
-              id="player-settings-subtitles"
-              onEnter={() => openView("subtitles", menuEntries[0]?.available ?? false)}
-              onKeyDown={makeMainMenuKeyDown(0)}
-              disableFocusEffects
-              className={`${styles.menuItem} ${
-                menuEntries[0]?.available ? "" : styles.menuItemDisabled
-              }`}
-            >
-              <div className={styles.menuLeft}>
-                {menuEntries[0]?.icon}
-                <span>{menuEntries[0]?.label || "Subtitles"}</span>
-              </div>
-              <div className={styles.menuRight}>
-                <span
-                  className={`${styles.menuStatus} ${
-                    menuEntries[0]?.available ? "" : styles.menuStatusMuted
-                  }`}
-                >
-                  {menuEntries[0]?.status || "Not available"}
-                </span>
-                <ChevronRight size={20} />
-              </div>
-            </Focusable>
-
-            <Focusable
-              id="player-settings-audio"
-              onEnter={() => openView("audio", menuEntries[1]?.available ?? false)}
-              onKeyDown={makeMainMenuKeyDown(1)}
-              disableFocusEffects
-              className={`${styles.menuItem} ${
-                menuEntries[1]?.available ? "" : styles.menuItemDisabled
-              }`}
-            >
-              <div className={styles.menuLeft}>
-                {menuEntries[1]?.icon}
-                <span>{menuEntries[1]?.label || "Audio Tracks"}</span>
-              </div>
-              <div className={styles.menuRight}>
-                <span
-                  className={`${styles.menuStatus} ${
-                    menuEntries[1]?.available ? "" : styles.menuStatusMuted
-                  }`}
-                >
-                  {menuEntries[1]?.status || "Not available"}
-                </span>
-                <ChevronRight size={20} />
-              </div>
-            </Focusable>
-
-            <Focusable
-              id="player-settings-quality"
-              onEnter={() => openView("quality", menuEntries[2]?.available ?? false)}
-              onKeyDown={makeMainMenuKeyDown(2)}
-              disableFocusEffects
-              className={`${styles.menuItem} ${
-                menuEntries[2]?.available ? "" : styles.menuItemDisabled
-              }`}
-            >
-              <div className={styles.menuLeft}>
-                {menuEntries[2]?.icon}
-                <span>{menuEntries[2]?.label || "Quality"}</span>
-              </div>
-              <div className={styles.menuRight}>
-                <span
-                  className={`${styles.menuStatus} ${
-                    menuEntries[2]?.available ? "" : styles.menuStatusMuted
-                  }`}
-                >
-                  {menuEntries[2]?.status || "Source only"}
-                </span>
-                <ChevronRight size={20} />
-              </div>
-            </Focusable>
+            {menuEntries.map((entry, index) => (
+              <Focusable
+                key={entry.id}
+                id={entry.id}
+                onEnter={() => openView(entry.view, entry.available)}
+                onKeyDown={makeMainMenuKeyDown(index)}
+                disableFocusEffects
+                className={`${styles.menuItem} ${entry.available ? "" : styles.menuItemDisabled}`}
+              >
+                <div className={styles.menuLeft}>
+                  {entry.icon}
+                  <span>{entry.label}</span>
+                </div>
+                <div className={styles.menuRight}>
+                  <span className={`${styles.menuStatus} ${entry.available ? "" : styles.menuStatusMuted}`}>
+                    {entry.status}
+                  </span>
+                  <ChevronRight size={20} />
+                </div>
+              </Focusable>
+            ))}
           </div>
         )}
 
@@ -314,9 +268,9 @@ export const PlayerSettingsOverlay: React.FC<PlayerSettingsOverlayProps> = ({
         {/* Close row — always at bottom of main menu */}
         {activeView === "main" && (
           <Focusable
-            id="player-settings-close"
+            id={CLOSE_ID}
             onEnter={onClose}
-            onKeyDown={makeMainMenuKeyDown(3)}
+            onKeyDown={closeKeyDown}
             disableFocusEffects
             className={styles.closeRow}
           >

@@ -1,6 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   PlayerControls — Full-screen TV player controls overlay
-   Premium 10-foot UI — Glassmorphism, neon accents, and smooth transitions
+   PlayerControls — VOD/Series full-screen player controls overlay
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .overlay {
@@ -10,7 +9,6 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  /* Deep cinematic radial-influenced vignette gradient */
   background: linear-gradient(
     180deg,
     rgba(6, 8, 12, 0.96) 0%,
@@ -36,12 +34,6 @@
   gap: 1.5rem;
 }
 
-.topRightGroup {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
 .backButton {
   width: 4rem;
   height: 4rem;
@@ -50,7 +42,6 @@
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  /* High-end glassmorphic build */
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
@@ -74,9 +65,6 @@
 .topMeta {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
 }
 
 .title {
@@ -90,53 +78,6 @@
   line-height: 1.1;
   letter-spacing: -0.01em;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
-}
-
-.liveBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  color: var(--color-primary-glow);
-  font-size: 0.88rem;
-  font-weight: 900;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  text-shadow: none;
-}
-
-.liveMetaRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.8rem;
-}
-
-.liveMetaChip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0 0.9rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(245, 248, 255, 0.92);
-  font-size: 0.9rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
-.liveMetaText {
-  color: rgba(215, 226, 244, 0.86);
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.liveDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--color-primary-glow);
-  box-shadow: none;
 }
 
 .settingsButton {
@@ -167,80 +108,42 @@
   box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
-.clockPill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 3.1rem;
-  padding: 0 1.2rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(245, 248, 255, 0.96);
-  font-size: 1rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-}
-
 /* ── Bottom controls area ────────────────────────────────────────────────── */
 
 .bottomArea {
   padding: 0 4rem 3.5rem;
 }
 
-.liveProgramCard {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 1.4rem;
-  margin-bottom: 2rem;
-  padding: 1.15rem 1.4rem;
-  border-radius: 1.15rem;
-  background: rgba(9, 12, 18, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
-}
+/* ── VOD / Series metadata row ───────────────────────────────────────────── */
 
-.liveProgramColumn {
-  min-width: 0;
+.vodMetaRow {
   display: flex;
-  flex-direction: column;
-  gap: 0.28rem;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
 }
 
-.liveProgramDivider {
-  width: 1px;
-  height: 3.25rem;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.18) 18%,
-    rgba(255, 255, 255, 0.18) 82%,
-    rgba(255, 255, 255, 0) 100%
-  );
-}
-
-.liveProgramEyebrow {
-  color: rgba(192, 208, 236, 0.64);
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
-.liveProgramTitle {
-  color: #ffffff;
-  font-size: 1.08rem;
+.episodeBadge {
+  font-size: 0.8rem;
   font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.25rem 0.8rem;
+  border-radius: 999px;
 }
 
-.liveProgramMeta {
-  color: rgba(215, 226, 244, 0.76);
-  font-size: 0.92rem;
-  font-weight: 700;
+.qualityBadge,
+.audioBadge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* ── Seek / progress row ─────────────────────────────────────────────────── */
@@ -279,13 +182,12 @@
 .seekProgress {
   height: 100%;
   border-radius: inherit;
-  /* Elite gradient progress bar */
   background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
   position: relative;
   box-shadow: none;
 }
 
-/* Scrubber thumb - modern double ring dot */
+/* Scrubber thumb */
 .seekProgress::after {
   content: "";
   position: absolute;
@@ -300,37 +202,6 @@
   transition: transform 150ms ease;
 }
 
-/* VOD Metadata Row */
-.vodMetaRow {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.8rem;
-}
-
-.episodeBadge {
-  font-size: 0.8rem;
-  font-weight: 800;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 0.25rem 0.8rem;
-  border-radius: 999px;
-}
-
-.qualityBadge,
-.audioBadge {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.2rem 0.6rem;
-  border-radius: 0.25rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 /* ── Control buttons row ─────────────────────────────────────────────────── */
 
 .controlRow {
@@ -338,6 +209,12 @@
   align-items: center;
   justify-content: center;
   gap: 2.2rem;
+}
+
+.buttonGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .iconButton {
@@ -375,7 +252,6 @@
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  /* Elite gradient accent */
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-glow) 100%);
   border: none;
   transition:
@@ -393,7 +269,6 @@
   box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.82), 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
-/* Seek labels below buttons */
 .seekLabel {
   font-size: 0.78rem;
   font-weight: 800;
@@ -405,42 +280,7 @@
   text-transform: uppercase;
 }
 
-.channelLabel {
-  width: 8rem;
-  margin-top: 0.35rem;
-  color: rgba(224, 234, 250, 0.78);
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.buttonGroup {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.remoteHintRow {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.8rem;
-  margin-top: 1.85rem;
-}
-
-.remoteHint {
-  padding: 0.45rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(204, 218, 243, 0.76);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
+/* ── Performance-reduced mode ────────────────────────────────────────────── */
 
 :global(.perf-reduced) .backButton,
 :global(.perf-reduced) .settingsButton,

@@ -223,6 +223,30 @@
   font-style: italic;
 }
 
+/* Buffering indicator — shown in the EPG column while the stream loads */
+.bufferingRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bufferingSpinner {
+  color: rgba(255, 255, 255, 0.6);
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.bufferingLabel {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(220, 232, 255, 0.7);
+}
+
 /* Control buttons section */
 .controlsSection {
   display: flex;
