@@ -3883,25 +3883,22 @@ function PlayerScreen() {
         {isHudVisible ? (
           <footer style={playerHudDock}>
             <div style={playerProgressWrap}>
-              <div style={playerTime}>
-                {isLive && currentProgram ? (
-                  <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700 }}>
-                    <span style={{ color: '#ffffff' }}>{formatEpgTime(currentProgram.startTime)}</span>
-                    <span style={{ color: '#ff2438', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 12px' }}>
-                      {currentProgram.title}
-                    </span>
-                    <span style={{ color: '#ffffff' }}>{formatEpgTime(currentProgram.endTime)}</span>
-                  </div>
-                ) : (
-                  <>
-                    <span>{formatTime(currentTime)}</span>
-                    {!isLive ? <span>-{formatTime(Math.max(duration - currentTime, 0))}</span> : <span>LIVE</span>}
-                  </>
-                )}
-              </div>
+              {isLive && currentProgram ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px', fontSize: '16px' }}>
+                  <span style={{ color: '#ff2438', fontWeight: 800 }}>
+                    {currentProgram.title}
+                  </span>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontWeight: 700 }}>
+                    {formatEpgTime(currentProgram.startTime)} - {formatEpgTime(currentProgram.endTime)}
+                  </span>
+                </div>
+              ) : null}
+
               <div style={playerProgress} aria-hidden="true">
                 {isLive && currentProgram ? (
                   <div style={{ ...playerProgressPlayed, width: `${currentProgramProgress * 100}%`, background: '#ff2438' }} />
+                ) : isLive ? (
+                  <div style={{ ...playerProgressPlayed, width: '100%', background: '#ff2438' }} />
                 ) : (
                   <>
                     <div style={{ ...playerProgressBuffered, width: `${bufferPercent * 100}%` }} />
@@ -3909,6 +3906,22 @@ function PlayerScreen() {
                   </>
                 )}
               </div>
+
+              {(!isLive || !currentProgram) && (
+                <div style={playerTime}>
+                  {isLive ? (
+                    <>
+                      <span />
+                      <span style={{ color: '#ff2438', fontWeight: 800 }}>LIVE</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{formatTime(currentTime)}</span>
+                      <span>-{formatTime(Math.max(duration - currentTime, 0))}</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div style={playerControls}>

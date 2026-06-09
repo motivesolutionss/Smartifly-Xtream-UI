@@ -1800,12 +1800,13 @@ export const playerHud: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'space-between',
-  padding: '26px 32px 28px',
+  padding: '30px 40px 32px',
   opacity: 0,
   transform: 'translateY(12px)',
-  transition: 'opacity 180ms ease, transform 180ms ease',
+  transition: 'opacity 220ms ease, transform 220ms ease',
   pointerEvents: 'none',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.2) 25%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 75%, rgba(0, 0, 0, 0.9) 100%)'
 };
 
 export const playerHudVisible: CSSProperties = {
@@ -1828,10 +1829,12 @@ export const playerHudBadge: CSSProperties = {
   maxWidth: '680px',
   display: 'flex',
   flexDirection: 'column',
-  padding: '12px 14px',
-  borderRadius: '18px',
-  background: 'rgba(6, 8, 12, 0.34)',
-  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.06)',
+  padding: '16px 20px',
+  borderRadius: '16px',
+  background: 'rgba(10, 12, 18, 0.38)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
+  boxShadow: '0 6px 24px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05)',
   boxSizing: 'border-box'
 };
 
@@ -1872,10 +1875,12 @@ export const playerHudMeta: CSSProperties = {
 export const playerHudDock: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  padding: '18px 20px',
-  borderRadius: '24px',
-  background: 'linear-gradient(180deg, rgba(6, 8, 12, 0.24), rgba(6, 8, 12, 0.56))',
-  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 22px 42px rgba(0, 0, 0, 0.28)',
+  padding: '20px 24px',
+  borderRadius: '20px',
+  background: 'rgba(10, 12, 18, 0.45)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
+  boxShadow: '0 10px 32px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.05)',
   boxSizing: 'border-box'
 };
 

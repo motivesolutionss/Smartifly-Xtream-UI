@@ -55,10 +55,12 @@ export default defineConfig({
           "        window.addEventListener('error', function (event) {",
           "          setStatus('A runtime error blocked rendering.');",
           "          appendLog('window.error', event.error || event.message || 'Unknown error');",
+          "          showErrorPanel();",
           '        });',
           "        window.addEventListener('unhandledrejection', function (event) {",
           "          setStatus('An unhandled promise rejection blocked rendering.');",
           "          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');",
+          "          showErrorPanel();",
           '        });',
           '',
           "        setStatus('Global handlers ready. Loading app.js...');",
@@ -102,11 +104,13 @@ export default defineConfig({
             "        window.addEventListener('error', function (event) {",
             "          setStatus('A runtime error blocked rendering.');",
             "          appendLog('window.error', event.error || event.message || 'Unknown error');",
-            '        });',
+            "          showErrorPanel();",
+            "        });",
             "        window.addEventListener('unhandledrejection', function (event) {",
             "          setStatus('An unhandled promise rejection blocked rendering.');",
             "          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');",
-            '        });'
+            "          showErrorPanel();",
+            "        });"
           ].join(lineEnding),
           loaderSnippet
         );
