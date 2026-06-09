@@ -618,8 +618,8 @@ function DetailsScreen() {
   const portalBaseUrl = session?.portalBaseUrl?.trim();
   const portalCode = session?.portalCode?.trim();
   const watchlistScope = useMemo(
-    () => buildWatchlistScope(session?.portalCode, session?.username),
-    [session?.portalCode, session?.username]
+    () => buildWatchlistScope(session?.portalCode, session?.username, selectedProfile?.id),
+    [selectedProfile?.id, session?.portalCode, session?.username]
   );
   const selectedFavoriteKey = useMemo(() => {
     if (!selectedContent) {

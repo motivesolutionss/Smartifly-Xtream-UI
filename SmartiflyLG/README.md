@@ -12,6 +12,18 @@ npm run webos:launch
 
 The first screen mirrors the existing Android TV app's branded preloader and login experience, with D-pad focus support for LG remote testing.
 
+### Hosted wrapper mode
+
+If the emulator blocks the packaged `file://` app, use the hosted wrapper package instead:
+
+```sh
+npm run build
+node dev-server.mjs
+npm run webos:package:hosted
+```
+
+The hosted wrapper redirects to `http://10.20.30.30:4173/`, which serves the built `dist/` files over HTTP instead of `file://`.
+
 ## Local Development
 
 Create a `.env` file from `.env.example` so the LG app points at the local backend:

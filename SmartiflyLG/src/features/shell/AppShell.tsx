@@ -11,6 +11,7 @@ import PlayerScreen from '../player/PlayerScreen';
 import { useSpatialNav } from '../../hooks/useSpatialNav';
 import { contentScreen, eyebrow, heroCopy, mergeStyle, placeholderScreen, placeholderTitle } from '../../styles/lgTvStyles';
 import { type AppDestination, useAppStore } from '../../store/appStore';
+import { PRESET_AVATARS } from '../profiles/ProfileSelectionScreen';
 
 type SidebarItem = {
   id: AppDestination;
@@ -159,6 +160,10 @@ function AppShell() {
   const isContentDestination = focusRegion === 'content';
   const sidebarRouteIds = ['home', 'live', 'movies', 'series', 'search', 'watchlist'] as const;
   const getSidebarFocusTarget = () => {
+    if (currentDestination === 'settings') {
+      return 'settings';
+    }
+
     if (sidebarRouteIds.includes(currentDestination as (typeof sidebarRouteIds)[number])) {
       return currentDestination;
     }
@@ -669,15 +674,22 @@ function AppShell() {
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: 'linear-gradient(180deg, #ff2438 0%, #991220 100%)',
+                    background: selectedProfile?.avatarSeed && PRESET_AVATARS[selectedProfile.avatarSeed]
+                      ? 'transparent'
+                      : 'linear-gradient(180deg, #ff2438 0%, #991220 100%)',
                     color: '#ffffff',
                     fontSize: '12px',
                     fontWeight: 900,
                     flex: '0 0 34px',
-                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)'
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                    overflow: 'hidden'
                   }}
                 >
-                  {selectedProfile?.avatarSeed || 'PR'}
+                  {selectedProfile?.avatarSeed && PRESET_AVATARS[selectedProfile.avatarSeed] ? (
+                    PRESET_AVATARS[selectedProfile.avatarSeed]()
+                  ) : (
+                    selectedProfile?.avatarSeed ? selectedProfile.avatarSeed.slice(0, 2).toUpperCase() : 'PR'
+                  )}
                 </span>
                 <span
                   className="sidebar__profile-copy"
@@ -991,6 +1003,7 @@ function AppShell() {
           />
         ) : currentDestination === 'settings' ? (
           <SettingsScreen
+            isActive={isContentDestination}
             onRequestSidebarFocus={() => {
               setFocusRegion('sidebar');
               setFocusId(getSidebarFocusTarget());

@@ -35,11 +35,33 @@ type WatchlistActions = {
 type WatchlistStore = WatchlistState & WatchlistActions;
 
 function normalizeEntries(entries: unknown): WatchlistEntry[] {
-  return Array.isArray(entries) ? entries.filter(Boolean) as WatchlistEntry[] : [];
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries.filter(Boolean).map((entry) => migrateEntry(entry as WatchlistEntry));
 }
 
-export const buildWatchlistScope = (portalCode?: string | null, username?: string | null): string => (
-  `${String(portalCode || 'default')}::${String(username || 'guest').trim().toLowerCase()}`
+function migrateEntry(entry: WatchlistEntry): WatchlistEntry {
+  const scopeParts = String(entry.scope || '').split('::');
+  if (scopeParts.length >= 3) {
+    return entry;
+  }
+
+  const legacyScope = `${scopeParts[0] || 'default'}::${scopeParts[1] || 'guest'}::primary`;
+  return {
+    ...entry,
+    scope: legacyScope,
+    key: buildWatchlistKey(legacyScope, entry.kind, entry.entityId)
+  };
+}
+
+export const buildWatchlistScope = (
+  portalCode?: string | null,
+  username?: string | null,
+  profileId?: string | null
+): string => (
+  `${String(portalCode || 'default')}::${String(username || 'guest').trim().toLowerCase()}::${String(profileId || 'primary')}`
 );
 
 export const buildWatchlistKey = (
@@ -124,7 +146,12 @@ const useWatchlistStore = create<WatchlistStore>()(
     }),
     {
       name: 'smartifly-lg-watchlist-v1',
+      version: 2,
       storage: watchlistStorage,
+      migrate: (persistedState) => ({
+        ...(persistedState as WatchlistState),
+        entries: normalizeEntries((persistedState as WatchlistState | null)?.entries)
+      }),
       partialize: (state) => ({
         entries: state.entries
       })

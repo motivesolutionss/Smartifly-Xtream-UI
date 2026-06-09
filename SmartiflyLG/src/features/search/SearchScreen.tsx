@@ -47,7 +47,7 @@ import {
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
-import { BrowsePosterArt } from '../../components/BrowsePosterArt';
+import { SafeCardImage } from '../../components/SafeCardImage';
 
 type SearchItem = {
   id: string;
@@ -238,40 +238,9 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const searchFocusId = useAppStore((state) => state.searchFocusId);
   const setSearchFocusId = useAppStore((state) => state.setSearchFocusId);
+  const homeBootstrapData = useAppStore((state) => state.homeBootstrapData);
   const [debouncedQuery, setDebouncedQuery] = useState(() => query.trim().toLowerCase());
 
-  const handlePlayLiveChannel = (item: SearchItem) => {
-    const username = session?.username?.trim();
-    const password = session?.userInfo?.password?.trim();
-    const portalBaseUrl = session?.portalBaseUrl?.trim();
-
-    if (!username || !password || !portalBaseUrl) {
-      setStatusMessage('Missing live playback session');
-      return;
-    }
-
-    const playback = buildLivePlaybackRequest({
-      username,
-      password,
-      portalBaseUrl,
-      channels: filteredLive.map((entry) => ({
-        id: entry.id,
-        title: entry.title,
-        streamId: Number(entry.id.split('-').pop() || 0),
-        artwork: entry.artwork
-      })),
-      selectedChannelId: item.id,
-      returnDestination: 'search'
-    });
-
-    if (!playback) {
-      setStatusMessage('Missing live stream URL');
-      return;
-    }
-
-    setStatusMessage(`Playing ${item.title}`);
-    openPlayback(playback);
-  };
   const [movies, setMovies] = useState<SearchItem[]>([]);
   const [series, setSeries] = useState<SearchItem[]>([]);
   const [live, setLive] = useState<SearchItem[]>([]);
@@ -289,6 +258,129 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
   const username = session?.username?.trim();
   const password = session?.userInfo?.password?.trim();
   const portalBaseUrl = session?.portalBaseUrl?.trim();
+
+  const filteredMovies = useMemo(() => {
+    const source = debouncedQuery
+      ? movies.filter((item) => {
+          const haystack = [item.title, item.year, item.rating, item.description].filter(Boolean).join(' ').toLowerCase();
+          return haystack.includes(debouncedQuery);
+        })
+      : movies;
+
+    return trimRail(source);
+  }, [debouncedQuery, movies]);
+
+  const filteredSeries = useMemo(() => {
+    const source = debouncedQuery
+      ? series.filter((item) => {
+          const haystack = [item.title, item.year, item.rating, item.description].filter(Boolean).join(' ').toLowerCase();
+          return haystack.includes(debouncedQuery);
+        })
+      : series;
+
+    return trimRail(source);
+  }, [debouncedQuery, series]);
+
+  const filteredLive = useMemo(() => {
+    const source = debouncedQuery
+      ? live.filter((item) => {
+          const haystack = [item.title, item.categoryId].filter(Boolean).join(' ').toLowerCase();
+          return haystack.includes(debouncedQuery);
+        })
+      : live;
+
+    return trimRail(source);
+  }, [debouncedQuery, live]);
+
+  const railSections = useMemo(() => {
+    if (!debouncedQuery) {
+      if (!homeBootstrapData?.rails) {
+        return [];
+      }
+
+      const moviesRail = homeBootstrapData.rails.find(
+        (rail) => rail.kind === 'movie' && rail.id !== 'trending-for-you'
+      );
+      const seriesRail = homeBootstrapData.rails.find(
+        (rail) => rail.kind === 'series'
+      );
+      const liveRail = homeBootstrapData.rails.find(
+        (rail) => rail.kind === 'live'
+      );
+
+      const suggestionsRails = [];
+      if (moviesRail) {
+        suggestionsRails.push(moviesRail);
+      }
+      if (seriesRail) {
+        suggestionsRails.push(seriesRail);
+      }
+      if (liveRail) {
+        suggestionsRails.push(liveRail);
+      }
+
+      return suggestionsRails.map((rail) => ({
+        id: rail.id,
+        label: rail.title,
+        kind: rail.kind,
+        items: rail.items.map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          title: item.name,
+          artwork: item.artwork,
+          categoryId: item.categoryId,
+          containerExtension: item.containerExtension,
+          accent: item.accent,
+          year: '',
+          rating: '',
+          description: ''
+        }))
+      }));
+    }
+
+    return [
+      { id: 'movies', label: 'Movies', kind: 'movie' as const, items: filteredMovies },
+      { id: 'series', label: 'Series', kind: 'series' as const, items: filteredSeries },
+      { id: 'live', label: 'Live Channels', kind: 'live' as const, items: filteredLive }
+    ];
+  }, [debouncedQuery, homeBootstrapData, filteredMovies, filteredSeries, filteredLive]);
+
+  const handlePlayLiveChannel = (item: SearchItem) => {
+    const usernameVal = session?.username?.trim();
+    const passwordVal = session?.userInfo?.password?.trim();
+    const portalUrlVal = session?.portalBaseUrl?.trim();
+
+    if (!usernameVal || !passwordVal || !portalUrlVal) {
+      setStatusMessage('Missing live playback session');
+      return;
+    }
+
+    const activeLiveItems = railSections
+      .filter((s) => s.kind === 'live')
+      .flatMap((s) => s.items);
+
+    const playback = buildLivePlaybackRequest({
+      username: usernameVal,
+      password: passwordVal,
+      portalBaseUrl: portalUrlVal,
+      channels: activeLiveItems.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        streamId: Number(entry.id.split('-').pop() || 0),
+        artwork: entry.artwork
+      })),
+      selectedChannelId: item.id,
+      returnDestination: 'search'
+    });
+
+    if (!playback) {
+      setStatusMessage('Missing live stream URL');
+      return;
+    }
+
+    setStatusMessage(`Playing ${item.title}`);
+    openPlayback(playback);
+  };
 
   useEffect(() => {
     setFocusId(searchFocusId || 'query');
@@ -320,6 +412,13 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
     const portalValue = portalBaseUrl;
 
     if (!usernameValue || !passwordValue || !portalValue) {
+      setMovies([]);
+      setSeries([]);
+      setLive([]);
+      return;
+    }
+
+    if (!debouncedQuery) {
       setMovies([]);
       setSeries([]);
       setLive([]);
@@ -375,40 +474,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [password, portalBaseUrl, username]);
-
-  const filteredMovies = useMemo(() => {
-    const source = debouncedQuery
-      ? movies.filter((item) => {
-          const haystack = [item.title, item.year, item.rating, item.description].filter(Boolean).join(' ').toLowerCase();
-          return haystack.includes(debouncedQuery);
-        })
-      : movies;
-
-    return trimRail(source);
-  }, [debouncedQuery, movies]);
-
-  const filteredSeries = useMemo(() => {
-    const source = debouncedQuery
-      ? series.filter((item) => {
-          const haystack = [item.title, item.year, item.rating, item.description].filter(Boolean).join(' ').toLowerCase();
-          return haystack.includes(debouncedQuery);
-        })
-      : series;
-
-    return trimRail(source);
-  }, [debouncedQuery, series]);
-
-  const filteredLive = useMemo(() => {
-    const source = debouncedQuery
-      ? live.filter((item) => {
-          const haystack = [item.title, item.categoryId].filter(Boolean).join(' ').toLowerCase();
-          return haystack.includes(debouncedQuery);
-        })
-      : live;
-
-    return trimRail(source);
-  }, [debouncedQuery, live]);
+  }, [password, portalBaseUrl, username, debouncedQuery]);
 
   useEffect(() => {
     if (currentDestination !== 'search' || !isActive) {
@@ -431,7 +497,8 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
       const parts = focusId.split(':');
       const sectionId = parts[1];
       const cardIndex = Number(parts[2]);
-      const items = sectionId === 'movies' ? filteredMovies : sectionId === 'series' ? filteredSeries : filteredLive;
+      const section = railSections.find((s) => s.id === sectionId);
+      const items = section ? section.items : [];
       if (!loading) {
         if (items.length === 0 || cardIndex >= items.length) {
           queryRef.current?.focus();
@@ -460,7 +527,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
     queryRef.current?.focus();
     setFocusId('query');
     setSearchFocusId('query');
-  }, [currentDestination, focusId, loading, setSearchFocusId, isActive]);
+  }, [currentDestination, focusId, loading, setSearchFocusId, isActive, railSections]);
 
   const focusKeyboardKey = (row: number, col: number) => {
     const nextRow = Math.max(0, Math.min(row, keyboardRows.length - 1));
@@ -474,13 +541,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
     keyboardRefs.current[nextFocusId]?.focus();
   };
 
-  const railSections = [
-    { id: 'movies', label: 'Movies', items: filteredMovies },
-    { id: 'series', label: 'Series', items: filteredSeries },
-    { id: 'live', label: 'Live Channels', items: filteredLive }
-  ] as const;
-
-  const getRailFocusId = (sectionId: (typeof railSections)[number]['id'], index: number) => `card:${sectionId}:${index}`;
+  const getRailFocusId = (sectionId: string, index: number) => `card:${sectionId}:${index}`;
 
   const focusFirstAvailableRail = () => {
     const targetSection = railSections.findIndex((section) => section.items.length > 0);
@@ -675,16 +736,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
       if (cardIndex === 0) {
-        if (sectionIndex === 0) {
-          focusQueryField();
-          return;
-        }
-
-        let targetRow = 3; // Default to Shift/Z/delete row
-        if (sectionIndex === 2) {
-          targetRow = 4;   // CLEAR/SPACE/SEARCH row
-        }
-
+        const targetRow = Math.min(sectionIndex, keyboardRows.length - 1);
         const row = keyboardRows[targetRow] ?? [];
         const lastCol = Math.max(0, row.length - 1);
         focusKeyboardKey(targetRow, lastCol);
@@ -831,7 +883,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
       </aside>
 
       <div ref={searchResultsRef} className="lg-browse-scroll" style={searchResults}>
-        {(filteredMovies.length === 0 && filteredSeries.length === 0 && filteredLive.length === 0) ? (
+        {debouncedQuery && (filteredMovies.length === 0 && filteredSeries.length === 0 && filteredLive.length === 0) ? (
           <div style={searchEmpty}>
             <h3 style={searchEmptyTitle}>No results yet</h3>
             <p style={searchEmptyCopy}>Try a title, actor, year, or genre keyword.</p>
@@ -847,10 +899,19 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
             {section.items.length === 0 ? (
               <div style={searchRailEmpty}>No {section.label.toLowerCase()} match.</div>
             ) : (
-              <div className="lg-browse-scroll" style={searchRailTrack}>
+              <div
+                className="lg-browse-scroll"
+                style={mergeStyle(
+                  searchRailTrack,
+                  section.kind === 'live' && { gridAutoColumns: '440px' }
+                )}
+              >
                 {section.items.map((item, itemIndex) => {
                   const cardId = `card:${section.id}:${itemIndex}`;
                   const isFocused = focusId === cardId;
+                  const isLive = section.kind === 'live';
+                  const cardWidth = isLive ? 440 : 268;
+                  const cardHeight = isLive ? 248 : 402;
                   const sharedDetails = {
                     id: item.id,
                     contentId: Number(item.id.split('-').pop() || 0),
@@ -863,34 +924,6 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                     rating: item.rating
                   };
 
-                  if (item.kind === 'live') {
-                    return (
-                      <button
-                        key={item.id}
-                        ref={(node) => {
-                          cardRefs.current[cardId] = node;
-                        }}
-                        type="button"
-                        style={mergeStyle(searchRailCard, searchRailCardLive, isFocused && searchRailCardActive)}
-                        onFocus={() => {
-                          setFocusId(cardId);
-                          setSearchFocusId(cardId);
-                        }}
-                        onClick={() => handlePlayLiveChannel(item)}
-                        onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
-                      >
-                        <BrowsePosterArt
-                          artwork={item.artwork}
-                          name={item.title}
-                          accent={item.accent}
-                          badge="LIVE"
-                          artStyle={liveChannelCardArt}
-                          imgStyle={liveChannelCardImg}
-                        />
-                      </button>
-                    );
-                  }
-
                   return (
                     <button
                       key={item.id}
@@ -898,35 +931,67 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                         cardRefs.current[cardId] = node;
                       }}
                       type="button"
-                      style={mergeStyle(searchRailCard, isFocused && searchRailCardActive)}
+                      style={mergeStyle(
+                        searchRailCard,
+                        {
+                          width: `${cardWidth}px`,
+                          height: isLive ? '248px' : 'auto',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          flexShrink: 0
+                        },
+                        isFocused && searchRailCardActive
+                      )}
                       onFocus={() => {
                         setFocusId(cardId);
                         setSearchFocusId(cardId);
                       }}
-                      onClick={() => openContentDetails(sharedDetails, 'search')}
+                      onClick={() => {
+                        if (isLive) {
+                          handlePlayLiveChannel(item);
+                        } else {
+                          openContentDetails(sharedDetails, 'search');
+                        }
+                      }}
                       onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
                     >
-                      <BrowsePosterArt
-                        artwork={item.artwork}
-                        name={item.title}
-                        accent={item.accent}
-                        badge=""
-                        hideFallbackText={true}
-                      />
-                      <div style={searchRailCardCopy}>
-                        <strong style={mergeStyle(searchRailCardTitle, { opacity: isFocused ? 1 : 0.82, transition: 'opacity 0.22s' })}>
-                          {item.title}
-                        </strong>
-                        <div style={mergeStyle(searchRailCardMeta, { color: isFocused ? 'rgba(255, 255, 255, 0.88)' : 'rgba(255, 255, 255, 0.54)', transition: 'color 0.22s' })}>
-                          {item.year ? <span>{item.year}</span> : null}
-                          {item.year && item.rating ? <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>•</span> : null}
-                          {item.rating ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                              <span style={{ color: '#E50914' }}>★</span> {formatRating(item.rating)}
-                            </span>
-                          ) : null}
-                        </div>
+                      <div
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          height: `${cardHeight}px`,
+                          borderRadius: '20px',
+                          overflow: 'hidden',
+                          background: isLive
+                            ? 'linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 240, 240, 0.98) 100%)'
+                            : 'linear-gradient(180deg, rgba(18, 20, 24, 0.9) 0%, rgba(8, 9, 12, 0.96) 100%)'
+                        }}
+                      >
+                        <SafeCardImage
+                          src={item.artwork || ''}
+                          isLiveRail={isLive}
+                          name={item.title}
+                          accent={item.accent || ''}
+                          fallback={null}
+                        />
                       </div>
+
+                      {!isLive && (
+                        <div style={searchRailCardCopy}>
+                          <strong style={mergeStyle(searchRailCardTitle, { opacity: isFocused ? 1 : 0.82, transition: 'opacity 0.22s' })}>
+                            {item.title}
+                          </strong>
+                          <div style={mergeStyle(searchRailCardMeta, { color: isFocused ? 'rgba(255, 255, 255, 0.88)' : 'rgba(255, 255, 255, 0.54)', transition: 'color 0.22s' })}>
+                            {item.year ? <span>{item.year}</span> : null}
+                            {item.year && item.rating ? <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>•</span> : null}
+                            {item.rating ? (
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <span style={{ color: '#E50914' }}>★</span> {formatRating(item.rating)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
                     </button>
                   );
                 })}

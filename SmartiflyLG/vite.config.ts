@@ -48,6 +48,8 @@ export default defineConfig({
           .replace(/\s*<script type="module" crossorigin src="\.\/app\.js"><\/script>/, '')
           .replace(/\s*<script src="\.\/app\.js"><\/script>/, '');
 
+        const lineEnding = html.includes('\r\n') ? '\r\n' : '\n';
+
         const loaderSnippet = [
           "        setStatus('HTML loaded. Installing global error handlers...');",
           "        window.addEventListener('error', function (event) {",
@@ -92,7 +94,7 @@ export default defineConfig({
           '            loadAppBundle();',
           "          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');",
           "        }, 'The emulator could not load ./vendor/hls.min.js');"
-        ].join('\n');
+        ].join(lineEnding);
 
         const patched = withoutAppScript.replace(
           [
@@ -105,7 +107,7 @@ export default defineConfig({
             "          setStatus('An unhandled promise rejection blocked rendering.');",
             "          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');",
             '        });'
-          ].join('\n'),
+          ].join(lineEnding),
           loaderSnippet
         );
 

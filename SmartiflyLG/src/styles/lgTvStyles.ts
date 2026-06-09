@@ -144,6 +144,39 @@ export const browseCategoryCountActive: CSSProperties = {
   color: 'rgba(0, 0, 0, 0.45)'
 };
 
+export function getCategoryItemStyle(isFocused: boolean, isSelected: boolean): CSSProperties {
+  return {
+    border: 0,
+    borderRadius: '14px',
+    padding: '16px 20px',
+    background: isFocused 
+      ? '#ffffff' 
+      : isSelected 
+      ? 'rgba(255, 255, 255, 0.08)' 
+      : 'rgba(255, 255, 255, 0.02)',
+    color: isFocused ? '#07090e' : 'rgba(255, 255, 255, 0.62)',
+    textAlign: 'left',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    flexShrink: 0,
+    marginBottom: '12px',
+    boxSizing: 'border-box',
+    cursor: 'pointer',
+    outline: 'none',
+    position: 'relative',
+    overflow: 'hidden',
+    transform: isFocused ? 'scale(1.03) translate3d(2px, 0, 0)' : 'none',
+    boxShadow: isFocused 
+      ? '0 12px 30px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255,255,255,0.1)' 
+      : 'none',
+    transition: 'background 180ms ease, color 180ms ease, transform 180ms cubic-bezier(0.25, 1, 0.5, 1), box-shadow 180ms ease',
+    WebkitAppearance: 'none',
+    appearance: 'none'
+  };
+}
+
 export const browseContent: CSSProperties = {
   minWidth: 0,
   display: 'flex',
@@ -1605,6 +1638,8 @@ export const settingsPanel: CSSProperties = {
   flexDirection: 'column',
   gap: '22px',
   paddingTop: '10px',
+  paddingLeft: '16px',
+  paddingRight: '16px',
   overflowY: 'auto',
   boxSizing: 'border-box'
 };

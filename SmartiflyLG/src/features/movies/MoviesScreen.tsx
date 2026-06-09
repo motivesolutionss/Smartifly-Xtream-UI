@@ -25,6 +25,7 @@ import {
   browseSidebarHeader,
   cardDebugOverlay,
   contentScreen,
+  getCategoryItemStyle,
   mergeStyle,
   movieCard,
   movieCardActive
@@ -527,7 +528,7 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
                 ref={(node) => {
                   categoryRefs.current[`category:${category.id}`] = node;
                 }}
-                style={mergeStyle(browseCategory, isActive && browseCategoryActive)}
+                style={getCategoryItemStyle(isFocused, isSelected)}
                 onClick={() => {
                   setSelectedCategoryId(category.id);
                   setFocusId(`category:${category.id}`);
@@ -543,8 +544,36 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
                 }}
                 onKeyDown={(event) => handleCategoryKeyDown(event, index)}
               >
-                <span>{category.name}</span>
-                <span style={mergeStyle(browseCategoryCount, isActive && browseCategoryCountActive)}>{category.count}</span>
+                {(isSelected || isFocused) && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      left: '0',
+                      top: '14px',
+                      bottom: '14px',
+                      width: '4px',
+                      borderRadius: '999px',
+                      background: '#ff2438'
+                    }}
+                  />
+                )}
+                <span style={{ 
+                  color: isFocused ? '#07090e' : '#ffffff', 
+                  fontSize: '18px', 
+                  fontWeight: 800,
+                  paddingLeft: '6px'
+                }}>
+                  {category.name}
+                </span>
+                <span style={{ 
+                  color: isFocused ? 'rgba(7, 9, 14, 0.65)' : 'rgba(255, 255, 255, 0.45)', 
+                  fontSize: '13px', 
+                  fontWeight: 700,
+                  paddingRight: '6px'
+                }}>
+                  {category.count}
+                </span>
               </button>
             );
           })}

@@ -495,11 +495,15 @@ const footerTextStyle: CSSProperties = {
 
 function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenProps) {
   const session = useAppStore((state) => state.session);
+  const selectedProfile = useAppStore((state) => state.selectedProfile);
   const openContentDetails = useAppStore((state) => state.openContentDetails);
   const openPlayback = useAppStore((state) => state.openPlayback);
   const setStatusMessage = useAppStore((state) => state.setStatusMessage);
 
-  const scope = useMemo(() => buildWatchlistScope(session?.portalCode, session?.username), [session?.portalCode, session?.username]);
+  const scope = useMemo(
+    () => buildWatchlistScope(session?.portalCode, session?.username, selectedProfile?.id),
+    [selectedProfile?.id, session?.portalCode, session?.username]
+  );
   const watchlistEntries = useWatchlistStore((state) => state.entries);
   const removeFavorite = useWatchlistStore((state) => state.removeFavorite);
   const clearScope = useWatchlistStore((state) => state.clearScope);

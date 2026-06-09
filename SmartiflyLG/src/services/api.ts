@@ -126,12 +126,32 @@ export type XtreamLiveStream = {
   stream_type: string;
   stream_id: number;
   stream_icon: string;
+  epg_channel_id?: string | null;
   added: string;
   category_id: string;
   custom_sid: string;
   tv_archive: number;
   direct_source: string;
   tv_archive_duration: number;
+};
+
+export type XtreamShortEpgListing = {
+  id?: string | number;
+  title?: string;
+  description?: string;
+  start?: string;
+  end?: string;
+  start_timestamp?: string | number;
+  stop_timestamp?: string | number;
+};
+
+export type XtreamShortEpgEntry = {
+  id: string;
+  title: string;
+  description: string;
+  startTime: number;
+  endTime: number;
+  channelId: string;
 };
 
 export type XtreamMovie = {
@@ -259,7 +279,7 @@ function normalizeBaseUrl(input: string) {
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5000/v1' : 'https://api.xtreamui.duckdns.org/v1');
+  (import.meta.env.DEV ? 'http://localhost:5000/v1' : 'https://api.smartifly.co/v1');
 
 const CATALOG_CACHE_TTL_MS = 30 * 60 * 1000;
 const DETAILS_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -352,6 +372,20 @@ async function requestCached<T>(cacheKey: string, ttlMs: number, fetcher: () => 
 
   inFlightCatalogRequests.set(cacheKey, request);
   return request;
+}
+
+function decodeXtreamBase64(value?: string | null) {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return value;
+  }
 }
 
 function readArray<T>(data: unknown, keys: string[]) {
@@ -486,16 +520,13 @@ export async function checkDeviceActivation(deviceId: string): Promise<DeviceAct
 export function createXtreamApi(portalUrl: string) {
   return {
     authenticate: async (username: string, password: string) => {
-      const response = await fetch(`${API_BASE_URL}/public/xtream/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          portalUrl,
-          username,
-          password
-        })
+      const authUrl = new URL('/player_api.php', normalizeBaseUrl(portalUrl));
+      authUrl.searchParams.set('username', username);
+      authUrl.searchParams.set('password', password);
+
+      const response = await fetch(authUrl.toString(), {
+        method: 'GET',
+        cache: 'no-store'
       });
 
       if (!response.ok) {
@@ -513,12 +544,15 @@ export function createXtreamApi(portalUrl: string) {
         throw new Error(message);
       }
 
-      const payload = (await response.json()) as { success?: boolean; data?: XtreamAuthResponse; message?: string };
-      if (!payload.success || !payload.data) {
+      const payload = (await response.json()) as XtreamAuthResponse & { message?: string };
+      if (!payload.user_info || !payload.server_info) {
         throw new Error(payload.message || 'Xtream login failed');
       }
 
-      return payload.data;
+      return {
+        user_info: payload.user_info,
+        server_info: payload.server_info
+      };
     },
     getLiveCategories: (username: string, password: string) =>
       requestCached(
@@ -631,6 +665,27 @@ export function createXtreamApi(portalUrl: string) {
             series_id: seriesId
           })
       ),
+    getShortEpg: async (username: string, password: string, streamId: number, limit = 10) => {
+      const response = await requestJson<Record<string, unknown>>(portalUrl, {
+        username,
+        password,
+        action: 'get_short_epg',
+        stream_id: streamId,
+        limit
+      });
+      const listings = Array.isArray(response.epg_listings)
+        ? (response.epg_listings as XtreamShortEpgListing[])
+        : [];
+
+      return listings.map<XtreamShortEpgEntry>((item) => ({
+        id: String(item.id ?? `${streamId}-${item.start_timestamp ?? item.start ?? '0'}`),
+        title: decodeXtreamBase64(item.title).trim() || 'Live Broadcast',
+        description: decodeXtreamBase64(item.description).trim(),
+        startTime: Number(item.start_timestamp ?? 0) * 1000,
+        endTime: Number(item.stop_timestamp ?? 0) * 1000,
+        channelId: String(streamId)
+      }));
+    },
     getLiveStreamUrl: (username: string, password: string, streamId: number, format = 'ts') => {
       const user = encodeURIComponent(username);
       const pass = encodeURIComponent(password);

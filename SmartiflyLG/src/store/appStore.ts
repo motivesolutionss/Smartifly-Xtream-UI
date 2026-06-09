@@ -32,6 +32,7 @@ export type UserProfile = {
   name: string;
   avatarSeed: string;
   isKids?: boolean;
+  pinLock?: string;
 };
 
 export type AppDestination =
@@ -139,6 +140,9 @@ type AppState = {
   resetBootstrap: () => void;
   selectProfile: (profileId: string) => void;
   clearSelectedProfile: () => void;
+  addProfile: (name: string, avatarSeed: string, isKids?: boolean, pinLock?: string) => void;
+  removeProfile: (profileId: string) => void;
+  updateProfile: (profileId: string, updates: Partial<Pick<UserProfile, 'name' | 'avatarSeed' | 'isKids' | 'pinLock'>>) => void;
   openProfileSelectionFromHome: () => void;
   leaveProfileSelection: () => void;
   setCurrentDestination: (destination: AppDestination) => void;
@@ -223,6 +227,20 @@ function readProfiles(): UserProfile[] {
   return Array.isArray(raw) ? raw : [];
 }
 
+function generateProfileId() {
+  const randomSuffix =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10);
+
+  return `profile-${Date.now().toString(36)}-${randomSuffix}`;
+}
+
+function normalizeProfilePin(pinLock?: string) {
+  const digits = String(pinLock || '').replace(/\D/g, '').slice(0, 4);
+  return digits.length === 4 ? digits : '';
+}
+
 function createDefaultProfiles(username: string): UserProfile[] {
   const cleanUsername = username.trim();
   const primaryName = cleanUsername.length > 0 ? cleanUsername : 'Primary';
@@ -256,6 +274,10 @@ function persistSessionState(session: Session, profiles: UserProfile[]) {
   writeJson(PROFILES_KEY, profiles);
   writeString(PORTAL_KEY, session.portalCode);
   writeString(SELECTED_PROFILE_KEY, '');
+}
+
+function persistSelectedProfileId(profileId: string) {
+  writeString(SELECTED_PROFILE_KEY, profileId);
 }
 
 function applyAuthenticatedState(setter: Parameters<typeof create<AppState>>[0], session: Session, profiles: UserProfile[]) {
@@ -374,10 +396,16 @@ async function loadAndStoreHomeBootstrapData(
 
 const initialSession = normalizeStoredSession(readJson<Session | (Partial<Session> & { portal?: string })>(SESSION_KEY));
 const initialPortal = initialSession?.portalCode ?? readString(PORTAL_KEY, 'Default Server');
-const initialProfiles = readProfiles();
+const storedProfiles = readProfiles();
+const initialProfiles =
+  storedProfiles.length > 0
+    ? storedProfiles
+    : initialSession
+      ? createDefaultProfiles(initialSession.username)
+      : [];
 const initialSelectedProfileId = readString(SELECTED_PROFILE_KEY, '');
 const initialSelectedProfile =
-  initialProfiles.find((profile) => profile.id === initialSelectedProfileId) ?? null;
+  initialProfiles.find((profile) => profile.id === initialSelectedProfileId) ?? initialProfiles[0] ?? null;
 const initialHomeBootstrapData = readInitialHomeBootstrapData(initialSession, initialSelectedProfile);
 
 export const useAppStore = create<AppState>((set) => ({
@@ -605,27 +633,127 @@ export const useAppStore = create<AppState>((set) => ({
   selectProfile: (profileId) =>
     set((state) => {
       const selectedProfile = state.profiles.find((profile) => profile.id === profileId) ?? null;
-      writeString(SELECTED_PROFILE_KEY, selectedProfile?.id ?? '');
+      persistSelectedProfileId(selectedProfile?.id ?? '');
 
       return {
         selectedProfile,
-      profileSelectionSource: 'post-login',
-      bootstrapStatus: selectedProfile ? 'idle' : state.bootstrapStatus,
+        profileSelectionSource: 'post-login',
+        bootstrapStatus: selectedProfile ? 'idle' : state.bootstrapStatus,
         bootstrapError: null,
         homeBootstrapData: null,
         cachedMovies: [],
         sidebarFocusTarget: 'home',
-      statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage
+        statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage
       };
     }),
   clearSelectedProfile: () =>
-    set({
-      selectedProfile: null,
-      profileSelectionSource: 'post-login',
-      bootstrapStatus: 'idle',
-      bootstrapError: null,
-      homeBootstrapData: null,
-      cachedMovies: []
+    set(() => {
+      persistSelectedProfileId('');
+      return {
+        selectedProfile: null,
+        profileSelectionSource: 'post-login',
+        bootstrapStatus: 'idle',
+        bootstrapError: null,
+        homeBootstrapData: null,
+        cachedMovies: []
+      };
+    }),
+  addProfile: (name, avatarSeed, isKids = false, pinLock = '') =>
+    set((state) => {
+      const session = state.session;
+      if (!session) {
+        return state;
+      }
+
+      const cleanAvatarSeed = avatarSeed.trim().startsWith('svg:')
+        ? avatarSeed.trim()
+        : avatarSeed.trim().slice(0, 2).toUpperCase() || 'NP';
+
+      const nextProfile: UserProfile = {
+        id: generateProfileId(),
+        name: name.trim() || 'New Profile',
+        avatarSeed: cleanAvatarSeed,
+        isKids,
+        pinLock: normalizeProfilePin(pinLock) || undefined
+      };
+      const nextProfiles = [...state.profiles, nextProfile];
+      persistSessionState(session, nextProfiles);
+      persistSelectedProfileId(state.selectedProfile?.id || '');
+
+      return {
+        profiles: nextProfiles,
+        statusMessage: `Profile added: ${nextProfile.name}`
+      };
+    }),
+  removeProfile: (profileId) =>
+    set((state) => {
+      if (profileId === 'primary') {
+        return state;
+      }
+
+      const session = state.session;
+      if (!session) {
+        return state;
+      }
+
+      const nextProfiles = state.profiles.filter((profile) => profile.id !== profileId);
+      if (nextProfiles.length === state.profiles.length) {
+        return state;
+      }
+
+      const nextSelectedProfile =
+        state.selectedProfile?.id === profileId
+          ? nextProfiles[0] ?? null
+          : state.selectedProfile;
+
+      persistSessionState(session, nextProfiles);
+      persistSelectedProfileId(nextSelectedProfile?.id ?? '');
+
+      return {
+        profiles: nextProfiles,
+        selectedProfile: nextSelectedProfile,
+        statusMessage: `Profile removed`
+      };
+    }),
+  updateProfile: (profileId, updates) =>
+    set((state) => {
+      const session = state.session;
+      if (!session) {
+        return state;
+      }
+
+      const nextProfiles = state.profiles.map((profile) => {
+        if (profile.id !== profileId) return profile;
+
+        let nextAvatarSeed = profile.avatarSeed;
+        if (updates.avatarSeed !== undefined) {
+          nextAvatarSeed = updates.avatarSeed.trim().startsWith('svg:')
+            ? updates.avatarSeed.trim()
+            : updates.avatarSeed.trim().slice(0, 2).toUpperCase() || 'NP';
+        }
+
+        return {
+          ...profile,
+          ...updates,
+          name: updates.name?.trim() || profile.name,
+          avatarSeed: nextAvatarSeed,
+          pinLock: normalizeProfilePin(updates.pinLock) || undefined
+        };
+      });
+
+      const nextSelectedProfile =
+        state.selectedProfile?.id === profileId
+          ? nextProfiles.find((profile) => profile.id === profileId) ?? null
+          : state.selectedProfile;
+
+      persistSessionState(session, nextProfiles);
+      persistSelectedProfileId(nextSelectedProfile?.id ?? '');
+
+      return {
+        profiles: nextProfiles,
+        selectedProfile: nextSelectedProfile,
+        statusMessage: 'Profile updated'
+      };
     }),
   openProfileSelectionFromHome: () =>
     set({

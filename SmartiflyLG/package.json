@@ -10,6 +10,7 @@
     "probe:switch": "node scripts/probe-live-switch.mjs",
     "webos:stage": "npm run build",
     "webos:package": "npm run webos:stage && ares-package --no-minify dist",
+    "webos:package:hosted": "ares-package --no-minify hosted",
     "webos:install": "ares-install com.smartifly.lg_0.1.0_all.ipk",
     "webos:launch": "ares-launch com.smartifly.lg"
   },

@@ -1,6 +1,6 @@
-import { type KeyboardEvent, type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent, type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
-import { createXtreamApi, type XtreamLiveStream } from '../../services/api';
+import { createXtreamApi, type XtreamLiveStream, type XtreamShortEpgEntry } from '../../services/api';
 import {
   browseCategories,
   browseCategory,
@@ -21,6 +21,7 @@ import {
   browseSidebarHeader,
   cardDebugOverlay,
   contentScreen,
+  getCategoryItemStyle,
   liveChannelCard,
   liveChannelCardActive,
   liveChannelCardArt,
@@ -49,7 +50,18 @@ type LiveCard = {
   artwork?: string;
   categoryId: string;
   accent: string;
+  archiveAvailable: boolean;
+  archiveDuration: number;
+  epgChannelId: string | null;
 };
+
+type LiveEpgCacheEntry = {
+  fetchedAt: number;
+  programs: XtreamShortEpgEntry[];
+};
+
+const EPG_TTL_MS = 60 * 1000;
+const EPG_DEBOUNCE_MS = 300;
 
 const cardAccents = [
   'linear-gradient(180deg, #f5d06a 0%, #b54d21 100%)',
@@ -102,6 +114,27 @@ function truncateDebugValue(value: string | undefined, maxLength = 42) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
 }
 
+function formatTime(timestamp: number) {
+  if (!timestamp) {
+    return '--:--';
+  }
+
+  return new Intl.DateTimeFormat([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date(timestamp));
+}
+
+function truncateLine(value: string | undefined, maxLength = 42) {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) {
+    return '';
+  }
+
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}...` : trimmed;
+}
+
 function parseFocusId(focusId: string) {
   if (!focusId.startsWith('card:')) {
     return null;
@@ -148,9 +181,21 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
   const [selectedCategoryId, setSelectedCategoryId] = useState(() => useAppStore.getState().liveCategoryId || '');
   const [focusId, setFocusId] = useState(() => useAppStore.getState().liveFocusId || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const [epgByChannel, setEpgByChannel] = useState<Record<string, LiveEpgCacheEntry>>({});
+  const [epgLoadingChannelId, setEpgLoadingChannelId] = useState('');
   const categoryRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const lastFocusedChannelId = useRef<string | null>(useAppStore.getState().liveLastFocusedCardId || null);
+  const epgRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setClockMs(Date.now());
+    }, 30 * 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const username = session?.username?.trim();
@@ -190,7 +235,10 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
           extension: 'm3u8',
           artwork: pickImage(stream.stream_icon, stream.direct_source),
           categoryId: stream.category_id || '0',
-          accent: cardAccents[index % cardAccents.length]
+          accent: cardAccents[index % cardAccents.length],
+          archiveAvailable: Number(stream.tv_archive) === 1,
+          archiveDuration: Number(stream.tv_archive_duration) || 0,
+          epgChannelId: stream.epg_channel_id ?? null
         }));
 
         const counts = mappedChannels.reduce<Record<string, number>>((acc, channel) => {
@@ -270,6 +318,74 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
 
     return visibleChannels[0] ?? channels[0] ?? null;
   }, [channels, focusId, visibleChannels]);
+
+  useEffect(() => {
+    const username = session?.username?.trim();
+    const password = session?.userInfo?.password?.trim();
+    const portalBaseUrl = session?.portalBaseUrl?.trim();
+
+    if (!featuredChannel || !username || !password || !portalBaseUrl) {
+      return;
+    }
+
+    const cached = epgByChannel[featuredChannel.id];
+    if (cached && Date.now() - cached.fetchedAt <= EPG_TTL_MS) {
+      return;
+    }
+
+    const requestId = ++epgRequestIdRef.current;
+    const api = createXtreamApi(portalBaseUrl);
+    const timer = window.setTimeout(async () => {
+      setEpgLoadingChannelId(featuredChannel.id);
+      try {
+        const programs = await api.getShortEpg(username, password, featuredChannel.streamId, 10);
+        if (epgRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setEpgByChannel((current) => ({
+          ...current,
+          [featuredChannel.id]: {
+            fetchedAt: Date.now(),
+            programs
+          }
+        }));
+      } catch {
+        if (epgRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setEpgByChannel((current) => ({
+          ...current,
+          [featuredChannel.id]: {
+            fetchedAt: Date.now(),
+            programs: []
+          }
+        }));
+      } finally {
+        if (epgRequestIdRef.current === requestId) {
+          setEpgLoadingChannelId('');
+        }
+      }
+    }, EPG_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [epgByChannel, featuredChannel, session?.portalBaseUrl, session?.userInfo?.password, session?.username]);
+
+  const featuredPrograms = featuredChannel ? epgByChannel[featuredChannel.id]?.programs ?? [] : [];
+  const currentProgram = useMemo(
+    () => featuredPrograms.find((program) => clockMs >= program.startTime && clockMs <= program.endTime) ?? null,
+    [clockMs, featuredPrograms]
+  );
+  const nextProgram = useMemo(
+    () => featuredPrograms.find((program) => program.startTime > clockMs) ?? null,
+    [clockMs, featuredPrograms]
+  );
+  const currentProgramProgress = currentProgram
+    ? Math.min(1, Math.max(0, (clockMs - currentProgram.startTime) / Math.max(1, currentProgram.endTime - currentProgram.startTime)))
+    : 0;
 
   useEffect(() => {
     const focusedChannelId = parseFocusId(focusId);
@@ -474,7 +590,6 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
           {categories.map((category, index) => {
             const isSelected = selectedCategoryId === category.id;
             const isFocused = focusId === `category:${category.id}`;
-            const isActive = isSelected || isFocused;
 
             return (
               <button
@@ -483,7 +598,7 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
                 ref={(node) => {
                   categoryRefs.current[`category:${category.id}`] = node;
                 }}
-                style={mergeStyle(browseCategory, isActive && browseCategoryActive)}
+                style={getCategoryItemStyle(isFocused, isSelected)}
                 onClick={() => {
                   setSelectedCategoryId(category.id);
                   setFocusId(`category:${category.id}`);
@@ -499,8 +614,36 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
                 }}
                 onKeyDown={(event) => handleCategoryKeyDown(event, index)}
               >
-                <span>{category.name}</span>
-                <span style={mergeStyle(browseCategoryCount, isActive && browseCategoryCountActive)}>{category.count}</span>
+                {(isSelected || isFocused) && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      left: '0',
+                      top: '14px',
+                      bottom: '14px',
+                      width: '4px',
+                      borderRadius: '999px',
+                      background: '#ff2438'
+                    }}
+                  />
+                )}
+                <span style={{ 
+                  color: isFocused ? '#07090e' : '#ffffff', 
+                  fontSize: '18px', 
+                  fontWeight: 800,
+                  paddingLeft: '6px'
+                }}>
+                  {category.name}
+                </span>
+                <span style={{ 
+                  color: isFocused ? 'rgba(7, 9, 14, 0.65)' : 'rgba(255, 255, 255, 0.45)', 
+                  fontSize: '13px', 
+                  fontWeight: 700,
+                  paddingRight: '6px'
+                }}>
+                  {category.count}
+                </span>
               </button>
             );
           })}
@@ -509,9 +652,44 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
 
       <section style={browseContent} aria-label="Live channel grid">
         <div style={mergeStyle(browseGridHeader, browseContentHeader)}>
-          <div>
+          <div style={liveHeaderContentStyle}>
             <p style={browseLabel}>{selectedCategory?.name ?? 'Live TV'}</p>
             <h2 style={browseGridTitle}>{featuredChannel?.name ?? 'Browse channels'}</h2>
+            <div style={liveProgramHeadlineWrapStyle}>
+              <p style={liveProgramTitleStyle}>
+                {epgLoadingChannelId === featuredChannel?.id
+                  ? 'Loading guide...'
+                  : currentProgram?.title || 'Guide unavailable for this channel'}
+              </p>
+              {featuredChannel?.archiveAvailable ? (
+                <span style={liveCatchupBadgeStyle}>
+                  Replay {featuredChannel.archiveDuration > 0 ? `${featuredChannel.archiveDuration}h` : 'On'}
+                </span>
+              ) : null}
+            </div>
+            {currentProgram ? (
+              <>
+                <div style={liveProgramMetaStyle}>
+                  <span>{formatTime(currentProgram.startTime)} - {formatTime(currentProgram.endTime)}</span>
+                  {currentProgram.description ? <span>{truncateLine(currentProgram.description, 88)}</span> : null}
+                </div>
+                <div style={liveProgressTrackStyle}>
+                  <div
+                    style={{
+                      ...liveProgressFillStyle,
+                      width: `${Math.round(currentProgramProgress * 100)}%`
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p style={liveProgramFallbackStyle}>
+                {featuredChannel?.epgChannelId ? 'No listings are available right now.' : 'This channel has no linked EPG guide.'}
+              </p>
+            )}
+            <p style={liveNextStyle}>
+              {nextProgram ? `Next: ${nextProgram.title} (${formatTime(nextProgram.startTime)})` : 'Next: Schedule unavailable'}
+            </p>
           </div>
           <p style={mergeStyle(browseHint, browseGridHeaderHint)}>
             {isLoading ? 'Loading titles...' : visibleChannels.length > 0 ? `${visibleChannels.length} titles` : 'No titles loaded'}
@@ -556,6 +734,17 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
                     artStyle={liveChannelCardArt}
                     imgStyle={liveChannelCardImg}
                   />
+                  <div style={liveCardFooterStyle}>
+                    <strong style={liveCardTitleStyle}>{channel.name}</strong>
+                    <span style={liveCardProgramStyle}>
+                      {truncateLine(epgByChannel[channel.id]?.programs.find((program) => clockMs >= program.startTime && clockMs <= program.endTime)?.title, 36)
+                        || (channel.archiveAvailable ? 'Replay available' : 'No guide data')}
+                    </span>
+                    <div style={liveCardFooterMetaStyle}>
+                      <span>{channel.archiveAvailable ? 'Replay' : 'Live only'}</span>
+                      {channel.epgChannelId ? <span>EPG linked</span> : <span>No EPG ID</span>}
+                    </div>
+                  </div>
                   {import.meta.env.DEV ? (
                     <div style={cardDebugOverlay}>
                       <span>ID: {channel.streamId}</span>
@@ -575,3 +764,118 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
 }
 
 export default LiveScreen;
+
+const liveHeaderContentStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px',
+  maxWidth: '820px'
+};
+
+const liveProgramHeadlineWrapStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  flexWrap: 'wrap'
+};
+
+const liveProgramTitleStyle: CSSProperties = {
+  margin: 0,
+  color: '#ffffff',
+  fontSize: '20px',
+  lineHeight: 1.3,
+  fontWeight: 700
+};
+
+const liveProgramMetaStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '14px',
+  color: 'rgba(255, 255, 255, 0.68)',
+  fontSize: '13px',
+  fontWeight: 700
+};
+
+const liveProgressTrackStyle: CSSProperties = {
+  width: '320px',
+  maxWidth: '100%',
+  height: '5px',
+  borderRadius: '999px',
+  background: 'rgba(255, 255, 255, 0.12)',
+  overflow: 'hidden'
+};
+
+const liveProgressFillStyle: CSSProperties = {
+  height: '100%',
+  borderRadius: '999px',
+  background: 'linear-gradient(90deg, #ff3047 0%, #c80d24 100%)'
+};
+
+const liveNextStyle: CSSProperties = {
+  margin: 0,
+  color: 'rgba(255, 255, 255, 0.74)',
+  fontSize: '13px',
+  fontWeight: 700
+};
+
+const liveProgramFallbackStyle: CSSProperties = {
+  margin: 0,
+  color: 'rgba(255, 255, 255, 0.52)',
+  fontSize: '13px',
+  fontWeight: 600
+};
+
+const liveCatchupBadgeStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: '28px',
+  padding: '0 10px',
+  borderRadius: '999px',
+  background: 'rgba(229, 9, 20, 0.18)',
+  border: '1px solid rgba(229, 9, 20, 0.35)',
+  color: '#ffb6bd',
+  fontSize: '12px',
+  fontWeight: 800,
+  letterSpacing: '0.4px',
+  textTransform: 'uppercase'
+};
+
+const liveCardFooterStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+  padding: '12px 6px 4px 2px'
+};
+
+const liveCardTitleStyle: CSSProperties = {
+  color: '#ffffff',
+  fontSize: '15px',
+  lineHeight: 1.25,
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis'
+};
+
+const liveCardProgramStyle: CSSProperties = {
+  color: 'rgba(255, 255, 255, 0.72)',
+  fontSize: '12px',
+  lineHeight: 1.35,
+  fontWeight: 600,
+  minHeight: '16px',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis'
+};
+
+const liveCardFooterMetaStyle: CSSProperties = {
+  display: 'flex',
+  gap: '10px',
+  color: 'rgba(255, 255, 255, 0.44)',
+  fontSize: '10px',
+  lineHeight: 1.2,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px'
+};
