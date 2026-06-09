@@ -76,6 +76,7 @@ import { buildLivePlaybackRequest } from '../live/livePlayback';
 import { choosePlaybackEngine, type PlaybackEngine, type PlaybackEngineDecision } from './playbackEngine';
 import useSettingsStore from '../../store/settingsStore';
 import useWatchHistoryStore, { useTrackProgress, generateWatchHistoryId } from '../../store/watchHistoryStore';
+import { createXtreamApi, type XtreamShortEpgEntry } from '../../services/api';
 
 declare global {
   interface Window {
@@ -196,6 +197,27 @@ function formatTime(value: number) {
   }
 
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatEpgTime(timestamp: number) {
+  if (!timestamp) {
+    return '--:--';
+  }
+
+  return new Intl.DateTimeFormat([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date(timestamp));
+}
+
+function truncateLine(value: string | undefined, maxLength = 42) {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) {
+    return '';
+  }
+
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}...` : trimmed;
 }
 
 function guessMimeTypeFromStreamUrl(streamUrl: string) {
@@ -909,6 +931,8 @@ function PlayerScreen() {
   const [loadNonce, setLoadNonce] = useState(0);
   const [liveSessionEpoch, setLiveSessionEpoch] = useState(0);
   const [focusedId, setFocusedId] = useState<PlayerFocusId>('play');
+  const [liveEpg, setLiveEpg] = useState<XtreamShortEpgEntry[]>([]);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const [showSettings, setShowSettings] = useState(false);
   const [settingsView, setSettingsView] = useState<PlayerSettingsView>('root');
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -978,6 +1002,66 @@ function PlayerScreen() {
   const videoKey = isLive
     ? `live-${playback?.id ?? 'empty'}:${liveSessionEpoch}`
     : `${activeStreamUrl || 'empty'}:${loadNonce}`;
+
+  useEffect(() => {
+    if (!isLive) return;
+    const interval = window.setInterval(() => {
+      setClockMs(Date.now());
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, [isLive]);
+
+  useEffect(() => {
+    const username = session?.username?.trim();
+    const password = session?.userInfo?.password?.trim();
+    const portalBaseUrl = session?.portalBaseUrl?.trim();
+
+    if (!isLive || !currentLiveStreamId || !username || !password || !portalBaseUrl) {
+      setLiveEpg([]);
+      return;
+    }
+
+    let active = true;
+    const api = createXtreamApi(portalBaseUrl);
+    
+    const fetchEpg = async () => {
+      try {
+        const programs = await api.getShortEpg(username, password, currentLiveStreamId, 3);
+        if (active) {
+          setLiveEpg(programs || []);
+          setClockMs(Date.now());
+        }
+      } catch (err) {
+        console.warn(`${PLAYER_LOG_PREFIX} failed to load live EPG`, err);
+        if (active) {
+          setLiveEpg([]);
+        }
+      }
+    };
+
+    fetchEpg();
+
+    return () => {
+      active = false;
+    };
+  }, [isLive, currentLiveStreamId, session?.portalBaseUrl, session?.userInfo?.password, session?.username]);
+
+  const currentProgram = useMemo(() => {
+    if (!isLive || liveEpg.length === 0) return null;
+    return liveEpg.find((p) => clockMs >= p.startTime && clockMs <= p.endTime) || null;
+  }, [isLive, liveEpg, clockMs]);
+
+  const nextProgram = useMemo(() => {
+    if (!isLive || liveEpg.length === 0) return null;
+    return liveEpg.find((p) => p.startTime > clockMs) || null;
+  }, [isLive, liveEpg, clockMs]);
+
+  const currentProgramProgress = useMemo(() => {
+    if (!currentProgram) return 0;
+    const durationMs = currentProgram.endTime - currentProgram.startTime;
+    if (durationMs <= 0) return 0;
+    return Math.min(1, Math.max(0, (clockMs - currentProgram.startTime) / durationMs));
+  }, [currentProgram, clockMs]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -3775,6 +3859,19 @@ function PlayerScreen() {
             </p>
             <h1 style={playerTitle}>{playback.title}</h1>
             {playback.episodeTitle ? <p style={playerSubtitle}>{playback.episodeTitle}</p> : null}
+            
+            {isLive && currentProgram && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '14px', maxWidth: '680px' }}>
+                <p style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '15px', fontWeight: 600, lineHeight: 1.35, margin: 0 }}>
+                  {currentProgram.description ? truncateLine(currentProgram.description, 120) : 'No description available.'}
+                </p>
+                {nextProgram && (
+                  <p style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+                    Next: {nextProgram.title} ({formatEpgTime(nextProgram.startTime)})
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={playerHudMeta}>
@@ -3787,12 +3884,30 @@ function PlayerScreen() {
           <footer style={playerHudDock}>
             <div style={playerProgressWrap}>
               <div style={playerTime}>
-                <span>{formatTime(currentTime)}</span>
-                {!isLive ? <span>-{formatTime(Math.max(duration - currentTime, 0))}</span> : <span>LIVE</span>}
+                {isLive && currentProgram ? (
+                  <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700 }}>
+                    <span style={{ color: '#ffffff' }}>{formatEpgTime(currentProgram.startTime)}</span>
+                    <span style={{ color: '#ff2438', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 12px' }}>
+                      {currentProgram.title}
+                    </span>
+                    <span style={{ color: '#ffffff' }}>{formatEpgTime(currentProgram.endTime)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>{formatTime(currentTime)}</span>
+                    {!isLive ? <span>-{formatTime(Math.max(duration - currentTime, 0))}</span> : <span>LIVE</span>}
+                  </>
+                )}
               </div>
               <div style={playerProgress} aria-hidden="true">
-                <div style={{ ...playerProgressBuffered, width: `${bufferPercent * 100}%` }} />
-                <div style={{ ...playerProgressPlayed, width: `${progressPercent * 100}%` }} />
+                {isLive && currentProgram ? (
+                  <div style={{ ...playerProgressPlayed, width: `${currentProgramProgress * 100}%`, background: '#ff2438' }} />
+                ) : (
+                  <>
+                    <div style={{ ...playerProgressBuffered, width: `${bufferPercent * 100}%` }} />
+                    <div style={{ ...playerProgressPlayed, width: `${progressPercent * 100}%` }} />
+                  </>
+                )}
               </div>
             </div>
 

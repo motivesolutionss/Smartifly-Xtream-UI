@@ -734,17 +734,6 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
                     artStyle={liveChannelCardArt}
                     imgStyle={liveChannelCardImg}
                   />
-                  <div style={liveCardFooterStyle}>
-                    <strong style={liveCardTitleStyle}>{channel.name}</strong>
-                    <span style={liveCardProgramStyle}>
-                      {truncateLine(epgByChannel[channel.id]?.programs.find((program) => clockMs >= program.startTime && clockMs <= program.endTime)?.title, 36)
-                        || (channel.archiveAvailable ? 'Replay available' : 'No guide data')}
-                    </span>
-                    <div style={liveCardFooterMetaStyle}>
-                      <span>{channel.archiveAvailable ? 'Replay' : 'Live only'}</span>
-                      {channel.epgChannelId ? <span>EPG linked</span> : <span>No EPG ID</span>}
-                    </div>
-                  </div>
                   {import.meta.env.DEV ? (
                     <div style={cardDebugOverlay}>
                       <span>ID: {channel.streamId}</span>
@@ -841,41 +830,4 @@ const liveCatchupBadgeStyle: CSSProperties = {
   textTransform: 'uppercase'
 };
 
-const liveCardFooterStyle: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '6px',
-  padding: '12px 6px 4px 2px'
-};
 
-const liveCardTitleStyle: CSSProperties = {
-  color: '#ffffff',
-  fontSize: '15px',
-  lineHeight: 1.25,
-  fontWeight: 800,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis'
-};
-
-const liveCardProgramStyle: CSSProperties = {
-  color: 'rgba(255, 255, 255, 0.72)',
-  fontSize: '12px',
-  lineHeight: 1.35,
-  fontWeight: 600,
-  minHeight: '16px',
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis'
-};
-
-const liveCardFooterMetaStyle: CSSProperties = {
-  display: 'flex',
-  gap: '10px',
-  color: 'rgba(255, 255, 255, 0.44)',
-  fontSize: '10px',
-  lineHeight: 1.2,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px'
-};
