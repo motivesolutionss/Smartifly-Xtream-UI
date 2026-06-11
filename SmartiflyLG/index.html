@@ -1,283 +1,308 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#07090f" />
-    <title>Smartifly LG</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <style>
-      @keyframes spin {
-        from {
-          transform: rotate(0deg);
-        }
-        to {
-          transform: rotate(360deg);
-        }
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07090f" />
+  <title>Smartifly LG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <style>
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
       }
 
-      @keyframes boot-progress {
-        from {
-          transform: translateX(0);
-        }
-        to {
-          transform: translateX(172%);
-        }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes boot-progress {
+      from {
+        transform: translateX(0);
       }
 
-      #boot-debug {
-        position: fixed;
-        inset: 0;
-        z-index: 999999;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 18px;
-        background: radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.16), transparent 28%), linear-gradient(145deg, #040507 0%, #0b0f15 52%, #020304 100%);
-        color: #f3f6fb;
-        font-family: 'Outfit', 'Inter', sans-serif;
-        box-sizing: border-box;
+      to {
+        transform: translateX(172%);
       }
+    }
 
-      #boot-debug[data-hidden="true"] {
-        display: none;
-      }
+    #boot-debug {
+      position: fixed;
+      inset: 0;
+      z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.16), transparent 28%), linear-gradient(145deg, #040507 0%, #0b0f15 52%, #020304 100%);
+      color: #f3f6fb;
+      font-family: 'Outfit', 'Inter', sans-serif;
+      box-sizing: border-box;
+    }
 
-      /* Glow background behind spinner */
-      .boot-glow {
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 24%), radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.08), transparent 34%);
-        filter: blur(6px);
-        pointer-events: none;
-      }
+    #boot-debug[data-hidden="true"] {
+      display: none;
+    }
 
-      /* Branded Loader Spinner */
-      .boot-spinner {
-        position: relative;
-        width: 92px;
-        height: 92px;
-        border-radius: 999px;
-        border: 5px solid rgba(255, 255, 255, 0.08);
-        border-top-color: #e50914;
-        animation: spin 1.1s linear infinite;
-        box-shadow: 0 0 36px rgba(229, 9, 20, 0.18);
-        box-sizing: border-box;
-      }
+    /* Glow background behind spinner */
+    .boot-glow {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 24%), radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.08), transparent 34%);
+      filter: blur(6px);
+      pointer-events: none;
+    }
 
-      /* Brand Icon */
-      .boot-logo-img {
-        width: 236px;
-        max-width: 42vw;
-        margin-top: 2px;
-      }
+    /* Branded Loader Spinner */
+    .boot-spinner {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      border-radius: 999px;
+      border: 5px solid rgba(255, 255, 255, 0.08);
+      border-top-color: #e50914;
+      animation: spin 1.1s linear infinite;
+      box-shadow: 0 0 36px rgba(229, 9, 20, 0.18);
+      box-sizing: border-box;
+    }
 
-      /* Subtitle */
-      .boot-subtitle {
-        margin: 0;
-        color: rgba(255, 255, 255, 0.55);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 5px;
-        text-transform: uppercase;
-      }
+    /* Brand Icon */
+    .boot-logo-img {
+      width: 236px;
+      max-width: 42vw;
+      margin-top: 2px;
+    }
 
-      /* Progress Bar */
-      .boot-progress-track {
-        width: 56vw;
-        max-width: 320px;
-        height: 7px;
-        padding: 1px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        overflow: hidden;
-        box-shadow: 0 0 20px rgba(229, 9, 20, 0.12);
-        box-sizing: border-box;
-        margin-top: 6px;
-      }
+    /* Subtitle */
+    .boot-subtitle {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
 
-      .boot-progress-bar {
-        width: 38%;
-        height: 100%;
-        border-radius: inherit;
-        background: linear-gradient(90deg, #ff5d67, #e50914);
-        animation: boot-progress 1.2s ease-in-out infinite alternate;
-      }
+    /* Progress Bar */
+    .boot-progress-track {
+      width: 56vw;
+      max-width: 320px;
+      height: 7px;
+      padding: 1px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(229, 9, 20, 0.12);
+      box-sizing: border-box;
+      margin-top: 6px;
+    }
 
-      /* Stable build footer text */
-      .boot-footer {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 38px;
-        margin: 0;
-        color: rgba(255, 255, 255, 0.22);
-        font-size: 9px;
-        letter-spacing: 3px;
-        text-align: center;
-        text-transform: uppercase;
-      }
+    .boot-progress-bar {
+      width: 38%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #ff5d67, #e50914);
+      animation: boot-progress 1.2s ease-in-out infinite alternate;
+    }
 
-      /* Error panel styling */
-      #boot-error-container {
-        display: none;
-        position: absolute;
-        bottom: 40px;
-        left: 40px;
-        right: 40px;
-        background: rgba(255, 36, 56, 0.08);
-        border: 1px solid rgba(255, 36, 56, 0.3);
-        border-radius: 12px;
-        padding: 24px;
-        font-family: monospace;
-        text-align: left;
-        box-sizing: border-box;
-        z-index: 10;
-      }
+    /* Stable build footer text */
+    .boot-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 38px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.22);
+      font-size: 9px;
+      letter-spacing: 3px;
+      text-align: center;
+      text-transform: uppercase;
+    }
 
-      #boot-error-title {
-        margin: 0 0 8px;
-        color: #ff2438;
-        font-size: 18px;
-        font-weight: 700;
-      }
+    /* Error panel styling */
+    #boot-error-container {
+      display: none;
+      position: absolute;
+      bottom: 40px;
+      left: 40px;
+      right: 40px;
+      background: rgba(255, 36, 56, 0.08);
+      border: 1px solid rgba(255, 36, 56, 0.3);
+      border-radius: 12px;
+      padding: 24px;
+      font-family: monospace;
+      text-align: left;
+      box-sizing: border-box;
+      z-index: 10;
+    }
 
-      #boot-debug__status {
-        margin: 0 0 12px;
-        color: #ffffff;
-        font-size: 14px;
-      }
+    #boot-error-title {
+      margin: 0 0 8px;
+      color: #ff2438;
+      font-size: 18px;
+      font-weight: 700;
+    }
 
-      #boot-debug__log {
-        margin: 0;
-        color: #ff9db7;
-        font-size: 12px;
-        white-space: pre-wrap;
-        overflow-x: auto;
-        max-height: 160px;
-      }
+    #boot-debug__status {
+      margin: 0 0 12px;
+      color: #ffffff;
+      font-size: 14px;
+    }
 
-      .lg-details-scroll,
-      .lg-details-scroll-x,
-      .lg-browse-scroll {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-      }
+    #boot-debug__log {
+      margin: 0;
+      color: #ff9db7;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-x: auto;
+      max-height: 160px;
+    }
 
-      .lg-details-scroll::-webkit-scrollbar,
-      .lg-details-scroll-x::-webkit-scrollbar,
-      .lg-browse-scroll::-webkit-scrollbar {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="boot-debug" aria-live="polite">
-      <div class="boot-glow" aria-hidden="true"></div>
-      <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
-        <div class="boot-spinner" aria-hidden="true"></div>
-        <img class="boot-logo-img" src="./assets/smartifly_icon.png" alt="Smartifly" />
-        <p class="boot-subtitle">PREMIUM STREAMING ENGINE</p>
-      </div>
-      <div class="boot-progress-track" aria-hidden="true">
-        <div class="boot-progress-bar"></div>
-      </div>
-      <p class="boot-footer">v2025.05 • STABLE BUILD</p>
-      
-      <div id="boot-error-container">
-        <h2 id="boot-error-title">Startup Diagnostic Error</h2>
-        <p id="boot-debug__status">HTML loaded. Waiting for app bundle...</p>
-        <pre id="boot-debug__log">No runtime events yet.</pre>
-      </div>
+    .lg-details-scroll,
+    .lg-details-scroll-x,
+    .lg-browse-scroll {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .lg-details-scroll::-webkit-scrollbar,
+    .lg-details-scroll-x::-webkit-scrollbar,
+    .lg-browse-scroll::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="boot-debug" aria-live="polite">
+    <div class="boot-glow" aria-hidden="true"></div>
+    <div
+      style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <img class="boot-logo-img" src="./assets/smartifly_icon.png" alt="Smartifly" />
+      <p class="boot-subtitle">PREMIUM STREAMING ENGINE</p>
     </div>
-    <div id="root"></div>
-    <script>
-      (function () {
-        var panel = document.getElementById('boot-debug');
-        var statusNode = document.getElementById('boot-debug__status');
-        var logNode = document.getElementById('boot-debug__log');
+    <div class="boot-progress-track" aria-hidden="true">
+      <div class="boot-progress-bar"></div>
+    </div>
+    <p class="boot-footer">v2025.05 • STABLE BUILD</p>
 
-        function stringify(value) {
-          if (value == null) {
-            return String(value);
-          }
+    <div id="boot-error-container">
+      <h2 id="boot-error-title">Startup Diagnostic Error</h2>
+      <p id="boot-debug__status">HTML loaded. Waiting for app bundle...</p>
+      <pre id="boot-debug__log">No runtime events yet.</pre>
+    </div>
+  </div>
+  <div id="root"></div>
+  <script>
+    (function () {
+      var panel = document.getElementById('boot-debug');
+      var statusNode = document.getElementById('boot-debug__status');
+      var logNode = document.getElementById('boot-debug__log');
 
-          if (value instanceof Error) {
-            return value.stack || value.message || String(value);
-          }
-
-          if (typeof value === 'object') {
-            try {
-              return JSON.stringify(value, null, 2);
-            } catch (_error) {
-              return String(value);
-            }
-          }
-
+      function stringify(value) {
+        if (value == null) {
           return String(value);
         }
 
-        function setStatus(message) {
-          if (statusNode) {
-            statusNode.textContent = message;
+        if (value instanceof Error) {
+          return value.stack || value.message || String(value);
+        }
+
+        if (typeof value === 'object') {
+          try {
+            return JSON.stringify(value, null, 2);
+          } catch (_error) {
+            return String(value);
           }
         }
 
-        function appendLog(label, detail) {
-          if (!logNode) {
-            return;
-          }
+        return String(value);
+      }
 
-          var existing = logNode.textContent === 'No runtime events yet.' ? '' : logNode.textContent + '\n\n';
-          logNode.textContent = existing + label + '\n' + stringify(detail);
+      function setStatus(message) {
+        if (statusNode) {
+          statusNode.textContent = message;
+        }
+      }
+
+      function appendLog(label, detail) {
+        if (!logNode) {
+          return;
         }
 
-        function showErrorPanel() {
-          var errorContainer = document.getElementById('boot-error-container');
-          if (errorContainer) {
-            errorContainer.style.display = 'block';
-          }
-          var spinner = document.querySelector('.boot-spinner');
-          if (spinner) {
-            spinner.style.display = 'none';
-          }
-          var progress = document.querySelector('.boot-progress-track');
-          if (progress) {
-            progress.style.display = 'none';
-          }
+        var existing = logNode.textContent === 'No runtime events yet.' ? '' : logNode.textContent + '\n\n';
+        logNode.textContent = existing + label + '\n' + stringify(detail);
+      }
+
+      function showErrorPanel() {
+        var errorContainer = document.getElementById('boot-error-container');
+        if (errorContainer) {
+          errorContainer.style.display = 'block';
         }
+        var spinner = document.querySelector('.boot-spinner');
+        if (spinner) {
+          spinner.style.display = 'none';
+        }
+        var progress = document.querySelector('.boot-progress-track');
+        if (progress) {
+          progress.style.display = 'none';
+        }
+      }
 
-        window.__SMARTIFLY_BOOT_DEBUG__ = {
-          hide: function () {
-            if (panel) {
-              panel.setAttribute('data-hidden', 'true');
-            }
-          },
-          setStatus: setStatus,
-          appendLog: function (label, detail) {
-            appendLog(label, detail);
-            showErrorPanel();
+      var bundleStartTimeoutId = window.setTimeout(function () {
+        setStatus('The JavaScript bundle did not start in time.');
+        appendLog(
+          'boot timeout',
+          [
+            'HTML loaded, but /src/main.tsx never completed startup.',
+            'This usually means one of these:',
+            '1. The emulator cannot reach the Vite dev server URL.',
+            '2. localhost inside the emulator is not your host machine.',
+            '3. webOS emulator failed before executing the module bundle.',
+            'Recommended next step: open the app using your host machine IP instead of localhost, or install the built package instead of using the dev URL.'
+          ].join('\n')
+        );
+        showErrorPanel();
+      }, 6000);
+
+      window.__SMARTIFLY_BOOT_DEBUG__ = {
+        hide: function () {
+          window.clearTimeout(bundleStartTimeoutId);
+          if (panel) {
+            panel.setAttribute('data-hidden', 'true');
           }
-        };
-
-        setStatus('HTML loaded. Installing global error handlers...');
-        window.addEventListener('error', function (event) {
-          setStatus('A runtime error blocked rendering.');
-          appendLog('window.error', event.error || event.message || 'Unknown error');
+        },
+        setStatus: setStatus,
+        appendLog: function (label, detail) {
+          appendLog(label, detail);
           showErrorPanel();
-        });
-        window.addEventListener('unhandledrejection', function (event) {
-          setStatus('An unhandled promise rejection blocked rendering.');
-          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');
-          showErrorPanel();
-        });
-      })();
-    </script>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+        }
+      };
+
+      setStatus('HTML loaded. Installing global error handlers...');
+      window.addEventListener('error', function (event) {
+        setStatus('A runtime error blocked rendering.');
+        appendLog('window.error', event.error || event.message || 'Unknown error');
+        showErrorPanel();
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        setStatus('An unhandled promise rejection blocked rendering.');
+        appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');
+        showErrorPanel();
+      });
+    })();
+  </script>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

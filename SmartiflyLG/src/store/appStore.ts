@@ -129,6 +129,8 @@ type AppState = {
   selectedContent: SelectedContent | null;
   selectedPlayback: PlaybackRequest | null;
   detailReturnDestination: AppDestination;
+  detailsFocusId: string;
+  detailsSelectedSeasonId: string;
   statusMessage: string;
   isAuthenticating: boolean;
   setOnboardingScreen: (screen: OnboardingScreen) => void;
@@ -153,6 +155,8 @@ type AppState = {
   setLiveBrowseState: (state: { categoryId?: string, focusId?: string, lastFocusedCardId?: string }) => void;
   setSearchQuery: (query: string) => void;
   setSearchFocusId: (focusId: string) => void;
+  setDetailsReturnState: (state: { focusId?: string, selectedSeasonId?: string }) => void;
+  clearDetailsReturnState: () => void;
   openContentDetails: (content: SelectedContent, returnDestination: AppDestination) => void;
   openPlayback: (playback: PlaybackRequest) => void;
   closePlayback: () => void;
@@ -434,6 +438,8 @@ export const useAppStore = create<AppState>((set) => ({
   selectedContent: null,
   selectedPlayback: null,
   detailReturnDestination: 'home',
+  detailsFocusId: '',
+  detailsSelectedSeasonId: '',
   statusMessage: initialSession ? `Connected as ${initialSession.username}` : 'Ready for LG webOS emulator test',
   isAuthenticating: false,
   setOnboardingScreen: (screen) => set({ onboardingScreen: screen }),
@@ -835,10 +841,22 @@ export const useAppStore = create<AppState>((set) => ({
     set({
       searchFocusId
     }),
+  setDetailsReturnState: ({ focusId, selectedSeasonId }) =>
+    set((state) => ({
+      detailsFocusId: focusId ?? state.detailsFocusId,
+      detailsSelectedSeasonId: selectedSeasonId ?? state.detailsSelectedSeasonId
+    })),
+  clearDetailsReturnState: () =>
+    set({
+      detailsFocusId: '',
+      detailsSelectedSeasonId: ''
+    }),
   openContentDetails: (content, returnDestination) =>
     set({
       selectedContent: content,
       detailReturnDestination: returnDestination,
+      detailsFocusId: '',
+      detailsSelectedSeasonId: '',
       sidebarDestination: returnDestination,
       currentDestination: 'details'
     }),
@@ -856,7 +874,9 @@ export const useAppStore = create<AppState>((set) => ({
   closeContentDetails: () =>
     set((state) => ({
       currentDestination: state.sidebarDestination,
-      selectedContent: null
+      selectedContent: null,
+      detailsFocusId: '',
+      detailsSelectedSeasonId: ''
     })),
   changePortal: () => {
     if (canUseStorage()) {
@@ -899,6 +919,8 @@ export const useAppStore = create<AppState>((set) => ({
       selectedContent: null,
       selectedPlayback: null,
       detailReturnDestination: 'home',
+      detailsFocusId: '',
+      detailsSelectedSeasonId: '',
       isAuthenticating: false,
       statusMessage: 'Enter a new Server Identity'
     });
@@ -943,6 +965,8 @@ export const useAppStore = create<AppState>((set) => ({
       selectedContent: null,
       selectedPlayback: null,
       detailReturnDestination: 'home',
+      detailsFocusId: '',
+      detailsSelectedSeasonId: '',
       isAuthenticating: false,
       statusMessage: 'Signed out'
     });

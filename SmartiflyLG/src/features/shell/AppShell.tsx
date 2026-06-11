@@ -64,8 +64,8 @@ function NavIcon({
   const commonProps = {
     className,
     viewBox: '0 0 24 24',
-    width: '26px',
-    height: '26px',
+    width: '30px',
+    height: '30px',
     fill: 'none',
     stroke: 'currentColor',
     strokeWidth: 2,
@@ -520,7 +520,7 @@ function AppShell() {
             left: '16px',
             top: '50%',
             transform: 'translateY(-50%)',
-            height: '620px',
+            height: '760px',
             bottom: 'auto',
             width: isSidebarExpanded ? '240px' : '76px',
             zIndex: 10,
@@ -541,12 +541,12 @@ function AppShell() {
             style={{
               width: '100%',
               height: '100%',
-              padding: isSidebarExpanded ? '32px 14px' : '32px 10px',
+              padding: isSidebarExpanded ? '24px 14px' : '24px 10px',
               display: 'flex',
               flexDirection: 'column',
-              justifyContent: 'space-between',
+              justifyContent: 'center',
               alignItems: 'center',
-              gap: 0,
+              gap: isSidebarExpanded ? '16px' : '12px',
               background: isSidebarExpanded ? 'rgba(10, 12, 18, 0.92)' : 'rgba(10, 12, 18, 0.78)',
               backdropFilter: 'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)',
@@ -559,65 +559,8 @@ function AppShell() {
               boxSizing: 'border-box'
             }}
           >
-            <div
-              className="sidebar__brand"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '4px 0',
-                minHeight: '32px',
-                width: '100%'
-              }}
-            >
-              {isSidebarExpanded ? (
-                <p
-                  className="sidebar__wordmark"
-                  style={{
-                    margin: 0,
-                    color: '#ff2438',
-                    fontSize: '20px',
-                    fontWeight: 950,
-                    letterSpacing: '3px',
-                    opacity: 1,
-                    textAlign: 'center',
-                    width: '100%',
-                    transition: 'opacity 150ms ease'
-                  }}
-                >
-                  SMARTIFLY
-                </p>
-              ) : (
-                <p
-                  className="sidebar__wordmark"
-                  style={{
-                    margin: 0,
-                    color: '#ff2438',
-                    fontSize: '28px',
-                    fontWeight: 950,
-                    letterSpacing: 'normal',
-                    opacity: 0.96,
-                    transform: 'translateY(-1px)',
-                    textAlign: 'center',
-                    width: '100%',
-                    transition: 'opacity 150ms ease'
-                  }}
-                >
-                  S
-                </p>
-              )}
-            </div>
 
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                justifyContent: 'flex-start',
-                gap: isSidebarExpanded ? '14px' : '10px',
-                width: '100%'
-              }}
-            >
+
               <button
                 type="button"
                 className={focusId === 'profile' ? 'sidebar__profile active' : 'sidebar__profile'}
@@ -634,7 +577,7 @@ function AppShell() {
                   background: focusId === 'profile' ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
                   color: '#ffffff',
                   width: '100%',
-                  minHeight: '52px',
+                  minHeight: '62px',
                   padding: isSidebarExpanded ? '0 12px' : '0 8px',
                   display: 'flex',
                   alignItems: 'center',
@@ -668,19 +611,19 @@ function AppShell() {
                   className="sidebar__profile-avatar"
                   aria-hidden="true"
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '6px',
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '8px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: selectedProfile?.avatarSeed && PRESET_AVATARS[selectedProfile.avatarSeed]
-                      ? 'transparent'
+                       ? 'transparent'
                       : 'linear-gradient(180deg, #ff2438 0%, #991220 100%)',
                     color: '#ffffff',
-                    fontSize: '12px',
+                    fontSize: '14px',
                     fontWeight: 900,
-                    flex: '0 0 34px',
+                    flex: '0 0 42px',
                     boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
                     overflow: 'hidden'
                   }}
@@ -696,7 +639,7 @@ function AppShell() {
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    marginLeft: isSidebarExpanded ? '12px' : '0',
+                    marginLeft: isSidebarExpanded ? '14px' : '0',
                     opacity: isSidebarExpanded ? 1 : 0,
                     maxWidth: isSidebarExpanded ? '130px' : '0',
                     overflow: 'hidden',
@@ -706,25 +649,35 @@ function AppShell() {
                     transition: 'opacity 150ms ease, max-width 150ms ease, transform 180ms ease'
                   }}
                 >
-                  <strong style={{ color: '#ffffff', fontSize: '14px', fontWeight: 800 }}>
+                  <strong style={{ color: '#ffffff', fontSize: '17px', fontWeight: 800 }}>
                     {selectedProfile?.name || 'Profile'}
                   </strong>
-                  <small style={{ color: 'rgba(255, 255, 255, 0.54)', fontSize: '10px', fontWeight: 700 }}>
+                  <small style={{ color: 'rgba(255, 255, 255, 0.54)', fontSize: '11px', fontWeight: 700 }}>
                     {selectedProfile?.isKids ? 'Kids profile' : 'Primary profile'}
                   </small>
                 </span>
               </button>
+
+              <div
+                style={{
+                  height: '1px',
+                  width: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1) 20%, rgba(255, 255, 255, 0.1) 80%, transparent)',
+                  margin: '6px 0'
+                }}
+              />
 
               <nav
                 className="sidebar__nav"
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '4px',
+                  gap: '12px',
                   alignItems: 'stretch',
                   width: '100%',
                   justifyContent: 'flex-start',
-                  paddingTop: '0'
+                  paddingTop: '0',
+                  flex: 'none'
                 }}
               >
                 {sidebarItems.map((destination) => {
@@ -758,7 +711,7 @@ function AppShell() {
                           ? '#ffffff'
                           : 'rgba(255, 255, 255, 0.45)',
                         width: '100%',
-                        minHeight: '48px',
+                        minHeight: '52px',
                         padding: isSidebarExpanded ? '0 12px' : '0 8px',
                         display: 'flex',
                         alignItems: 'center',
@@ -804,13 +757,13 @@ function AppShell() {
                         className="nav-item__icon"
                         aria-hidden="true"
                         style={{
-                          width: '26px',
-                          height: '26px',
+                          width: '30px',
+                          height: '30px',
                           display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           lineHeight: 1,
-                          flex: '0 0 26px',
+                          flex: '0 0 30px',
                           color: 'inherit'
                         }}
                       >
@@ -819,13 +772,13 @@ function AppShell() {
                       <span
                         className="nav-item__label"
                         style={{
-                          marginLeft: isSidebarExpanded ? '12px' : '0',
+                          marginLeft: isSidebarExpanded ? '14px' : '0',
                           opacity: isSidebarExpanded ? 1 : 0,
                           maxWidth: isSidebarExpanded ? '130px' : '0',
                           overflow: 'hidden',
                           whiteSpace: 'nowrap',
                           transform: isSidebarExpanded ? 'translateX(0)' : 'translateX(-8px)',
-                          fontSize: '15px',
+                          fontSize: '17px',
                           fontWeight: 700,
                           transition: 'opacity 150ms ease, max-width 150ms ease, transform 180ms ease'
                         }}
@@ -836,7 +789,14 @@ function AppShell() {
                   );
                 })}
               </nav>
-            </div>
+            <div
+              style={{
+                height: '1px',
+                width: '100%',
+                background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1) 20%, rgba(255, 255, 255, 0.1) 80%, transparent)',
+                margin: '6px 0'
+              }}
+            />
 
             <button
               type="button"
@@ -856,7 +816,7 @@ function AppShell() {
                   ? '#ffffff'
                   : 'rgba(255, 255, 255, 0.45)',
                 width: '100%',
-                minHeight: '48px',
+                minHeight: '52px',
                 padding: isSidebarExpanded ? '0 12px' : '0 8px',
                 display: 'flex',
                 alignItems: 'center',
@@ -902,13 +862,13 @@ function AppShell() {
                 className="nav-item__icon"
                 aria-hidden="true"
                 style={{
-                  width: '26px',
-                  height: '26px',
+                  width: '30px',
+                  height: '30px',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   lineHeight: 1,
-                  flex: '0 0 26px',
+                  flex: '0 0 30px',
                   color: 'inherit'
                 }}
               >
@@ -917,13 +877,13 @@ function AppShell() {
               <span
                 className="nav-item__label"
                 style={{
-                  marginLeft: isSidebarExpanded ? '12px' : '0',
+                  marginLeft: isSidebarExpanded ? '14px' : '0',
                   opacity: isSidebarExpanded ? 1 : 0,
                   maxWidth: isSidebarExpanded ? '130px' : '0',
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
                   transform: isSidebarExpanded ? 'translateX(0)' : 'translateX(-8px)',
-                  fontSize: '15px',
+                  fontSize: '17px',
                   fontWeight: 700,
                   transition: 'opacity 150ms ease, max-width 150ms ease, transform 180ms ease'
                 }}

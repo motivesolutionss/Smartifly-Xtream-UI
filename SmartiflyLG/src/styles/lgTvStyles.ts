@@ -575,14 +575,15 @@ export const searchSidebarBack: CSSProperties = {
   textAlign: 'center',
   cursor: 'pointer',
   boxSizing: 'border-box',
-  transition: 'all 0.18s ease'
+  transition: 'transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+  transform: 'translateZ(0)'
 };
 
 export const searchSidebarBackFocused: CSSProperties = {
   background: '#ffffff',
   color: '#0b1018',
   borderColor: '#ffffff',
-  transform: 'scale(1.03)',
+  transform: 'scale(1.03) translateZ(0)',
   boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.95), 0 8px 24px rgba(0, 0, 0, 0.45)'
 };
 
@@ -640,11 +641,9 @@ export const searchRailEmpty: CSSProperties = {
 };
 
 export const searchRailTrack: CSSProperties = {
-  display: 'grid',
-  gridAutoFlow: 'column',
-  gridAutoColumns: '270px',
-  gap: '18px',
-  alignItems: 'start',
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'flex-start',
   overflowX: 'auto',
   overflowY: 'hidden',
   padding: '24px 20px',
@@ -663,11 +662,14 @@ export const searchRailCard: CSSProperties = {
   outline: 'none',
   cursor: 'pointer',
   boxSizing: 'border-box',
-  transition: 'all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)'
+  marginRight: '18px',
+  flexShrink: 0,
+  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+  transform: 'translateZ(0)'
 };
 
 export const searchRailCardActive: CSSProperties = {
-  transform: 'translateY(-6px) scale(1.05)',
+  transform: 'translateY(-6px) scale(1.05) translateZ(0)',
   boxShadow: '0 22px 48px rgba(0, 0, 0, 0.5), 0 0 0 3px #ffffff'
 };
 
@@ -733,7 +735,8 @@ export const tvKey: CSSProperties = {
   boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.02)',
   cursor: 'pointer',
   boxSizing: 'border-box',
-  transition: 'all 0.18s ease'
+  transition: 'transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+  transform: 'translateZ(0)'
 };
 
 export const tvKeyAccent: CSSProperties = {
@@ -743,7 +746,7 @@ export const tvKeyAccent: CSSProperties = {
 };
 
 export const tvKeyFocused: CSSProperties = {
-  transform: 'scale(1.08)',
+  transform: 'scale(1.08) translateZ(0)',
   boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.95), 0 8px 24px rgba(0, 0, 0, 0.45)',
   background: '#ffffff',
   color: '#0b1018',
@@ -751,7 +754,7 @@ export const tvKeyFocused: CSSProperties = {
 };
 
 export const tvKeyAccentFocused: CSSProperties = {
-  transform: 'scale(1.08)',
+  transform: 'scale(1.08) translateZ(0)',
   background: 'linear-gradient(135deg, #ff2438 0%, #b20710 100%)',
   color: '#ffffff',
   borderColor: '#ffffff',
@@ -814,7 +817,7 @@ export const detailsBackdropCinematic: CSSProperties = {
   height: '100%',
   display: 'block',
   objectFit: 'cover',
-  objectPosition: 'center 36%',
+  objectPosition: 'center 15%',
   filter: 'saturate(0.92) brightness(0.82) contrast(1.04)',
   opacity: 0.88
 };
@@ -837,7 +840,7 @@ export const detailsOverlay: CSSProperties = {
   ...fillAbsolute,
   pointerEvents: 'none',
   background:
-    'linear-gradient(90deg, rgba(2, 3, 6, 0.72) 0%, rgba(2, 3, 6, 0.4) 24%, rgba(2, 3, 6, 0.06) 40%, rgba(2, 3, 6, 0) 54%), linear-gradient(180deg, rgba(2, 3, 6, 0.08) 0%, rgba(2, 3, 6, 0.42) 42%, rgba(2, 3, 6, 0.96) 68%, rgba(2, 3, 6, 1) 85%)'
+    'linear-gradient(90deg, rgba(2, 3, 6, 0.72) 0%, rgba(2, 3, 6, 0.4) 24%, rgba(2, 3, 6, 0.06) 40%, rgba(2, 3, 6, 0) 54%), linear-gradient(180deg, rgba(2, 3, 6, 0.05) 0%, rgba(2, 3, 6, 0.2) 50%, rgba(2, 3, 6, 0.6) 82%, rgba(2, 3, 6, 1) 96%)'
 };
 
 export const detailsOverlayCorner: CSSProperties = {
@@ -1115,33 +1118,33 @@ export const detailsSeasonRow: CSSProperties = {
 };
 
 export const detailsSeasonChip: CSSProperties = {
-  width: '170px',
+  minWidth: '140px',
   flexShrink: 0,
   marginRight: '14px',
-  border: 0,
-  borderRadius: '18px',
-  padding: '16px 18px',
-  background: 'rgba(255, 255, 255, 0.08)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: '24px',
+  padding: '12px 24px',
+  background: 'rgba(255, 255, 255, 0.06)',
   color: 'rgba(255, 255, 255, 0.88)',
-  display: 'flex',
-  flexDirection: 'row',
+  display: 'inline-flex',
   alignItems: 'center',
-  justifyContent: 'space-between',
-  textAlign: 'left',
-  fontSize: '16px',
+  justifyContent: 'center',
+  fontSize: '15px',
   fontWeight: 800,
   outline: 'none',
   cursor: 'pointer',
   boxSizing: 'border-box',
+  transition: 'all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
   WebkitAppearance: 'none',
   appearance: 'none'
 };
 
 export const detailsSeasonChipActive: CSSProperties = {
   transform: 'translateY(-3px)',
-  background: '#f4f4f4',
-  color: '#0b0d10',
-  boxShadow: '0 16px 30px rgba(0, 0, 0, 0.28), 0 0 0 3px rgba(255, 255, 255, 0.88)'
+  background: '#b21e29',
+  color: '#ffffff',
+  borderColor: '#b21e29',
+  boxShadow: '0 8px 20px rgba(0, 0, 0, 0.45)'
 };
 
 export const detailsEpisodeGrid: CSSProperties = {
@@ -1250,7 +1253,10 @@ export const detailsEpisodeDescription: CSSProperties = {
 export const detailsSimilar: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  flexShrink: 0
+  flexShrink: 0,
+  paddingLeft: '52px',
+  paddingRight: '52px',
+  boxSizing: 'border-box'
 };
 
 export const detailsSimilarRow: CSSProperties = {

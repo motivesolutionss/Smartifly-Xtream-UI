@@ -44,9 +44,12 @@ export default defineConfig({
         const htmlWithInlinedCss = html
           .replace('<link rel="stylesheet" crossorigin href="./styles.css">', cssInlineTag);
 
+        // Remove any source entry scripts or generated script tags for app.js
         const withoutAppScript = htmlWithInlinedCss
-          .replace(/\s*<script type="module" crossorigin src="\.\/app\.js"><\/script>/, '')
-          .replace(/\s*<script src="\.\/app\.js"><\/script>/, '');
+          .replace(/\s*<script type="module" src="\/src\/main\.tsx"><\/script>/g, '')
+          .replace(/\s*<script type="module" src="src\/main\.tsx"><\/script>/g, '')
+          .replace(/\s*<script type="module" crossorigin src="\.\/app\.js"><\/script>/g, '')
+          .replace(/\s*<script src="\.\/app\.js"><\/script>/g, '');
 
         const lineEnding = html.includes('\r\n') ? '\r\n' : '\n';
 
@@ -98,21 +101,10 @@ export default defineConfig({
           "        }, 'The emulator could not load ./vendor/hls.min.js');"
         ].join(lineEnding);
 
+        // Replace the error handler block with the full loader block using RegExp
         const patched = withoutAppScript.replace(
-          [
-            "        setStatus('HTML loaded. Installing global error handlers...');",
-            "        window.addEventListener('error', function (event) {",
-            "          setStatus('A runtime error blocked rendering.');",
-            "          appendLog('window.error', event.error || event.message || 'Unknown error');",
-            "          showErrorPanel();",
-            "        });",
-            "        window.addEventListener('unhandledrejection', function (event) {",
-            "          setStatus('An unhandled promise rejection blocked rendering.');",
-            "          appendLog('window.unhandledrejection', event.reason || 'Unknown rejection');",
-            "          showErrorPanel();",
-            "        });"
-          ].join(lineEnding),
-          loaderSnippet
+          /\s*setStatus\(\s*['"]HTML loaded\. Installing global error handlers\.\.\.['"]\s*\);[\s\S]*?window\.addEventListener\(['"]unhandledrejection['"][\s\S]*?showErrorPanel\(\);\s*\}\);/,
+          lineEnding + loaderSnippet
         );
 
         if (patched !== html) {

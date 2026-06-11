@@ -126,7 +126,7 @@ type DetailEpisode = {
   streamId?: number;
 };
 
-type DetailFocusId = 'back' | 'play' | 'save' | `season:${string}` | `episode:${string}` | `similar:${string}`;
+type DetailFocusId = 'back' | 'play' | 'save' | 'trailer' | 'close-trailer' | `season:${string}` | `episode:${string}` | `similar:${string}`;
 
 
 function pickImage(...values: Array<string | string[] | undefined>) {
@@ -172,6 +172,44 @@ function getPlaybackExtensions(extension?: string | null) {
 function getEpisodeNumber(value?: string | number | null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getEpisodeTag(seasonId: string, episodeNumber?: number) {
+  const seasonNumber = Number(seasonId);
+  const seasonPart = Number.isFinite(seasonNumber) && seasonNumber > 0
+    ? `S${String(seasonNumber).padStart(2, '0')}`
+    : 'S--';
+  const episodePart = episodeNumber
+    ? `E${String(episodeNumber).padStart(2, '0')}`
+    : 'EP';
+
+  return `${seasonPart}${episodePart}`;
+}
+
+function getEpisodeCardTitle(title: string, seriesTitle?: string) {
+  const rawTitle = title.trim();
+  if (!rawTitle) {
+    return 'Episode';
+  }
+
+  let normalized = rawTitle;
+  const trimmedSeriesTitle = seriesTitle?.trim();
+
+  if (trimmedSeriesTitle) {
+    const seriesPattern = new RegExp(`^${escapeRegExp(trimmedSeriesTitle)}\\s*[-:|]\\s*`, 'i');
+    normalized = normalized.replace(seriesPattern, '').trim();
+  }
+
+  normalized = normalized
+    .replace(/^\s*S\d{1,2}E\d{1,2}\s*[-:|]?\s*/i, '')
+    .replace(/^\s*Episode\s+\d+\s*[-:|]?\s*/i, '')
+    .trim();
+
+  return normalized || rawTitle;
 }
 
 function mapMovieSimilar(item: XtreamMovie): DetailCard {
@@ -497,6 +535,54 @@ function parseSeriesInfo(info: XtreamSeriesInfo, fallback: DetailState): DetailS
   };
 }
 
+function getYouTubeEmbedUrl(urlOrId?: string): string | null {
+  if (!urlOrId) return null;
+  const trimmed = urlOrId.trim();
+  if (!trimmed) return null;
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return `https://www.youtube-nocookie.com/embed/${trimmed}?autoplay=1${typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`;
+  }
+
+  const ytRegexes = [
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i,
+    /embed\/([^"&?\/\s]{11})/i
+  ];
+
+  for (const regex of ytRegexes) {
+    const match = trimmed.match(regex);
+    if (match && match[1]) {
+      return `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1${typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : ''}`;
+    }
+  }
+
+  return null;
+}
+
+function getYouTubeVideoId(urlOrId?: string): string | null {
+  if (!urlOrId) return null;
+  const trimmed = urlOrId.trim();
+  if (!trimmed) return null;
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const ytRegexes = [
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i,
+    /embed\/([^"&?\/\s]{11})/i
+  ];
+
+  for (const regex of ytRegexes) {
+    const match = trimmed.match(regex);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
 type DetailsBackdropMode = 'none' | 'ambient' | 'cinematic';
 
 function getDetailsBackdropMode(
@@ -604,9 +690,13 @@ function DetailsScreen() {
   const session = useAppStore((state) => state.session);
   const selectedContent = useAppStore((state) => state.selectedContent);
   const detailReturnDestination = useAppStore((state) => state.detailReturnDestination);
+  const detailsFocusId = useAppStore((state) => state.detailsFocusId);
+  const detailsSelectedSeasonId = useAppStore((state) => state.detailsSelectedSeasonId);
   const closeContentDetails = useAppStore((state) => state.closeContentDetails);
   const openContentDetails = useAppStore((state) => state.openContentDetails);
   const openPlayback = useAppStore((state) => state.openPlayback);
+  const setDetailsReturnState = useAppStore((state) => state.setDetailsReturnState);
+  const clearDetailsReturnState = useAppStore((state) => state.clearDetailsReturnState);
   const setStatusMessage = useAppStore((state) => state.setStatusMessage);
   const watchlistEntries = useWatchlistStore((state) => state.entries);
   const toggleFavorite = useWatchlistStore((state) => state.toggleFavorite);
@@ -617,6 +707,7 @@ function DetailsScreen() {
   const [seriesInfo, setSeriesInfo] = useState<XtreamSeriesInfo | null>(null);
   const [selectedSeason, setSelectedSeason] = useState('');
   const [loading, setLoading] = useState(true);
+  const [trailerEmbedUrl, setTrailerEmbedUrl] = useState<string | null>(null);
   const [hasError, setHasError] = useState(false);
   const [focusId, setFocusId] = useState<DetailFocusId>('play');
   const [backdropReady, setBackdropReady] = useState(false);
@@ -764,8 +855,16 @@ function DetailsScreen() {
           setSimilar([]);
           setSeriesInfo(info);
           const seasonIds = getSeriesSeasonOptions(info).map((season) => season.id);
-          setSelectedSeason((current) => (seasonIds.includes(current) ? current : seasonIds[0] || ''));
-          setFocusId('play');
+          const restoredSeasonId =
+            detailsSelectedSeasonId && seasonIds.includes(detailsSelectedSeasonId)
+              ? detailsSelectedSeasonId
+              : '';
+          setSelectedSeason((current) => restoredSeasonId || (seasonIds.includes(current) ? current : seasonIds[0] || ''));
+          setFocusId(
+            detailsFocusId && detailsFocusId.startsWith('episode:')
+              ? (detailsFocusId as DetailFocusId)
+              : 'play'
+          );
 
           if (!info) {
             setHasError(true);
@@ -793,7 +892,7 @@ function DetailsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [portalBaseUrl, password, selectedContent, username]);
+  }, [detailsFocusId, detailsSelectedSeasonId, portalBaseUrl, password, selectedContent, username]);
 
   const seasonOptions = useMemo(() => getSeriesSeasonOptions(seriesInfo), [seriesInfo]);
   const visibleSeasonOptions = useMemo(
@@ -888,6 +987,12 @@ function DetailsScreen() {
   }, [focusId, selectedContent?.id, visibleSeasonOptions.length, selectedSeasonEpisodes.length, similar.length]);
 
   useEffect(() => {
+    if (trailerEmbedUrl) {
+      setFocusId('close-trailer');
+    }
+  }, [trailerEmbedUrl]);
+
+  useEffect(() => {
     const node = focusRefs.current[focusId];
     node?.scrollIntoView({
       block: 'center',
@@ -946,6 +1051,8 @@ function DetailsScreen() {
       const progress = useWatchHistoryStore.getState().getProgress('movie', selectedContent.contentId);
       const resumePosition = progress && !progress.completed ? progress.position : undefined;
 
+      clearDetailsReturnState();
+
       openPlayback({
         id: `movie-${selectedContent.contentId}`,
         kind: 'movie',
@@ -974,6 +1081,8 @@ function DetailsScreen() {
     const streamUrl = api.getSeriesStreamUrl(username, password, episodeId, extensions.primary);
     const progress = useWatchHistoryStore.getState().getProgress('series', episodeId);
     const resumePosition = progress && !progress.completed ? progress.position : undefined;
+
+    clearDetailsReturnState();
 
     openPlayback({
       id: episode.id,
@@ -1011,6 +1120,11 @@ function DetailsScreen() {
     const progress = useWatchHistoryStore.getState().getProgress('series', episodeId);
     const resumePosition = progress && !progress.completed ? progress.position : undefined;
 
+    setDetailsReturnState({
+      focusId: `episode:${episode.id}`,
+      selectedSeasonId: episode.seasonId
+    });
+
     openPlayback({
       id: episode.id,
       kind: 'series',
@@ -1031,7 +1145,90 @@ function DetailsScreen() {
     });
   };
 
+  const handleWatchTrailer = () => {
+    if (!detail?.trailerUrl) {
+      setStatusMessage('Trailer is not available');
+      return;
+    }
+
+    const youtubeEmbed = getYouTubeEmbedUrl(detail.trailerUrl);
+    if (youtubeEmbed) {
+      const youtubeId = getYouTubeVideoId(detail.trailerUrl);
+      const isWebOS = /web0s|webos/i.test(navigator.userAgent) || typeof (window as any).PalmSystem !== 'undefined';
+
+      if (youtubeId && isWebOS && (window as any).WebOSServiceBridge) {
+        try {
+          const bridge = new (window as any).WebOSServiceBridge();
+          bridge.onservicecallback = (msg: string) => {
+            try {
+              const res = JSON.parse(msg);
+              if (!res.returnValue) {
+                console.warn('Native YouTube launch returned false, attempting to launch webOS system browser');
+                try {
+                  const browserBridge = new (window as any).WebOSServiceBridge();
+                  browserBridge.call('luna://com.webos.service.applicationmanager/launch', JSON.stringify({
+                    id: 'com.webos.app.browser',
+                    params: {
+                      target: `https://www.youtube.com/watch?v=${youtubeId}`
+                    }
+                  }));
+                } catch (browserErr) {
+                  console.error('Failed calling webOS browser launch, falling back to iframe:', browserErr);
+                  setTrailerEmbedUrl(youtubeEmbed);
+                }
+              }
+            } catch (e) {
+              setTrailerEmbedUrl(youtubeEmbed);
+            }
+          };
+          bridge.call('luna://com.webos.service.applicationmanager/launch', JSON.stringify({
+            id: 'youtube.leanback.v4',
+            params: {
+              contentId: `v=${youtubeId}`
+            }
+          }));
+        } catch (err) {
+          console.error('Failed calling native YouTube launch, falling back to iframe:', err);
+          setTrailerEmbedUrl(youtubeEmbed);
+        }
+      } else {
+        setTrailerEmbedUrl(youtubeEmbed);
+      }
+    } else {
+      if (!selectedContent || !session || !username || !password || !portalBaseUrl) {
+        setStatusMessage('Playback is not ready yet');
+        return;
+      }
+
+      const title = detail.title || selectedContent.title;
+      const posterUrl = detail.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl;
+      const backdropUrl = detail.backdropUrl || selectedContent.backdropUrl || detail.posterUrl || selectedContent.posterUrl;
+
+      clearDetailsReturnState();
+
+      openPlayback({
+        id: `${selectedContent.kind}-trailer-${selectedContent.contentId}`,
+        kind: 'movie',
+        title: `${title} - Trailer`,
+        description: `Trailer for ${title}`,
+        posterUrl,
+        backdropUrl,
+        streamUrl: detail.trailerUrl,
+        returnDestination: 'details',
+        streamId: selectedContent.contentId
+      });
+    }
+  };
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (trailerEmbedUrl) {
+      if (event.key === 'Escape' || event.key === 'Backspace') {
+        event.preventDefault();
+        setTrailerEmbedUrl(null);
+        setFocusId('trailer');
+      }
+      return;
+    }
     const content = selectedContent;
 
     if (event.key === 'Escape' || event.key === 'Backspace') {
@@ -1053,6 +1250,10 @@ function DetailsScreen() {
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
+        if (detail?.trailerUrl) {
+          focusContent('trailer');
+          return;
+        }
         if (content.kind === 'series' && visibleSeasonOptions.length > 0) {
           focusSeasonAt(0);
           return;
@@ -1074,6 +1275,10 @@ function DetailsScreen() {
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
+        if (detail?.trailerUrl) {
+          focusContent('trailer');
+          return;
+        }
         if (content.kind === 'series' && visibleSeasonOptions.length > 0) {
           focusSeasonAt(0);
           return;
@@ -1101,6 +1306,31 @@ function DetailsScreen() {
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
+        if (detail?.trailerUrl) {
+          focusContent('trailer');
+          return;
+        }
+        if (content.kind === 'series' && visibleSeasonOptions.length > 0) {
+          focusSeasonAt(0);
+          return;
+        }
+
+        if (similar.length > 0) {
+          focusSimilarAt(0);
+        }
+      }
+      return;
+    }
+
+    if (focusId === 'trailer') {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        focusContent('play');
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
         if (content.kind === 'series' && visibleSeasonOptions.length > 0) {
           focusSeasonAt(0);
           return;
@@ -1120,7 +1350,7 @@ function DetailsScreen() {
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         if (currentSeasonIndex <= 0) {
-          focusContent('save');
+          focusContent('trailer');
           return;
         }
 
@@ -1145,7 +1375,11 @@ function DetailsScreen() {
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        focusContent('play');
+        if (detail?.trailerUrl) {
+          focusContent('trailer');
+        } else {
+          focusContent('play');
+        }
       }
       return;
     }
@@ -1153,60 +1387,36 @@ function DetailsScreen() {
     if (focusId.startsWith('episode:')) {
       const currentEpisodeId = focusId.slice('episode:'.length);
       const currentEpisodeIndex = selectedSeasonEpisodes.findIndex((episode) => episode.id === currentEpisodeId);
-      const columns = 4;
-      const rowCount = Math.max(1, Math.ceil(selectedSeasonEpisodes.length / columns));
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        const previousIndex =
-          currentEpisodeIndex > 0 ? currentEpisodeIndex - 1 : selectedSeasonEpisodes.length - 1;
-        focusEpisodeAt(previousIndex);
+        if (currentEpisodeIndex <= 0) {
+          focusContent('trailer');
+          return;
+        }
+        focusEpisodeAt(currentEpisodeIndex - 1);
         return;
       }
 
       if (event.key === 'ArrowRight') {
         event.preventDefault();
-        const nextIndex =
-          currentEpisodeIndex + 1 < selectedSeasonEpisodes.length ? currentEpisodeIndex + 1 : 0;
-        focusEpisodeAt(nextIndex);
+        if (currentEpisodeIndex < selectedSeasonEpisodes.length - 1) {
+          focusEpisodeAt(currentEpisodeIndex + 1);
+        }
         return;
       }
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        if (currentEpisodeIndex < columns) {
-          focusContent(`season:${selectedSeason || visibleSeasonOptions[0]?.id || ''}`);
-          return;
-        }
-
-        const col = currentEpisodeIndex % columns;
-        const targetRow = Math.floor(currentEpisodeIndex / columns) - 1;
-        let nextIndex = targetRow * columns + col;
-        while (nextIndex >= selectedSeasonEpisodes.length) {
-          nextIndex -= columns;
-        }
-        focusEpisodeAt(nextIndex);
+        const currentSeasonIndex = visibleSeasonOptions.findIndex((s) => s.id === selectedSeason);
+        focusSeasonAt(currentSeasonIndex >= 0 ? currentSeasonIndex : 0);
         return;
       }
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        const col = currentEpisodeIndex % columns;
-        const currentRow = Math.floor(currentEpisodeIndex / columns);
-        const isLastRow = currentRow >= rowCount - 1;
-
-        if (!isLastRow) {
-          let nextIndex = (currentRow + 1) * columns + col;
-          while (nextIndex >= selectedSeasonEpisodes.length) {
-            nextIndex -= columns;
-          }
-          focusEpisodeAt(nextIndex);
-          return;
-        }
-
-        if (similar.length > 0) {
-          focusSimilarAt(Math.min(Math.floor(currentEpisodeIndex / columns), similar.length - 1));
-        }
+        // Keep focus within episodes as it is the bottom-most list for series
+        return;
       }
       return;
     }
@@ -1246,7 +1456,11 @@ function DetailsScreen() {
           return;
         }
 
-        focusContent('play');
+        if (detail?.trailerUrl) {
+          focusContent('trailer');
+        } else {
+          focusContent('play');
+        }
       }
     }
   };
@@ -1279,7 +1493,7 @@ function DetailsScreen() {
       <div
         style={mergeStyle(
           detailsHero,
-          selectedContent.kind === 'movie' ? { minHeight: '580px' } : { minHeight: '640px' }
+          selectedContent.kind === 'series' && detail?.trailerUrl ? { minHeight: '820px' } : { minHeight: '580px' }
         )}
       >
         <div style={detailsBackdrop}>
@@ -1304,16 +1518,125 @@ function DetailsScreen() {
         </div>
 
         <div style={detailsContent}>
-          <div style={detailsPoster}>
-            <ArtworkWithFallback
-              title={selectedContent.title}
-              artwork={posterArt}
-              imageStyle={detailsPosterImg}
-              fallbackStyle={detailsPosterFallback}
-              fallbackWords={4}
-              fallbackChars={34}
-              showTitle={false}
-            />
+          <div style={{ display: 'flex', flexDirection: 'column', width: '320px', marginRight: '32px', flexShrink: 0 }}>
+            <div style={mergeStyle(detailsPoster, { width: '320px', height: '480px', marginRight: 0, marginBottom: '24px' })}>
+              <ArtworkWithFallback
+                title={selectedContent.title}
+                artwork={posterArt}
+                imageStyle={detailsPosterImg}
+                fallbackStyle={detailsPosterFallback}
+                fallbackWords={4}
+                fallbackChars={34}
+                showTitle={false}
+              />
+            </div>
+
+            {!loading && selectedContent.kind === 'series' && detail?.trailerUrl ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#E50914', display: 'inline-block', boxShadow: '0 0 8px #E50914' }} />
+                  <strong style={{
+                    color: 'rgba(255, 255, 255, 0.75)',
+                    fontSize: '14px',
+                    fontWeight: 900,
+                    letterSpacing: '1.2px',
+                    textTransform: 'uppercase'
+                  }}>Trailer</strong>
+                </div>
+                
+                <button
+                  ref={registerFocusRef('trailer')}
+                  type="button"
+                  style={mergeStyle(
+                    {
+                      position: 'relative',
+                      width: '320px',
+                      height: '180px',
+                      borderRadius: '16px',
+                      border: '3px solid rgba(255, 255, 255, 0.22)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      overflow: 'hidden',
+                      outline: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                      boxSizing: 'border-box'
+                    },
+                    focusId === 'trailer' && {
+                      borderColor: '#E50914',
+                      transform: 'scale(1.05)'
+                    }
+                  )}
+                  onFocus={() => setFocusId('trailer')}
+                  onClick={() => handleWatchTrailer()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleWatchTrailer();
+                    }
+                  }}
+                >
+                  <div style={{ position: 'absolute', inset: 0, opacity: focusId === 'trailer' ? 0.95 : 0.82, zIndex: 1, transition: 'opacity 0.2s ease' }}>
+                    <ArtworkWithFallback
+                      title="Trailer"
+                      artwork={detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl}
+                      imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      fallbackStyle={{ width: '100%', height: '100%' }}
+                    />
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(2, 3, 6, 0.7) 0%, rgba(2, 3, 6, 0.1) 100%)' }} />
+                  </div>
+
+                  <div style={{
+                    position: 'relative',
+                    zIndex: 2,
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '999px',
+                    backgroundColor: '#E50914',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    boxShadow: focusId === 'trailer' ? '0 0 20px rgba(229, 9, 20, 0.8)' : '0 4px 12px rgba(0, 0, 0, 0.4)',
+                    transition: 'all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                    transform: focusId === 'trailer' ? 'scale(1.15)' : 'scale(1)'
+                  }}>
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="#ffffff" style={{ marginLeft: '3px' }}>
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '12px',
+                    left: '12px',
+                    zIndex: 2,
+                    backgroundColor: 'rgba(2, 3, 6, 0.72)',
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+                  }}>
+                    <strong style={{
+                      color: '#ffffff',
+                      fontSize: '13px',
+                      fontWeight: 900,
+                      letterSpacing: '0.6px',
+                      textTransform: 'uppercase'
+                    }}>
+                      Watch Trailer
+                    </strong>
+                  </div>
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div style={detailsCopyBlock}>
@@ -1465,136 +1788,6 @@ function DetailsScreen() {
                   );
                 })()}
 
-                {selectedContent.kind === 'series' ? (
-                  <div style={detailsSeriesPanel}>
-                    {visibleSeasonOptions.length > 0 ? (
-                      <>
-                        <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
-                          <h2 style={detailsSectionTitle}>Seasons</h2>
-                          <p style={detailsSectionCopy}>{visibleSeasonOptions.length} seasons</p>
-                        </div>
-
-                        <div className="lg-details-scroll-x" style={detailsSeasonRow} role="tablist" aria-label="Series seasons">
-                          {visibleSeasonOptions.map((season, index) => {
-                            const seasonFocusId = `season:${season.id}` as DetailFocusId;
-                            const isSelected = selectedSeason === season.id;
-                            const isFocused = focusId === seasonFocusId;
-                            const isActive = isSelected || isFocused;
-
-                            return (
-                              <button
-                                key={season.id}
-                                ref={registerFocusRef(seasonFocusId)}
-                                type="button"
-                                role="tab"
-                                aria-selected={isSelected}
-                                style={mergeStyle(detailsSeasonChip, isActive && detailsSeasonChipActive)}
-                                onFocus={() => {
-                                  setFocusId(seasonFocusId);
-                                }}
-                                onClick={() => setSelectedSeason(season.id)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    setSelectedSeason(season.id);
-                                  }
-                                  if (event.key === 'ArrowDown') {
-                                    event.preventDefault();
-                                    focusEpisodeAt(0);
-                                  }
-                                  if (event.key === 'ArrowLeft' && index === 0) {
-                                    event.preventDefault();
-                                    focusContent('save');
-                                  }
-                                }}
-                              >
-                                <span>{season.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock)}>
-                          <h2 style={detailsSectionTitle}>Episodes</h2>
-                          <p style={detailsSectionCopy}>{selectedSeasonEpisodes.length} titles</p>
-                        </div>
-
-                        {selectedSeasonEpisodes.length > 0 ? (
-                          <div style={detailsEpisodeGrid}>
-                            {selectedSeasonEpisodes.map((episode) => {
-                              const episodeFocusId = `episode:${episode.id}` as DetailFocusId;
-                              const isFocused = focusId === episodeFocusId;
-
-                              const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
-                              const progressKey = `${session?.portalCode || 'default'}::${session?.username?.trim().toLowerCase() || 'guest'}::${selectedProfile?.id || 'primary'}::series::${episodeId}`;
-                              const progressInfo = watchHistory[progressKey];
-
-                              return (
-                                <div key={episode.id} style={detailsEpisodeCardWrap}>
-                                  <button
-                                    ref={registerFocusRef(episodeFocusId)}
-                                    type="button"
-                                    style={mergeStyle(detailsEpisodeCard, isFocused && detailsEpisodeCardActive)}
-                                    onFocus={() => setFocusId(episodeFocusId)}
-                                    onClick={() => handleEpisodePlay(episode)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === 'Enter') {
-                                        event.preventDefault();
-                                        handleEpisodePlay(episode);
-                                      }
-                                    }}
-                                  >
-                                    <div style={detailsEpisodeArt}>
-                                      <ArtworkWithFallback
-                                        title={episode.title}
-                                        artwork={episode.artwork}
-                                        fallbackArtwork={episode.fallbackArtwork}
-                                        imageStyle={detailsEpisodeImg}
-                                        fallbackStyle={detailsEpisodeFallback}
-                                        fallbackWords={4}
-                                        fallbackChars={28}
-                                        preferFallbackArtwork
-                                      />
-                                      {progressInfo && progressInfo.progress > 0 && !progressInfo.completed && (
-                                        <div style={{
-                                          position: 'absolute',
-                                          bottom: 0,
-                                          left: 0,
-                                          right: 0,
-                                          height: '4px',
-                                          backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                                          zIndex: 10
-                                        }}>
-                                          <div style={{
-                                            width: `${progressInfo.progress}%`,
-                                            height: '100%',
-                                            backgroundColor: '#e50914'
-                                          }} />
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div style={detailsEpisodeCopy}>
-                                      <div style={detailsEpisodeEyebrow}>
-                                        <span>{episode.episodeNumber ? `Episode ${episode.episodeNumber}` : 'Episode'}</span>
-                                        {episode.duration ? <span>{episode.duration}</span> : null}
-                                      </div>
-                                      <strong style={detailsEpisodeTitle}>{episode.title}</strong>
-                                      {episode.description ? <p style={detailsEpisodeDescription}>{episode.description}</p> : null}
-                                    </div>
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p style={detailsHint}>This series has no episodes uploaded yet.</p>
-                        )}
-                      </>
-                    ) : (
-                      <p style={detailsHint}>This series has no episodes uploaded yet.</p>
-                    )}
-                  </div>
-                ) : null}
               </>
             ) : (
               <div style={{
@@ -1651,6 +1844,337 @@ function DetailsScreen() {
         </div>
       </div>
 
+      {!loading && selectedContent.kind === 'series' && visibleSeasonOptions.length > 0 ? (
+        <section style={mergeStyle(detailsSimilar, { marginBottom: '40px' })} aria-label="Seasons and Episodes">
+          <div style={mergeStyle(detailsSectionHeader, { marginBottom: '16px' })}>
+            <h2 style={detailsSectionTitle}>Seasons</h2>
+            <p style={detailsSectionCopy}>{visibleSeasonOptions.length} seasons</p>
+          </div>
+
+          <div className="lg-details-scroll-x" style={detailsSeasonRow} role="tablist" aria-label="Series seasons">
+            {visibleSeasonOptions.map((season, index) => {
+              const seasonFocusId = `season:${season.id}` as DetailFocusId;
+              const isSelected = selectedSeason === season.id;
+              const isFocused = focusId === seasonFocusId;
+
+
+              return (
+                <button
+                  key={season.id}
+                  ref={registerFocusRef(seasonFocusId)}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  style={mergeStyle(
+                    detailsSeasonChip,
+                    isSelected && {
+                      background: '#E50914',
+                      borderColor: '#E50914',
+                      color: '#ffffff'
+                    },
+                    isFocused && {
+                      transform: 'scale(1.06) translateY(-2px)',
+                      borderColor: '#ffffff',
+                      boxShadow: '0 0 0 3px #ffffff, 0 12px 28px rgba(0, 0, 0, 0.6)'
+                    }
+                  )}
+                  onFocus={() => {
+                    setFocusId(seasonFocusId);
+                  }}
+                  onClick={() => setSelectedSeason(season.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      setSelectedSeason(season.id);
+                    }
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      focusEpisodeAt(0);
+                    }
+                    if (event.key === 'ArrowLeft' && index === 0) {
+                      event.preventDefault();
+                      focusContent('trailer');
+                    }
+                  }}
+                >
+                  <span>{season.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={mergeStyle(detailsSectionHeader, detailsSeriesBlock, { marginTop: '24px', marginBottom: '16px' })}>
+            <h2 style={detailsSectionTitle}>Episodes</h2>
+            <p style={detailsSectionCopy}>{selectedSeasonEpisodes.length} titles</p>
+          </div>
+
+          {selectedSeasonEpisodes.length > 0 ? (
+            <div className="lg-details-scroll-x" style={detailsSeasonRow}>
+              {selectedSeasonEpisodes.map((episode, index) => {
+                const episodeFocusId = `episode:${episode.id}` as DetailFocusId;
+                const isFocused = focusId === episodeFocusId;
+                const episodeTag = getEpisodeTag(episode.seasonId, episode.episodeNumber);
+                const episodeCardTitle = getEpisodeCardTitle(episode.title, detail?.title || selectedContent.title);
+
+                const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
+                const progressKey = `${session?.portalCode || 'default'}::${session?.username?.trim().toLowerCase() || 'guest'}::${selectedProfile?.id || 'primary'}::series::${episodeId}`;
+                const progressInfo = watchHistory[progressKey];
+
+                return (
+                  <div key={episode.id} style={{ width: '320px', flexShrink: 0, marginRight: '20px', boxSizing: 'border-box' }}>
+                    <button
+                      ref={registerFocusRef(episodeFocusId)}
+                      type="button"
+                      style={mergeStyle(
+                        detailsEpisodeCard,
+                        {
+                          width: '100%',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '2px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '16px',
+                          transition: 'all 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                          transform: isFocused ? 'scale(1.04)' : 'scale(1)',
+                          borderColor: isFocused ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.08)',
+                          boxShadow: isFocused ? '0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.92)' : 'none'
+                        }
+                      )}
+                      onFocus={() => setFocusId(episodeFocusId)}
+                      onClick={() => handleEpisodePlay(episode)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          handleEpisodePlay(episode);
+                        }
+                        if (event.key === 'ArrowLeft' && index === 0) {
+                          event.preventDefault();
+                          focusContent('trailer');
+                        }
+                        if (event.key === 'ArrowUp') {
+                          event.preventDefault();
+                          focusSeasonAt(visibleSeasonOptions.findIndex((s) => s.id === selectedSeason));
+                        }
+                      }}
+                    >
+                      <div style={mergeStyle(detailsEpisodeArt, { height: '160px', borderRadius: '14px 14px 0 0', position: 'relative' })}>
+                        <ArtworkWithFallback
+                          title={episode.title}
+                          artwork={episode.artwork}
+                          fallbackArtwork={episode.fallbackArtwork}
+                          imageStyle={detailsEpisodeImg}
+                          fallbackStyle={detailsEpisodeFallback}
+                          fallbackWords={4}
+                          fallbackChars={28}
+                          preferFallbackArtwork
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            padding: '32px 14px 10px',
+                            background: 'linear-gradient(180deg, rgba(2, 3, 6, 0) 0%, rgba(2, 3, 6, 0.88) 100%)',
+                            zIndex: 4,
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '12px',
+                              color: 'rgba(255, 255, 255, 0.9)',
+                              fontSize: '12px',
+                              fontWeight: 900,
+                              letterSpacing: '0.9px',
+                              textTransform: 'uppercase'
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {episode.episodeNumber ? `Episode ${episode.episodeNumber}` : episodeTag}
+                            </span>
+                            {episode.duration ? (
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  fontVariantNumeric: 'tabular-nums',
+                                  color: 'rgba(255, 255, 255, 0.82)'
+                                }}
+                              >
+                                {episode.duration}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        {progressInfo && progressInfo.progress > 0 && !progressInfo.completed && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '4px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                            zIndex: 10
+                          }}>
+                            <div style={{ width: `${progressInfo.progress}%`, height: '100%', backgroundColor: '#e50914' }} />
+                          </div>
+                        )}
+                      </div>
+                      <div style={mergeStyle(detailsEpisodeCopy, { padding: '12px 14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' })}>
+                        <strong
+                          style={mergeStyle(detailsEpisodeTitle, {
+                            display: 'block',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'normal',
+                            marginBottom: 0,
+                            minHeight: '24px',
+                            lineHeight: 1.24,
+                            fontSize: '17px',
+                            color: isFocused ? '#e50914' : '#ffffff'
+                          })}
+                        >
+                          {episodeCardTitle}
+                        </strong>
+                        {episode.description ? (
+                          <p
+                            style={mergeStyle(detailsEpisodeDescription, {
+                              display: 'block',
+                              minHeight: '38px',
+                              overflow: 'visible',
+                              margin: 0,
+                              color: 'rgba(255, 255, 255, 0.72)',
+                              lineHeight: 1.32,
+                              whiteSpace: 'normal'
+                            })}
+                          >
+                            {episode.description}
+                          </p>
+                        ) : (
+                          <div style={{ minHeight: '38px' }} />
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p style={detailsHint}>This series has no episodes uploaded yet.</p>
+          )}
+        </section>
+      ) : null}
+
+      {!loading && selectedContent.kind === 'movie' && detail?.trailerUrl ? (
+        <section style={mergeStyle(detailsSimilar, { marginBottom: '40px' })} aria-label="Trailers">
+          <div style={detailsSectionHeader}>
+            <h2 style={detailsSectionTitle}>Trailers & Extras</h2>
+            <p style={detailsSectionCopy}>1 video</p>
+          </div>
+
+          <div style={{ padding: '8px 8px 18px 4px', marginTop: '8px' }}>
+            <button
+              ref={registerFocusRef('trailer')}
+              type="button"
+              style={mergeStyle(
+                {
+                  position: 'relative',
+                  width: '384px',
+                  height: '216px',
+                  borderRadius: '16px',
+                  border: '3px solid rgba(255, 255, 255, 0.1)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  overflow: 'hidden',
+                  outline: 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxSizing: 'border-box'
+                },
+                focusId === 'trailer' && {
+                  borderColor: '#E50914',
+                  transform: 'scale(1.05)',
+                  boxShadow: '0 8px 24px rgba(229, 9, 20, 0.3)'
+                }
+              )}
+              onFocus={() => setFocusId('trailer')}
+              onClick={() => handleWatchTrailer()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleWatchTrailer();
+                }
+              }}
+            >
+              <div style={{ position: 'absolute', inset: 0, opacity: 0.6, zIndex: 1 }}>
+                <ArtworkWithFallback
+                  title="Trailer"
+                  artwork={detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl}
+                  imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  fallbackStyle={{ width: '100%', height: '100%' }}
+                />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 100%)' }} />
+              </div>
+
+              <div style={{
+                position: 'relative',
+                zIndex: 2,
+                width: '60px',
+                height: '60px',
+                borderRadius: '999px',
+                backgroundColor: focusId === 'trailer' ? '#E50914' : 'rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                border: '2px solid rgba(255, 255, 255, 0.3)',
+                transition: 'all 0.2s ease',
+                transform: focusId === 'trailer' ? 'scale(1.1)' : 'scale(1)'
+              }}>
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="#ffffff" style={{ marginLeft: '4px' }}>
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+
+              <div style={{
+                position: 'absolute',
+                bottom: '16px',
+                left: '16px',
+                zIndex: 2,
+                textAlign: 'left'
+              }}>
+                <span style={{
+                  display: 'inline-block',
+                  backgroundColor: '#E50914',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  marginBottom: '6px'
+                }}>Trailer</span>
+                <strong style={{
+                  display: 'block',
+                  color: '#ffffff',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  textShadow: '0 2px 4px rgba(0,0,0,0.8)'
+                }}>
+                  Watch Trailer
+                </strong>
+              </div>
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {!loading && selectedContent.kind === 'movie' ? (
         <section style={detailsSimilar} aria-label="More movies">
           <div style={detailsSectionHeader}>
@@ -1700,6 +2224,109 @@ function DetailsScreen() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {trailerEmbedUrl ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Watch Trailer"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0, 0, 0, 0.9)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)'
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '1280px',
+              height: '720px',
+              borderRadius: '20px',
+              overflow: 'hidden',
+              backgroundColor: '#000000',
+              border: '4px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 24px 72px rgba(0, 0, 0, 0.8), 0 0 40px rgba(229, 9, 20, 0.2)'
+            }}
+          >
+            <iframe
+              src={trailerEmbedUrl}
+              referrerPolicy="strict-origin-when-cross-origin"
+              title="YouTube video player"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none'
+              }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              tabIndex={-1}
+            />
+          </div>
+
+          <button
+            ref={registerFocusRef('close-trailer')}
+            type="button"
+            onFocus={() => setFocusId('close-trailer')}
+            onClick={() => {
+              setTrailerEmbedUrl(null);
+              setFocusId('trailer');
+            }}
+            style={mergeStyle(
+              {
+              marginTop: '24px',
+              padding: '14px 28px',
+              borderRadius: '16px',
+              border: '2px solid rgba(255, 255, 255, 0.2)',
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              color: '#ffffff',
+              fontSize: '20px',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              cursor: 'pointer',
+              outline: 'none',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              transition: 'all 0.18s cubic-bezier(0.25, 1, 0.5, 1)'
+              },
+              focusId === 'close-trailer' && {
+                transform: 'scale(1.05)',
+                backgroundColor: '#E50914',
+                borderColor: '#E50914',
+                boxShadow: '0 0 24px rgba(229, 9, 20, 0.5)'
+              }
+            )}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.backgroundColor = '#E50914';
+              e.currentTarget.style.borderColor = '#E50914';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            }}
+          >
+            <span style={{
+              backgroundColor: '#ffffff',
+              color: '#000000',
+              padding: '3px 8px',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: 900,
+              textTransform: 'uppercase'
+            }}>Back</span>
+            <span>Close Trailer</span>
+          </button>
+        </div>
       ) : null}
     </section>
   );

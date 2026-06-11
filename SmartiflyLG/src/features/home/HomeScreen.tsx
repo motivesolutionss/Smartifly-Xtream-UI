@@ -35,9 +35,9 @@ const HOME_HERO_OVERLAY_BACKGROUND =
 
 const HOME_HERO_BACKDROP_IMAGE = {
   objectFit: 'cover' as const,
-  objectPosition: '78% 38%',
+  objectPosition: '78% 15%',
   filter: 'saturate(1.08) brightness(0.78) contrast(1.06)',
-  transform: 'scale(1.05)',
+  transform: 'none',
   opacity: 0.94
 };
 
@@ -718,6 +718,18 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
             boxSizing: 'border-box'
           }}
         >
+          <img
+            src="./assets/smartifly_icon.png"
+            alt="Smartifly"
+            style={{
+              width: '280px',
+              height: 'auto',
+              marginBottom: '24px',
+              marginLeft: '-8px',
+              display: 'block',
+              filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6))'
+            }}
+          />
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: '14px' }}>
             <span
               className="lg-home__badge"

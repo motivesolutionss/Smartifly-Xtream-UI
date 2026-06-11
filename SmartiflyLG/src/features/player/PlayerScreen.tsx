@@ -1105,10 +1105,12 @@ function PlayerScreen() {
       return;
     }
 
+    console.debug(`${PLAYER_LOG_PREFIX} resetVideoElement start`, { currentSrc: video.currentSrc || null, srcAttr: video.getAttribute('src'), ts: Date.now() });
     video.pause();
     clearVideoSources(video);
     video.removeAttribute('src');
     video.load();
+    console.debug(`${PLAYER_LOG_PREFIX} resetVideoElement complete`, { ts: Date.now() });
   }, []);
 
   const clearHudTimer = () => {
@@ -1369,6 +1371,7 @@ function PlayerScreen() {
     console.debug(`${PLAYER_LOG_PREFIX} teardown`);
     shakaPlayerRef.current = null;
     await player.destroy().catch(() => undefined);
+    console.warn(`${PLAYER_LOG_PREFIX} teardown complete`, { ts: Date.now() });
   }, []);
 
   const teardownHlsPlayer = useCallback(async () => {
@@ -1386,12 +1389,15 @@ function PlayerScreen() {
         message: destroyError instanceof Error ? destroyError.message : String(destroyError)
       });
     }
+    console.warn(`${PLAYER_LOG_PREFIX} hls.js teardown complete`, { ts: Date.now() });
   }, []);
 
   const teardownPlaybackEngines = useCallback(async (video: HTMLVideoElement | null) => {
+    console.warn(`${PLAYER_LOG_PREFIX} teardownPlaybackEngines start`, { streamUrl: activeStreamUrl, liveSessionEpoch: liveSessionEpochRef.current, ts: Date.now() });
     await teardownHlsPlayer();
     await teardownPlayer();
     resetVideoElement(video);
+    console.warn(`${PLAYER_LOG_PREFIX} teardownPlaybackEngines complete`, { streamUrl: activeStreamUrl, liveSessionEpoch: liveSessionEpochRef.current, ts: Date.now() });
   }, [resetVideoElement, teardownHlsPlayer, teardownPlayer]);
 
   const scheduleLiveSwitchCooldownRetry = useCallback(
@@ -1893,7 +1899,8 @@ function PlayerScreen() {
       // hlsSourceUrl always stays as resolvedStreamUrl — hls.js is pointed at
       // the real URL so live polling works normally after the first load.
       let hlsSourceUrl = resolvedStreamUrl;
-      const preferShakaForLiveHls = false;
+      // Force Shaka for live HLS during manual switch to avoid hls.js retry/fallback creating duplicate opens
+      const preferShakaForLiveHls = playback.kind === 'live' && isM3u8Url(activeStreamUrl) && isManualLiveSwitchStartup;
       const preferNativeHlsForLiveM3u8 =
         playback.kind === 'live' &&
         isM3u8Url(activeStreamUrl) &&
@@ -1920,13 +1927,39 @@ function PlayerScreen() {
           }
         }
 
-        if (!isManualLiveSwitchStartup) {
+        // Ensure a fresh player state for live opens so every channel switch
+        // behaves like a first-time open. Teardown the playback engines for
+        // live playback even when this is a manual live switch startup.
+        if (!isManualLiveSwitchStartup || playback.kind === 'live') {
+          console.warn(`${PLAYER_LOG_PREFIX} live open tearing down previous playback engines`, {
+            activeStreamUrl,
+            selectedEngine: activeEngineRef.current,
+            isFreshLiveOpenIsolationActive: isFreshLiveOpenIsolationActive(),
+            liveSessionEpoch: liveSessionEpochRef.current
+          });
           await teardownPlaybackEngines(attachedVideo);
+          console.warn(`${PLAYER_LOG_PREFIX} live open teardown complete`, {
+            activeStreamUrl,
+            liveSessionEpoch: liveSessionEpochRef.current,
+            ts: Date.now()
+          });
         }
 
         if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
           return;
         }
+
+        console.warn(`${PLAYER_LOG_PREFIX} choosing playback engine`, {
+          playbackId: playback.id,
+          playbackKind: playback.kind,
+          activeStreamUrl,
+          engineOverride,
+          preferNativeHlsForLiveM3u8,
+          preferShakaForLiveHls,
+          isManualLiveSwitchStartup,
+          liveSessionEpoch: liveSessionEpochRef.current,
+          freshIsolation: isFreshLiveOpenIsolationActive()
+        });
 
         engineDecision = choosePlaybackEngine({
           playback,
@@ -1938,21 +1971,37 @@ function PlayerScreen() {
 
         selectedEngine = engineOverride === 'hlsjs' ? 'hlsjs' : engineDecision.engine;
         activeEngineRef.current = selectedEngine;
+        console.debug(`${PLAYER_LOG_PREFIX} engine decision`, { engineDecision, selectedEngine, ts: Date.now() });
 
         const shouldSkipRedirectResolution =
           isManualLiveSwitchStartup ||
           (playback.kind === 'live' && (selectedEngine === 'hlsjs' || selectedEngine === 'shaka'));
+        console.debug(`${PLAYER_LOG_PREFIX} redirect resolution`, { shouldSkipRedirectResolution, activeStreamUrl, selectedEngine, isManualLiveSwitchStartup, ts: Date.now() });
 
         if (shouldSkipRedirectResolution) {
+          console.warn(`${PLAYER_LOG_PREFIX} skipping redirect resolution`, {
+            activeStreamUrl,
+            selectedEngine,
+            isManualLiveSwitchStartup,
+            playKind: playback.kind
+          });
           resolvedStreamUrl = activeStreamUrl;
         } else {
+          console.warn(`${PLAYER_LOG_PREFIX} resolving redirected stream URL`, {
+            activeStreamUrl,
+            selectedEngine,
+            isManualLiveSwitchStartup,
+            playKind: playback.kind
+          });
           resolvedStreamUrl = activeStreamUrl.startsWith('http')
             ? await resolveRedirectedStreamUrl(activeStreamUrl, loadAbortController.signal)
             : activeStreamUrl;
 
-          if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
-            return;
-          }
+          console.debug(`${PLAYER_LOG_PREFIX} resolved stream url`, { from: activeStreamUrl, to: resolvedStreamUrl, ts: Date.now() });
+        }
+
+        if (cancelled || loadGeneration !== loadGenerationRef.current || loadAbortController.signal.aborted) {
+          return;
         }
 
         nativeSourceUrl = resolvedStreamUrl;
@@ -2218,9 +2267,11 @@ function PlayerScreen() {
             manifestLoadingTimeOut: 5000,
             levelLoadingTimeOut: 5000,
             fragLoadingTimeOut: 5000,
-            manifestLoadingMaxRetry: 4,
-            levelLoadingMaxRetry: 4,
-            fragLoadingMaxRetry: 4,
+            // Reduce retry counts for live HLS to prevent duplicate/overlapping playlist opens
+            // that can trigger 403 errors on IPTV servers with per-connection limits
+            manifestLoadingMaxRetry: isLive ? 0 : 4,
+            levelLoadingMaxRetry: isLive ? 0 : 4,
+            fragLoadingMaxRetry: isLive ? 1 : 4,
             pLoader: rewrittenPlaylistText ? (PatchedPlaylistLoader as unknown as PlaylistLoaderConstructor) : undefined,
             // Forward the browser/TV User-Agent on every XHR so live playlist
             // polling is not rejected by servers that enforce UA-based access
@@ -3007,6 +3058,12 @@ function PlayerScreen() {
         if (playback.kind === 'live' && currentLiveStreamId != null && getLiveSwitchContext().streamId === currentLiveStreamId) {
           setLiveSwitchContext({ fromSwitch: false });
         }
+        // Clear the fresh-live-open isolation after a successful live open so
+        // subsequent channel switches (including backward switches) can use
+        // the normal recovery/fallback logic.
+        if (playback.kind === 'live' && isFreshLiveOpenIsolationActive()) {
+          setFreshLiveOpenIsolationActive(false);
+        }
         if (playback.kind !== 'live') {
           showHUD();
         } else {
@@ -3059,6 +3116,15 @@ function PlayerScreen() {
             preferShakaForLiveHls
           });
 
+          if (playback.kind === 'live' && isFreshLiveOpenIsolationActive()) {
+            console.warn(`${PLAYER_LOG_PREFIX} clearing fresh live open isolation after failed live startup`, {
+              streamUrl: activeStreamUrl,
+              resolvedStreamUrl,
+              message
+            });
+            setFreshLiveOpenIsolationActive(false);
+          }
+
           if (selectedEngine === 'hlsjs' && liveHlsJsFallbackToShakaUsedRef.current) {
             startupAttemptInFlightRef.current = false;
             return;
@@ -3102,11 +3168,13 @@ function PlayerScreen() {
             }
           }
 
+          // During fresh live open isolation, skip fallback to prevent duplicate opens
           if (
             playback.kind === 'live' &&
             selectedEngine === 'native' &&
             engineOverride == null &&
-            !liveNativeStartupRetryUsedRef.current
+            !liveNativeStartupRetryUsedRef.current &&
+            !isFreshLiveOpenIsolationActive()
           ) {
             liveNativeStartupRetryUsedRef.current = true;
             console.warn(`${PLAYER_LOG_PREFIX} retrying live hls.js startup once`, {
@@ -3139,6 +3207,8 @@ function PlayerScreen() {
             return;
           }
 
+          // During fresh live open isolation (manual switch), prevent hls.js to shaka escalation
+          // as it would create duplicate playlist opens and trigger 403 errors
           if (
             playback.kind === 'live' &&
             selectedEngine === 'hlsjs' &&
@@ -3199,7 +3269,19 @@ function PlayerScreen() {
             console.warn(`${PLAYER_LOG_PREFIX} terminal playback failure`, {
               message,
               streamUrl: activeStreamUrl,
-              resolvedStreamUrl
+              resolvedStreamUrl,
+              selectedEngine,
+              isFreshLiveOpenIsolationActive: isFreshLiveOpenIsolationActive(),
+              liveSessionEpoch: liveSessionEpochRef.current
+            });
+            console.error(`${PLAYER_LOG_PREFIX} terminal failure context`, {
+              playbackId: playback.id,
+              currentLiveStreamId,
+              liveSwitchContext: getLiveSwitchContext(),
+              revisitDebug: getRevisitDebugInfo(),
+              isFreshLiveOpenIsolationActive: isFreshLiveOpenIsolationActive(),
+              liveSessionEpoch: liveSessionEpochRef.current,
+              ts: Date.now()
             });
             markStreamTemporarilyUnavailable(activeStreamUrl);
             void logPlaybackDiagnostics('terminal playback failure', {

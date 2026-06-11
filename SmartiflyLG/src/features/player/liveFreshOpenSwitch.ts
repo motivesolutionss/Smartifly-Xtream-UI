@@ -1,5 +1,8 @@
 import type { PlaybackRequest } from '../../store/appStore';
-import { setFreshLiveOpenIsolationActive } from './liveFreshOpenTestState';
+import {
+  isFreshLiveOpenIsolationActive,
+  setFreshLiveOpenIsolationActive
+} from './liveFreshOpenTestState';
 
 export type LiveFreshOpenActions = {
   getSelectedPlayback: () => PlaybackRequest | null;
@@ -54,12 +57,37 @@ export async function performFreshLiveChannelSwitch(delta: number, actions: Live
     fromId: playback.id,
     fromTitle: playback.title,
     toId: nextPlayback.id,
-    toTitle: nextPlayback.title
+    toTitle: nextPlayback.title,
+    liveQueueLength: playback.liveQueue?.length ?? null,
+    liveIndex: playback.liveIndex
   });
 
   setFreshLiveOpenIsolationActive(true);
+  console.warn('[LG Player] fresh live open isolation activated', {
+    active: isFreshLiveOpenIsolationActive()
+  });
+  console.warn('[LG Player] fresh live open teardown start', {
+    fromId: playback.id,
+    fromTitle: playback.title,
+    toId: nextPlayback.id,
+    toTitle: nextPlayback.title,
+    ts: Date.now()
+  });
   await actions.teardownPlaybackEngines();
+  console.warn('[LG Player] fresh live open teardown complete', {
+    fromId: playback.id,
+    toId: nextPlayback.id,
+    ts: Date.now()
+  });
   actions.resetLiveSurface();
+  console.warn('[LG Player] fresh live open surface reset', {
+    liveSessionEpoch: Date.now()
+  });
   actions.setStatusMessage(`Playing ${nextPlayback.title}`);
+  console.warn('[LG Player] fresh live open dispatching openPlayback', {
+    toId: nextPlayback.id,
+    toTitle: nextPlayback.title,
+    ts: Date.now()
+  });
   actions.openPlayback(nextPlayback);
 }
