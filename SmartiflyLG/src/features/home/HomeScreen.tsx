@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { createXtreamApi } from '../../services/api';
 import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
+import { buildResumePlaybackRequest } from '../player/buildResumePlayback';
 import { cardDebugOverlay } from '../../styles/lgTvStyles';
 import { fallbackHero, type ChannelItem, type RailSection, type HeroItem } from './homeBootstrap';
 import useWatchHistoryStore, { buildWatchHistoryScope } from '../../store/watchHistoryStore';
@@ -182,12 +183,11 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
         id: `continue-${item.type}-${item.streamId}`,
         contentId: item.streamId,
         name: item.title,
-        artwork: item.data?.backdropUrl || item.data?.backdrop || item.thumbnail || '',
+        artwork: item.thumbnail || '',
         kind: (item.type === 'series' ? 'series' : 'movie') as any,
         fallbackLabel: item.title.slice(0, 2).toUpperCase(),
         accent: '#e50914',
-        containerExtension: item.data?.containerExtension,
-        categoryId: item.data?.categoryId,
+        containerExtension: item.containerExtension,
         data: item
       }))
     };
@@ -330,7 +330,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
         posterUrl: heroItem.artwork,
         backdropUrl: heroItem.artwork,
         streamUrl: api.getVodStreamUrl(username, password, heroItem.contentId, heroItem.containerExtension || 'mp4'),
-        returnDestination: 'home'
+        returnDestination: 'home',
+        streamId: heroItem.contentId,
+        containerExtension: heroItem.containerExtension || 'mp4'
       });
       return;
     }
@@ -356,7 +358,12 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
         posterUrl: firstEpisode.info?.movie_image?.trim() || heroItem.artwork,
         backdropUrl: heroItem.artwork,
         streamUrl: api.getSeriesStreamUrl(username, password, episodeId, firstEpisode.container_extension?.trim() || 'mp4'),
-        returnDestination: 'home'
+        returnDestination: 'home',
+        streamId: episodeId,
+        seriesId: heroItem.contentId,
+        seasonNumber: Number(firstSeasonWithEpisodes) || 1,
+        episodeNumber: Number(firstEpisode.episode_num || 0) || 1,
+        containerExtension: firstEpisode.container_extension?.trim() || 'mp4'
       });
     } catch {
       setStatusMessage('Series playback is not ready yet');
@@ -376,28 +383,18 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
     if (rail.id === 'continue-watching') {
       const progress = (item as any).data as WatchProgress;
       if (progress) {
-        const api = createXtreamApi(portalBaseUrl);
-        const extension = progress.data?.containerExtension || 'mp4';
-        const streamUrl = progress.type === 'movie'
-          ? api.getVodStreamUrl(username, password, progress.streamId, extension)
-          : api.getSeriesStreamUrl(username, password, progress.streamId, extension);
-
-        openPlayback({
-          id: progress.type === 'movie' ? `movie-${progress.streamId}` : progress.data?.id || `episode-${progress.streamId}`,
-          kind: progress.type === 'series' ? 'series' : 'movie',
-          title: progress.title,
-          episodeTitle: progress.episodeTitle,
-          description: progress.data?.description,
-          posterUrl: progress.thumbnail,
-          backdropUrl: progress.thumbnail,
-          streamUrl,
-          resumePosition: progress.position,
-          returnDestination: 'home',
-          streamId: progress.streamId,
-          seriesId: progress.seriesId,
-          seasonNumber: progress.seasonNumber,
-          episodeNumber: progress.episodeNumber
+        const playback = await buildResumePlaybackRequest({
+          progress,
+          session,
+          returnDestination: 'home'
         });
+
+        if (!playback) {
+          setStatusMessage('Resume playback is not ready yet');
+          return;
+        }
+
+        openPlayback(playback);
         return;
       }
     }
@@ -1132,9 +1129,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                               textOverflow: 'ellipsis',
                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)'
                             }}>
-                              {(item as any).data?.title || item.name}
+                              {((item as any).data as WatchProgress | undefined)?.title || item.name}
                             </span>
-                            {(item as any).data?.type === 'series' && (
+                            {(((item as any).data as WatchProgress | undefined)?.type === 'series') && (
                               <span style={{
                                 color: 'rgba(255, 255, 255, 0.76)',
                                 fontSize: '12px',
@@ -1144,9 +1141,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                                 textOverflow: 'ellipsis',
                                 textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)'
                               }}>
-                                {(item as any).data?.seasonNumber && (item as any).data?.episodeNumber
-                                  ? `S${(item as any).data?.seasonNumber}:E${(item as any).data?.episodeNumber} - ${(item as any).data?.episodeTitle || ''}`
-                                  : (item as any).data?.episodeTitle || ''}
+                                {(((item as any).data as WatchProgress | undefined)?.seasonNumber) && (((item as any).data as WatchProgress | undefined)?.episodeNumber)
+                                  ? `S${((item as any).data as WatchProgress).seasonNumber}:E${((item as any).data as WatchProgress).episodeNumber} - ${((item as any).data as WatchProgress).episodeTitle || ''}`
+                                  : ((item as any).data as WatchProgress | undefined)?.episodeTitle || ''}
                               </span>
                             )}
                             <div style={{
@@ -1158,7 +1155,7 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                               marginTop: '4px'
                             }}>
                               <div style={{
-                                width: `${Math.min(100, Math.max(0, (item as any).data?.progress || 0))}%`,
+                                width: `${Math.min(100, Math.max(0, (((item as any).data as WatchProgress | undefined)?.progress || 0)))}%`,
                                 height: '100%',
                                 backgroundColor: '#e50914'
                               }} />

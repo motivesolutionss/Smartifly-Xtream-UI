@@ -886,7 +886,11 @@ function PlayerScreen() {
         positionValue,
         durationValue,
         thumbnail,
-        playback
+        {
+          description: playback.description,
+          playbackId: playback.id,
+          containerExtension: playback.containerExtension
+        }
       );
     } else if (playback.kind === 'series') {
       const seriesId = playback.seriesId || 0;
@@ -900,7 +904,11 @@ function PlayerScreen() {
         positionValue,
         durationValue,
         thumbnail,
-        playback
+        {
+          description: playback.description,
+          playbackId: playback.id,
+          containerExtension: playback.containerExtension
+        }
       );
     }
   }, [playback, trackMovie, trackEpisode]);
@@ -3251,7 +3259,9 @@ function PlayerScreen() {
             title: currentPlayback.title,
             episodeTitle: currentPlayback.episodeTitle,
             thumbnail: currentPlayback.posterUrl || currentPlayback.backdropUrl,
-            data: currentPlayback
+            description: currentPlayback.description,
+            playbackId: currentPlayback.id,
+            containerExtension: currentPlayback.containerExtension
           });
         }
       }

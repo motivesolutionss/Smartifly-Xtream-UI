@@ -7,7 +7,7 @@ import useWatchlistStore, {
 } from '../../store/watchlistStore';
 import { useWatchHistoryStore, type WatchProgress } from '../../store/watchHistoryStore';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
-import { createXtreamApi } from '../../services/api';
+import { buildResumePlaybackRequest } from '../player/buildResumePlayback';
 
 type WatchlistScreenProps = {
   isActive?: boolean;
@@ -15,22 +15,6 @@ type WatchlistScreenProps = {
 };
 
 function toSelectedContent(entry: WatchlistEntry): SelectedContent | null {
-  if (entry.data && typeof entry.data === 'object' && 'contentId' in entry.data && 'kind' in entry.data && 'title' in entry.data) {
-    const candidate = entry.data as SelectedContent;
-    return {
-      id: candidate.id || entry.key,
-      contentId: candidate.contentId,
-      kind: candidate.kind,
-      title: candidate.title,
-      categoryId: candidate.categoryId,
-      posterUrl: candidate.posterUrl || entry.image,
-      backdropUrl: candidate.backdropUrl || entry.image,
-      description: candidate.description,
-      year: candidate.year || entry.year,
-      rating: candidate.rating || entry.rating?.toString()
-    };
-  }
-
   if (entry.kind === 'movie' || entry.kind === 'series') {
     return {
       id: entry.key,
@@ -612,42 +596,28 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
     openContentDetails(content, 'watchlist');
   };
 
-  const playProgress = (progress: WatchProgress | null = selectedContinueItem) => {
+  const playProgress = async (progress: WatchProgress | null = selectedContinueItem) => {
     if (!progress) {
       return;
     }
 
-    const username = session?.userInfo?.username?.trim();
-    const password = session?.userInfo?.password?.trim();
-    const portalBaseUrl = session?.portalBaseUrl?.trim();
-
-    if (!username || !password || !portalBaseUrl) {
+    if (!session) {
       setStatusMessage('Playback is not ready yet');
       return;
     }
 
-    const api = createXtreamApi(portalBaseUrl);
-    const extension = progress.data?.containerExtension || 'mp4';
-    const streamUrl = progress.type === 'movie'
-      ? api.getVodStreamUrl(username, password, progress.streamId, extension)
-      : api.getSeriesStreamUrl(username, password, progress.streamId, extension);
-
-    openPlayback({
-      id: progress.type === 'movie' ? `movie-${progress.streamId}` : progress.data?.id || `episode-${progress.streamId}`,
-      kind: progress.type === 'series' ? 'series' : 'movie',
-      title: progress.title,
-      episodeTitle: progress.episodeTitle,
-      description: progress.data?.description,
-      posterUrl: progress.thumbnail,
-      backdropUrl: progress.thumbnail,
-      streamUrl,
-      resumePosition: progress.position,
-      returnDestination: 'watchlist',
-      streamId: progress.streamId,
-      seriesId: progress.seriesId,
-      seasonNumber: progress.seasonNumber,
-      episodeNumber: progress.episodeNumber
+    const playback = await buildResumePlaybackRequest({
+      progress,
+      session,
+      returnDestination: 'watchlist'
     });
+
+    if (!playback) {
+      setStatusMessage('Resume playback is not ready yet');
+      return;
+    }
+
+    openPlayback(playback);
   };
 
   const removeSpecificEntry = (itemIndex: number) => {
@@ -965,9 +935,8 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
   const heroDisplay = useMemo(() => {
     if (activeTab === 'watchlist') {
       if (!selectedEntry) return null;
-      const backdropUrl = (selectedEntry.data as SelectedContent)?.backdropUrl;
       return {
-        backdrop: backdropUrl || selectedEntry.image,
+        backdrop: selectedEntry.image,
         title: selectedEntry.title,
         kind: selectedEntry.kind.toUpperCase(),
         year: selectedEntry.year,
@@ -980,13 +949,12 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
       const subtitleText = selectedContinueItem.type === 'series' && selectedContinueItem.seasonNumber && selectedContinueItem.episodeNumber
         ? `Season ${selectedContinueItem.seasonNumber}, Episode ${selectedContinueItem.episodeNumber} - ${selectedContinueItem.episodeTitle || ''}`
         : selectedContinueItem.episodeTitle || 'Saved watch progress.';
-      const backdropUrl = (selectedContinueItem.data as SelectedContent)?.backdropUrl || (selectedContinueItem.data as any)?.backdrop;
       return {
-        backdrop: backdropUrl || selectedContinueItem.thumbnail,
+        backdrop: selectedContinueItem.thumbnail,
         title: selectedContinueItem.title,
         kind: selectedContinueItem.type.toUpperCase(),
-        year: selectedContinueItem.data?.year || null,
-        rating: selectedContinueItem.data?.rating ? formatRating(selectedContinueItem.data.rating) : null,
+        year: null,
+        rating: null,
         description: subtitleText,
         primaryLabel: `Resume at ${Math.floor(selectedContinueItem.position / 60)}m`
       };
@@ -1196,9 +1164,9 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
                   }}
                 >
                   <div style={mergeStyle(landscapeCardInnerStyle, isFocused && landscapeCardActiveStyle)}>
-                    {((item.data as SelectedContent)?.backdropUrl || (item.data as any)?.backdrop || item.thumbnail) ? (
+                    {item.thumbnail ? (
                       <img
-                        src={(item.data as SelectedContent)?.backdropUrl || (item.data as any)?.backdrop || item.thumbnail}
+                        src={item.thumbnail}
                         alt=""
                         style={landscapeThumbnailStyle}
                       />

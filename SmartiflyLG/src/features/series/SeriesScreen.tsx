@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
-import { createXtreamApi, type XtreamSeries } from '../../services/api';
+import { createXtreamApi, type XtreamCategory, type XtreamSeries } from '../../services/api';
 import {
   browseCategories,
   browseCategory,
@@ -109,6 +109,73 @@ function parseFocusId(focusId: string) {
   return focusId.slice('card:'.length);
 }
 
+function buildSeriesCatalog(
+  seriesCategories: XtreamCategory[],
+  series: XtreamSeries[],
+  storedCategoryId: string,
+  storedFocusId: string
+) {
+  const sortedSeries = sortByScore(series, (item) => {
+    const modified = item.last_modified ? Date.parse(String(item.last_modified)) : 0;
+    const rating = Number(item.rating_5based || 0);
+    return (Number.isFinite(modified) ? modified : 0) + rating * 1000;
+  });
+
+  const mappedSeries = sortedSeries.map<SeriesCard>((item, index) => ({
+    id: `series-${item.series_id}`,
+    name: item.name,
+    seriesId: item.series_id,
+    artwork: pickImage(item.cover, item.backdrop_path),
+    categoryId: item.category_id || '0',
+    rating: item.rating ? String(item.rating) : item.rating_5based ? String(item.rating_5based) : '',
+    year: getSeriesYear(item),
+    accent: posterAccents[index % posterAccents.length]
+  }));
+
+  const counts = mappedSeries.reduce<Record<string, number>>((acc, item) => {
+    acc[item.categoryId] = (acc[item.categoryId] || 0) + 1;
+    return acc;
+  }, {});
+
+  const categories: SeriesCategory[] = seriesCategories
+    .filter((category) => counts[category.category_id] > 0)
+    .map((category) => ({
+      id: category.category_id,
+      name: category.category_name,
+      count: counts[category.category_id] || 0
+    }));
+
+  const defaultCategoryId = categories[0]?.id || '';
+  const selectedCategoryId = categories.some((category) => category.id === storedCategoryId)
+    ? storedCategoryId
+    : defaultCategoryId;
+  const focusId = (() => {
+    if (storedFocusId.startsWith('category:')) {
+      const categoryId = storedFocusId.slice('category:'.length);
+      if (categories.some((category) => category.id === categoryId)) {
+        return storedFocusId;
+      }
+    }
+
+    if (storedFocusId.startsWith('card:')) {
+      const storedCardId = storedFocusId.slice('card:'.length);
+      const storedCard = mappedSeries.find((item) => item.id === storedCardId);
+      if (storedCard && storedCard.categoryId === selectedCategoryId) {
+        return storedFocusId;
+      }
+    }
+
+    return selectedCategoryId ? `category:${selectedCategoryId}` : '';
+  })();
+
+  return {
+    categories,
+    seriesItems: mappedSeries,
+    selectedCategoryId,
+    focusId
+  };
+}
+
 type SeriesScreenProps = {
   onRequestSidebarFocus: () => void;
   contentFocusToken: number;
@@ -163,65 +230,13 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
 
         const seriesCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
         const series = seriesResult.status === 'fulfilled' ? seriesResult.value : [];
+        const nextCatalog = buildSeriesCatalog(seriesCategories, series, storedCategoryId, storedFocusId);
 
-        const sortedSeries = sortByScore(series, (item) => {
-          const modified = item.last_modified ? Date.parse(String(item.last_modified)) : 0;
-          const rating = Number(item.rating_5based || 0);
-          return (Number.isFinite(modified) ? modified : 0) + rating * 1000;
-        });
-
-        const mappedSeries = sortedSeries.map<SeriesCard>((item, index) => ({
-          id: `series-${item.series_id}`,
-          name: item.name,
-          seriesId: item.series_id,
-          artwork: pickImage(item.cover, item.backdrop_path),
-          categoryId: item.category_id || '0',
-          rating: item.rating ? String(item.rating) : item.rating_5based ? String(item.rating_5based) : '',
-          year: getSeriesYear(item),
-          accent: posterAccents[index % posterAccents.length]
-        }));
-
-        const counts = mappedSeries.reduce<Record<string, number>>((acc, item) => {
-          acc[item.categoryId] = (acc[item.categoryId] || 0) + 1;
-          return acc;
-        }, {});
-
-        const nextCategories: SeriesCategory[] = seriesCategories
-          .filter((category) => counts[category.category_id] > 0)
-          .map((category) => ({
-            id: category.category_id,
-            name: category.category_name,
-            count: counts[category.category_id] || 0
-          }));
-
-        const defaultCategoryId = nextCategories[0]?.id || '';
-        const nextSelectedCategoryId = nextCategories.some((category) => category.id === storedCategoryId)
-          ? storedCategoryId
-          : defaultCategoryId;
-        const nextFocusId = (() => {
-          if (storedFocusId.startsWith('category:')) {
-            const categoryId = storedFocusId.slice('category:'.length);
-            if (nextCategories.some((category) => category.id === categoryId)) {
-              return storedFocusId;
-            }
-          }
-
-          if (storedFocusId.startsWith('card:')) {
-            const storedCardId = storedFocusId.slice('card:'.length);
-            const storedCard = mappedSeries.find((item) => item.id === storedCardId);
-            if (storedCard && storedCard.categoryId === nextSelectedCategoryId) {
-              return storedFocusId;
-            }
-          }
-
-          return nextSelectedCategoryId ? `category:${nextSelectedCategoryId}` : '';
-        })();
-
-        setCategories(nextCategories);
-        setSeriesItems(mappedSeries);
-        setSelectedCategoryId(nextSelectedCategoryId);
-        setFocusId(nextFocusId);
-        pendingRestoreFocusId.current = nextFocusId;
+        setCategories(nextCatalog.categories);
+        setSeriesItems(nextCatalog.seriesItems);
+        setSelectedCategoryId(nextCatalog.selectedCategoryId);
+        setFocusId(nextCatalog.focusId);
+        pendingRestoreFocusId.current = nextCatalog.focusId;
       } catch {
         if (!cancelled) {
           setCategories([]);
@@ -253,6 +268,7 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   const visibleSeries = useMemo(() => {
     return selectedSeries.slice(0, visibleCount);
   }, [selectedSeries, visibleCount]);
+  const hasCatalogContent = categories.length > 0 && seriesItems.length > 0;
 
   const expandVisibleSeries = useCallback(
     (focusedIndex?: number) => {
@@ -327,6 +343,10 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   }, [categories, currentDestination, focusId, selectedCategoryId, selectedSeries, visibleCount, visibleSeries]);
 
   useEffect(() => {
+    if (pendingRestoreFocusId.current.startsWith('card:')) {
+      return;
+    }
+
     const categoryNode = categoryRefs.current[`category:${selectedCategoryId}`];
     if (categoryNode) {
       onContentRegionChange('categories');
@@ -562,12 +582,18 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
             </div>
           </div>
           <p style={mergeStyle(browseHint, browseGridHeaderHint)}>
-            {isLoading ? 'Loading titles...' : visibleSeries.length > 0 ? `${visibleSeries.length} titles` : 'No titles loaded'}
+            {isLoading && !hasCatalogContent
+              ? 'Loading titles...'
+              : isLoading
+                ? 'Refreshing titles...'
+                : visibleSeries.length > 0
+                  ? `${visibleSeries.length} titles`
+                  : 'No titles loaded'}
           </p>
         </div>
 
         <div className="lg-browse-scroll" style={browseGridScroll}>
-          {isLoading ? (
+          {isLoading && !hasCatalogContent ? (
             <div style={browseLoading} role="status" aria-live="polite">
               <div style={browseLoadingSpinner} aria-hidden="true" />
               <p>Loading series...</p>

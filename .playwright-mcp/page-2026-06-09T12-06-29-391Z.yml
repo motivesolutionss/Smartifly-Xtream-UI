@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - img "Smartifly" [ref=e5]
+      - paragraph [ref=e6]: PREMIUM STREAMING ENGINE
+    - paragraph [ref=e9]: v2025.05 • STABLE BUILD
+  - main [ref=e11]:
+    - generic [ref=e13]:
+      - img "Smartifly" [ref=e15]
+      - paragraph [ref=e16]: PREMIUM STREAMING ENGINE
+    - paragraph [ref=e19]: v2025.05 • STABLE BUILD

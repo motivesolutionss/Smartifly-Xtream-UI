@@ -19,8 +19,10 @@ export interface WatchProgress {
   title: string;
   episodeTitle?: string;
   thumbnail?: string;
+  description?: string;
+  playbackId?: string;
+  containerExtension?: string;
   completed: boolean;
-  data?: any;
 }
 
 type WatchHistoryState = {
@@ -93,6 +95,16 @@ function normalizeHistory(history: unknown): Record<string, WatchProgress> {
 }
 
 const isCompleted = (progress: number): boolean => progress >= 90;
+const MAX_HISTORY_ITEMS = 20;
+
+function getScopeFromHistoryId(id: string) {
+  const parts = id.split('::');
+  if (parts.length < 5) {
+    return '';
+  }
+
+  return parts.slice(0, 3).join('::');
+}
 
 export const useWatchHistoryStore = create<WatchHistoryStore>()(
   persist(
@@ -102,19 +114,31 @@ export const useWatchHistoryStore = create<WatchHistoryStore>()(
       updateProgress: (progress) => {
         const id = generateWatchHistoryId(progress.type, progress.streamId);
         const completed = isCompleted(progress.progress);
+        const scope = getScopeFromHistoryId(id);
 
         set((state) => {
           const currentHistory = normalizeHistory(state.history);
-          return {
-            history: {
-              ...currentHistory,
-              [id]: {
-                ...progress,
-                id,
-                lastWatched: Date.now(),
-                completed,
-              },
+          const nextHistory = {
+            ...currentHistory,
+            [id]: {
+              ...progress,
+              id,
+              lastWatched: Date.now(),
+              completed,
             },
+          };
+
+          const scopedEntries = Object.values(nextHistory)
+            .filter((item) => getScopeFromHistoryId(item.id) === scope)
+            .sort((a, b) => b.lastWatched - a.lastWatched);
+
+          const trimmedHistory = { ...nextHistory };
+          for (const item of scopedEntries.slice(MAX_HISTORY_ITEMS)) {
+            delete trimmedHistory[item.id];
+          }
+
+          return {
+            history: trimmedHistory,
           };
         });
       },
@@ -138,7 +162,7 @@ export const useWatchHistoryStore = create<WatchHistoryStore>()(
           .filter((item) => item.id.startsWith(scope))
           .filter((item) => !item.completed && item.progress > 0)
           .sort((a, b) => b.lastWatched - a.lastWatched)
-          .slice(0, limit);
+          .slice(0, Math.min(limit, MAX_HISTORY_ITEMS));
       },
 
       markCompleted: (id) => {
@@ -174,9 +198,31 @@ export const useWatchHistoryStore = create<WatchHistoryStore>()(
     }),
     {
       name: 'smartifly-lg-watch-history-v1',
+      version: 2,
       storage: watchHistoryStorage,
       partialize: (state) => ({
-        history: state.history,
+        history: Object.fromEntries(
+          Object.entries(state.history)
+            .map(([id, item]) => [id, {
+              id: item.id,
+              type: item.type,
+              streamId: item.streamId,
+              seriesId: item.seriesId,
+              seasonNumber: item.seasonNumber,
+              episodeNumber: item.episodeNumber,
+              progress: item.progress,
+              position: item.position,
+              duration: item.duration,
+              lastWatched: item.lastWatched,
+              title: item.title,
+              episodeTitle: item.episodeTitle,
+              thumbnail: item.thumbnail,
+              description: item.description,
+              playbackId: item.playbackId,
+              containerExtension: item.containerExtension,
+              completed: item.completed
+            }])
+        ),
       }),
     }
   )
@@ -184,29 +230,36 @@ export const useWatchHistoryStore = create<WatchHistoryStore>()(
 
 export const useTrackProgress = () => {
   const updateProgress = useWatchHistoryStore((state) => state.updateProgress);
+  type ProgressMetadata = {
+    description?: string;
+    playbackId?: string;
+    containerExtension?: string;
+  };
 
-  return {
-    trackMovie: (
-      streamId: number,
-      title: string,
-      position: number,
-      duration: number,
-      thumbnail?: string,
-      data?: any
-    ) => {
+    return {
+      trackMovie: (
+        streamId: number,
+        title: string,
+        position: number,
+        duration: number,
+        thumbnail?: string,
+        metadata?: ProgressMetadata
+      ) => {
       const progress = duration > 0 ? Math.round((position / duration) * 100) : 1;
 
-      updateProgress({
-        type: 'movie',
-        streamId,
-        title,
-        position,
-        duration,
-        progress: Math.min(Math.max(progress, 1), 100),
-        thumbnail,
-        data,
-      });
-    },
+        updateProgress({
+          type: 'movie',
+          streamId,
+          title,
+          position,
+          duration,
+          progress: Math.min(Math.max(progress, 1), 100),
+          thumbnail,
+          description: metadata?.description,
+          playbackId: metadata?.playbackId,
+          containerExtension: metadata?.containerExtension
+        });
+      },
 
     trackEpisode: (
       episodeStreamId: number,
@@ -218,15 +271,15 @@ export const useTrackProgress = () => {
       position: number,
       duration: number,
       thumbnail?: string,
-      data?: any
+      metadata?: ProgressMetadata
     ) => {
       const progress = duration > 0 ? Math.round((position / duration) * 100) : 1;
 
-      updateProgress({
-        type: 'series',
-        streamId: episodeStreamId,
-        seriesId,
-        title: seriesTitle,
+        updateProgress({
+          type: 'series',
+          streamId: episodeStreamId,
+          seriesId,
+          title: seriesTitle,
         episodeTitle,
         seasonNumber,
         episodeNumber,
@@ -234,27 +287,28 @@ export const useTrackProgress = () => {
         duration,
         progress: Math.min(Math.max(progress, 1), 100),
         thumbnail,
-        data,
-      });
-    },
+        description: metadata?.description,
+        playbackId: metadata?.playbackId,
+        containerExtension: metadata?.containerExtension
+        });
+      },
 
     trackLive: (
       streamId: number,
       title: string,
       thumbnail?: string,
-      data?: any
+      _data?: any
     ) => {
-      updateProgress({
-        type: 'live',
-        streamId,
-        title,
-        position: 0,
-        duration: 0,
-        progress: 0,
-        thumbnail,
-        data,
-      });
-    },
+        updateProgress({
+          type: 'live',
+          streamId,
+          title,
+          position: 0,
+          duration: 0,
+          progress: 0,
+          thumbnail
+        });
+      },
   };
 };
 

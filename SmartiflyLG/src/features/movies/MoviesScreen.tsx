@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
-import { createXtreamApi, type XtreamMovie } from '../../services/api';
+import { createXtreamApi, type XtreamCategory, type XtreamMovie } from '../../services/api';
 import {
   browseCategories,
   browseCategory,
@@ -157,6 +157,73 @@ function focusCategory(
   categoryRefs.current[`category:${categoryId}`]?.focus();
 }
 
+function buildMovieCatalog(
+  vodCategories: XtreamCategory[],
+  vodStreams: XtreamMovie[],
+  storedCategoryId: string,
+  storedFocusId: string
+) {
+  const sortedMovies = sortByScore(vodStreams, (movie) => {
+    const added = movie.added ? Date.parse(String(movie.added)) : 0;
+    const rating = Number(movie.rating_5based || 0);
+    return (Number.isFinite(added) ? added : 0) + rating * 1000;
+  });
+
+  const mappedMovies = sortedMovies.map<MovieCard>((movie, index) => ({
+    id: `movie-${movie.stream_id}`,
+    name: movie.name,
+    streamId: movie.stream_id,
+    artwork: pickImage(movie.backdrop_path, movie.stream_icon, movie.direct_source),
+    categoryId: movie.category_id || '0',
+    rating: movie.rating_5based ? String(movie.rating_5based) : '',
+    year: getMovieYear(movie),
+    accent: posterAccents[index % posterAccents.length]
+  }));
+
+  const counts = mappedMovies.reduce<Record<string, number>>((acc, movie) => {
+    acc[movie.categoryId] = (acc[movie.categoryId] || 0) + 1;
+    return acc;
+  }, {});
+
+  const categories: MovieCategory[] = vodCategories
+    .filter((category) => counts[category.category_id] > 0)
+    .map((category) => ({
+      id: category.category_id,
+      name: category.category_name,
+      count: counts[category.category_id] || 0
+    }));
+
+  const defaultCategoryId = categories[0]?.id || '';
+  const selectedCategoryId = categories.some((category) => category.id === storedCategoryId)
+    ? storedCategoryId
+    : defaultCategoryId;
+  const focusId = (() => {
+    if (storedFocusId.startsWith('category:')) {
+      const categoryId = storedFocusId.slice('category:'.length);
+      if (categories.some((category) => category.id === categoryId)) {
+        return storedFocusId;
+      }
+    }
+
+    if (storedFocusId.startsWith('card:')) {
+      const storedCardId = storedFocusId.slice('card:'.length);
+      const storedCard = mappedMovies.find((movie) => movie.id === storedCardId);
+      if (storedCard && storedCard.categoryId === selectedCategoryId) {
+        return storedFocusId;
+      }
+    }
+
+    return selectedCategoryId ? `category:${selectedCategoryId}` : '';
+  })();
+
+  return {
+    categories,
+    movies: mappedMovies,
+    selectedCategoryId,
+    focusId
+  };
+}
+
 type MoviesScreenProps = {
   onRequestSidebarFocus: () => void;
   contentFocusToken: number;
@@ -211,66 +278,13 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
 
         const vodCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
         const vodStreams = moviesResult.status === 'fulfilled' ? moviesResult.value : [];
+        const nextCatalog = buildMovieCatalog(vodCategories, vodStreams, storedCategoryId, storedFocusId);
 
-        const sortedMovies = sortByScore(vodStreams, (movie) => {
-          const added = movie.added ? Date.parse(String(movie.added)) : 0;
-          const rating = Number(movie.rating_5based || 0);
-          return (Number.isFinite(added) ? added : 0) + rating * 1000;
-        });
-
-        const mappedMovies = sortedMovies.map<MovieCard>((movie, index) => ({
-          id: `movie-${movie.stream_id}`,
-          name: movie.name,
-          streamId: movie.stream_id,
-          artwork: pickImage(movie.backdrop_path, movie.stream_icon, movie.direct_source),
-          categoryId: movie.category_id || '0',
-          rating: movie.rating_5based ? String(movie.rating_5based) : '',
-          year: getMovieYear(movie),
-          accent: posterAccents[index % posterAccents.length]
-        }));
-
-        const counts = mappedMovies.reduce<Record<string, number>>((acc, movie) => {
-          acc[movie.categoryId] = (acc[movie.categoryId] || 0) + 1;
-          return acc;
-        }, {});
-
-        const nextCategories: MovieCategory[] = vodCategories
-          .filter((category) => counts[category.category_id] > 0)
-          .map((category) => ({
-            id: category.category_id,
-            name: category.category_name,
-            count: counts[category.category_id] || 0
-          }));
-
-        const defaultCategoryId = nextCategories[0]?.id || '';
-        const nextSelectedCategoryId = nextCategories.some((category) => category.id === storedCategoryId)
-          ? storedCategoryId
-          : defaultCategoryId;
-        const nextFocusId = (() => {
-          if (storedFocusId.startsWith('category:')) {
-            const categoryId = storedFocusId.slice('category:'.length);
-            if (nextCategories.some((category) => category.id === categoryId)) {
-              return storedFocusId;
-            }
-          }
-
-          if (storedFocusId.startsWith('card:')) {
-            const storedCardId = storedFocusId.slice('card:'.length);
-            const storedCard = mappedMovies.find((movie) => movie.id === storedCardId);
-            if (storedCard && storedCard.categoryId === nextSelectedCategoryId) {
-              return storedFocusId;
-            }
-          }
-
-          return nextSelectedCategoryId ? `category:${nextSelectedCategoryId}` : '';
-        })();
-
-        setCategories(nextCategories);
-        setMovies(mappedMovies);
-        useAppStore.getState().setCachedMovies(vodStreams);
-        setSelectedCategoryId(nextSelectedCategoryId);
-        setFocusId(nextFocusId);
-        pendingRestoreFocusId.current = nextFocusId;
+        setCategories(nextCatalog.categories);
+        setMovies(nextCatalog.movies);
+        setSelectedCategoryId(nextCatalog.selectedCategoryId);
+        setFocusId(nextCatalog.focusId);
+        pendingRestoreFocusId.current = nextCatalog.focusId;
       } catch {
         if (!cancelled) {
           setCategories([]);
@@ -302,6 +316,7 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   const visibleMovies = useMemo(() => {
     return selectedMovies.slice(0, visibleCount);
   }, [selectedMovies, visibleCount]);
+  const hasCatalogContent = categories.length > 0 && movies.length > 0;
 
   const expandVisibleMovies = useCallback(
     (focusedIndex?: number) => {
@@ -376,6 +391,10 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   }, [categories, currentDestination, focusId, selectedCategoryId, selectedMovies, visibleCount, visibleMovies]);
 
   useEffect(() => {
+    if (pendingRestoreFocusId.current.startsWith('card:')) {
+      return;
+    }
+
     const categoryNode = categoryRefs.current[`category:${selectedCategoryId}`];
     if (categoryNode) {
       onContentRegionChange('categories');
@@ -591,12 +610,18 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
             </div>
           </div>
           <p style={mergeStyle(browseHint, browseGridHeaderHint)}>
-            {isLoading ? 'Loading titles...' : visibleMovies.length > 0 ? `${visibleMovies.length} titles` : 'No titles loaded'}
+            {isLoading && !hasCatalogContent
+              ? 'Loading titles...'
+              : isLoading
+                ? 'Refreshing titles...'
+                : visibleMovies.length > 0
+                  ? `${visibleMovies.length} titles`
+                  : 'No titles loaded'}
           </p>
         </div>
 
         <div className="lg-browse-scroll" style={browseGridScroll}>
-          {isLoading ? (
+          {isLoading && !hasCatalogContent ? (
             <div style={browseLoading} role="status" aria-live="polite">
               <div style={browseLoadingSpinner} aria-hidden="true" />
               <p>Loading movies...</p>

@@ -1,6 +1,6 @@
 import { type CSSProperties, type KeyboardEvent, type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
-import { createXtreamApi, type XtreamLiveStream, type XtreamShortEpgEntry } from '../../services/api';
+import { createXtreamApi, type XtreamCategory, type XtreamLiveStream, type XtreamShortEpgEntry } from '../../services/api';
 import {
   browseCategories,
   browseCategory,
@@ -165,6 +165,70 @@ function focusCategory(
   categoryRefs.current[`category:${categoryId}`]?.focus();
 }
 
+function buildLiveCatalog(
+  liveCategories: XtreamCategory[],
+  liveStreams: XtreamLiveStream[],
+  storedCategoryId: string,
+  storedFocusId: string
+) {
+  const sortedStreams = sortByScore(liveStreams, (stream) => Number(stream.num) || 0);
+  const channels = sortedStreams.map<LiveCard>((stream, index) => ({
+    id: `live-${stream.stream_id}`,
+    name: stream.name,
+    streamId: stream.stream_id,
+    extension: 'm3u8',
+    artwork: pickImage(stream.stream_icon, stream.direct_source),
+    categoryId: stream.category_id || '0',
+    accent: cardAccents[index % cardAccents.length],
+    archiveAvailable: Number(stream.tv_archive) === 1,
+    archiveDuration: Number(stream.tv_archive_duration) || 0,
+    epgChannelId: stream.epg_channel_id ?? null
+  }));
+
+  const counts = channels.reduce<Record<string, number>>((acc, channel) => {
+    acc[channel.categoryId] = (acc[channel.categoryId] || 0) + 1;
+    return acc;
+  }, {});
+
+  const categories: LiveCategory[] = liveCategories
+    .filter((category) => counts[category.category_id] > 0)
+    .map((category) => ({
+      id: category.category_id,
+      name: category.category_name,
+      count: counts[category.category_id] || 0
+    }));
+
+  const defaultCategoryId = categories[0]?.id || '';
+  const selectedCategoryId = categories.some((category) => category.id === storedCategoryId)
+    ? storedCategoryId
+    : defaultCategoryId;
+  const focusId = (() => {
+    if (storedFocusId.startsWith('card:')) {
+      const channelId = parseFocusId(storedFocusId);
+      const storedChannel = channels.find((channel) => channel.id === channelId);
+      if (storedChannel && storedChannel.categoryId === selectedCategoryId) {
+        return storedFocusId;
+      }
+    }
+
+    if (storedFocusId.startsWith('category:')) {
+      const categoryId = storedFocusId.slice('category:'.length);
+      if (categories.some((category) => category.id === categoryId)) {
+        return storedFocusId;
+      }
+    }
+
+    return selectedCategoryId ? `category:${selectedCategoryId}` : '';
+  })();
+
+  return {
+    categories,
+    channels,
+    selectedCategoryId,
+    focusId
+  };
+}
+
 type LiveScreenProps = {
   onRequestSidebarFocus: () => void;
   contentFocusToken: number;
@@ -176,10 +240,12 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
   const openPlayback = useAppStore((state) => state.openPlayback);
   const setStatusMessage = useAppStore((state) => state.setStatusMessage);
   const setLiveBrowseState = useAppStore((state) => state.setLiveBrowseState);
+  const storedCategoryId = useAppStore((state) => state.liveCategoryId);
+  const storedFocusId = useAppStore((state) => state.liveFocusId);
   const [categories, setCategories] = useState<LiveCategory[]>([]);
   const [channels, setChannels] = useState<LiveCard[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(() => useAppStore.getState().liveCategoryId || '');
-  const [focusId, setFocusId] = useState(() => useAppStore.getState().liveFocusId || '');
+  const [selectedCategoryId, setSelectedCategoryId] = useState(storedCategoryId);
+  const [focusId, setFocusId] = useState(storedFocusId);
   const [isLoading, setIsLoading] = useState(false);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [epgByChannel, setEpgByChannel] = useState<Record<string, LiveEpgCacheEntry>>({});
@@ -226,55 +292,12 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
 
         const liveCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
         const liveStreams = streamsResult.status === 'fulfilled' ? streamsResult.value : [];
+        const nextCatalog = buildLiveCatalog(liveCategories, liveStreams, storedCategoryId, storedFocusId);
 
-        const sortedStreams = sortByScore(liveStreams, (stream) => Number(stream.num) || 0);
-        const mappedChannels = sortedStreams.map<LiveCard>((stream, index) => ({
-          id: `live-${stream.stream_id}`,
-          name: stream.name,
-          streamId: stream.stream_id,
-          extension: 'm3u8',
-          artwork: pickImage(stream.stream_icon, stream.direct_source),
-          categoryId: stream.category_id || '0',
-          accent: cardAccents[index % cardAccents.length],
-          archiveAvailable: Number(stream.tv_archive) === 1,
-          archiveDuration: Number(stream.tv_archive_duration) || 0,
-          epgChannelId: stream.epg_channel_id ?? null
-        }));
-
-        const counts = mappedChannels.reduce<Record<string, number>>((acc, channel) => {
-          acc[channel.categoryId] = (acc[channel.categoryId] || 0) + 1;
-          return acc;
-        }, {});
-
-        const nextCategories: LiveCategory[] = liveCategories
-          .filter((category) => counts[category.category_id] > 0)
-          .map((category) => ({
-            id: category.category_id,
-            name: category.category_name,
-            count: counts[category.category_id] || 0
-          }));
-
-        const defaultCategoryId = nextCategories[0]?.id || '';
-
-        setCategories(nextCategories);
-        setChannels(mappedChannels);
-        setSelectedCategoryId((current) => {
-          return nextCategories.some((category) => category.id === current) ? current : defaultCategoryId;
-        });
-        setFocusId((current) => {
-          if (current.startsWith('card:')) {
-            const channelId = parseFocusId(current);
-            const exists = mappedChannels.some((c) => c.id === channelId);
-            if (exists) {
-              return current;
-            }
-          }
-          return current && current !== 'category:all'
-            ? current
-            : defaultCategoryId
-              ? `category:${defaultCategoryId}`
-              : '';
-        });
+        setCategories(nextCatalog.categories);
+        setChannels(nextCatalog.channels);
+        setSelectedCategoryId(nextCatalog.selectedCategoryId);
+        setFocusId(nextCatalog.focusId);
       } catch {
         if (!cancelled) {
           setCategories([]);
@@ -306,6 +329,7 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
 
     return selected;
   }, [channels, selectedCategoryId]);
+  const hasCatalogContent = categories.length > 0 && channels.length > 0;
 
   const featuredChannel = useMemo(() => {
     const focusedChannelId = parseFocusId(focusId);
@@ -692,12 +716,18 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
             </p>
           </div>
           <p style={mergeStyle(browseHint, browseGridHeaderHint)}>
-            {isLoading ? 'Loading titles...' : visibleChannels.length > 0 ? `${visibleChannels.length} titles` : 'No titles loaded'}
+            {isLoading && !hasCatalogContent
+              ? 'Loading titles...'
+              : isLoading
+                ? 'Refreshing titles...'
+                : visibleChannels.length > 0
+                  ? `${visibleChannels.length} titles`
+                  : 'No titles loaded'}
           </p>
         </div>
 
         <div className="lg-browse-scroll" style={liveGridScroll}>
-          {isLoading ? (
+          {isLoading && !hasCatalogContent ? (
             <div style={browseLoading} role="status" aria-live="polite">
               <div style={browseLoadingSpinner} aria-hidden="true" />
               <p>Loading channels...</p>
@@ -829,5 +859,3 @@ const liveCatchupBadgeStyle: CSSProperties = {
   letterSpacing: '0.4px',
   textTransform: 'uppercase'
 };
-
-

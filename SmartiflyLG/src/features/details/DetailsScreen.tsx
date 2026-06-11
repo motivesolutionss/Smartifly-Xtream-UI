@@ -157,6 +157,18 @@ function getYearFromValue(value?: string | number | null) {
   return parsed.length === 4 ? parsed : '';
 }
 
+function getPlaybackExtensions(extension?: string | null) {
+  const normalized = extension?.trim().toLowerCase();
+  const extensions = [normalized, 'mkv', 'mp4'].filter(
+    (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index
+  );
+
+  return {
+    primary: extensions[0] || 'mkv',
+    fallbacks: extensions.slice(1)
+  };
+}
+
 function getEpisodeNumber(value?: string | number | null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -794,40 +806,43 @@ function DetailsScreen() {
   const episodeFallbackArt = detail?.posterUrl || selectedContent?.posterUrl || detail?.backdropUrl || selectedContent?.backdropUrl;
   const detailsBackdropMode = getDetailsBackdropMode(heroArt, posterArt, resolvedBackdropUrl, backdropFailed);
 
-  if (heroArt !== prevHeroArt || selectedContent?.id !== prevContentId) {
-    setBackdropReady(false);
-    setBackdropFailed(false);
-    setPrevHeroArt(heroArt);
-    setPrevContentId(selectedContent?.id);
-  }
+  useEffect(() => {
+    if (heroArt !== prevHeroArt || selectedContent?.id !== prevContentId) {
+      setBackdropReady(false);
+      setBackdropFailed(false);
+      setPrevHeroArt(heroArt);
+      setPrevContentId(selectedContent?.id);
+    }
+  }, [heroArt, prevHeroArt, selectedContent?.id, prevContentId]);
 
   // Automatically sync/update favorite with full metadata (e.g. backdropUrl) once fetched
   useEffect(() => {
     if (detail && isSaved && selectedContent) {
       const currentFavorite = watchlistEntries.find((entry) => entry.key === selectedFavoriteKey);
-      const currentBackdrop = (currentFavorite?.data as SelectedContent)?.backdropUrl;
-      const fetchedBackdrop = detail.backdropUrl;
+      const nextTitle = detail.title || selectedContent.title;
+      const nextSubtitle = detail.description || selectedContent.description;
+      const nextImage = detail.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl;
+      const nextRating = detail.rating || selectedContent.rating;
+      const nextYear = detail.year || selectedContent.year;
       
-      // Update if backdropUrl is missing or out of sync
-      if (fetchedBackdrop && currentBackdrop !== fetchedBackdrop) {
+      // Update once when the lean saved metadata is out of sync.
+      if (
+        currentFavorite?.title !== nextTitle ||
+        currentFavorite?.subtitle !== nextSubtitle ||
+        currentFavorite?.image !== nextImage ||
+        currentFavorite?.rating !== nextRating ||
+        currentFavorite?.year !== nextYear
+      ) {
         useWatchlistStore.getState().addFavorite({
           key: selectedFavoriteKey,
           scope: watchlistScope,
           kind: selectedContent.kind,
           entityId: String(selectedContent.contentId),
-          title: detail.title || selectedContent.title,
-          subtitle: detail.description || selectedContent.description,
-          image: detail.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl,
-          rating: detail.rating || selectedContent.rating,
-          year: detail.year || selectedContent.year,
-          data: {
-            ...selectedContent,
-            posterUrl: detail.posterUrl || selectedContent.posterUrl,
-            backdropUrl: detail.backdropUrl || selectedContent.backdropUrl,
-            description: detail.description || selectedContent.description,
-            year: detail.year || selectedContent.year,
-            rating: detail.rating || selectedContent.rating
-          }
+          title: nextTitle,
+          subtitle: nextSubtitle,
+          image: nextImage,
+          rating: nextRating,
+          year: nextYear
         });
       }
     }
@@ -926,8 +941,8 @@ function DetailsScreen() {
     const posterUrl = detail?.posterUrl || selectedContent.posterUrl || detail?.backdropUrl || selectedContent.backdropUrl;
 
     if (selectedContent.kind === 'movie') {
-      const extension = detail?.containerExtension || 'mp4';
-      const streamUrl = api.getVodStreamUrl(username, password, selectedContent.contentId, extension);
+      const extensions = getPlaybackExtensions(detail?.containerExtension);
+      const streamUrl = api.getVodStreamUrl(username, password, selectedContent.contentId, extensions.primary);
       const progress = useWatchHistoryStore.getState().getProgress('movie', selectedContent.contentId);
       const resumePosition = progress && !progress.completed ? progress.position : undefined;
 
@@ -939,8 +954,11 @@ function DetailsScreen() {
         posterUrl,
         backdropUrl,
         streamUrl,
+        fallbackUrls: extensions.fallbacks.map((extension) => api.getVodStreamUrl(username, password, selectedContent.contentId, extension)),
         resumePosition,
-        returnDestination: 'details'
+        returnDestination: 'details',
+        streamId: selectedContent.contentId,
+        containerExtension: extensions.primary
       });
       return;
     }
@@ -952,8 +970,8 @@ function DetailsScreen() {
 
     const episode = selectedSeasonEpisodes[0];
     const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
-    const extension = episode.extension || 'mp4';
-    const streamUrl = api.getSeriesStreamUrl(username, password, episodeId, extension);
+    const extensions = getPlaybackExtensions(episode.extension);
+    const streamUrl = api.getSeriesStreamUrl(username, password, episodeId, extensions.primary);
     const progress = useWatchHistoryStore.getState().getProgress('series', episodeId);
     const resumePosition = progress && !progress.completed ? progress.position : undefined;
 
@@ -966,8 +984,14 @@ function DetailsScreen() {
       posterUrl: episode.artwork || posterUrl,
       backdropUrl,
       streamUrl,
+      fallbackUrls: extensions.fallbacks.map((extension) => api.getSeriesStreamUrl(username, password, episodeId, extension)),
       resumePosition,
-      returnDestination: 'details'
+      returnDestination: 'details',
+      streamId: episodeId,
+      seriesId: selectedContent.contentId,
+      seasonNumber: Number(selectedSeason) || 1,
+      episodeNumber: episode.episodeNumber || 1,
+      containerExtension: extensions.primary
     });
   };
 
@@ -982,8 +1006,8 @@ function DetailsScreen() {
     const backdropUrl = detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl;
     const posterUrl = detail?.posterUrl || selectedContent.posterUrl || detail?.backdropUrl || selectedContent.backdropUrl;
     const episodeId = episode.streamId || Number(episode.id.replace('episode-', '')) || selectedContent.contentId;
-    const extension = episode.extension || 'mp4';
-    const streamUrl = api.getSeriesStreamUrl(username, password, episodeId, extension);
+    const extensions = getPlaybackExtensions(episode.extension);
+    const streamUrl = api.getSeriesStreamUrl(username, password, episodeId, extensions.primary);
     const progress = useWatchHistoryStore.getState().getProgress('series', episodeId);
     const resumePosition = progress && !progress.completed ? progress.position : undefined;
 
@@ -996,8 +1020,14 @@ function DetailsScreen() {
       posterUrl: episode.artwork || posterUrl,
       backdropUrl,
       streamUrl,
+      fallbackUrls: extensions.fallbacks.map((extension) => api.getSeriesStreamUrl(username, password, episodeId, extension)),
       resumePosition,
-      returnDestination: 'details'
+      returnDestination: 'details',
+      streamId: episodeId,
+      seriesId: selectedContent.contentId,
+      seasonNumber: Number(episode.seasonId) || Number(selectedSeason) || 1,
+      episodeNumber: episode.episodeNumber || 1,
+      containerExtension: extensions.primary
     });
   };
 
@@ -1373,15 +1403,7 @@ function DetailsScreen() {
                         subtitle: detail?.description || selectedContent.description,
                         image: detail?.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl,
                         rating: detail?.rating || selectedContent.rating,
-                        year: detail?.year || selectedContent.year,
-                        data: {
-                          ...selectedContent,
-                          posterUrl: detail?.posterUrl || selectedContent.posterUrl,
-                          backdropUrl: detail?.backdropUrl || selectedContent.backdropUrl,
-                          description: detail?.description || selectedContent.description,
-                          year: detail?.year || selectedContent.year,
-                          rating: detail?.rating || selectedContent.rating
-                        }
+                        year: detail?.year || selectedContent.year
                       });
 
                       setStatusMessage(isSaved ? 'Removed from favorites' : 'Added to favorites');

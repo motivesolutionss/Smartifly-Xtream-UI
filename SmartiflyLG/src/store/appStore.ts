@@ -88,6 +88,7 @@ export type PlaybackRequest = {
   seriesId?: number;
   seasonNumber?: number;
   episodeNumber?: number;
+  containerExtension?: string;
 };
 
 type LoginInput = {
@@ -110,7 +111,6 @@ type AppState = {
   bootstrapStatus: BootstrapStatus;
   bootstrapError: string | null;
   homeBootstrapData: HomeBootstrapData | null;
-  cachedMovies: any[];
   currentDestination: AppDestination;
   sidebarDestination: AppDestination;
   sidebarFocusTarget: 'profile' | AppDestination | 'settings';
@@ -158,7 +158,6 @@ type AppState = {
   closePlayback: () => void;
   closeContentDetails: () => void;
   changePortal: () => void;
-  setCachedMovies: (movies: any[]) => void;
   signOut: () => void;
 };
 
@@ -292,7 +291,6 @@ function applyAuthenticatedState(setter: Parameters<typeof create<AppState>>[0],
     bootstrapStatus: 'idle',
     bootstrapError: null,
     homeBootstrapData: null,
-    cachedMovies: [],
     currentDestination: 'home',
     sidebarDestination: 'home',
     sidebarFocusTarget: 'home',
@@ -418,7 +416,6 @@ export const useAppStore = create<AppState>((set) => ({
   bootstrapStatus: initialHomeBootstrapData ? 'ready' : 'idle',
   bootstrapError: null,
   homeBootstrapData: initialHomeBootstrapData,
-  cachedMovies: [],
   currentDestination: 'home',
   sidebarDestination: 'home',
   sidebarFocusTarget: 'home',
@@ -441,7 +438,6 @@ export const useAppStore = create<AppState>((set) => ({
   isAuthenticating: false,
   setOnboardingScreen: (screen) => set({ onboardingScreen: screen }),
   setStatusMessage: (message) => set({ statusMessage: message }),
-  setCachedMovies: (movies) => set({ cachedMovies: movies }),
   signIn: async ({ portalCode, username, password }) => {
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
@@ -628,7 +624,7 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapStatus: 'idle',
       bootstrapError: null,
       homeBootstrapData: null,
-      cachedMovies: []
+      ...getEmptyCatalogState()
     }),
   selectProfile: (profileId) =>
     set((state) => {
@@ -637,11 +633,10 @@ export const useAppStore = create<AppState>((set) => ({
 
       return {
         selectedProfile,
-        profileSelectionSource: 'post-login',
-        bootstrapStatus: selectedProfile ? 'idle' : state.bootstrapStatus,
-        bootstrapError: null,
-        homeBootstrapData: null,
-        cachedMovies: [],
+      profileSelectionSource: 'post-login',
+      bootstrapStatus: selectedProfile ? 'idle' : state.bootstrapStatus,
+      bootstrapError: null,
+      homeBootstrapData: null,
         sidebarFocusTarget: 'home',
         statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage
       };
@@ -655,7 +650,6 @@ export const useAppStore = create<AppState>((set) => ({
         bootstrapStatus: 'idle',
         bootstrapError: null,
         homeBootstrapData: null,
-        cachedMovies: []
       };
     }),
   addProfile: (name, avatarSeed, isKids = false, pinLock = '') =>
@@ -795,7 +789,6 @@ export const useAppStore = create<AppState>((set) => ({
         bootstrapStatus: 'idle',
         bootstrapError: null,
         homeBootstrapData: null,
-        cachedMovies: [],
         statusMessage: 'Return to sign in'
       };
     }),
@@ -888,7 +881,6 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapStatus: 'idle',
       bootstrapError: null,
       homeBootstrapData: null,
-      cachedMovies: [],
       currentDestination: 'home',
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',
@@ -933,7 +925,6 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapStatus: 'idle',
       bootstrapError: null,
       homeBootstrapData: null,
-      cachedMovies: [],
       currentDestination: 'home',
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',

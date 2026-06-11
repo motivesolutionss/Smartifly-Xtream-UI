@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { SelectedContent } from './appStore';
 
 export type WatchlistKind = 'live' | 'movie' | 'series' | 'episode';
 
@@ -16,7 +15,6 @@ export interface WatchlistEntry {
   year?: string;
   episodeUrl?: string;
   addedAt: number;
-  data: SelectedContent | Record<string, unknown> | null;
 }
 
 type WatchlistState = {
@@ -39,7 +37,9 @@ function normalizeEntries(entries: unknown): WatchlistEntry[] {
     return [];
   }
 
-  return entries.filter(Boolean).map((entry) => migrateEntry(entry as WatchlistEntry));
+  return entries
+    .filter(Boolean)
+    .map((entry) => migrateEntry(entry as WatchlistEntry));
 }
 
 function migrateEntry(entry: WatchlistEntry): WatchlistEntry {
@@ -50,9 +50,17 @@ function migrateEntry(entry: WatchlistEntry): WatchlistEntry {
 
   const legacyScope = `${scopeParts[0] || 'default'}::${scopeParts[1] || 'guest'}::primary`;
   return {
-    ...entry,
+    key: buildWatchlistKey(legacyScope, entry.kind, entry.entityId),
     scope: legacyScope,
-    key: buildWatchlistKey(legacyScope, entry.kind, entry.entityId)
+    kind: entry.kind,
+    entityId: entry.entityId,
+    title: entry.title,
+    subtitle: entry.subtitle,
+    image: entry.image,
+    rating: entry.rating,
+    year: entry.year,
+    episodeUrl: entry.episodeUrl,
+    addedAt: entry.addedAt || Date.now()
   };
 }
 
@@ -104,10 +112,11 @@ const useWatchlistStore = create<WatchlistStore>()(
       addFavorite: (entry) => {
         set((state) => {
           const currentEntries = normalizeEntries(state.entries);
+          const { addedAt: _addedAt, ...leanEntry } = entry;
           const withoutExisting = currentEntries.filter((item) => item.key !== entry.key);
           return {
             entries: [
-              { ...entry, addedAt: Date.now() },
+              { ...leanEntry, addedAt: Date.now() },
               ...withoutExisting
             ]
           };
@@ -146,14 +155,38 @@ const useWatchlistStore = create<WatchlistStore>()(
     }),
     {
       name: 'smartifly-lg-watchlist-v1',
-      version: 2,
+      version: 3,
       storage: watchlistStorage,
       migrate: (persistedState) => ({
         ...(persistedState as WatchlistState),
-        entries: normalizeEntries((persistedState as WatchlistState | null)?.entries)
+        entries: normalizeEntries((persistedState as WatchlistState | null)?.entries).map(({ title, subtitle, image, rating, year, episodeUrl, key, scope, kind, entityId, addedAt }) => ({
+          key,
+          scope,
+          kind,
+          entityId,
+          title,
+          subtitle,
+          image,
+          rating,
+          year,
+          episodeUrl,
+          addedAt
+        }))
       }),
       partialize: (state) => ({
-        entries: state.entries
+        entries: state.entries.map(({ key, scope, kind, entityId, title, subtitle, image, rating, year, episodeUrl, addedAt }) => ({
+          key,
+          scope,
+          kind,
+          entityId,
+          title,
+          subtitle,
+          image,
+          rating,
+          year,
+          episodeUrl,
+          addedAt
+        }))
       })
     }
   )
