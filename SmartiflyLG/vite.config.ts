@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFil
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { transformSync } from '@babel/core';
 
 export default defineConfig({
   plugins: [
@@ -109,6 +110,57 @@ export default defineConfig({
 
         if (patched !== html) {
           writeFileSync(indexPath, patched, 'utf8');
+        }
+
+        // Transpile app.js to ES5 and prepend polyfills for webOS 3.0
+        const appJsPath = join(process.cwd(), 'dist', 'app.js');
+        if (existsSync(appJsPath)) {
+          console.log('Post-processing app.js: transpiling to ES5 (chrome 38) and prepending polyfills...');
+          try {
+            const rawAppJs = readFileSync(appJsPath, 'utf8');
+            const babelResult = transformSync(rawAppJs, {
+              presets: [
+                ['@babel/preset-env', {
+                  targets: { chrome: '38' },
+                  useBuiltIns: false,
+                  modules: false
+                }]
+              ],
+              compact: true,
+              minified: true,
+              configFile: false,
+              babelrc: false
+            });
+
+            if (!babelResult || !babelResult.code) {
+              throw new Error('Babel compilation returned empty code');
+            }
+
+            const coreJsPath = join(process.cwd(), 'node_modules', 'core-js-bundle', 'minified.js');
+            const fetchPath = join(process.cwd(), 'node_modules', 'whatwg-fetch', 'dist', 'fetch.umd.js');
+            const abortPath = join(process.cwd(), 'node_modules', 'abortcontroller-polyfill', 'dist', 'abortcontroller-polyfill-only.js');
+
+            const coreJsCode = existsSync(coreJsPath) ? readFileSync(coreJsPath, 'utf8') : '';
+            const fetchCode = existsSync(fetchPath) ? readFileSync(fetchPath, 'utf8') : '';
+            const abortCode = existsSync(abortPath) ? readFileSync(abortPath, 'utf8') : '';
+
+            const finalAppJs = [
+              '/* --- CORE-JS POLYFILLS --- */',
+              coreJsCode,
+              '/* --- FETCH POLYFILL --- */',
+              fetchCode,
+              '/* --- ABORT CONTROLLER POLYFILL --- */',
+              abortCode,
+              '/* --- APP BUNDLE --- */',
+              babelResult.code
+            ].join('\n');
+
+            writeFileSync(appJsPath, finalAppJs, 'utf8');
+            console.log('app.js successfully transpiled and polyfilled for webOS 3.0!');
+          } catch (e) {
+            console.error('Failed to post-process app.js:', e);
+            throw e;
+          }
         }
       }
     }

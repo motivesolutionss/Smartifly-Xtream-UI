@@ -11,6 +11,7 @@ export interface WatchlistEntry {
   title: string;
   subtitle?: string;
   image?: string;
+  backdrop?: string;
   rating?: number | string;
   year?: string;
   episodeUrl?: string;
@@ -57,6 +58,7 @@ function migrateEntry(entry: WatchlistEntry): WatchlistEntry {
     title: entry.title,
     subtitle: entry.subtitle,
     image: entry.image,
+    backdrop: entry.backdrop,
     rating: entry.rating,
     year: entry.year,
     episodeUrl: entry.episodeUrl,
@@ -155,11 +157,11 @@ const useWatchlistStore = create<WatchlistStore>()(
     }),
     {
       name: 'smartifly-lg-watchlist-v1',
-      version: 3,
+      version: 4,
       storage: watchlistStorage,
       migrate: (persistedState) => ({
         ...(persistedState as WatchlistState),
-        entries: normalizeEntries((persistedState as WatchlistState | null)?.entries).map(({ title, subtitle, image, rating, year, episodeUrl, key, scope, kind, entityId, addedAt }) => ({
+        entries: normalizeEntries((persistedState as WatchlistState | null)?.entries).map(({ title, subtitle, image, backdrop, rating, year, episodeUrl, key, scope, kind, entityId, addedAt }) => ({
           key,
           scope,
           kind,
@@ -167,6 +169,7 @@ const useWatchlistStore = create<WatchlistStore>()(
           title,
           subtitle,
           image,
+          backdrop,
           rating,
           year,
           episodeUrl,
@@ -174,7 +177,7 @@ const useWatchlistStore = create<WatchlistStore>()(
         }))
       }),
       partialize: (state) => ({
-        entries: state.entries.map(({ key, scope, kind, entityId, title, subtitle, image, rating, year, episodeUrl, addedAt }) => ({
+        entries: state.entries.map(({ key, scope, kind, entityId, title, subtitle, image, backdrop, rating, year, episodeUrl, addedAt }) => ({
           key,
           scope,
           kind,
@@ -182,6 +185,7 @@ const useWatchlistStore = create<WatchlistStore>()(
           title,
           subtitle,
           image,
+          backdrop,
           rating,
           year,
           episodeUrl,

@@ -1,4 +1,13 @@
 import type { CSSProperties } from 'react';
+import { legacyChromiumBrowser } from '../utils/legacyBrowser';
+
+export function legacyAwareStyle(modern: CSSProperties, legacy?: CSSProperties): CSSProperties {
+  if (legacyChromiumBrowser) {
+    return Object.assign({}, modern, legacy);
+  }
+  return modern;
+}
+
 
 export function mergeStyle(...styles: Array<CSSProperties | false | undefined | null>): CSSProperties {
   return Object.assign({}, ...styles.filter(Boolean));
@@ -472,7 +481,11 @@ export const searchScreen: CSSProperties = {
   padding: '30px 28px 24px 24px',
   background:
     'linear-gradient(90deg, rgba(3, 4, 7, 0.98) 0%, rgba(3, 4, 7, 0.98) 100%), radial-gradient(circle at 45% 10%, rgba(229, 9, 20, 0.08), transparent 26%)',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    display: 'flex',
+    flexDirection: 'row'
+  } : {})
 };
 
 export const searchSidebar: CSSProperties = {
@@ -484,7 +497,12 @@ export const searchSidebar: CSSProperties = {
   minWidth: 0,
   paddingRight: '6px',
   boxSizing: 'border-box',
-  overflow: 'hidden'
+  overflow: 'hidden',
+  ...(legacyChromiumBrowser ? {
+    width: '520px',
+    marginRight: '28px',
+    flexShrink: 0
+  } : {})
 };
 
 export const searchHeader: CSSProperties = {
@@ -594,7 +612,10 @@ export const searchResults: CSSProperties = {
   gap: '24px',
   padding: '20px 24px 24px',
   overflowY: 'auto',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    flex: 1
+  } : {})
 };
 
 export const searchEmpty: CSSProperties = {
@@ -713,7 +734,10 @@ export const tvKeyboard: CSSProperties = {
   background: 'rgba(11, 15, 24, 0.65)',
   backdropFilter: 'blur(12px)',
   border: '1px solid rgba(255, 255, 255, 0.05)',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    backdropFilter: 'none'
+  } : {})
 };
 
 export const tvKeyboardRow: CSSProperties = {
@@ -721,7 +745,12 @@ export const tvKeyboardRow: CSSProperties = {
   gridTemplateColumns: 'repeat(10, minmax(0, 1fr))',
   gap: '6px',
   marginTop: '6px',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center'
+  } : {})
 };
 
 export const tvKey: CSSProperties = {
@@ -1347,7 +1376,7 @@ export const detailsEmptyTitle: CSSProperties = {
   fontSize: '42px'
 };
 
-export const panelScreenBase: CSSProperties = {
+export const panelScreenBase: CSSProperties = legacyAwareStyle({
   display: 'grid',
   gridTemplateColumns: '360px minmax(0, 1fr)',
   gap: '28px',
@@ -1357,9 +1386,12 @@ export const panelScreenBase: CSSProperties = {
   background:
     'linear-gradient(90deg, rgba(3, 4, 7, 0.98) 0%, rgba(3, 4, 7, 0.98) 100%), radial-gradient(circle at 45% 10%, rgba(229, 9, 20, 0.08), transparent 26%)',
   boxSizing: 'border-box'
-};
+}, {
+  display: 'flex',
+  flexDirection: 'row'
+});
 
-export const panelSidebar: CSSProperties = {
+export const panelSidebar: CSSProperties = legacyAwareStyle({
   display: 'flex',
   flexDirection: 'column',
   gap: '22px',
@@ -1369,7 +1401,11 @@ export const panelSidebar: CSSProperties = {
   paddingRight: '8px',
   overflowY: 'auto',
   boxSizing: 'border-box'
-};
+}, {
+  width: '360px',
+  flexShrink: 0,
+  marginRight: '28px'
+});
 
 export const panelHeader: CSSProperties = {
   display: 'flex',
@@ -1434,11 +1470,16 @@ export const panelActions: CSSProperties = {
   marginTop: '10px'
 };
 
-export const panelCardGrid: CSSProperties = {
+export const panelCardGrid: CSSProperties = legacyAwareStyle({
   display: 'grid',
   gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
   gap: '16px'
-};
+}, {
+  display: 'flex',
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between'
+});
 
 export const panelInfoCard: CSSProperties = {
   padding: '18px 20px',
@@ -1638,7 +1679,7 @@ export const settingsMenuItemCopy: CSSProperties = {
   letterSpacing: '0.6px'
 };
 
-export const settingsPanel: CSSProperties = {
+export const settingsPanel: CSSProperties = legacyAwareStyle({
   minWidth: 0,
   display: 'flex',
   flexDirection: 'column',
@@ -1648,7 +1689,9 @@ export const settingsPanel: CSSProperties = {
   paddingRight: '16px',
   overflowY: 'auto',
   boxSizing: 'border-box'
-};
+}, {
+  flex: 1
+});
 
 export const settingsSection: CSSProperties = {
   display: 'flex',

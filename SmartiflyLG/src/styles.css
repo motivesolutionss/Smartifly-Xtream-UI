@@ -36,12 +36,22 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+  outline: none !important;
 }
 
 button {
   cursor: pointer;
+  outline: none !important;
+}
+
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
 }
 
 .boot-screen {

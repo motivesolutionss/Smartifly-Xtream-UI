@@ -12,6 +12,7 @@ import { useSpatialNav } from '../../hooks/useSpatialNav';
 import { contentScreen, eyebrow, heroCopy, mergeStyle, placeholderScreen, placeholderTitle } from '../../styles/lgTvStyles';
 import { type AppDestination, useAppStore } from '../../store/appStore';
 import { PRESET_AVATARS } from '../profiles/ProfileSelectionScreen';
+import { legacyChromiumBrowser, scrollIntoViewCompat } from '../../utils/legacyBrowser';
 
 type SidebarItem = {
   id: AppDestination;
@@ -342,7 +343,7 @@ function AppShell() {
       return;
     }
 
-    navRefs.current[focusId]?.scrollIntoView({
+    scrollIntoViewCompat(navRefs.current[focusId], {
       block: 'nearest',
       inline: 'nearest'
     });
@@ -548,11 +549,11 @@ function AppShell() {
               alignItems: 'center',
               gap: isSidebarExpanded ? '16px' : '12px',
               background: isSidebarExpanded ? 'rgba(10, 12, 18, 0.92)' : 'rgba(10, 12, 18, 0.78)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              backdropFilter: legacyChromiumBrowser ? 'none' : 'blur(20px)',
+              WebkitBackdropFilter: legacyChromiumBrowser ? 'none' : 'blur(20px)',
               borderRadius: isSidebarExpanded ? '24px' : '38px',
               border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: '0 16px 48px rgba(0, 0, 0, 0.65)',
+              boxShadow: legacyChromiumBrowser ? '0 10px 28px rgba(0, 0, 0, 0.42)' : '0 16px 48px rgba(0, 0, 0, 0.65)',
               overflowY: 'hidden',
               transition: 'background 220ms ease, width 220ms cubic-bezier(0.25, 1, 0.5, 1), padding 220ms ease, border-radius 220ms ease',
               transformOrigin: 'left center',
@@ -987,7 +988,7 @@ function AppShell() {
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(3, 4, 6, 0.72)',
-            backdropFilter: 'blur(8px)'
+            backdropFilter: legacyChromiumBrowser ? 'none' : 'blur(8px)'
           }}
         >
           <div

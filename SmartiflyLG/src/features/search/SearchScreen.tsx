@@ -48,6 +48,8 @@ import {
 import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
 import { SafeCardImage } from '../../components/SafeCardImage';
+import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
+
 
 type SearchItem = {
   id: string;
@@ -849,12 +851,26 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                         keyboardRefs.current[keyId] = node;
                       }}
                       type="button"
-                      style={mergeStyle(
-                        tvKey,
-                        tvKeySpanStyle(key.span),
-                        isAccent && tvKeyAccent,
-                        isFocused && (isAccent ? tvKeyAccentFocused : tvKeyFocused)
-                      )}
+                      style={
+                        legacyChromiumBrowser
+                          ? {
+                              ...mergeStyle(
+                                tvKey,
+                                isAccent && tvKeyAccent,
+                                isFocused && (isAccent ? tvKeyAccentFocused : tvKeyFocused)
+                              ),
+                              width: `calc(((100% - 54px) / 10) * ${key.span || 1} + ${(key.span || 1) - 1} * 6px)`,
+                              marginRight: colIndex === row.length - 1 ? '0px' : '6px',
+                              transform: 'none',
+                              transition: 'none'
+                            }
+                          : mergeStyle(
+                              tvKey,
+                              tvKeySpanStyle(key.span),
+                              isAccent && tvKeyAccent,
+                              isFocused && (isAccent ? tvKeyAccentFocused : tvKeyFocused)
+                            )
+                      }
                       onFocus={() => {
                         setFocusId(keyId);
                         setSearchFocusId(keyId);
@@ -925,75 +941,92 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                   };
 
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      ref={(node) => {
-                        cardRefs.current[cardId] = node;
+                      style={{
+                        width: `${cardWidth}px`,
+                        minWidth: `${cardWidth}px`,
+                        maxWidth: `${cardWidth}px`,
+                        flexShrink: 0,
+                        marginRight: '18px',
+                        boxSizing: 'border-box'
                       }}
-                      type="button"
-                      style={mergeStyle(
-                        searchRailCard,
-                        {
-                          width: `${cardWidth}px`,
-                          height: isLive ? '248px' : 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          flexShrink: 0
-                        },
-                        isFocused && searchRailCardActive
-                      )}
-                      onFocus={() => {
-                        setFocusId(cardId);
-                        setSearchFocusId(cardId);
-                      }}
-                      onClick={() => {
-                        if (isLive) {
-                          handlePlayLiveChannel(item);
-                        } else {
-                          openContentDetails(sharedDetails, 'search');
-                        }
-                      }}
-                      onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
                     >
-                      <div
-                        style={{
-                          position: 'relative',
-                          width: '100%',
-                          height: `${cardHeight}px`,
-                          borderRadius: '20px',
-                          overflow: 'hidden',
-                          background: isLive
-                            ? 'linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 240, 240, 0.98) 100%)'
-                            : 'linear-gradient(180deg, rgba(18, 20, 24, 0.9) 0%, rgba(8, 9, 12, 0.96) 100%)'
+                      <button
+                        ref={(node) => {
+                          cardRefs.current[cardId] = node;
                         }}
+                        type="button"
+                        style={mergeStyle(
+                          searchRailCard,
+                          {
+                            width: '100%',
+                            minWidth: '100%',
+                            maxWidth: '100%',
+                            height: isLive ? '248px' : 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            marginRight: 0,
+                            flexShrink: 0
+                          },
+                          isFocused && searchRailCardActive
+                        )}
+                        onFocus={() => {
+                          setFocusId(cardId);
+                          setSearchFocusId(cardId);
+                        }}
+                        onClick={() => {
+                          if (isLive) {
+                            handlePlayLiveChannel(item);
+                          } else {
+                            openContentDetails(sharedDetails, 'search');
+                          }
+                        }}
+                        onKeyDown={(event) => handleCardKeyDown(event, sectionIndex, itemIndex)}
                       >
-                        <SafeCardImage
-                          src={item.artwork || ''}
-                          isLiveRail={isLive}
-                          name={item.title}
-                          accent={item.accent || ''}
-                          fallback={null}
-                        />
-                      </div>
-
-                      {!isLive && (
-                        <div style={searchRailCardCopy}>
-                          <strong style={mergeStyle(searchRailCardTitle, { opacity: isFocused ? 1 : 0.82, transition: 'opacity 0.22s' })}>
-                            {item.title}
-                          </strong>
-                          <div style={mergeStyle(searchRailCardMeta, { color: isFocused ? 'rgba(255, 255, 255, 0.88)' : 'rgba(255, 255, 255, 0.54)', transition: 'color 0.22s' })}>
-                            {item.year ? <span>{item.year}</span> : null}
-                            {item.year && item.rating ? <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>•</span> : null}
-                            {item.rating ? (
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                <span style={{ color: '#E50914' }}>★</span> {formatRating(item.rating)}
-                              </span>
-                            ) : null}
-                          </div>
+                        <div
+                          style={{
+                            position: 'relative',
+                            width: '100%',
+                            minWidth: '100%',
+                            maxWidth: '100%',
+                            height: `${cardHeight}px`,
+                            borderRadius: '20px',
+                            overflow: 'hidden',
+                            background: isLive
+                              ? 'linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 240, 240, 0.98) 100%)'
+                              : 'linear-gradient(180deg, rgba(18, 20, 24, 0.9) 0%, rgba(8, 9, 12, 0.96) 100%)'
+                          }}
+                        >
+                          <SafeCardImage
+                            src={item.artwork || ''}
+                            isLiveRail={isLive}
+                            name={item.title}
+                            accent={item.accent || ''}
+                            fallback={null}
+                          />
                         </div>
-                      )}
-                    </button>
+
+                        {!isLive && (
+                          <div style={searchRailCardCopy}>
+                            <strong style={mergeStyle(searchRailCardTitle, { opacity: isFocused ? 1 : 0.82, transition: 'opacity 0.22s' })}>
+                              {item.title}
+                            </strong>
+                            <div style={mergeStyle(searchRailCardMeta, { color: isFocused ? 'rgba(255, 255, 255, 0.88)' : 'rgba(255, 255, 255, 0.54)', transition: 'color 0.22s' })}>
+                              {item.year ? <span>{item.year}</span> : null}
+                              {item.year && item.rating ? <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>•</span> : null}
+                              {item.rating ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <span style={{ color: '#E50914' }}>★</span> {formatRating(item.rating)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
+                      </button>
+                    </div>
                   );
+
                 })}
               </div>
             )}

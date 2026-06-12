@@ -74,6 +74,7 @@ import {
   mergeStyle
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
+import { scrollIntoViewCompat, scrollToTopCompat, closestCompat, legacyChromiumBrowser } from '../../utils/legacyBrowser';
 import {
   buildMovieInfoCacheKey,
   buildSeriesInfoCacheKey,
@@ -994,7 +995,18 @@ function DetailsScreen() {
 
   useEffect(() => {
     const node = focusRefs.current[focusId];
-    node?.scrollIntoView({
+    if (!node) return;
+
+    const isHeroElement = !!closestCompat(node, '.lg-details-hero');
+    if (isHeroElement) {
+      const scrollContainer = closestCompat(node, '.lg-details-scroll');
+      if (scrollContainer) {
+        scrollToTopCompat(scrollContainer, 0);
+        return;
+      }
+    }
+
+    scrollIntoViewCompat(node, {
       block: 'center',
       inline: 'nearest',
       behavior: 'auto'
@@ -1491,6 +1503,7 @@ function DetailsScreen() {
       tabIndex={-1}
     >
       <div
+        className="lg-details-hero"
         style={mergeStyle(
           detailsHero,
           selectedContent.kind === 'series' && detail?.trailerUrl ? { minHeight: '820px' } : { minHeight: '580px' }
@@ -1579,14 +1592,14 @@ function DetailsScreen() {
                     }
                   }}
                 >
-                  <div style={{ position: 'absolute', inset: 0, opacity: focusId === 'trailer' ? 0.95 : 0.82, zIndex: 1, transition: 'opacity 0.2s ease' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: focusId === 'trailer' ? 0.95 : 0.82, zIndex: 1, transition: 'opacity 0.2s ease' }}>
                     <ArtworkWithFallback
                       title="Trailer"
                       artwork={detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl}
                       imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       fallbackStyle={{ width: '100%', height: '100%' }}
                     />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(2, 3, 6, 0.7) 0%, rgba(2, 3, 6, 0.1) 100%)' }} />
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(0deg, rgba(2, 3, 6, 0.7) 0%, rgba(2, 3, 6, 0.1) 100%)' }} />
                   </div>
 
                   <div style={{
@@ -1725,6 +1738,7 @@ function DetailsScreen() {
                         title: detail?.title || selectedContent.title,
                         subtitle: detail?.description || selectedContent.description,
                         image: detail?.posterUrl || selectedContent.posterUrl || selectedContent.backdropUrl,
+                        backdrop: detail?.backdropUrl || selectedContent.backdropUrl || selectedContent.posterUrl,
                         rating: detail?.rating || selectedContent.rating,
                         year: detail?.year || selectedContent.year
                       });
@@ -2110,14 +2124,14 @@ function DetailsScreen() {
                 }
               }}
             >
-              <div style={{ position: 'absolute', inset: 0, opacity: 0.6, zIndex: 1 }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.6, zIndex: 1 }}>
                 <ArtworkWithFallback
                   title="Trailer"
                   artwork={detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl}
                   imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   fallbackStyle={{ width: '100%', height: '100%' }}
                 />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 100%)' }} />
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 100%)' }} />
               </div>
 
               <div style={{
@@ -2233,15 +2247,18 @@ function DetailsScreen() {
           aria-label="Watch Trailer"
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 1000,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(0, 0, 0, 0.9)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)'
+            backdropFilter: legacyChromiumBrowser ? 'none' : 'blur(12px)',
+            WebkitBackdropFilter: legacyChromiumBrowser ? 'none' : 'blur(12px)'
           }}
         >
           <div
@@ -2256,19 +2273,70 @@ function DetailsScreen() {
               boxShadow: '0 24px 72px rgba(0, 0, 0, 0.8), 0 0 40px rgba(229, 9, 20, 0.2)'
             }}
           >
-            <iframe
-              src={trailerEmbedUrl}
-              referrerPolicy="strict-origin-when-cross-origin"
-              title="YouTube video player"
-              style={{
-                width: '100%',
-                height: '100%',
-                border: 'none'
-              }}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              tabIndex={-1}
-            />
+            {typeof window !== 'undefined' && window.location.protocol === 'file:' ? (
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '40px',
+                  boxSizing: 'border-box',
+                  textAlign: 'center',
+                  background: 'linear-gradient(135deg, #1e2230 0%, #0d0f14 100%)',
+                  color: '#ffffff'
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="80"
+                  height="80"
+                  fill="none"
+                  stroke="#E50914"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ marginBottom: '24px' }}
+                >
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <h2 style={{ fontSize: '28px', fontWeight: 800, margin: '0 0 12px 0', color: '#ffffff' }}>
+                  YouTube Player Restricted
+                </h2>
+                <p style={{ fontSize: '18px', color: 'rgba(255, 255, 255, 0.7)', lineHeight: 1.5, maxWidth: '800px', margin: '0 0 24px 0' }}>
+                  YouTube blocks video embeds from local files (<code>file://</code> protocol) for security, resulting in <strong>Error 153</strong>.
+                </p>
+                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', borderRadius: '12px', padding: '24px', border: '1px solid rgba(255, 255, 255, 0.08)', textAlign: 'left', width: '100%', maxWidth: '640px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 12px 0', textTransform: 'uppercase', letterSpacing: '1px', color: '#E50914' }}>
+                    How to enable YouTube trailers:
+                  </h3>
+                  <ol style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.8)', paddingLeft: '20px', margin: 0, lineHeight: 1.6 }}>
+                    <li>Run the local server: <code style={{ color: '#00E676' }}>node dev-server.mjs</code></li>
+                    <li>Package the hosted app wrapper: <code style={{ color: '#00E676' }}>npm run webos:package:hosted</code></li>
+                    <li>Install the hosted version to the emulator/TV.</li>
+                    <li>Launch the hosted version (it runs over HTTP on port 4173).</li>
+                  </ol>
+                </div>
+              </div>
+            ) : (
+              <iframe
+                src={trailerEmbedUrl}
+                referrerPolicy="strict-origin-when-cross-origin"
+                title="YouTube video player"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none'
+                }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                tabIndex={-1}
+              />
+            )}
           </div>
 
           <button

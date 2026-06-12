@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start:legacy": "npm run build && vite preview --host 0.0.0.0",
     "build": "vite build",
     "probe:stream": "node scripts/probe-stream.mjs",
     "probe:switch": "node scripts/probe-live-switch.mjs",
@@ -24,8 +25,13 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "typescript": "^5.9.3"
+    "abortcontroller-polyfill": "^1.7.8",
+    "core-js-bundle": "^3.49.0",
+    "typescript": "^5.9.3",
+    "whatwg-fetch": "^3.6.20"
   }
 }

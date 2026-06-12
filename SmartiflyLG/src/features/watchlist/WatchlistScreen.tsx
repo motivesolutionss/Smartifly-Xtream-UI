@@ -8,6 +8,7 @@ import useWatchlistStore, {
 import { useWatchHistoryStore, type WatchProgress } from '../../store/watchHistoryStore';
 import { BrowsePosterArt } from '../../components/BrowsePosterArt';
 import { buildResumePlaybackRequest } from '../player/buildResumePlayback';
+import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
 
 type WatchlistScreenProps = {
   isActive?: boolean;
@@ -22,7 +23,7 @@ function toSelectedContent(entry: WatchlistEntry): SelectedContent | null {
       kind: entry.kind,
       title: entry.title,
       posterUrl: entry.image,
-      backdropUrl: entry.image,
+      backdropUrl: entry.backdrop || entry.image,
       description: entry.subtitle,
       year: entry.year,
       rating: entry.rating?.toString()
@@ -85,7 +86,10 @@ const heroBackdropStyle: CSSProperties = {
 
 const heroGradientStyle: CSSProperties = {
   position: 'absolute',
-  inset: 0,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
   zIndex: 2,
   background: 'linear-gradient(to right, #090a0f 35%, rgba(9, 10, 15, 0.6) 65%, transparent 100%), linear-gradient(to bottom, transparent 60%, #090a0f 100%)'
 };
@@ -115,7 +119,11 @@ const heroTitleStyle: CSSProperties = {
   fontWeight: 900,
   color: '#ffffff',
   lineHeight: 1.1,
-  letterSpacing: '-0.5px'
+  letterSpacing: '-0.5px',
+  ...(legacyChromiumBrowser ? {
+    marginTop: '12px',
+    marginBottom: '12px'
+  } : {})
 };
 
 const heroMetaStyle: CSSProperties = {
@@ -124,7 +132,10 @@ const heroMetaStyle: CSSProperties = {
   gap: '12px',
   fontSize: '14px',
   fontWeight: 700,
-  color: 'rgba(255, 255, 255, 0.6)'
+  color: 'rgba(255, 255, 255, 0.6)',
+  ...(legacyChromiumBrowser ? {
+    marginBottom: '16px'
+  } : {})
 };
 
 const heroMetaItemStyle: CSSProperties = {
@@ -254,7 +265,14 @@ const gridContainerStyle: CSSProperties = {
   gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
   gap: '20px',
   width: '100%',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    alignContent: 'flex-start'
+  } : {})
 };
 
 const cardButtonOuterStyle: CSSProperties = {
@@ -287,7 +305,14 @@ const landscapeGridContainerStyle: CSSProperties = {
   gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
   gap: '20px',
   width: '100%',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  ...(legacyChromiumBrowser ? {
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    alignContent: 'flex-start'
+  } : {})
 };
 
 const landscapeCardOuterStyle: CSSProperties = {
@@ -936,7 +961,7 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
     if (activeTab === 'watchlist') {
       if (!selectedEntry) return null;
       return {
-        backdrop: selectedEntry.image,
+        backdrop: selectedEntry.backdrop || selectedEntry.image,
         title: selectedEntry.title,
         kind: selectedEntry.kind.toUpperCase(),
         year: selectedEntry.year,
@@ -997,11 +1022,29 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
             <p style={heroEyebrowStyle}>{activeTab === 'watchlist' ? 'My List' : 'Continue Watching'}</p>
             <h1 style={heroTitleStyle}>{heroDisplay.title}</h1>
             <div style={heroMetaStyle}>
-              <span style={heroMetaItemStyle}>{heroDisplay.kind}</span>
-              {heroDisplay.year ? <span style={heroMetaItemStyle}>{heroDisplay.year}</span> : null}
+              <span style={
+                legacyChromiumBrowser 
+                  ? { ...heroMetaItemStyle, marginRight: '12px' } 
+                  : heroMetaItemStyle
+              }>
+                {heroDisplay.kind}
+              </span>
+              {heroDisplay.year ? (
+                <span style={
+                  legacyChromiumBrowser 
+                    ? { ...heroMetaItemStyle, marginRight: '12px' } 
+                    : heroMetaItemStyle
+                }>
+                  {heroDisplay.year}
+                </span>
+              ) : null}
               {heroDisplay.rating ? (
-                <span style={{ ...heroMetaItemStyle, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#E50914' }}>★</span> {heroDisplay.rating}
+                <span style={
+                  legacyChromiumBrowser
+                    ? { ...heroMetaItemStyle, display: 'flex', alignItems: 'center', marginRight: '12px' }
+                    : { ...heroMetaItemStyle, display: 'flex', alignItems: 'center', gap: '4px' }
+                }>
+                  <span style={{ color: '#E50914', marginRight: legacyChromiumBrowser ? '4px' : '0' }}>★</span> {heroDisplay.rating}
                 </span>
               ) : null}
             </div>
@@ -1011,7 +1054,17 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
               <button
                 ref={registerFocusRef('hero:open')}
                 type="button"
-                style={mergeStyle(primaryButtonStyle, focusId === 'hero:open' && buttonActiveStyle)}
+                style={
+                  legacyChromiumBrowser
+                    ? {
+                        ...mergeStyle(primaryButtonStyle, focusId === 'hero:open' && buttonActiveStyle),
+                        transform: 'none',
+                        transition: 'none',
+                        boxShadow: focusId === 'hero:open' ? '0 0 0 2.5px rgba(255, 255, 255, 0.95)' : 'none',
+                        marginRight: '14px'
+                      }
+                    : mergeStyle(primaryButtonStyle, focusId === 'hero:open' && buttonActiveStyle)
+                }
                 onFocus={() => setFocusId('hero:open')}
                 onClick={() => {
                   if (activeTab === 'watchlist') {
@@ -1026,7 +1079,16 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
               <button
                 ref={registerFocusRef('hero:clear')}
                 type="button"
-                style={mergeStyle(secondaryButtonStyle, focusId === 'hero:clear' && buttonActiveStyle)}
+                style={
+                  legacyChromiumBrowser
+                    ? {
+                        ...mergeStyle(secondaryButtonStyle, focusId === 'hero:clear' && buttonActiveStyle),
+                        transform: 'none',
+                        transition: 'none',
+                        boxShadow: focusId === 'hero:clear' ? '0 0 0 2.5px rgba(255, 255, 255, 0.95)' : 'none'
+                      }
+                    : mergeStyle(secondaryButtonStyle, focusId === 'hero:clear' && buttonActiveStyle)
+                }
                 onFocus={() => setFocusId('hero:clear')}
                 onClick={clearAll}
               >
@@ -1051,11 +1113,24 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
         <button
           ref={registerFocusRef('tab:watchlist')}
           type="button"
-          style={mergeStyle(
-            tabButtonStyle,
-            activeTab === 'watchlist' && tabActiveStyle,
-            focusId === 'tab:watchlist' && tabFocusedStyle
-          )}
+          style={
+            legacyChromiumBrowser
+              ? {
+                  ...mergeStyle(
+                    tabButtonStyle,
+                    activeTab === 'watchlist' && tabActiveStyle,
+                    focusId === 'tab:watchlist' && tabFocusedStyle
+                  ),
+                  transform: 'none',
+                  transition: 'none',
+                  marginRight: '32px'
+                }
+              : mergeStyle(
+                  tabButtonStyle,
+                  activeTab === 'watchlist' && tabActiveStyle,
+                  focusId === 'tab:watchlist' && tabFocusedStyle
+                )
+          }
           onFocus={() => {
             setFocusId('tab:watchlist');
             setActiveTab('watchlist');
@@ -1068,11 +1143,23 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
         <button
           ref={registerFocusRef('tab:continue')}
           type="button"
-          style={mergeStyle(
-            tabButtonStyle,
-            activeTab === 'continue' && tabActiveStyle,
-            focusId === 'tab:continue' && tabFocusedStyle
-          )}
+          style={
+            legacyChromiumBrowser
+              ? {
+                  ...mergeStyle(
+                    tabButtonStyle,
+                    activeTab === 'continue' && tabActiveStyle,
+                    focusId === 'tab:continue' && tabFocusedStyle
+                  ),
+                  transform: 'none',
+                  transition: 'none'
+                }
+              : mergeStyle(
+                  tabButtonStyle,
+                  activeTab === 'continue' && tabActiveStyle,
+                  focusId === 'tab:continue' && tabFocusedStyle
+                )
+          }
           onFocus={() => {
             setFocusId('tab:continue');
             setActiveTab('continue');
@@ -1089,7 +1176,7 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
         entries.length > 0 ? (
           <div ref={scrollContainerRef} className="library-grid-scroll" style={gridSectionStyle}>
             <div style={gridContainerStyle}>
-              {entries.map((entry) => {
+              {entries.map((entry, index) => {
                 const itemFocusId = `list:${entry.key}`;
                 const isFocused = focusId === itemFocusId;
 
@@ -1098,7 +1185,19 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
                     key={entry.key}
                     ref={registerFocusRef(itemFocusId)}
                     type="button"
-                    style={cardButtonOuterStyle}
+                    style={
+                      legacyChromiumBrowser
+                        ? {
+                            ...cardButtonOuterStyle,
+                            display: 'block',
+                            width: 'calc((100% - 120px) / 7)',
+                            height: '372px',
+                            marginRight: (index + 1) % 7 === 0 ? '0px' : '20px',
+                            marginBottom: '20px',
+                            padding: 0
+                          }
+                        : cardButtonOuterStyle
+                    }
                     onFocus={() => {
                       setFocusId(itemFocusId);
                       setSelectedKey(entry.key);
@@ -1109,7 +1208,17 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
                       openSelected(entry);
                     }}
                   >
-                    <div style={mergeStyle(cardInnerStyle, isFocused && cardActiveStyle)}>
+                    <div style={
+                      legacyChromiumBrowser
+                        ? {
+                            ...cardInnerStyle,
+                            height: '372px',
+                            transition: 'none',
+                            transform: 'none',
+                            boxShadow: isFocused ? '0 0 0 2px rgba(255, 255, 255, 0.95)' : 'none'
+                          }
+                        : mergeStyle(cardInnerStyle, isFocused && cardActiveStyle)
+                    }>
                       <BrowsePosterArt
                         artwork={entry.image}
                         name={entry.title}
@@ -1143,7 +1252,7 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
       ) : continueWatchingItems.length > 0 ? (
         <div ref={scrollContainerRef} className="library-grid-scroll" style={gridSectionStyle}>
           <div style={landscapeGridContainerStyle}>
-            {continueWatchingItems.map((item) => {
+            {continueWatchingItems.map((item, index) => {
               const itemFocusId = `continue:${item.id}`;
               const isFocused = focusId === itemFocusId;
 
@@ -1152,7 +1261,19 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
                   key={item.id}
                   ref={registerFocusRef(itemFocusId)}
                   type="button"
-                  style={landscapeCardOuterStyle}
+                  style={
+                    legacyChromiumBrowser
+                      ? {
+                          ...landscapeCardOuterStyle,
+                          display: 'block',
+                          width: 'calc((100% - 80px) / 5)',
+                          height: '194px',
+                          marginRight: (index + 1) % 5 === 0 ? '0px' : '20px',
+                          marginBottom: '20px',
+                          padding: 0
+                        }
+                      : landscapeCardOuterStyle
+                  }
                   onFocus={() => {
                     setFocusId(itemFocusId);
                     setSelectedContinueId(item.id);
@@ -1163,7 +1284,18 @@ function WatchlistScreen({ isActive, onRequestSidebarFocus }: WatchlistScreenPro
                     playProgress(item);
                   }}
                 >
-                  <div style={mergeStyle(landscapeCardInnerStyle, isFocused && landscapeCardActiveStyle)}>
+                  <div style={
+                    legacyChromiumBrowser
+                      ? {
+                          ...landscapeCardInnerStyle,
+                          width: '100%',
+                          height: '194px',
+                          transition: 'none',
+                          transform: 'none',
+                          boxShadow: isFocused ? '0 0 0 2px rgba(255, 255, 255, 0.95)' : 'none'
+                        }
+                      : mergeStyle(landscapeCardInnerStyle, isFocused && landscapeCardActiveStyle)
+                  }>
                     {item.thumbnail ? (
                       <img
                         src={item.thumbnail}

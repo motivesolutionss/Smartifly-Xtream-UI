@@ -7,6 +7,7 @@ import { cardDebugOverlay } from '../../styles/lgTvStyles';
 import { fallbackHero, type ChannelItem, type RailSection, type HeroItem } from './homeBootstrap';
 import useWatchHistoryStore, { buildWatchHistoryScope } from '../../store/watchHistoryStore';
 import { SafeCardImage } from '../../components/SafeCardImage';
+import { scrollIntoViewCompat } from '../../utils/legacyBrowser';
 
 /** Sized for 10-foot UI on webOS (avoid clamp/grid; fixed px). */
 const HOME_RAIL_CARD = {
@@ -262,7 +263,7 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
     }
 
     if (focusId === 'play' || focusId === 'info') {
-      heroSectionRef.current?.scrollIntoView({
+      scrollIntoViewCompat(heroSectionRef.current, {
         block: 'start',
         inline: 'nearest'
       });

@@ -41,6 +41,7 @@ import { PRESET_AVATARS, AVATAR_OPTIONS } from '../profiles/ProfileSelectionScre
 import type { CSSProperties } from 'react';
 import useSettingsStore from '../../store/settingsStore';
 import useWatchlistStore, { buildWatchlistScope } from '../../store/watchlistStore';
+import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
 
 type SettingsSection = 'account' | 'profiles' | 'app' | 'about';
 
@@ -686,7 +687,11 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
     background: 'rgba(255, 255, 255, 0.02)',
     border: '1px solid rgba(255, 255, 255, 0.06)',
     boxSizing: 'border-box',
-    transition: 'border-color 150ms ease, background 150ms ease'
+    transition: 'border-color 150ms ease, background 150ms ease',
+    ...(legacyChromiumBrowser ? {
+      width: 'calc((100% - 32px) / 3)',
+      flexShrink: 0
+    } : {})
   };
 
   const infoLabelStyle: CSSProperties = {
@@ -1488,7 +1493,21 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
             </div>
 
             {/* Actions row */}
-            <div style={{ display: 'grid', gridTemplateColumns: editingProfile && editingProfile.id !== 'primary' ? '1fr 1fr 1fr' : '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+            <div style={
+              legacyChromiumBrowser
+                ? {
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    marginTop: '12px'
+                  }
+                : {
+                    display: 'grid',
+                    gridTemplateColumns: editingProfile && editingProfile.id !== 'primary' ? '1fr 1fr 1fr' : '1fr 1fr',
+                    gap: '12px',
+                    marginTop: '12px'
+                  }
+            }>
               <button
                 ref={(el) => {
                   formRefs.current['5'] = el;
@@ -1519,8 +1538,14 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                   cursor: 'pointer',
                   outline: 'none',
                   boxSizing: 'border-box',
-                  transform: formFocusIndex === 5 ? 'scale(1.02)' : 'none',
-                  boxShadow: formFocusIndex === 5 ? '0 0 0 3px #ffffff, 0 12px 22px rgba(229,9,20,0.3)' : 'none'
+                  transform: legacyChromiumBrowser ? 'none' : formFocusIndex === 5 ? 'scale(1.02)' : 'none',
+                  boxShadow: legacyChromiumBrowser
+                    ? (formFocusIndex === 5 ? '0 0 0 2px #ffffff' : 'none')
+                    : (formFocusIndex === 5 ? '0 0 0 3px #ffffff, 0 12px 22px rgba(229,9,20,0.3)' : 'none'),
+                  ...(legacyChromiumBrowser ? {
+                    width: editingProfile && editingProfile.id !== 'primary' ? 'calc((100% - 24px) / 3)' : 'calc((100% - 12px) / 2)',
+                    flexShrink: 0
+                  } : {})
                 }}
               >
                 Save
@@ -1543,8 +1568,14 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                   cursor: 'pointer',
                   outline: 'none',
                   boxSizing: 'border-box',
-                  transform: formFocusIndex === 6 ? 'scale(1.02)' : 'none',
-                  boxShadow: formFocusIndex === 6 ? '0 0 0 3px #ffffff' : 'none'
+                  transform: legacyChromiumBrowser ? 'none' : formFocusIndex === 6 ? 'scale(1.02)' : 'none',
+                  boxShadow: legacyChromiumBrowser
+                    ? (formFocusIndex === 6 ? '0 0 0 2px #ffffff' : 'none')
+                    : (formFocusIndex === 6 ? '0 0 0 3px #ffffff' : 'none'),
+                  ...(legacyChromiumBrowser ? {
+                    width: editingProfile && editingProfile.id !== 'primary' ? 'calc((100% - 24px) / 3)' : 'calc((100% - 12px) / 2)',
+                    flexShrink: 0
+                  } : {})
                 }}
               >
                 Cancel
@@ -1571,8 +1602,14 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                     cursor: 'pointer',
                     outline: 'none',
                     boxSizing: 'border-box',
-                    transform: formFocusIndex === 7 ? 'scale(1.02)' : 'none',
-                    boxShadow: formFocusIndex === 7 ? '0 0 0 3px #ffffff' : 'none'
+                    transform: legacyChromiumBrowser ? 'none' : formFocusIndex === 7 ? 'scale(1.02)' : 'none',
+                    boxShadow: legacyChromiumBrowser
+                      ? (formFocusIndex === 7 ? '0 0 0 2px #ffffff' : 'none')
+                      : (formFocusIndex === 7 ? '0 0 0 3px #ffffff' : 'none'),
+                    ...(legacyChromiumBrowser ? {
+                      width: 'calc((100% - 24px) / 3)',
+                      flexShrink: 0
+                    } : {})
                   }}
                 >
                   Delete
@@ -1590,13 +1627,17 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
           aria-modal="true"
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 110,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(3, 4, 7, 0.9)',
-            backdropFilter: 'blur(24px)'
+            backdropFilter: legacyChromiumBrowser ? 'none' : 'blur(24px)',
+            WebkitBackdropFilter: legacyChromiumBrowser ? 'none' : 'blur(24px)'
           }}
         >
           <div
@@ -1610,11 +1651,11 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '24px',
+              ...(legacyChromiumBrowser ? {} : { gap: '24px' }),
               boxSizing: 'border-box'
             }}
           >
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', marginBottom: legacyChromiumBrowser ? '24px' : '0' }}>
               <p style={{ margin: 0, color: '#f5d06a', fontSize: '12px', fontWeight: 800, letterSpacing: '2px', textTransform: 'uppercase' }}>
                 Security Lock
               </p>
@@ -1629,7 +1670,12 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
             </div>
 
             {/* Digits row */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', margin: '10px 0' }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              margin: legacyChromiumBrowser ? '0 0 24px' : '10px 0',
+              ...(legacyChromiumBrowser ? {} : { gap: '14px' })
+            }}>
               {[0, 1, 2, 3].map((idx) => {
                 const digit = pinDigits[idx];
                 const isDigitFocused = pinFocusIndex === idx;
@@ -1662,7 +1708,8 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                       justifyContent: 'center',
                       cursor: 'pointer',
                       boxShadow: isDigitFocused ? '0 0 16px rgba(255,36,56,0.3)' : 'none',
-                      transition: 'border-color 100ms ease, background-color 100ms ease'
+                      transition: 'border-color 100ms ease, background-color 100ms ease',
+                      margin: legacyChromiumBrowser ? '0 7px' : '0'
                     }}
                   >
                     {isFilled ? (activeModal === 'pin-unlock' ? '●' : digit) : ''}
@@ -1673,13 +1720,34 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
 
             {/* Error state */}
             {pinError && (
-              <p style={{ margin: 0, color: '#ff3446', fontSize: '16px', fontWeight: 600 }}>
+              <p style={{
+                margin: legacyChromiumBrowser ? '0 0 24px' : 0,
+                color: '#ff3446',
+                fontSize: '16px',
+                fontWeight: 600
+              }}>
                 {pinError}
               </p>
             )}
 
             {/* Action Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', width: '100%', marginTop: '8px' }}>
+            <div style={
+              legacyChromiumBrowser
+                ? {
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    marginTop: '0'
+                  }
+                : {
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '14px',
+                    width: '100%',
+                    marginTop: '8px'
+                  }
+            }>
               <button
                 ref={(el) => {
                   pinRefs.current['4'] = el;
@@ -1717,9 +1785,15 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                   border: 'none',
                   cursor: 'pointer',
                   outline: 'none',
-                  transform: pinFocusIndex === 4 ? 'scale(1.02)' : 'none',
-                  boxShadow: pinFocusIndex === 4 ? '0 0 0 3px #ffffff, 0 12px 22px rgba(229,9,20,0.3)' : 'none',
-                  transition: 'transform 100ms ease, box-shadow 100ms ease'
+                  transform: legacyChromiumBrowser ? 'none' : pinFocusIndex === 4 ? 'scale(1.02)' : 'none',
+                  boxShadow: legacyChromiumBrowser
+                    ? (pinFocusIndex === 4 ? '0 0 0 2px #ffffff' : 'none')
+                    : (pinFocusIndex === 4 ? '0 0 0 3px #ffffff, 0 12px 22px rgba(229,9,20,0.3)' : 'none'),
+                  transition: legacyChromiumBrowser ? 'none' : 'transform 100ms ease, box-shadow 100ms ease',
+                  ...(legacyChromiumBrowser ? {
+                    width: 'calc((100% - 14px) / 2)',
+                    flexShrink: 0
+                  } : {})
                 }}
               >
                 {activeModal === 'pin-unlock' ? 'Unlock' : 'Save PIN'}
@@ -1749,9 +1823,15 @@ function SettingsScreen({ isActive, onRequestSidebarFocus }: SettingsScreenProps
                   border: '1px solid rgba(255,255,255,0.06)',
                   cursor: 'pointer',
                   outline: 'none',
-                  transform: pinFocusIndex === 5 ? 'scale(1.02)' : 'none',
-                  boxShadow: pinFocusIndex === 5 ? '0 0 0 3px #ffffff' : 'none',
-                  transition: 'transform 100ms ease, box-shadow 100ms ease'
+                  transform: legacyChromiumBrowser ? 'none' : pinFocusIndex === 5 ? 'scale(1.02)' : 'none',
+                  boxShadow: legacyChromiumBrowser
+                    ? (pinFocusIndex === 5 ? '0 0 0 2px #ffffff' : 'none')
+                    : (pinFocusIndex === 5 ? '0 0 0 3px #ffffff' : 'none'),
+                  transition: legacyChromiumBrowser ? 'none' : 'transform 100ms ease, box-shadow 100ms ease',
+                  ...(legacyChromiumBrowser ? {
+                    width: 'calc((100% - 14px) / 2)',
+                    flexShrink: 0
+                  } : {})
                 }}
               >
                 Cancel
