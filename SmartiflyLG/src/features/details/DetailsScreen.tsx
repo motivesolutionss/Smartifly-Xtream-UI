@@ -1506,7 +1506,7 @@ function DetailsScreen() {
         className="lg-details-hero"
         style={mergeStyle(
           detailsHero,
-          selectedContent.kind === 'series' && detail?.trailerUrl ? { minHeight: '820px' } : { minHeight: '580px' }
+          detail?.trailerUrl ? { minHeight: '820px' } : { minHeight: '580px' }
         )}
       >
         <div style={detailsBackdrop}>
@@ -1544,10 +1544,10 @@ function DetailsScreen() {
               />
             </div>
 
-            {!loading && selectedContent.kind === 'series' && detail?.trailerUrl ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#E50914', display: 'inline-block', boxShadow: '0 0 8px #E50914' }} />
+            {!loading && detail?.trailerUrl ? (
+              <div style={{ display: 'flex', flexDirection: 'column', marginTop: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#E50914', display: 'inline-block', boxShadow: '0 0 8px #E50914', marginRight: '8px' }} />
                   <strong style={{
                     color: 'rgba(255, 255, 255, 0.75)',
                     fontSize: '14px',
@@ -1810,13 +1810,12 @@ function DetailsScreen() {
                 justifyContent: 'center',
                 alignItems: 'flex-start',
                 height: '340px',
-                gap: '24px',
                 marginTop: '16px'
               }}>
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '20px'
+                  marginBottom: '24px'
                 }}>
                   <div style={{
                     width: '48px',
@@ -1825,7 +1824,8 @@ function DetailsScreen() {
                     border: '4px solid rgba(255, 255, 255, 0.08)',
                     borderTopColor: '#E50914',
                     animation: 'spin 1s linear infinite',
-                    boxShadow: '0 0 24px rgba(229, 9, 20, 0.15)'
+                    boxShadow: '0 0 24px rgba(229, 9, 20, 0.15)',
+                    marginRight: '20px'
                   }} />
                   <p style={{
                     color: 'rgba(255, 255, 255, 0.55)',
@@ -2035,14 +2035,14 @@ function DetailsScreen() {
                           </div>
                         )}
                       </div>
-                      <div style={mergeStyle(detailsEpisodeCopy, { padding: '12px 14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' })}>
+                      <div style={mergeStyle(detailsEpisodeCopy, { padding: '12px 14px 16px', display: 'flex', flexDirection: 'column' })}>
                         <strong
                           style={mergeStyle(detailsEpisodeTitle, {
                             display: 'block',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'normal',
-                            marginBottom: 0,
+                            marginBottom: '6px',
                             minHeight: '24px',
                             lineHeight: 1.24,
                             fontSize: '17px',
@@ -2077,115 +2077,6 @@ function DetailsScreen() {
           ) : (
             <p style={detailsHint}>This series has no episodes uploaded yet.</p>
           )}
-        </section>
-      ) : null}
-
-      {!loading && selectedContent.kind === 'movie' && detail?.trailerUrl ? (
-        <section style={mergeStyle(detailsSimilar, { marginBottom: '40px' })} aria-label="Trailers">
-          <div style={detailsSectionHeader}>
-            <h2 style={detailsSectionTitle}>Trailers & Extras</h2>
-            <p style={detailsSectionCopy}>1 video</p>
-          </div>
-
-          <div style={{ padding: '8px 8px 18px 4px', marginTop: '8px' }}>
-            <button
-              ref={registerFocusRef('trailer')}
-              type="button"
-              style={mergeStyle(
-                {
-                  position: 'relative',
-                  width: '384px',
-                  height: '216px',
-                  borderRadius: '16px',
-                  border: '3px solid rgba(255, 255, 255, 0.1)',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  overflow: 'hidden',
-                  outline: 'none',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  boxSizing: 'border-box'
-                },
-                focusId === 'trailer' && {
-                  borderColor: '#E50914',
-                  transform: 'scale(1.05)',
-                  boxShadow: '0 8px 24px rgba(229, 9, 20, 0.3)'
-                }
-              )}
-              onFocus={() => setFocusId('trailer')}
-              onClick={() => handleWatchTrailer()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleWatchTrailer();
-                }
-              }}
-            >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.6, zIndex: 1 }}>
-                <ArtworkWithFallback
-                  title="Trailer"
-                  artwork={detail?.backdropUrl || selectedContent.backdropUrl || detail?.posterUrl || selectedContent.posterUrl}
-                  imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  fallbackStyle={{ width: '100%', height: '100%' }}
-                />
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 100%)' }} />
-              </div>
-
-              <div style={{
-                position: 'relative',
-                zIndex: 2,
-                width: '60px',
-                height: '60px',
-                borderRadius: '999px',
-                backgroundColor: focusId === 'trailer' ? '#E50914' : 'rgba(255, 255, 255, 0.12)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                transition: 'all 0.2s ease',
-                transform: focusId === 'trailer' ? 'scale(1.1)' : 'scale(1)'
-              }}>
-                <svg viewBox="0 0 24 24" width="28" height="28" fill="#ffffff" style={{ marginLeft: '4px' }}>
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-
-              <div style={{
-                position: 'absolute',
-                bottom: '16px',
-                left: '16px',
-                zIndex: 2,
-                textAlign: 'left'
-              }}>
-                <span style={{
-                  display: 'inline-block',
-                  backgroundColor: '#E50914',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 900,
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '6px'
-                }}>Trailer</span>
-                <strong style={{
-                  display: 'block',
-                  color: '#ffffff',
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  textShadow: '0 2px 4px rgba(0,0,0,0.8)'
-                }}>
-                  Watch Trailer
-                </strong>
-              </div>
-            </button>
-          </div>
         </section>
       ) : null}
 
@@ -2359,7 +2250,6 @@ function DetailsScreen() {
               fontWeight: 800,
               display: 'flex',
               alignItems: 'center',
-              gap: '12px',
               cursor: 'pointer',
               outline: 'none',
               boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
@@ -2390,7 +2280,8 @@ function DetailsScreen() {
               borderRadius: '6px',
               fontSize: '14px',
               fontWeight: 900,
-              textTransform: 'uppercase'
+              textTransform: 'uppercase',
+              marginRight: '12px'
             }}>Back</span>
             <span>Close Trailer</span>
           </button>

@@ -496,13 +496,14 @@ function AppShell() {
 
   const activeDestination = destinations.find((destination) => destination.id === currentDestination) ?? destinations[0];
   const isPlayerActive = currentDestination === 'player';
+  const isSidebarHidden = currentDestination === 'player' || currentDestination === 'details';
   const sidebarClassName = 'sidebar';
   const sidebarRailClassName = focusRegion === 'sidebar' ? 'sidebar__rail expanded' : 'sidebar__rail';
   const isSidebarExpanded = focusRegion === 'sidebar';
 
   return (
     <main
-      className={isPlayerActive ? 'app-shell authenticated-shell player-active' : 'app-shell authenticated-shell'}
+      className={isSidebarHidden ? 'app-shell authenticated-shell player-active' : 'app-shell authenticated-shell'}
       style={{
         width: '100vw',
         height: '100vh',
@@ -511,7 +512,7 @@ function AppShell() {
         position: 'relative'
       }}
     >
-      {!isPlayerActive ? (
+      {!isSidebarHidden ? (
         <aside
           className={sidebarClassName}
           aria-label="Primary navigation"
@@ -897,14 +898,14 @@ function AppShell() {
       ) : null}
 
       <div
-        className={isPlayerActive ? 'shell-content shell-content--player' : 'shell-content'}
+        className={isSidebarHidden ? 'shell-content shell-content--player' : 'shell-content'}
         style={{
           minWidth: 0,
           height: '100%',
           padding: 0,
           position: 'relative',
           zIndex: 1,
-          marginLeft: isPlayerActive ? 0 : '92px'
+          marginLeft: isSidebarHidden ? 0 : '92px'
         }}
       >
         {currentDestination === 'home' ? (
