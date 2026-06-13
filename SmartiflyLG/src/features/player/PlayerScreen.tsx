@@ -87,7 +87,7 @@ declare global {
 }
 
 type PlayerFocusId = 'back' | 'rewind' | 'play' | 'forward' | 'settings';
-type PlayerSettingsView = 'root' | 'speed' | 'aspect';
+type PlayerSettingsView = 'root' | 'speed' | 'aspect' | 'subtitles' | 'quality';
 
 const SEEK_STEP_SECONDS = 10;
 const HUD_TIMEOUT_MS = 3500;
@@ -946,6 +946,94 @@ function PlayerScreen() {
   const [settingsView, setSettingsView] = useState<PlayerSettingsView>('root');
   const [playbackRate, setPlaybackRate] = useState(1);
   const [aspectMode, setAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
+
+  type SubtitleTrackInfo = { id: string | number; label: string; language: string; active: boolean };
+  type QualityTrackInfo = { id: string | number; label: string; active: boolean };
+
+  const [subtitles, setSubtitles] = useState<SubtitleTrackInfo[]>([]);
+  const [qualities, setQualities] = useState<QualityTrackInfo[]>([]);
+  const [activeSubtitleId, setActiveSubtitleId] = useState<string | number>('off');
+  const [activeQualityId, setActiveQualityId] = useState<string | number>('auto');
+
+  const handleNativeTracks = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const tracks = Array.from(video.textTracks || []);
+    if (tracks.length > 0) {
+      setSubtitles(
+        tracks.map((t: any, idx: number) => ({
+          id: idx,
+          label: t.label || t.language || `Track ${idx + 1}`,
+          language: t.language || '',
+          active: t.mode === 'showing'
+        }))
+      );
+      const activeIdx = tracks.findIndex((t: any) => t.mode === 'showing');
+      setActiveSubtitleId(activeIdx >= 0 ? activeIdx : 'off');
+    }
+  }, []);
+
+  const handleSubtitleChange = (trackId: string | number) => {
+    setActiveSubtitleId(trackId);
+    if (activeEngineRef.current === 'shaka' && shakaPlayerRef.current) {
+      if (trackId === 'off') {
+        shakaPlayerRef.current.setTextTrackVisibility(false);
+      } else {
+        const track = shakaPlayerRef.current.getTextTracks().find((t: any) => t.id === Number(trackId));
+        if (track) {
+          shakaPlayerRef.current.selectTextTrack(track);
+          shakaPlayerRef.current.setTextTrackVisibility(true);
+        }
+      }
+    } else if (activeEngineRef.current === 'hlsjs' && hlsPlayerRef.current) {
+      hlsPlayerRef.current.subtitleTrack = trackId === 'off' ? -1 : Number(trackId);
+    } else if (activeEngineRef.current === 'native' && videoRef.current) {
+      const tracks = videoRef.current.textTracks;
+      if (trackId === 'off') {
+        for (let i = 0; i < tracks.length; i++) {
+          tracks[i].mode = 'disabled';
+        }
+      } else {
+        const targetIdx = Number(trackId);
+        for (let i = 0; i < tracks.length; i++) {
+          tracks[i].mode = i === targetIdx ? 'showing' : 'disabled';
+        }
+      }
+    }
+  };
+
+  const handleQualityChange = (qualityId: string | number) => {
+    setActiveQualityId(qualityId);
+    if (activeEngineRef.current === 'shaka' && shakaPlayerRef.current) {
+      if (qualityId === 'auto') {
+        shakaPlayerRef.current.configure({ abr: { enabled: true } });
+      } else {
+        shakaPlayerRef.current.configure({ abr: { enabled: false } });
+        const chosenHeight = Number(qualityId);
+        const variants = shakaPlayerRef.current.getVariantTracks();
+        const matching = variants.filter((v: any) => v.height === chosenHeight);
+        if (matching.length > 0) {
+          const best = matching.reduce((prev: any, curr: any) => (prev.bandwidth > curr.bandwidth ? prev : curr), matching[0]);
+          shakaPlayerRef.current.selectVariantTrack(best, true);
+        }
+      }
+    } else if (activeEngineRef.current === 'hlsjs' && hlsPlayerRef.current) {
+      hlsPlayerRef.current.currentLevel = qualityId === 'auto' ? -1 : Number(qualityId);
+    }
+  };
+
+  const getActiveQualityLabel = () => {
+    if (activeQualityId !== 'auto') {
+      return `${activeQualityId}p`;
+    }
+    const video = videoRef.current;
+    if (video && video.videoHeight) {
+      return `Auto (${video.videoHeight}p)`;
+    }
+    return 'Auto';
+  };
+
   const isLive = playback?.kind === 'live';
   const playbackSources = useMemo(() => {
     if (!playback) {
@@ -1846,6 +1934,10 @@ function PlayerScreen() {
       suppressHudRevealRef.current = true;
     }
     setAspectMode('contain');
+    setSubtitles([]);
+    setQualities([]);
+    setActiveSubtitleId('off');
+    setActiveQualityId('auto');
 
     // Holds the Blob URL for the rewritten HLS playlist so the cleanup can revoke it.
     async function load() {
@@ -2447,6 +2539,8 @@ function PlayerScreen() {
               hlsPlayer.off(hlsRuntime.Events.BUFFER_APPENDED, onBufferAppended);
               hlsPlayer.off(hlsRuntime.Events.BUFFER_FLUSHING, onBufferFlushing);
               hlsPlayer.off(hlsRuntime.Events.BUFFER_EOS, onBufferEos);
+              hlsPlayer.off(hlsRuntime.Events.SUBTITLE_TRACKS_UPDATED, onSubtitleTracksUpdated);
+              hlsPlayer.off(hlsRuntime.Events.SUBTITLE_TRACK_SWITCH, onSubtitleTrackSwitch);
               restoreMediaSourceDebugging();
               // Keep the ERROR listener active so we receive logs and run recovery/escalation during playback.
             };
@@ -2548,21 +2642,58 @@ function PlayerScreen() {
                 return;
               }
 
-              // hls.js manifest parsed log removed
               applyVideoAudioState(attachedVideo, 'hlsjs-manifest-parsed');
-              // Don't finish() here — wait for FRAG_BUFFERED so the startup
-              // promise resolves only after play() has been called with real
-              // data in the buffer. Finishing here would call setIsReady(true)
-              // before play(), causing the live watchdog to fire immediately.
-              //
-              // Reset the startup timer from this point so hls.js gets a fresh
-              // full window to buffer the first frag and call play(). Without
-              // this the original 15s can expire before FRAG_BUFFERED if the
-              // pLoader or manifest fetch took several seconds already.
+
+              // Populate qualities/levels
+              if (Array.isArray(hlsPlayer.levels)) {
+                const levelTracks = hlsPlayer.levels.map((lvl: any, idx: number) => ({
+                  id: idx,
+                  label: lvl.height ? `${lvl.height}p` : `Level ${idx + 1}`,
+                  active: hlsPlayer.currentLevel === idx
+                }));
+                setQualities(levelTracks);
+                setActiveQualityId(hlsPlayer.currentLevel === -1 ? 'auto' : hlsPlayer.currentLevel);
+              }
+
+              // Populate subtitles
+              if (Array.isArray(hlsPlayer.subtitleTracks)) {
+                const subtitleTracks = hlsPlayer.subtitleTracks.map((t: any, idx: number) => ({
+                  id: idx,
+                  label: t.name || t.lang || `Track ${idx + 1}`,
+                  language: t.lang || '',
+                  active: hlsPlayer.subtitleTrack === idx
+                }));
+                setSubtitles(subtitleTracks);
+                setActiveSubtitleId(hlsPlayer.subtitleTrack === -1 ? 'off' : hlsPlayer.subtitleTrack);
+              }
+
               window.clearTimeout(timeoutId);
               timeoutId = window.setTimeout(() => {
                 fail(`hls.js startup timed out after ${hlsStartupTimeoutMs}ms`);
               }, hlsStartupTimeoutMs);
+            };
+
+            const onSubtitleTracksUpdated = () => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+              if (Array.isArray(hlsPlayer.subtitleTracks)) {
+                const subtitleTracks = hlsPlayer.subtitleTracks.map((t: any, idx: number) => ({
+                  id: idx,
+                  label: t.name || t.lang || `Track ${idx + 1}`,
+                  language: t.lang || '',
+                  active: hlsPlayer.subtitleTrack === idx
+                }));
+                setSubtitles(subtitleTracks);
+                setActiveSubtitleId(hlsPlayer.subtitleTrack === -1 ? 'off' : hlsPlayer.subtitleTrack);
+              }
+            };
+
+            const onSubtitleTrackSwitch = () => {
+              if (cancelled || loadGeneration !== loadGenerationRef.current) {
+                return;
+              }
+              setActiveSubtitleId(hlsPlayer.subtitleTrack === -1 ? 'off' : hlsPlayer.subtitleTrack);
             };
 
             const onFirstFragBuffered = () => {
@@ -2688,6 +2819,8 @@ function PlayerScreen() {
             hlsPlayer.on(hlsRuntime.Events.BUFFER_FLUSHING, onBufferFlushing);
             hlsPlayer.on(hlsRuntime.Events.BUFFER_EOS, onBufferEos);
             hlsPlayer.on(hlsRuntime.Events.ERROR, onHlsError);
+            hlsPlayer.on(hlsRuntime.Events.SUBTITLE_TRACKS_UPDATED, onSubtitleTracksUpdated);
+            hlsPlayer.on(hlsRuntime.Events.SUBTITLE_TRACK_SWITCH, onSubtitleTrackSwitch);
 
             // hls.js level/frag logs removed
 
@@ -2841,31 +2974,51 @@ function PlayerScreen() {
           });
 
           player.addEventListener('trackschanged', () => {
+            if (cancelled) return;
             try {
-              const tracks = player.getVariantTracks();
-              console.warn(`${PLAYER_LOG_PREFIX} shaka tracks changed`, {
-                count: tracks.length,
-                variants: tracks.map((t) => ({
-                  id: t.id,
-                  active: t.active,
-                  type: t.type,
-                  videoCodec: t.videoCodec,
-                  audioCodec: t.audioCodec,
-                  codecs: t.codecs,
-                  bandwidth: t.bandwidth,
-                  width: t.width,
-                  height: t.height
-                }))
-              });
+              const textTracks = player.getTextTracks();
+              setSubtitles(textTracks.map((t: any) => ({
+                id: t.id,
+                label: t.label || t.language || 'Unknown Language',
+                language: t.language || '',
+                active: t.active
+              })));
+
+              const isVisible = player.isTextTrackVisible();
+              const activeText = textTracks.find((t: any) => t.active);
+              setActiveSubtitleId(isVisible && activeText ? activeText.id : 'off');
+
+              const variantTracks = player.getVariantTracks();
+              const heights = Array.from(new Set(variantTracks.map((t: any) => t.height).filter(Boolean))) as number[];
+              heights.sort((a, b) => b - a);
+              setQualities(heights.map((h: number) => ({
+                id: h,
+                label: `${h}p`,
+                active: false
+              })));
+
+              const isAuto = player.getConfiguration().abr.enabled;
+              setActiveQualityId(isAuto ? 'auto' : (variantTracks.find((t: any) => t.active)?.height || 'auto'));
             } catch (err) {
-              console.warn(`${PLAYER_LOG_PREFIX} shaka failed to read tracks on trackschanged`, {
-                error: err instanceof Error ? err.message : String(err)
-              });
+              console.warn(`${PLAYER_LOG_PREFIX} shaka failed to read tracks on trackschanged`, err);
             }
           });
 
           player.addEventListener('adaptation', () => {
-            console.warn(`${PLAYER_LOG_PREFIX} shaka adaptation event`);
+            if (cancelled) return;
+            try {
+              const isAuto = player.getConfiguration().abr.enabled;
+              if (isAuto) {
+                setActiveQualityId('auto');
+              } else {
+                const activeVariant = player.getVariantTracks().find((t: any) => t.active);
+                if (activeVariant && activeVariant.height) {
+                  setActiveQualityId(activeVariant.height);
+                }
+              }
+            } catch (err) {
+              console.warn(`${PLAYER_LOG_PREFIX} shaka failed on adaptation`, err);
+            }
           });
 
           await player.attach(attachedVideo);
@@ -3451,6 +3604,9 @@ function PlayerScreen() {
         setRecoveryMessage(null);
         setStartupOverlayMessage(null);
       }
+      if (activeEngineRef.current === 'native') {
+        handleNativeTracks();
+      }
     };
 
     const handleLoadedData = () => {
@@ -3660,6 +3816,12 @@ function PlayerScreen() {
       }
     };
 
+    const handleTextTrackChange = () => {
+      if (activeEngineRef.current === 'native') {
+        handleNativeTracks();
+      }
+    };
+
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -3676,6 +3838,9 @@ function PlayerScreen() {
     video.addEventListener('volumechange', handleVolumeChange);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleVideoError);
+    if (video.textTracks) {
+      video.textTracks.addEventListener('change', handleTextTrackChange);
+    }
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -3694,6 +3859,9 @@ function PlayerScreen() {
       video.removeEventListener('volumechange', handleVolumeChange);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('error', handleVideoError);
+      if (video.textTracks) {
+        video.textTracks.removeEventListener('change', handleTextTrackChange);
+      }
     };
   }, [
     activeStreamIndex,
@@ -4119,6 +4287,14 @@ function PlayerScreen() {
                   <span>Aspect</span>
                   <strong>{aspectMode}</strong>
                 </button>
+                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('subtitles')}>
+                  <span>Subtitles</span>
+                  <strong>{activeSubtitleId === 'off' ? 'Off' : subtitles.find((s) => s.id === activeSubtitleId)?.label || 'On'}</strong>
+                </button>
+                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('quality')}>
+                  <span>Quality</span>
+                  <strong>{getActiveQualityLabel()}</strong>
+                </button>
                 <button
                   type="button"
                   style={mergeStyle(playerSettingsItem, playerSettingsItemRow)}
@@ -4171,7 +4347,7 @@ function PlayerScreen() {
                   ))}
                 </div>
               </>
-            ) : (
+            ) : settingsView === 'aspect' ? (
               <>
                 <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
                   Back
@@ -4185,6 +4361,65 @@ function PlayerScreen() {
                       onClick={() => setAspectMode(mode)}
                     >
                       {mode}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : settingsView === 'subtitles' ? (
+              <>
+                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
+                  Back
+                </button>
+                <div style={playerSettingsList}>
+                  <button
+                    type="button"
+                    style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeSubtitleId === 'off' && playerSettingsItemActive)}
+                    onClick={() => handleSubtitleChange('off')}
+                  >
+                    Off
+                  </button>
+                  {subtitles.map((track) => (
+                    <button
+                      key={track.id}
+                      type="button"
+                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeSubtitleId === track.id && playerSettingsItemActive)}
+                      onClick={() => handleSubtitleChange(track.id)}
+                    >
+                      {track.label}
+                    </button>
+                  ))}
+                  {subtitles.length === 0 && (
+                    <button
+                      type="button"
+                      disabled
+                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, { opacity: 0.4, cursor: 'default' })}
+                    >
+                      None Available
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
+                  Back
+                </button>
+                <div style={playerSettingsList}>
+                  <button
+                    type="button"
+                    style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeQualityId === 'auto' && playerSettingsItemActive)}
+                    onClick={() => handleQualityChange('auto')}
+                  >
+                    Auto
+                  </button>
+                  {qualities.map((q) => (
+                    <button
+                      key={q.id}
+                      type="button"
+                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeQualityId === q.id && playerSettingsItemActive)}
+                      onClick={() => handleQualityChange(q.id)}
+                    >
+                      {q.label}
                     </button>
                   ))}
                 </div>

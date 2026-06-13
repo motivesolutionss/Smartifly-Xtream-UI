@@ -328,16 +328,16 @@
           document.body.appendChild(bundleScript);
         };
         setStatus('Loading polyfills...');
-        loadScript('./vendor/polyfills.js?v=1781358478725', function () {
+        loadScript('./vendor/polyfills.js?v=1781359336241', function () {
           setStatus('Loading vendor player bundles...');
-          loadScript('./vendor/hls.min.js?v=1781358478725', function () {
+          loadScript('./vendor/hls.min.js?v=1781359336241', function () {
             setStatus('hls.js loaded. Loading Shaka...');
-            loadScript('./vendor/shaka-player.compiled.js?v=1781358478725', function () {
+            loadScript('./vendor/shaka-player.compiled.js?v=1781359336241', function () {
               setStatus('Shaka loaded. Loading app.js...');
               loadAppBundle();
-            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=1781358478725');
-          }, 'The emulator could not load ./vendor/hls.min.js?v=1781358478725');
-        }, 'The emulator could not load ./vendor/polyfills.js?v=1781358478725');
+            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=1781359336241');
+          }, 'The emulator could not load ./vendor/hls.min.js?v=1781359336241');
+        }, 'The emulator could not load ./vendor/polyfills.js?v=1781359336241');
     })();
   </script>
 </body>
