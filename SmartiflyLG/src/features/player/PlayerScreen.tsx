@@ -360,10 +360,6 @@ async function probeStreamHeaders(streamUrl: string) {
   }
 }
 
-function rewriteStreamUrlForTesting(url: string): string {
-  return url;
-}
-
 async function resolveRedirectedStreamUrl(streamUrl: string, signal?: AbortSignal) {
   const controller = new AbortController();
   const abortFromExternalSignal = () => controller.abort();
@@ -949,7 +945,7 @@ function PlayerScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsView, setSettingsView] = useState<PlayerSettingsView>('root');
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [aspectMode, setAspectMode] = useState<'contain' | 'cover' | 'fill'>('fill');
+  const [aspectMode, setAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
   const isLive = playback?.kind === 'live';
   const playbackSources = useMemo(() => {
     if (!playback) {
@@ -1849,7 +1845,7 @@ function PlayerScreen() {
       clearHudTimer();
       suppressHudRevealRef.current = true;
     }
-    setAspectMode('fill');
+    setAspectMode('contain');
 
     // Holds the Blob URL for the rewritten HLS playlist so the cleanup can revoke it.
     async function load() {
@@ -1877,7 +1873,7 @@ function PlayerScreen() {
         playback.kind === 'live' && currentLiveStreamId != null && !isManualLiveSwitchStartup
           ? Math.max(playback.liveHandoffMs ?? 0, getLiveHandoffDelayMs(currentLiveStreamId))
           : 0;
-      let resolvedStreamUrl = rewriteStreamUrlForTesting(activeStreamUrl);
+      let resolvedStreamUrl = activeStreamUrl;
 
       // HLS playlist rewrite: fetch the playlist ourselves, follow the redirect,
       // rewrite all root-relative and relative segment paths to absolute URLs,
@@ -1990,7 +1986,7 @@ function PlayerScreen() {
             isManualLiveSwitchStartup,
             playKind: playback.kind
           });
-          resolvedStreamUrl = rewriteStreamUrlForTesting(activeStreamUrl);
+          resolvedStreamUrl = activeStreamUrl;
         } else {
           console.warn(`${PLAYER_LOG_PREFIX} resolving redirected stream URL`, {
             activeStreamUrl,
@@ -1998,9 +1994,9 @@ function PlayerScreen() {
             isManualLiveSwitchStartup,
             playKind: playback.kind
           });
-          resolvedStreamUrl = (activeStreamUrl.indexOf('http') === 0 || activeStreamUrl.indexOf('/') === 0)
-            ? await resolveRedirectedStreamUrl(rewriteStreamUrlForTesting(activeStreamUrl), loadAbortController.signal)
-            : rewriteStreamUrlForTesting(activeStreamUrl);
+          resolvedStreamUrl = activeStreamUrl.startsWith('http')
+            ? await resolveRedirectedStreamUrl(activeStreamUrl, loadAbortController.signal)
+            : activeStreamUrl;
 
           console.debug(`${PLAYER_LOG_PREFIX} resolved stream url`, { from: activeStreamUrl, to: resolvedStreamUrl, ts: Date.now() });
         }
@@ -4111,8 +4107,8 @@ function PlayerScreen() {
       </header>
 
       {showSettings ? (
-        <div style={playerSettings} role="dialog" aria-modal="true" aria-label="Player settings">
-          <div style={playerSettingsPanel} ref={settingsPanelRef}>
+        <div className="player-settings" style={playerSettings} role="dialog" aria-modal="true" aria-label="Player settings">
+          <div className="player-settings-panel" style={playerSettingsPanel} ref={settingsPanelRef}>
             {settingsView === 'root' ? (
               <>
                 <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('speed')}>
@@ -4141,6 +4137,7 @@ function PlayerScreen() {
                 </button>
                 <button
                   type="button"
+                  className="player-settings-close"
                   style={mergeStyle(playerSettingsItem, playerSettingsItemClose)}
                   onClick={() => {
                     setShowSettings(false);
