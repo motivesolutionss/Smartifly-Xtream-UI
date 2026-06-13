@@ -361,19 +361,6 @@ async function probeStreamHeaders(streamUrl: string) {
 }
 
 function rewriteStreamUrlForTesting(url: string): string {
-  if (!url) return url;
-
-  const isHosted = typeof window !== 'undefined' && 
-    window.location.protocol.indexOf('http') === 0 && 
-    window.location.host.indexOf('10.20.30.10:25461') === -1;
-
-  if (isHosted && url.indexOf('http://10.20.30.10:25461') === 0) {
-    const relativePath = url.substring('http://10.20.30.10:25461'.length);
-    const proxyUrl = '/stream-proxy' + relativePath;
-    console.warn(`[Player Proxy] Rewriting URL for hosted testing: ${url} -> ${proxyUrl}`);
-    return proxyUrl;
-  }
-
   return url;
 }
 
