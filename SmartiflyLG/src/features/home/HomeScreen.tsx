@@ -7,7 +7,7 @@ import { cardDebugOverlay } from '../../styles/lgTvStyles';
 import { fallbackHero, type ChannelItem, type RailSection, type HeroItem } from './homeBootstrap';
 import useWatchHistoryStore, { buildWatchHistoryScope } from '../../store/watchHistoryStore';
 import { SafeCardImage } from '../../components/SafeCardImage';
-import { scrollIntoViewCompat } from '../../utils/legacyBrowser';
+import { scrollIntoViewCompat, legacyChromiumBrowser } from '../../utils/legacyBrowser';
 
 /** Sized for 10-foot UI on webOS (avoid clamp/grid; fixed px). */
 const HOME_RAIL_CARD = {
@@ -1033,7 +1033,9 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                       outline: 'none',
                       WebkitAppearance: 'none',
                       appearance: 'none',
-                      transform: isFocused ? 'translateY(-6px) scale(1.015) translateZ(0)' : 'translateZ(0)',
+                      transform: legacyChromiumBrowser 
+                        ? 'none' 
+                        : isFocused ? 'translateY(-6px) scale(1.015) translateZ(0)' : 'translateZ(0)',
                       boxShadow: isFocused ? '0 22px 42px rgba(0, 0, 0, 0.3), 0 0 0 3px rgba(255, 255, 255, 0.86)' : 'none'
                     }}
                   >

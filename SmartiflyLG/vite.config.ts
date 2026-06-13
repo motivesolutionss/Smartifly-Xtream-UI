@@ -14,6 +14,7 @@ export default defineConfig({
         const html = readFileSync(indexPath, 'utf8');
         const distDir = join(process.cwd(), 'dist');
         const vendorDir = join(distDir, 'vendor');
+        const cacheBust = Date.now().toString();
 
         try {
           mkdirSync(vendorDir, { recursive: true });
@@ -92,14 +93,17 @@ export default defineConfig({
           '          };',
           '          document.body.appendChild(bundleScript);',
           '        };',
-          "        setStatus('Loading vendor player bundles...');",
-          "        loadScript('./vendor/hls.min.js', function () {",
-          "          setStatus('hls.js loaded. Loading Shaka...');",
-          "          loadScript('./vendor/shaka-player.compiled.js', function () {",
-          "            setStatus('Shaka loaded. Loading app.js...');",
-          '            loadAppBundle();',
-          "          }, 'The emulator could not load ./vendor/shaka-player.compiled.js');",
-          "        }, 'The emulator could not load ./vendor/hls.min.js');"
+          "        setStatus('Loading polyfills...');",
+          `        loadScript('./vendor/polyfills.js?v=${cacheBust}', function () {`,
+          "          setStatus('Loading vendor player bundles...');",
+          `          loadScript('./vendor/hls.min.js?v=${cacheBust}', function () {`,
+          "            setStatus('hls.js loaded. Loading Shaka...');",
+          `            loadScript('./vendor/shaka-player.compiled.js?v=${cacheBust}', function () {`,
+          "              setStatus('Shaka loaded. Loading app.js...');",
+          '              loadAppBundle();',
+          `            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=${cacheBust}');`,
+          `          }, 'The emulator could not load ./vendor/hls.min.js?v=${cacheBust}');`,
+          `        }, 'The emulator could not load ./vendor/polyfills.js?v=${cacheBust}');`
         ].join(lineEnding);
 
         // Replace the error handler block with the full loader block using RegExp
@@ -144,13 +148,18 @@ export default defineConfig({
             const fetchCode = existsSync(fetchPath) ? readFileSync(fetchPath, 'utf8') : '';
             const abortCode = existsSync(abortPath) ? readFileSync(abortPath, 'utf8') : '';
 
-            const finalAppJs = [
+            const polyfillsJs = [
               '/* --- CORE-JS POLYFILLS --- */',
               coreJsCode,
               '/* --- FETCH POLYFILL --- */',
               fetchCode,
               '/* --- ABORT CONTROLLER POLYFILL --- */',
-              abortCode,
+              abortCode
+            ].join('\n');
+            const polyfillsPath = join(process.cwd(), 'dist', 'vendor', 'polyfills.js');
+            writeFileSync(polyfillsPath, polyfillsJs, 'utf8');
+
+            const finalAppJs = [
               '/* --- APP BUNDLE --- */',
               babelResult.code
             ].join('\n');

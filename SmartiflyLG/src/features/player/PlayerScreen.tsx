@@ -77,6 +77,7 @@ import { choosePlaybackEngine, type PlaybackEngine, type PlaybackEngineDecision 
 import useSettingsStore from '../../store/settingsStore';
 import useWatchHistoryStore, { useTrackProgress, generateWatchHistoryId } from '../../store/watchHistoryStore';
 import { createXtreamApi, type XtreamShortEpgEntry } from '../../services/api';
+import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
 
 declare global {
   interface Window {
@@ -2253,7 +2254,7 @@ function PlayerScreen() {
           }
 
           const hlsPlayer = new hlsRuntime({
-            enableWorker: !isWebOS,
+            enableWorker: !isWebOS && !legacyChromiumBrowser,
             lowLatencyMode: false,
             // Disable automatic load start so hls.js doesn't begin live
             // playlist polling before we've attached to the video element
@@ -3915,7 +3916,7 @@ function PlayerScreen() {
 
       {recoveryMessage ? (
         <div style={playerRecovery} role="status" aria-live="polite">
-          {(recoveryMessage.toLowerCase().includes('unavailable') || recoveryMessage.toLowerCase().includes('could not recover')) ? (
+          {(recoveryMessage.toLowerCase().includes('unavailable') || recoveryMessage.toLowerCase().includes('could not recover') || recoveryMessage.toLowerCase().includes('not supported')) ? (
             <div style={playerRecoveryCard}>
               <span style={{
                 color: '#ffffff',

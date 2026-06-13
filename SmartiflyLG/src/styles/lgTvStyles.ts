@@ -761,33 +761,46 @@ export const tvKey: CSSProperties = {
   color: 'rgba(255, 255, 255, 0.88)',
   fontSize: '16px',
   fontWeight: 700,
-  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.02)',
   cursor: 'pointer',
   boxSizing: 'border-box',
-  transition: 'transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-  transform: 'translateZ(0)'
+  outline: 'none',
+  WebkitAppearance: 'none',
+  appearance: 'none',
+  ...(legacyChromiumBrowser ? {
+    background: '#1a1f2b',
+    border: '1px solid #2a3140'
+  } : {})
 };
 
 export const tvKeyAccent: CSSProperties = {
   background: 'rgba(229, 9, 20, 0.15)',
-  borderColor: 'rgba(229, 9, 20, 0.3)',
-  color: '#ff6675'
+  border: '1px solid rgba(229, 9, 20, 0.3)',
+  color: '#ff6675',
+  ...(legacyChromiumBrowser ? {
+    background: '#4c0f18',
+    border: '1px solid #6d1721',
+    color: '#ff6675'
+  } : {})
 };
 
 export const tvKeyFocused: CSSProperties = {
-  transform: 'scale(1.08) translateZ(0)',
-  boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.95), 0 8px 24px rgba(0, 0, 0, 0.45)',
   background: '#ffffff',
   color: '#0b1018',
-  borderColor: '#ffffff'
+  outline: 'none',
+  ...(legacyChromiumBrowser ? {
+    background: '#ffffff',
+    color: '#0b1018'
+  } : {})
 };
 
 export const tvKeyAccentFocused: CSSProperties = {
-  transform: 'scale(1.08) translateZ(0)',
-  background: 'linear-gradient(135deg, #ff2438 0%, #b20710 100%)',
+  background: '#e50914',
   color: '#ffffff',
-  borderColor: '#ffffff',
-  boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.95), 0 8px 24px rgba(229, 9, 20, 0.35)'
+  outline: 'none',
+  ...(legacyChromiumBrowser ? {
+    background: '#e50914',
+    color: '#ffffff'
+  } : {})
 };
 
 export function tvKeySpanStyle(span?: number): CSSProperties {
