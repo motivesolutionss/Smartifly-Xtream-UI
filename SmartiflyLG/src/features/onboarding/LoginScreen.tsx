@@ -538,14 +538,15 @@ function LoginScreen({ onBack }: LoginScreenProps) {
         }}
       >
         <div style={{ maxWidth: '920px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px' }}>
             <span
               style={{
                 color: '#f5d06a',
                 fontSize: '12px',
                 fontWeight: 800,
                 letterSpacing: '2px',
-                textTransform: 'uppercase'
+                textTransform: 'uppercase',
+                marginRight: '14px'
               }}
             >
               {activeStep.eyebrow}
@@ -596,14 +597,14 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                 <div
                   key={`row-${rowIndex}`}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(10, minmax(0, 1fr))',
-                    gap: '8px',
+                    display: 'flex',
+                    flexDirection: 'row',
                     marginTop: rowIndex === 0 ? 0 : '8px'
                   }}
                 >
                   {row.map((key, colIndex) => {
                     const isFocused = rowIndex === focusedRow && colIndex === focusedCol;
+                    const spanVal = key.span || 1;
                     return (
                       <button
                         key={`${rowIndex}-${colIndex}-${key.label}`}
@@ -619,8 +620,9 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                         onMouseEnter={() => syncFocus(rowIndex, colIndex)}
                         tabIndex={isFocused ? 0 : -1}
                         style={{
+                          width: `calc(((100% - 72px) / 10) * ${spanVal} + ${spanVal - 1} * 8px)`,
+                          marginRight: colIndex < row.length - 1 ? '8px' : 0,
                           minHeight: '46px',
-                          gridColumn: key.span ? `span ${key.span}` : 'span 1',
                           border: 0,
                           borderRadius: '12px',
                           background: key.accent
@@ -635,7 +637,8 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                             ? '0 0 0 2px rgba(255,255,255,0.16), 0 8px 16px rgba(0,0,0,0.22)'
                             : 'inset 0 -1px 0 rgba(255,255,255,0.02)',
                           cursor: 'pointer',
-                          outline: 'none'
+                          outline: 'none',
+                          boxSizing: 'border-box'
                         }}
                       >
                         {key.label}

@@ -117,8 +117,12 @@ function App() {
               borderRadius: '999px',
               border: '5px solid rgba(255, 255, 255, 0.08)',
               borderTopColor: '#e50914',
+              WebkitAnimation: 'spin 1.1s linear infinite',
               animation: 'spin 1.1s linear infinite',
-              boxShadow: '0 0 36px rgba(229, 9, 20, 0.18)'
+              boxShadow: '0 0 36px rgba(229, 9, 20, 0.18)',
+              willChange: 'transform',
+              transform: 'translateZ(0)',
+              WebkitTransform: 'translateZ(0)'
             }}
           />
           <img src="./assets/smartifly_icon.png" alt="Smartifly" style={{ width: '236px', maxWidth: '42vw', marginTop: '2px' }} />
@@ -154,7 +158,11 @@ function App() {
               height: '100%',
               borderRadius: 'inherit',
               background: 'linear-gradient(90deg, #ff5d67, #e50914)',
-              animation: 'boot-progress 1.2s ease-in-out infinite alternate'
+              WebkitAnimation: 'boot-progress 1.2s ease-in-out infinite alternate',
+              animation: 'boot-progress 1.2s ease-in-out infinite alternate',
+              willChange: 'transform',
+              transform: 'translateZ(0)',
+              WebkitTransform: 'translateZ(0)'
             }}
           />
         </div>

@@ -175,6 +175,22 @@ export default defineConfig({
     }
   ],
   base: './',
+  server: {
+    proxy: {
+      '/stream-proxy': {
+        target: 'http://10.20.30.10:25461',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/stream-proxy/, ''),
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+            proxyRes.headers['Access-Control-Allow-Headers'] = '*';
+            proxyRes.headers['Access-Control-Allow-Methods'] = '*';
+          });
+        }
+      }
+    }
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

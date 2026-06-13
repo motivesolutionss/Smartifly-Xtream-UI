@@ -305,7 +305,11 @@ export const browseLoadingSpinner: CSSProperties = {
   borderRadius: '999px',
   border: '4px solid rgba(255, 255, 255, 0.08)',
   borderTopColor: '#e50914',
-  animation: 'spin 1.05s linear infinite'
+  WebkitAnimation: 'spin 1.05s linear infinite',
+  animation: 'spin 1.05s linear infinite',
+  transform: 'translateZ(0)',
+  WebkitTransform: 'translateZ(0)',
+  willChange: 'transform'
 };
 
 /** Portrait tiles — 5 per row @ 1080p, ~3 rows visible (live uses wider 16:9 tiles). */
@@ -2107,7 +2111,11 @@ export const playerRecoverySpinner: CSSProperties = {
   borderRadius: '999px',
   border: '5px solid rgba(255, 255, 255, 0.15)',
   borderTopColor: '#e50914',
-  animation: 'spin 1s linear infinite'
+  WebkitAnimation: 'spin 1s linear infinite',
+  animation: 'spin 1s linear infinite',
+  transform: 'translateZ(0)',
+  WebkitTransform: 'translateZ(0)',
+  willChange: 'transform'
 };
 
 export const playerScreenEmpty: CSSProperties = {

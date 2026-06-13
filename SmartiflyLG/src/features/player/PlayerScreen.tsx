@@ -360,6 +360,23 @@ async function probeStreamHeaders(streamUrl: string) {
   }
 }
 
+function rewriteStreamUrlForTesting(url: string): string {
+  if (!url) return url;
+
+  const isHosted = typeof window !== 'undefined' && 
+    window.location.protocol.indexOf('http') === 0 && 
+    window.location.host.indexOf('10.20.30.10:25461') === -1;
+
+  if (isHosted && url.indexOf('http://10.20.30.10:25461') === 0) {
+    const relativePath = url.substring('http://10.20.30.10:25461'.length);
+    const proxyUrl = '/stream-proxy' + relativePath;
+    console.warn(`[Player Proxy] Rewriting URL for hosted testing: ${url} -> ${proxyUrl}`);
+    return proxyUrl;
+  }
+
+  return url;
+}
+
 async function resolveRedirectedStreamUrl(streamUrl: string, signal?: AbortSignal) {
   const controller = new AbortController();
   const abortFromExternalSignal = () => controller.abort();
@@ -1873,7 +1890,7 @@ function PlayerScreen() {
         playback.kind === 'live' && currentLiveStreamId != null && !isManualLiveSwitchStartup
           ? Math.max(playback.liveHandoffMs ?? 0, getLiveHandoffDelayMs(currentLiveStreamId))
           : 0;
-      let resolvedStreamUrl = activeStreamUrl;
+      let resolvedStreamUrl = rewriteStreamUrlForTesting(activeStreamUrl);
 
       // HLS playlist rewrite: fetch the playlist ourselves, follow the redirect,
       // rewrite all root-relative and relative segment paths to absolute URLs,
@@ -1986,7 +2003,7 @@ function PlayerScreen() {
             isManualLiveSwitchStartup,
             playKind: playback.kind
           });
-          resolvedStreamUrl = activeStreamUrl;
+          resolvedStreamUrl = rewriteStreamUrlForTesting(activeStreamUrl);
         } else {
           console.warn(`${PLAYER_LOG_PREFIX} resolving redirected stream URL`, {
             activeStreamUrl,
@@ -1994,9 +2011,9 @@ function PlayerScreen() {
             isManualLiveSwitchStartup,
             playKind: playback.kind
           });
-          resolvedStreamUrl = activeStreamUrl.startsWith('http')
-            ? await resolveRedirectedStreamUrl(activeStreamUrl, loadAbortController.signal)
-            : activeStreamUrl;
+          resolvedStreamUrl = (activeStreamUrl.indexOf('http') === 0 || activeStreamUrl.indexOf('/') === 0)
+            ? await resolveRedirectedStreamUrl(rewriteStreamUrlForTesting(activeStreamUrl), loadAbortController.signal)
+            : rewriteStreamUrlForTesting(activeStreamUrl);
 
           console.debug(`${PLAYER_LOG_PREFIX} resolved stream url`, { from: activeStreamUrl, to: resolvedStreamUrl, ts: Date.now() });
         }

@@ -70,7 +70,11 @@ function StartupLoaderScreen() {
             border: '5px solid rgba(255, 255, 255, 0.08)',
             borderTopColor: '#e50914',
             boxShadow: '0 0 36px rgba(229, 9, 20, 0.16)',
-            animation: 'spin 1.05s linear infinite'
+            WebkitAnimation: 'spin 1.05s linear infinite',
+            animation: 'spin 1.05s linear infinite',
+            transform: 'translateZ(0)',
+            WebkitTransform: 'translateZ(0)',
+            willChange: 'transform'
           }}
         />
         <p
@@ -132,7 +136,11 @@ function StartupLoaderScreen() {
                 height: '100%',
                 borderRadius: 'inherit',
                 background: 'linear-gradient(90deg, #ff5d67, #e50914)',
-                animation: 'boot-progress 1.2s ease-in-out infinite alternate'
+                WebkitAnimation: 'boot-progress 1.2s ease-in-out infinite alternate',
+                animation: 'boot-progress 1.2s ease-in-out infinite alternate',
+                willChange: 'transform',
+                transform: 'translateZ(0)',
+                WebkitTransform: 'translateZ(0)'
               }}
             />
           </div>
