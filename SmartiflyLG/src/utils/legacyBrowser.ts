@@ -89,6 +89,50 @@ export function scrollChildIntoHorizontalViewCompat(
   container.scrollLeft = nextLeft;
 }
 
+export function scrollChildIntoVerticalViewCompat(
+  container: HTMLElement | null | undefined,
+  child: HTMLElement | null | undefined,
+  padding = 24
+) {
+  if (!container || !child) {
+    return;
+  }
+
+  const currentTop = container.scrollTop;
+  const visibleTop = currentTop + padding;
+  const visibleBottom = currentTop + container.clientHeight - padding;
+
+  let childTop = child.offsetTop;
+  let parent = child.offsetParent;
+  while (parent && parent !== container) {
+    childTop += (parent as HTMLElement).offsetTop;
+    parent = (parent as HTMLElement).offsetParent;
+  }
+
+  const childBottom = childTop + child.offsetHeight;
+
+  let nextTop = currentTop;
+
+  if (childTop < 250) {
+    nextTop = 0;
+  } else if (childTop < visibleTop) {
+    nextTop = Math.max(0, childTop - padding);
+  } else if (childBottom > visibleBottom) {
+    nextTop = Math.max(0, childBottom - container.clientHeight + padding);
+  }
+
+  if (nextTop === currentTop) {
+    return;
+  }
+
+  if (!legacyChromiumBrowser) {
+    container.scrollTo({ top: nextTop });
+    return;
+  }
+
+  container.scrollTop = nextTop;
+}
+
 export function closestCompat(
   element: HTMLElement | null | undefined,
   selector: string

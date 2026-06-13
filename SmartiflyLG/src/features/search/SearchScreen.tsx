@@ -48,7 +48,12 @@ import {
 import { useAppStore } from '../../store/appStore';
 import { buildLivePlaybackRequest } from '../live/livePlayback';
 import { SafeCardImage } from '../../components/SafeCardImage';
-import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
+import {
+  closestCompat,
+  legacyChromiumBrowser,
+  scrollChildIntoHorizontalViewCompat,
+  scrollChildIntoVerticalViewCompat
+} from '../../utils/legacyBrowser';
 
 
 type SearchItem = {
@@ -490,7 +495,9 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
           node.focus();
         }
 
-        node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+        const track = closestCompat(node, '.lg-browse-scroll') as HTMLElement;
+        scrollChildIntoHorizontalViewCompat(track, node, 24);
+        scrollChildIntoVerticalViewCompat(searchResultsRef.current, node, 24);
         return;
       }
 
@@ -912,7 +919,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
 
         {railSections.map((section, sectionIndex) => (
           <section style={searchRail} key={section.id} aria-label={section.label}>
-            <div>
+            <div style={{ marginBottom: '12px' }}>
               <p style={browseLabel}>{section.label}</p>
             </div>
 
@@ -948,12 +955,12 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                     <div
                       key={item.id}
                       style={{
+                        display: 'inline-block',
+                        verticalAlign: 'top',
                         width: `${cardWidth}px`,
-                        minWidth: `${cardWidth}px`,
-                        maxWidth: `${cardWidth}px`,
-                        flexShrink: 0,
                         marginRight: '18px',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        whiteSpace: 'normal'
                       }}
                     >
                       <button
@@ -968,8 +975,7 @@ function SearchScreen({ isActive, onRequestSidebarFocus }: SearchScreenProps) {
                             minWidth: '100%',
                             maxWidth: '100%',
                             height: isLive ? '248px' : 'auto',
-                            display: 'flex',
-                            flexDirection: 'column',
+                            display: 'block',
                             marginRight: 0,
                             flexShrink: 0
                           },

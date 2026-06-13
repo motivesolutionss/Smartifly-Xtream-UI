@@ -607,9 +607,7 @@ export const searchSidebarBackFocused: CSSProperties = {
 
 export const searchResults: CSSProperties = {
   minWidth: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '24px',
+  display: 'block',
   padding: '20px 24px 24px',
   overflowY: 'auto',
   boxSizing: 'border-box',
@@ -647,9 +645,8 @@ export const searchEmptyCopy: CSSProperties = {
 };
 
 export const searchRail: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '16px'
+  display: 'block',
+  marginBottom: '40px'
 };
 
 export const searchRailEmpty: CSSProperties = {
@@ -662,13 +659,12 @@ export const searchRailEmpty: CSSProperties = {
 };
 
 export const searchRailTrack: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'row',
-  alignItems: 'flex-start',
+  display: 'block',
+  whiteSpace: 'nowrap',
   overflowX: 'auto',
   overflowY: 'hidden',
-  padding: '24px 20px',
-  margin: '-12px -20px -24px -20px',
+  padding: '28px 20px 20px 20px',
+  margin: '-12px -20px 0 -20px',
   boxSizing: 'border-box',
   ...hideScrollbar
 };
