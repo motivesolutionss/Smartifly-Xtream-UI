@@ -464,7 +464,10 @@ function LoginScreen({ onBack }: LoginScreenProps) {
           alt=""
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             width: '100%',
             height: '100%',
             objectFit: 'cover',
@@ -475,7 +478,10 @@ function LoginScreen({ onBack }: LoginScreenProps) {
         <div
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             background:
               'linear-gradient(90deg, rgba(5, 8, 14, 0.94) 0%, rgba(5, 8, 14, 0.76) 55%, rgba(5, 8, 14, 0.16) 100%)'
           }}

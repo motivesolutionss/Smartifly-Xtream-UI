@@ -677,8 +677,7 @@ function ProfileSelectionScreen() {
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          gap: '36px'
+          alignItems: 'center'
         }}
       >
         <div
@@ -687,7 +686,7 @@ function ProfileSelectionScreen() {
             flexDirection: 'column',
             alignItems: 'center',
             textAlign: 'center',
-            gap: '16px'
+            marginBottom: '36px'
           }}
         >
           <p
@@ -697,7 +696,8 @@ function ProfileSelectionScreen() {
               fontSize: '14px',
               fontWeight: 800,
               textTransform: 'uppercase',
-              letterSpacing: '4px'
+              letterSpacing: '4px',
+              marginBottom: '16px'
             }}
           >
             Profiles
@@ -709,7 +709,8 @@ function ProfileSelectionScreen() {
               fontSize: '60px',
               fontWeight: 800,
               letterSpacing: '-1px',
-              lineHeight: 1
+              lineHeight: 1,
+              marginBottom: '16px'
             }}
           >
             {isEditMode ? 'Manage Profiles' : "Who's watching?"}
@@ -737,9 +738,8 @@ function ProfileSelectionScreen() {
             display: 'flex',
             alignItems: 'stretch',
             justifyContent: 'center',
-            gap: '32px',
             flexWrap: 'wrap',
-            margin: '24px 0'
+            margin: '24px 0 60px 0'
           }}
         >
           {profiles.map((profile, index) => {
@@ -794,6 +794,7 @@ function ProfileSelectionScreen() {
                   minHeight: '320px',
                   borderRadius: '24px',
                   border: isThisCardFocused ? '3px solid #ffffff' : '1px solid rgba(255,255,255,0.06)',
+                  margin: '0 16px 20px 16px',
                   background: isThisCardFocused
                     ? 'linear-gradient(180deg, rgba(30, 37, 54, 0.95) 0%, rgba(15, 18, 26, 0.98) 100%)'
                     : 'linear-gradient(180deg, rgba(20, 24, 34, 0.6) 0%, rgba(10, 12, 18, 0.8) 100%)',
@@ -818,7 +819,10 @@ function ProfileSelectionScreen() {
                   <div
                     style={{
                       position: 'absolute',
-                      inset: 0,
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
                       borderRadius: '20px',
                       background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 60%)',
                       pointerEvents: 'none',
@@ -846,7 +850,10 @@ function ProfileSelectionScreen() {
                     <div
                       style={{
                         position: 'absolute',
-                        inset: 0,
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
                         background: 'rgba(0,0,0,0.6)',
                         display: 'flex',
                         alignItems: 'center',
@@ -868,8 +875,7 @@ function ProfileSelectionScreen() {
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '6px'
+                    alignItems: 'center'
                   }}
                 >
                   <strong
@@ -879,7 +885,8 @@ function ProfileSelectionScreen() {
                       fontSize: '22px',
                       fontWeight: 700,
                       lineHeight: 1.2,
-                      color: isThisCardFocused ? '#ffffff' : 'rgba(255,255,255,0.85)'
+                      color: isThisCardFocused ? '#ffffff' : 'rgba(255,255,255,0.85)',
+                      marginBottom: '6px'
                     }}
                   >
                     {profile.pinLock && (
@@ -937,15 +944,16 @@ function ProfileSelectionScreen() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '20px',
               cursor: 'pointer',
               outline: 'none',
+              margin: '0 16px 20px 16px',
               opacity: activeModal === null && focusArea === 'grid' ? (focusIndex === profiles.length ? 1 : 0.45) : 0.85,
               transform:
                 activeModal === null && focusArea === 'grid' && focusIndex === profiles.length
                   ? 'translate3d(0, -8px, 0) scale(1.05)'
                   : 'translate3d(0, 0, 0) scale(1)',
-              transition: 'transform 180ms cubic-bezier(0.25, 0.8, 0.25, 1), opacity 180ms ease, border-color 180ms ease'
+              transition: 'transform 180ms cubic-bezier(0.25, 0.8, 0.25, 1), opacity 180ms ease, border-color 180ms ease',
+              position: 'relative'
             }}
           >
             {/* Glossy Overlay for Add Card when focused */}
@@ -953,7 +961,10 @@ function ProfileSelectionScreen() {
               <div
                 style={{
                   position: 'absolute',
-                  inset: 0,
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                   borderRadius: '20px',
                   background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 60%)',
                   pointerEvents: 'none',
@@ -969,7 +980,8 @@ function ProfileSelectionScreen() {
                 border: '2.5px solid rgba(255,255,255,0.2)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                marginBottom: '20px'
               }}
             >
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255,255,255,0.6)' }}>
@@ -1019,7 +1031,10 @@ function ProfileSelectionScreen() {
           aria-modal="true"
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 100,
             display: 'flex',
             alignItems: 'center',
@@ -1036,11 +1051,10 @@ function ProfileSelectionScreen() {
               border: '1px solid rgba(255,255,255,0.08)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '24px',
               boxSizing: 'border-box'
             }}
           >
-            <div>
+            <div style={{ marginBottom: '24px' }}>
               <p style={{ margin: 0, color: '#ff2438', fontSize: '12px', fontWeight: 800, letterSpacing: '2px', textTransform: 'uppercase' }}>
                 Profile Editor
               </p>
@@ -1050,10 +1064,10 @@ function ProfileSelectionScreen() {
             </div>
 
             {/* Form Fields */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '24px' }}>
               {/* Profile Name */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontSize: '15px', fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>Profile Name</label>
+              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '20px' }}>
+                <label style={{ fontSize: '15px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>Profile Name</label>
                 {isEditingName ? (
                   <input
                     ref={(el) => {
@@ -1113,8 +1127,8 @@ function ProfileSelectionScreen() {
               </div>
 
               {/* Avatar Selection Selector */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontSize: '15px', fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>Profile Avatar</label>
+              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '20px' }}>
+                <label style={{ fontSize: '15px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>Profile Avatar</label>
                 
                 {/* Horizontal row of SVG options */}
                 <div 
@@ -1122,7 +1136,7 @@ function ProfileSelectionScreen() {
                     formRefs.current['1'] = el;
                   }}
                   tabIndex={-1}
-                  style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', padding: '6px 0', outline: 'none' }}
+                  style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', outline: 'none' }}
                 >
                   {AVATAR_OPTIONS.map((opt) => {
                     const isSelected = opt.id === 'custom' 
@@ -1189,7 +1203,7 @@ function ProfileSelectionScreen() {
                 
                 {/* Text input, only active when custom initials is selected */}
                 {!formAvatar.startsWith('svg:') && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', marginTop: '4px' }}>
                     {isEditingInitials ? (
                       <input
                         ref={(el) => {
@@ -1277,7 +1291,8 @@ function ProfileSelectionScreen() {
                   fontWeight: 700,
                   outline: 'none',
                   cursor: 'pointer',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  marginBottom: '20px'
                 }}
               >
                 <span>Kids Profile</span>
@@ -1335,7 +1350,7 @@ function ProfileSelectionScreen() {
             </div>
 
             {/* Action Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: editingProfile && editingProfile.id !== 'primary' ? '1fr 1fr 1fr' : '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', marginTop: '12px' }}>
               <button
                 ref={(el) => {
                   formRefs.current['4'] = el;
@@ -1359,6 +1374,8 @@ function ProfileSelectionScreen() {
                   setFocusIndex(0);
                 }}
                 style={{
+                  flex: 1,
+                  marginRight: '12px',
                   height: '56px',
                   borderRadius: '14px',
                   background: 'linear-gradient(180deg, #ff2438 0%, #c40c18 100%)',
@@ -1383,6 +1400,8 @@ function ProfileSelectionScreen() {
                 type="button"
                 onClick={() => setActiveModal(null)}
                 style={{
+                  flex: 1,
+                  marginRight: (editingProfile && editingProfile.id !== 'primary') ? '12px' : 0,
                   height: '56px',
                   borderRadius: '14px',
                   background: '#1f2636',
@@ -1414,6 +1433,7 @@ function ProfileSelectionScreen() {
                     setFocusIndex(0);
                   }}
                   style={{
+                    flex: 1,
                     height: '56px',
                     borderRadius: '14px',
                     background: '#4a121c',
@@ -1443,7 +1463,10 @@ function ProfileSelectionScreen() {
           aria-modal="true"
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 110,
             display: 'flex',
             alignItems: 'center',
@@ -1480,7 +1503,7 @@ function ProfileSelectionScreen() {
             </div>
 
             {/* Digits Display */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', margin: '10px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
               {[0, 1, 2, 3].map((idx) => {
                 const digit = pinDigits[idx];
                 const isDigitFocused = pinFocusIndex === idx;
@@ -1512,7 +1535,8 @@ function ProfileSelectionScreen() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      transition: 'border-color 100ms ease, background-color 100ms ease'
+                      transition: 'border-color 100ms ease, background-color 100ms ease',
+                      marginRight: idx < 3 ? '14px' : 0
                     }}
                   >
                     {isFilled ? (activeModal === 'pin-unlock' ? '●' : digit) : ''}
@@ -1529,7 +1553,7 @@ function ProfileSelectionScreen() {
             )}
 
             {/* Action Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', width: '100%', marginTop: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', width: '100%', marginTop: '8px' }}>
               <button
                 ref={(el) => {
                   pinRefs.current['4'] = el;
@@ -1558,6 +1582,8 @@ function ProfileSelectionScreen() {
                   }
                 }}
                 style={{
+                  flex: 1,
+                  marginRight: '14px',
                   height: '58px',
                   borderRadius: '16px',
                   background: 'linear-gradient(180deg, #ff2438 0%, #d50d1a 100%)',
@@ -1590,6 +1616,7 @@ function ProfileSelectionScreen() {
                   }
                 }}
                 style={{
+                  flex: 1,
                   height: '58px',
                   borderRadius: '16px',
                   background: '#1f2636',

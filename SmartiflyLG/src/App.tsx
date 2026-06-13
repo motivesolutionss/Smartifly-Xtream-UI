@@ -98,7 +98,10 @@ function App() {
           aria-hidden="true"
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             background:
               'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 24%), radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.08), transparent 34%)',
             filter: 'blur(6px)'
@@ -181,7 +184,10 @@ function App() {
           aria-hidden="true"
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             background:
               'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 24%), radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.08), transparent 34%)',
             filter: 'blur(8px)'
@@ -220,7 +226,10 @@ function App() {
           aria-hidden="true"
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             background:
               'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03), transparent 24%), radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.08), transparent 34%)',
             filter: 'blur(8px)'

@@ -33,8 +33,84 @@ function installLegacyRandomUuidPolyfill() {
   };
 }
 
+function installKeyboardEventKeyPolyfill() {
+  if (typeof window === 'undefined' || typeof KeyboardEvent === 'undefined') {
+    return;
+  }
+
+  const proto = KeyboardEvent.prototype;
+  let needsPolyfill = !('key' in proto);
+
+  if (!needsPolyfill) {
+    try {
+      const e = new KeyboardEvent('keydown');
+      if (e.key === undefined) {
+        needsPolyfill = true;
+      }
+    } catch (err) {
+      // If KeyboardEvent constructor is not supported on legacy Chrome v38,
+      // fallback to prototype checks.
+      if (!('key' in proto)) {
+        needsPolyfill = true;
+      }
+    }
+  }
+
+  if (needsPolyfill) {
+    const keyMap: Record<number, string> = {
+      8: 'Backspace',
+      9: 'Tab',
+      13: 'Enter',
+      27: 'Escape',
+      32: ' ',
+      33: 'PageUp',
+      34: 'PageDown',
+      35: 'End',
+      36: 'Home',
+      37: 'ArrowLeft',
+      38: 'ArrowUp',
+      39: 'ArrowRight',
+      40: 'ArrowDown',
+      45: 'Insert',
+      46: 'Delete',
+      461: 'GoBack',    // LG webOS back button
+      10009: 'Backspace' // Samsung Tizen back button
+    };
+
+    // Number keys
+    for (let i = 48; i <= 57; i++) {
+      keyMap[i] = String.fromCharCode(i);
+    }
+    // Letter keys
+    for (let i = 65; i <= 90; i++) {
+      keyMap[i] = String.fromCharCode(i);
+    }
+
+    try {
+      Object.defineProperty(proto, 'key', {
+        get(this: KeyboardEvent) {
+          const code = this.keyCode || this.which;
+          if (keyMap[code] !== undefined) {
+            if (code >= 65 && code <= 90 && !this.shiftKey) {
+              return keyMap[code].toLowerCase();
+            }
+            return keyMap[code];
+          }
+          const char = String.fromCharCode(code);
+          return char || 'Unidentified';
+        },
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {
+      console.error('Failed to define KeyboardEvent.prototype.key polyfill:', e);
+    }
+  }
+}
+
 try {
   installLegacyRandomUuidPolyfill();
+  installKeyboardEventKeyPolyfill();
 
   if (import.meta.env.DEV) {
     void import('./features/player/debug/iptvReleaseTimingDebug').then(({ installIptvDebugTools }) => {

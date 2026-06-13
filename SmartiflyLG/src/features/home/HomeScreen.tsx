@@ -611,7 +611,6 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
-        gap: '20px',
         overflowY: 'hidden',
         padding: '0 0 12px'
       }}
@@ -625,7 +624,8 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
           position: 'relative',
           minHeight: `${HOME_HERO_MIN_HEIGHT}px`,
           overflow: 'hidden',
-          background: HOME_HERO_SHELL_BACKGROUND
+          background: HOME_HERO_SHELL_BACKGROUND,
+          marginBottom: '20px'
         }}
       >
         <div
@@ -675,15 +675,29 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
               }}
             />
           ) : null}
+          {/* Horizontal Gradient Overlay (Left-to-Right) */}
           <div
-            className="lg-home__hero-overlay"
+            className="lg-home__hero-overlay-horiz"
             style={{
               position: 'absolute',
               top: 0,
               right: 0,
               bottom: 0,
               left: 0,
-              background: HOME_HERO_OVERLAY_BACKGROUND,
+              background: 'linear-gradient(90deg, rgba(5, 6, 8, 0.96) 0%, rgba(5, 6, 8, 0.88) 22%, rgba(5, 6, 8, 0.62) 42%, rgba(5, 6, 8, 0.12) 70%, transparent 100%)',
+              pointerEvents: 'none'
+            }}
+          />
+          {/* Vertical Gradient Overlay (Top-to-Bottom) */}
+          <div
+            className="lg-home__hero-overlay-vert"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              background: 'linear-gradient(180deg, rgba(5, 6, 8, 0) 0%, rgba(5, 6, 8, 0.2) 60%, #050608 100%)',
               pointerEvents: 'none'
             }}
           />
@@ -1132,7 +1146,6 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'flex-end',
-                            gap: '2px',
                             boxSizing: 'border-box'
                           }}>
                             <span style={{
@@ -1142,7 +1155,8 @@ function HomeScreen({ isActive, onRequestSidebarFocus }: HomeScreenProps) {
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
-                              textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)'
+                              textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)',
+                              marginBottom: '2px'
                             }}>
                               {((item as any).data as WatchProgress | undefined)?.title || item.name}
                             </span>

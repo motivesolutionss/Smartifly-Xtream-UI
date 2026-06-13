@@ -197,7 +197,10 @@ function RegistrationScreen({ onBack }: RegistrationScreenProps) {
         <div
           style={{
             position: 'absolute',
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             background:
               'radial-gradient(circle at 78% 22%, rgba(229, 9, 20, 0.24), transparent 32%), linear-gradient(180deg, rgba(6, 8, 14, 0.2), rgba(6, 8, 14, 0.82))'
           }}
