@@ -165,7 +165,7 @@ export function Navbar() {
             <div className="hidden xl:flex items-center gap-3">
               <CurrencySelector />
 
-              <Link href="/packages">
+              <Link href="/login">
                 <Button className="btn-primary hover-lift group">
                   <Sparkles className="w-4 h-4" />
                   Get Started
@@ -320,7 +320,7 @@ export function Navbar() {
                         transition={{ duration: 0.3, delay: 0.35 }}
                       >
                         <Link
-                          href="/packages"
+                          href="/login"
                           onClick={() => setIsMobileMenuOpen(false)}
                         >
                           <Button className="w-full btn-primary btn-lg hover-lift">
@@ -379,4 +379,3 @@ export function Navbar() {
 }
 
 export default Navbar;
-

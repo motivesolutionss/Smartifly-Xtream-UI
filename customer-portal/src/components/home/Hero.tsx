@@ -150,7 +150,7 @@ export function Hero() {
                     transition={{ delay: 0.7 }}
                     className="flex flex-col sm:flex-row items-center justify-center gap-6"
                 >
-                    <Link href="/packages">
+                    <Link href="/login">
                         <Button
                             size="lg"
                             className="h-16 px-12 bg-primary hover:bg-primary-dark text-primary-foreground rounded-full group hover-lift shadow-premium-glow text-lg font-bold transition-all"
