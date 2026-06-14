@@ -36,7 +36,7 @@ const platforms = [
     badgeVariant: "success",
     color: "from-violet-500 to-purple-600",
     borderColor: "border-violet-500/30",
-    downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/smartiflyapp.apk",
+    downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/app-release.apk",
     downloadLabel: "Download TV APK",
     specs: [
       { label: "File Size", value: "45.2 MB" },
@@ -64,7 +64,7 @@ const platforms = [
     badgeVariant: "success",
     color: "from-cyan-500 to-blue-600",
     borderColor: "border-cyan-500/30",
-    downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/smartiflyapp.apk",
+    downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/MobileV2.0.0/smartiflymobileapp.apk",
     downloadLabel: "Download Mobile APK",
     specs: [
       { label: "File Size", value: "38.7 MB" },

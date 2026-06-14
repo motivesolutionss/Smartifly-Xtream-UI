@@ -16,7 +16,7 @@ const apps = [
         badgeColor: "bg-violet-500/20 text-violet-400 border-violet-500/30",
         iconColor: "from-violet-500 to-purple-600",
         borderColor: "border-violet-500/50",
-        downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/smartiflyapp.apk", // Placeholder: replace with actual URL or path when ready
+        downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/app-release.apk",
         downloadLabel: "Download TV APK",
     },
     {
@@ -27,7 +27,7 @@ const apps = [
         badgeColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
         iconColor: "from-cyan-500 to-blue-600",
         borderColor: "border-cyan-500/50",
-        downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/v1.0.0/smartiflyapp.apk", // Placeholder: replace with actual URL or path when ready
+        downloadUrl: "https://github.com/motivesolutionss/Smartifly-Xtream-UI/releases/download/MobileV2.0.0/smartiflymobileapp.apk",
         downloadLabel: "Download Mobile APK",
     },
 ];
