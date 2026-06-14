@@ -1,0 +1,137 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sxui-db
+    restart: unless-stopped
+    env_file:
+      - ./.env.vps
+    volumes:
+      - sxui_db_data:/var/lib/mysql
+    networks:
+      - nginx-proxy
+
+backend:
+  build:
+    context: ./smartifly-xtreamui-backend
+    dockerfile: Dockerfile
+  container_name: sxui-api
+  restart: unless-stopped
+  env_file:
+    - ./.env.vps
+  environment:
+    - VIRTUAL_HOST=api.smartifly.co
+    - VIRTUAL_PORT=5000
+    - LETSENCRYPT_HOST=api.smartifly.co
+    - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+  expose:
+    - "5000"
+  read_only: true
+  tmpfs:
+    - /tmp
+  networks:
+    - nginx-proxy
+  volumes:
+    - sxui_uploads:/app/uploads
+    - sxui_backups:/app/backups
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  mem_limit: 768m
+  depends_on:
+    mysql:
+      condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const http=require('http'); const req=http.get('http://127.0.0.1:5000/docs', r=>process.exit(r.statusCode<500?0:1)); req.on('error',()=>process.exit(1)); req.setTimeout(5000,()=>{req.destroy();process.exit(1);});"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+admin-panel:
+  build:
+    context: ./admin-panel
+    dockerfile: Dockerfile
+    args:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.smartifly.co}
+  container_name: sxui-admin
+  restart: unless-stopped
+  expose:
+    - "3000"
+  read_only: true
+  tmpfs:
+    - /tmp
+  environment:
+    - VIRTUAL_HOST=admin.smartifly.co
+    - VIRTUAL_PORT=3000
+    - LETSENCRYPT_HOST=admin.smartifly.co
+    - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+    - HOSTNAME=0.0.0.0
+    - PORT=3000
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  mem_limit: 512m
+  networks:
+    - nginx-proxy
+  depends_on:
+    backend:
+      condition: service_healthy
+  healthcheck:
+    test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/" ]
+    interval: 30s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+
+customer-portal:
+  build:
+    context: ./customer-portal
+    dockerfile: Dockerfile
+    args:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.smartifly.co}
+  container_name: sxui-portal
+  restart: unless-stopped
+  expose:
+    - "3000"
+  read_only: true
+  tmpfs:
+    - /tmp
+  environment:
+    - VIRTUAL_HOST=smartifly.co
+    - VIRTUAL_PORT=3000
+    - LETSENCRYPT_HOST=smartifly.co
+    - LETSENCRYPT_EMAIL=adnankhawar005@gmail.com
+    - HOSTNAME=0.0.0.0
+    - PORT=3000
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  mem_limit: 512m
+  networks:
+    - nginx-proxy
+  depends_on:
+    backend:
+      condition: service_healthy
+  healthcheck:
+    test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/" ]
+    interval: 30s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+
+networks:
+nginx-proxy:
+  external: true
+
+volumes:
+sxui_db_data:
+sxui_uploads:
+sxui_backups:

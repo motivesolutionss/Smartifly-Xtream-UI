@@ -18,30 +18,50 @@ export function createApp(): Application {
   const app = express();
 
   // SECURITY
-  app.use(helmet());
-
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    })
+  );
   // CORS
-  const corsOrigins = process.env.CORS_ORIGINS
+  const configuredOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
     : ['http://localhost:5173', 'http://localhost:3000'];
 
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow non-browser/server-to-server requests with no Origin header.
-        if (!origin) return callback(null, true);
+  const allowedOrigins = new Set(configuredOrigins);
 
-        if (corsOrigins.includes(origin)) {
+  const isAllowedOrigin = (origin: string): boolean => {
+    if (allowedOrigins.has(origin)) return true;
+    if (/^http:\/\/localhost(:\d+)?$/i.test(origin)) return true;
+    if (/^https:\/\/([a-z0-9-]+\.)?smartifly\.co$/i.test(origin)) return true;
+    return false;
+  };
+
+  const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+      if (!origin || origin === 'null') {
+        return callback(null, true);
+      }
+      // LG webOS packaged apps loaded from file:// can send either Origin: null
+      // or a file:// app identifier such as file://com.smartifly.lg-webos.
+      if (origin === 'null' || origin.startsWith('file://')) {
           return callback(null, true);
-        }
+      }
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
 
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-    })
-  );
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    optionsSuccessStatus: 204,
+  };
+
+  app.use(cors(corsOptions));
+  app.options(/.*/, cors(corsOptions));
 
   // BODY PARSING
   app.use(express.json({ limit: '10mb' }));
