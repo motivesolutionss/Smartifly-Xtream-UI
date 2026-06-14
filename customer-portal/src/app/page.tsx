@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { Hero } from "@/components/home/Hero";
 import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 // Lazy load heavy components that are below the fold
 // These components use framer-motion and are not critical for initial render
@@ -45,6 +46,41 @@ const CTA = dynamic(() => import("@/components/home/CTA").then(mod => mod.CTA), 
 });
 
 export default function HomePage() {
+  const { useLiteEffects } = usePerformanceMode();
+  const [showDeferredSections, setShowDeferredSections] = useState(!useLiteEffects);
+
+  useEffect(() => {
+    if (!useLiteEffects) {
+      setShowDeferredSections(true);
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    const revealSections = () => {
+      if (!cancelled) {
+        setShowDeferredSections(true);
+      }
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(revealSections, { timeout: 1500 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    timeoutId = globalThis.setTimeout(revealSections, 600);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    };
+  }, [useLiteEffects]);
+
   // Handle hash scrolling when navigating from other pages
   useEffect(() => {
     const hash = window.location.hash;
@@ -59,20 +95,24 @@ export default function HomePage() {
 
           window.scrollTo({
             top: offsetPosition,
-            behavior: 'smooth'
+            behavior: useLiteEffects ? "auto" : "smooth"
           });
         }
       }, 100);
     }
-  }, []);
+  }, [useLiteEffects]);
 
   return (
     <>
       <Hero />
-      <Features />
-      <DownloadApps />
-      <FAQ />
-      <CTA />
+      {showDeferredSections && (
+        <>
+          <Features />
+          <DownloadApps />
+          <FAQ />
+          <CTA />
+        </>
+      )}
     </>
   );
 }

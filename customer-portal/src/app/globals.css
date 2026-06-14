@@ -2172,3 +2172,52 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* TV & Reduced Motion Performance Override */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-delay: -1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  background-attachment: initial !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+.reduce-motion html {
+  scroll-behavior: auto !important;
+}
+
+.performance-lite *,
+.performance-lite *::before,
+.performance-lite *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.performance-lite .glass-card,
+.performance-lite .glass-card-sm,
+.performance-lite .glass-card-interactive {
+  background: hsl(var(--background) / 0.88) !important;
+  border-color: hsl(var(--border) / 0.5) !important;
+}
+
+.performance-lite [class*="blur-"] {
+  filter: none !important;
+}
+
+.performance-lite [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.performance-tv .hover-lift,
+.performance-tv .hover-lift-sm,
+.performance-tv .glass-card-interactive,
+.performance-tv [class*="group"] {
+  transform: none !important;
+}

@@ -107,9 +107,32 @@ async function fetchWithErrorHandling<T>(
  * ```
  */
 export async function fetchPackages(): Promise<Package[]> {
-  return await fetchWithErrorHandling<Package[]>(`${BASE_URL}/api/packages`, undefined, {
-    timeout: 30000, // 30 seconds for packages
-  });
+  const endpoints = [
+    `${BASE_URL}/v1/public/packages`,
+    `${BASE_URL}/api/packages`,
+  ];
+
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      return await fetchWithErrorHandling<Package[]>(endpoint, undefined, {
+        timeout: 15000,
+        maxRetries: 1,
+      });
+    } catch (error: any) {
+      lastError = error;
+
+      // Stop immediately if the server responded successfully but with a non-retryable problem.
+      if (error?.status && error.status !== 404) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to fetch packages from all configured endpoints.");
 }
 
 /**

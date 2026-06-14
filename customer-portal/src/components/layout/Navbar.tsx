@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu, X, Ticket, Package, Phone, Search,
-  Sparkles, ChevronDown, Home
+  Sparkles, ChevronDown, Home, Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,13 +17,14 @@ import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 const navItems = [
   { path: "/", label: "Home", icon: Home },
   { path: "/packages", label: "Packages", icon: Package },
+  { path: "/downloads", label: "Downloads", icon: Download },
   { path: "/tickets", label: "Support", icon: Ticket },
-  { path: "/subscription", label: "My Subscription", icon: Search },
+  { path: "/subscription", label: "Subscription", icon: Search },
   { path: "/about", label: "About", icon: Phone },
 ];
 
 export function Navbar() {
-  const { reduceMotion } = usePerformanceMode();
+  const { reduceMotion, useLiteEffects } = usePerformanceMode();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -40,10 +41,11 @@ export function Navbar() {
         const scrolled = window.scrollY > 20;
         setIsScrolled((prev) => (prev === scrolled ? prev : scrolled));
 
-        // Calculate scroll progress for progress bar
-        const windowHeight = document.documentElement.scrollHeight - window.innerHeight;
-        const progress = windowHeight > 0 ? (window.scrollY / windowHeight) * 100 : 0;
-        setScrollProgress((prev) => (prev === progress ? prev : progress));
+        if (!useLiteEffects) {
+          const windowHeight = document.documentElement.scrollHeight - window.innerHeight;
+          const progress = windowHeight > 0 ? (window.scrollY / windowHeight) * 100 : 0;
+          setScrollProgress((prev) => (prev === progress ? prev : progress));
+        }
         ticking = false;
       });
     };
@@ -51,7 +53,7 @@ export function Navbar() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [useLiteEffects]);
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -61,17 +63,22 @@ export function Navbar() {
   return (
     <>
       {/* Scroll Progress Bar */}
-      <motion.div
-        className="fixed top-0 left-0 right-0 h-1 bg-gradient-button-primary z-[60] origin-left"
-        style={{ scaleX: scrollProgress / 100 }}
-        initial={{ scaleX: 0 }}
-      />
+      {!useLiteEffects && (
+        <motion.div
+          className="fixed top-0 left-0 right-0 h-1 bg-gradient-button-primary z-[60] origin-left"
+          style={{ scaleX: scrollProgress / 100 }}
+          initial={{ scaleX: 0 }}
+        />
+      )}
 
       <nav
         className={cn(
           "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
           isScrolled
-            ? "bg-background/90 backdrop-blur-xl border-b border-border/50 shadow-xl"
+            ? cn(
+                "border-b border-border/50",
+                useLiteEffects ? "bg-background/95" : "bg-background/90 backdrop-blur-xl shadow-xl"
+              )
             : "bg-transparent border-b border-transparent"
         )}
       >
@@ -100,10 +107,10 @@ export function Navbar() {
               </div>
             </Link>
 
-            {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center">
+            {/* Desktop Middle Navigation */}
+            <div className="hidden xl:flex items-center justify-center flex-1 mx-6">
               <div className={cn(
-                "flex items-center gap-1 px-2 py-2 mr-4 rounded-full transition-all duration-500",
+                "flex items-center gap-1 px-2 py-2 rounded-full transition-all duration-500",
                 isScrolled
                   ? "glass-card"
                   : "bg-white/5 backdrop-blur-sm border border-white/10"
@@ -116,7 +123,7 @@ export function Navbar() {
                       key={item.path}
                       href={item.path}
                       className={cn(
-                        "relative px-4 py-2.5 text-sm font-medium font-heading rounded-lg transition-all duration-300 group",
+                        "relative px-4 py-2.5 text-sm font-medium font-heading rounded-lg transition-all duration-300 group whitespace-nowrap",
                         isActive
                           ? "text-foreground"
                           : "text-foreground-secondary hover:text-foreground"
@@ -152,11 +159,12 @@ export function Navbar() {
                   );
                 })}
               </div>
+            </div>
 
-              {/* Currency Selector */}
-              <CurrencySelector className="mr-3" />
+            {/* Desktop Right Actions */}
+            <div className="hidden xl:flex items-center gap-3">
+              <CurrencySelector />
 
-              {/* CTA Button */}
               <Link href="/packages">
                 <Button className="btn-primary hover-lift group">
                   <Sparkles className="w-4 h-4" />
@@ -181,7 +189,7 @@ export function Navbar() {
               variant="ghost"
               size="icon"
               className={cn(
-                "lg:hidden relative transition-all duration-500",
+                "xl:hidden relative transition-all duration-500",
                 isMobileMenuOpen && "bg-primary/10",
                 isScrolled
                   ? "glass-card"
@@ -226,7 +234,7 @@ export function Navbar() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 xl:hidden"
                 onClick={() => setIsMobileMenuOpen(false)}
               />
 
@@ -236,7 +244,7 @@ export function Navbar() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
-                className="absolute top-full left-0 right-0 lg:hidden z-50"
+                className="absolute top-full left-0 right-0 xl:hidden z-50"
               >
                 <div className="container pt-2 pb-6">
                   <div className="glass-card-strong rounded-2xl overflow-hidden shadow-2xl">
@@ -371,5 +379,4 @@ export function Navbar() {
 }
 
 export default Navbar;
-
 

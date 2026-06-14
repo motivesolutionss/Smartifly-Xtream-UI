@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 interface FAQItem {
   question: string;
@@ -16,6 +17,7 @@ interface FAQAccordionProps {
 }
 
 export function FAQAccordion({ items, className }: FAQAccordionProps) {
+  const { useLiteEffects } = usePerformanceMode();
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
@@ -23,10 +25,10 @@ export function FAQAccordion({ items, className }: FAQAccordionProps) {
       {items.map((item, index) => (
         <motion.div
           key={index}
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={useLiteEffects ? false : { opacity: 0, y: 20 }}
+          whileInView={useLiteEffects ? undefined : { opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.4, delay: index * 0.1 }}
+          transition={useLiteEffects ? undefined : { duration: 0.4, delay: index * 0.1 }}
         >
           <div
             className={cn(
@@ -47,28 +49,39 @@ export function FAQAccordion({ items, className }: FAQAccordionProps) {
                 </span>
               </div>
               <motion.div
-                animate={{ rotate: openIndex === index ? 180 : 0 }}
+                animate={useLiteEffects ? undefined : { rotate: openIndex === index ? 180 : 0 }}
                 transition={{ duration: 0.2 }}
+                className={cn(useLiteEffects && openIndex === index && "rotate-180")}
               >
                 <ChevronDown className="w-5 h-5 text-muted-foreground" />
               </motion.div>
             </button>
-            <AnimatePresence>
-              {openIndex === index && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <div className="px-5 pb-5 pt-0">
-                    <div className="pl-11 text-muted-foreground leading-relaxed">
-                      {item.answer}
-                    </div>
+            {useLiteEffects ? (
+              openIndex === index ? (
+                <div className="px-5 pb-5 pt-0">
+                  <div className="pl-11 text-muted-foreground leading-relaxed">
+                    {item.answer}
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              ) : null
+            ) : (
+              <AnimatePresence>
+                {openIndex === index && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <div className="px-5 pb-5 pt-0">
+                      <div className="pl-11 text-muted-foreground leading-relaxed">
+                        {item.answer}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
           </div>
         </motion.div>
       ))}

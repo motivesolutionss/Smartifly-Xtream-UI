@@ -41,7 +41,7 @@ const itemVariants = {
 };
 
 export default function PackagesPage() {
-  const { reduceMotion } = usePerformanceMode();
+  const { reduceMotion, useLiteEffects } = usePerformanceMode();
   const { data: packages = [], isLoading, error, refetch, isError } = usePackages();
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
@@ -53,16 +53,25 @@ export default function PackagesPage() {
   return (
     <section className="section relative overflow-hidden">
       {/* Matching Animated Background Effects from Features/FAQ */}
-      <motion.div
-        className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
-        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
-        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-      />
+      {useLiteEffects ? (
+        <>
+          <div className="absolute top-20 left-1/4 h-52 w-52 rounded-full bg-primary/6 opacity-75" />
+          <div className="absolute bottom-20 right-1/4 h-48 w-48 rounded-full bg-accent/6 opacity-75" />
+        </>
+      ) : (
+        <>
+          <motion.div
+            className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
+            animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+            transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
+            animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
+            transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+          />
+        </>
+      )}
 
       {/* Grid pattern overlay */}
       <div
@@ -135,15 +144,15 @@ export default function PackagesPage() {
         {/* Package Cards Grid */}
         {!isError && (
         <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate={isInView ? "visible" : "hidden"}
+          variants={useLiteEffects ? undefined : containerVariants}
+          initial={useLiteEffects ? false : "hidden"}
+          animate={useLiteEffects ? undefined : isInView ? "visible" : "hidden"}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto"
         >
           {isLoading ? (
             <>
               {[1, 2, 3].map((i) => (
-                <motion.div key={i} variants={itemVariants}>
+                <motion.div key={i} variants={useLiteEffects ? undefined : itemVariants}>
                   <PackageCardSkeleton />
                 </motion.div>
               ))}
@@ -151,14 +160,14 @@ export default function PackagesPage() {
             ) : packages.length > 0 ? (
             <>
               {packages.map((pkg, index) => (
-                <motion.div key={pkg.id} variants={itemVariants}>
+                <motion.div key={pkg.id} variants={useLiteEffects ? undefined : itemVariants}>
                   <PackageCard pkg={pkg} index={index} />
                 </motion.div>
               ))}
             </>
             ) : (
               <motion.div
-                variants={itemVariants}
+                variants={useLiteEffects ? undefined : itemVariants}
                 className="col-span-full"
               >
                 <EmptyPackagesState />
@@ -190,9 +199,9 @@ export default function PackagesPage() {
                   return (
                     <motion.div
                       key={i}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={isInView ? { opacity: 1, y: 0 } : {}}
-                      transition={{ duration: 0.4, delay: 0.5 + i * 0.1 }}
+                      initial={useLiteEffects ? false : { opacity: 0, y: 20 }}
+                      animate={useLiteEffects ? undefined : isInView ? { opacity: 1, y: 0 } : {}}
+                      transition={useLiteEffects ? undefined : { duration: 0.4, delay: 0.5 + i * 0.1 }}
                       className="flex items-center gap-3 p-4 rounded-xl glass-card-sm hover:bg-background-hover transition-colors group"
                     >
                       <div className={`w-11 h-11 rounded-lg ${item.bgColor} flex items-center justify-center group-hover:scale-110 transition-transform`}>

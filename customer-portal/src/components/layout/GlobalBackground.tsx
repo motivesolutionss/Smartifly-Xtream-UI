@@ -1,11 +1,12 @@
 "use client";
 
 import { motion, useSpring, useMotionValue } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 
 export function GlobalBackground() {
-    const { reduceMotion } = usePerformanceMode();
+    const { reduceMotion, useLiteEffects } = usePerformanceMode();
+    const [isMounted, setIsMounted] = useState(false);
 
     // Parallax values
     const mouseX = useMotionValue(0);
@@ -16,6 +17,7 @@ export function GlobalBackground() {
     const springY = useSpring(mouseY, { stiffness: 20, damping: 30 });
 
     useEffect(() => {
+        setIsMounted(true);
         if (reduceMotion) return;
 
         let rafId: number | null = null;
@@ -55,7 +57,7 @@ export function GlobalBackground() {
                 style={reduceMotion ? undefined : { x: springX, y: springY, scale: 1.05 }}
                 className="absolute inset-0 w-full h-full"
             >
-                {reduceMotion ? (
+                {!isMounted || useLiteEffects ? (
                     <div className="h-full w-full bg-[radial-gradient(circle_at_30%_20%,rgba(124,58,237,0.18),transparent_45%),radial-gradient(circle_at_80%_70%,rgba(6,182,212,0.14),transparent_40%),linear-gradient(180deg,rgba(2,6,23,0.9),rgba(2,6,23,1))]" />
                 ) : (
                     <video
@@ -63,7 +65,7 @@ export function GlobalBackground() {
                         loop
                         muted
                         playsInline
-                        preload="auto"
+                        preload="none"
                         className="h-full w-full object-cover opacity-25 saturate-[0.7] contrast-[1.1]"
                     >
                         <source src="/vid.webm" type="video/webm" />
@@ -74,9 +76,6 @@ export function GlobalBackground() {
 
             {/* 2. Cinematic Overlays */}
             <div className="absolute inset-0 pointer-events-none">
-                {/* Film Grain / Noise Overlay */}
-                <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-
                 {/* Global Deep Tint */}
                 <div className="absolute inset-0 bg-background/20" />
 
@@ -94,7 +93,7 @@ export function GlobalBackground() {
                 />
 
                 {/* Horizontal Scanline Beams */}
-                {!reduceMotion && (
+                {!useLiteEffects && (
                     <motion.div
                         animate={{ y: ["-100%", "200%"] }}
                         transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
@@ -104,8 +103,8 @@ export function GlobalBackground() {
             </div>
 
             {/* 4. Brand Glows (On Top of video, behind content) */}
-            <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-primary/10 blur-[140px] rounded-full mix-blend-screen animate-pulse" />
-            <div className="absolute bottom-[10%] right-[-5%] w-[40%] h-[40%] bg-accent/5 blur-[100px] rounded-full mix-blend-overlay" />
+            <div className={`absolute top-[-10%] left-[-10%] rounded-full ${useLiteEffects ? "w-[38%] h-[38%] bg-primary/8 blur-[48px]" : "w-[60%] h-[60%] bg-primary/10 blur-[140px] mix-blend-screen animate-pulse"}`} />
+            <div className={`absolute bottom-[10%] right-[-5%] rounded-full ${useLiteEffects ? "w-[28%] h-[28%] bg-accent/5 blur-[36px]" : "w-[40%] h-[40%] bg-accent/5 blur-[100px] mix-blend-overlay"}`} />
 
             {/* Bottom Blending Gradient (Extra safety for footer) */}
             <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-background to-transparent z-10" />

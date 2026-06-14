@@ -15,6 +15,7 @@ import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 const footerLinks = {
   product: [
     { label: "Packages", href: "/packages", disabled: false },
+    { label: "Downloads", href: "/downloads", disabled: false },
     { label: "Check Subscription", href: "/subscription", disabled: false },
     { label: "Features", href: "/#features", disabled: false },
   ],
@@ -74,7 +75,7 @@ const itemVariants = {
 };
 
 export function Footer() {
-  const { reduceMotion } = usePerformanceMode();
+  const { reduceMotion, useLiteEffects } = usePerformanceMode();
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -88,21 +89,70 @@ export function Footer() {
   };
 
   return (
+    useLiteEffects ? (
+      <footer className="relative border-t border-border/30 bg-background/95">
+        <div className="container relative z-10 py-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative w-12 h-12">
+                <Image
+                  src="/smartifly-logo.webp"
+                  alt="Smartifly Logo"
+                  width={48}
+                  height={48}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <div>
+                <div className="font-heading font-bold text-lg text-foreground">Smartifly</div>
+                <div className="text-xs text-foreground-muted uppercase tracking-wider">Premium OTT Platform</div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-4 text-sm">
+              <Link href="/packages" className="text-foreground-secondary hover:text-foreground transition-colors">Packages</Link>
+              <Link href="/downloads" className="text-foreground-secondary hover:text-foreground transition-colors">Downloads</Link>
+              <Link href="/tickets/create" className="text-foreground-secondary hover:text-foreground transition-colors">Support</Link>
+              <Link href="/contact" className="text-foreground-secondary hover:text-foreground transition-colors">Contact</Link>
+            </div>
+
+            <div className="flex items-center gap-4 text-xs text-foreground-muted">
+              <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-success" /> Secure</span>
+              <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-warning fill-warning" /> 4.9/5</span>
+              <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-primary" /> Fast</span>
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-border/30 pt-4 text-xs text-foreground-muted">
+            © {new Date().getFullYear()} Smartifly. All rights reserved.
+          </div>
+        </div>
+      </footer>
+    ) : (
     <footer className="relative border-t border-border/30 overflow-hidden">
       {/* Enhanced Background Effects */}
       <div className="absolute inset-0 bg-gradient-to-b from-background via-background-secondary/50 to-background-secondary" />
 
       {/* Animated gradient orbs */}
-      <motion.div
-        className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
-        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
-        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
-        animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
-        transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-      />
+      {useLiteEffects ? (
+        <>
+          <div className="absolute top-20 left-1/4 h-52 w-52 rounded-full bg-primary/6 opacity-80" />
+          <div className="absolute bottom-20 right-1/4 h-44 w-44 rounded-full bg-accent/6 opacity-80" />
+        </>
+      ) : (
+        <>
+          <motion.div
+            className="absolute top-20 left-1/4 w-96 h-96 bg-gradient-glow-violet rounded-full blur-3xl opacity-10"
+            animate={reduceMotion ? { opacity: 0.1 } : { scale: [1, 1.2, 1], opacity: [0.1, 0.15, 0.1] }}
+            transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-glow-cyan rounded-full blur-3xl opacity-10"
+            animate={reduceMotion ? { opacity: 0.1 } : { scale: [1.2, 1, 1.2], opacity: [0.1, 0.15, 0.1] }}
+            transition={reduceMotion ? { duration: 0.2 } : { duration: 8, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+          />
+        </>
+      )}
 
       {/* Grid pattern */}
       <div
@@ -354,6 +404,7 @@ export function Footer() {
         <div className="h-1 bg-gradient-button-primary opacity-50" />
       </div>
     </footer>
+    )
   );
 }
 

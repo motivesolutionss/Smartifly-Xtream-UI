@@ -1,9 +1,11 @@
 "use client";
 
 import { motion, useInView } from "framer-motion";
-import { Tv, Smartphone, Download } from "lucide-react";
+import { Tv, Smartphone, Download, ArrowRight } from "lucide-react";
 import { useRef } from "react";
 import { usePerformanceMode } from "@/hooks/usePerformanceMode";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 const apps = [
     {
@@ -158,6 +160,21 @@ export function DownloadApps() {
                             </motion.div>
                         );
                     })}
+                </motion.div>
+
+                {/* View All Platforms Button */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={isInView ? { opacity: 1, y: 0 } : {}}
+                    transition={{ duration: 0.6, delay: 0.3 }}
+                    className="text-center mt-12"
+                >
+                    <Link href="/downloads">
+                        <Button variant="outline" size="lg" className="rounded-full group">
+                            View Setup Guides & All Devices
+                            <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                    </Link>
                 </motion.div>
             </div>
         </section>

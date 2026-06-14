@@ -97,6 +97,7 @@ const itemVariants = {
 
 function FAQItem({ faq, index }: { faq: typeof faqs[0]; index: number }) {
     const [isOpen, setIsOpen] = useState(false);
+    const { useLiteEffects } = usePerformanceMode();
 
     return (
         <motion.div
@@ -111,29 +112,37 @@ function FAQItem({ faq, index }: { faq: typeof faqs[0]; index: number }) {
                     {faq.question}
                 </span>
                 <motion.div
-                    animate={{ rotate: isOpen ? 180 : 0 }}
+                    animate={useLiteEffects ? undefined : { rotate: isOpen ? 180 : 0 }}
                     transition={{ duration: 0.3 }}
-                    className="flex-shrink-0"
+                    className={`flex-shrink-0 ${useLiteEffects && isOpen ? "rotate-180" : ""}`}
                 >
                     <ChevronDown className="w-5 h-5 text-foreground-muted" />
                 </motion.div>
             </button>
 
-            <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="overflow-hidden"
-                    >
-                        <div className="px-6 pb-5 text-foreground-secondary leading-relaxed border-t border-border-soft pt-4">
-                            {faq.answer}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {useLiteEffects ? (
+                isOpen ? (
+                    <div className="px-6 pb-5 pt-4 text-foreground-secondary leading-relaxed border-t border-border-soft">
+                        {faq.answer}
+                    </div>
+                ) : null
+            ) : (
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="overflow-hidden"
+                        >
+                            <div className="px-6 pb-5 text-foreground-secondary leading-relaxed border-t border-border-soft pt-4">
+                                {faq.answer}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            )}
         </motion.div>
     );
 }

@@ -3,7 +3,7 @@ import { Router } from "express";
 
 import { prisma } from "../../config/prisma";
 import { PublicDeviceCheckController } from "../../controllers/public/deviceCheck.controller";
-import { listHeroBanners } from "../../storage/adminContent.store";
+import { listHeroBanners, listPackages } from "../../storage/adminContent.store";
 import { encryptConfig } from "../../utils/cryptoConfig";
 
 const router = Router();
@@ -94,6 +94,20 @@ router.get("/hero-banners", async (_req, res) => {
     .filter((b) => b.isActive !== false)
     .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
   return res.json({ success: true, data: fallbackHeroBanners });
+});
+
+/**
+ * Public package catalog used by the customer portal.
+ */
+router.get("/packages", async (_req, res) => {
+  const packages = (await listPackages())
+    .filter((pkg) => pkg.isActive !== false)
+    .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+
+  return res.json({
+    success: true,
+    data: packages,
+  });
 });
 
 export default router;

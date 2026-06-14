@@ -6,12 +6,14 @@ import { ChevronDown, Check, DollarSign } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { CURRENCIES } from '@/lib/currency';
 import { cn } from '@/lib/utils';
+import { usePerformanceMode } from '@/hooks/usePerformanceMode';
 
 interface CurrencySelectorProps {
     className?: string;
 }
 
 export function CurrencySelector({ className }: CurrencySelectorProps) {
+    const { useLiteEffects } = usePerformanceMode();
     const { selectedCurrency, setSelectedCurrency } = useCurrency();
     const [isOpen, setIsOpen] = useState(false);
 
@@ -42,10 +44,10 @@ export function CurrencySelector({ className }: CurrencySelectorProps) {
 
                         {/* Dropdown */}
                         <motion.div
-                            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                            transition={{ duration: 0.15 }}
+                            initial={useLiteEffects ? false : { opacity: 0, y: -10, scale: 0.95 }}
+                            animate={useLiteEffects ? undefined : { opacity: 1, y: 0, scale: 1 }}
+                            exit={useLiteEffects ? undefined : { opacity: 0, y: -10, scale: 0.95 }}
+                            transition={useLiteEffects ? undefined : { duration: 0.15 }}
                             className="absolute right-0 mt-2 w-64 glass-card-strong rounded-xl shadow-2xl border border-border/50 z-50 overflow-hidden"
                         >
                             <div className="p-2 max-h-80 overflow-y-auto">

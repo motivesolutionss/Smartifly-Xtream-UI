@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { convertPrice, formatPrice } from "@/lib/currency";
+import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 import type { Package } from "@/types";
 
 interface PackageCardProps {
@@ -19,6 +20,7 @@ interface PackageCardProps {
  * Prevents unnecessary re-renders and recalculations.
  */
 export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCardProps) {
+  const { useLiteEffects } = usePerformanceMode();
   const { selectedCurrency, exchangeRates } = useCurrency();
 
   // Memoize currency conversion to avoid recalculating on every render
@@ -88,9 +90,9 @@ export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCard
           {pkg.features.map((feature, i) => (
             <motion.div
               key={i}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 + i * 0.05 }}
+              initial={useLiteEffects ? false : { opacity: 0, x: -10 }}
+              animate={useLiteEffects ? undefined : { opacity: 1, x: 0 }}
+              transition={useLiteEffects ? undefined : { duration: 0.3, delay: index * 0.1 + i * 0.05 }}
               className="flex items-center gap-3 group/item hover:translate-x-1 transition-transform"
             >
               <div className="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center flex-shrink-0 group-hover/item:bg-success/30 transition-colors">
@@ -130,10 +132,12 @@ export const PackageCard = memo(function PackageCard({ pkg, index }: PackageCard
         </div>
 
         {/* Hover glow effect */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/5 to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        {!useLiteEffects && (
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/5 to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        )}
 
         {/* Bottom gradient line */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className={`absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent ${useLiteEffects ? "opacity-100" : "opacity-0 group-hover:opacity-100 transition-opacity"}`} />
       </div>
     </div>
   );

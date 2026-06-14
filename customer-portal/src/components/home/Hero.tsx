@@ -10,7 +10,7 @@ import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 export function Hero() {
     const containerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const { reduceMotion } = usePerformanceMode();
+    const { reduceMotion, useLiteEffects } = usePerformanceMode();
 
     // Mouse Parallax effect
     const mouseX = useMotionValue(0);
@@ -66,18 +66,22 @@ export function Hero() {
                 }}
             >
                 <div className="absolute inset-0 bg-background/40 z-[1]" /> {/* Subtle tint */}
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                    className="w-full h-full object-cover opacity-60"
-                >
-                    <source src="/vid.webm" type="video/webm" />
-                    <source src="/vid.mp4" type="video/mp4" />
-                </video>
+                {useLiteEffects ? (
+                    <div className="h-full w-full bg-[radial-gradient(circle_at_30%_20%,rgba(124,58,237,0.26),transparent_42%),radial-gradient(circle_at_80%_75%,rgba(6,182,212,0.18),transparent_38%),linear-gradient(180deg,rgba(2,6,23,0.88),rgba(2,6,23,1))]" />
+                ) : (
+                    <video
+                        ref={videoRef}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover opacity-60"
+                    >
+                        <source src="/vid.webm" type="video/webm" />
+                        <source src="/vid.mp4" type="video/mp4" />
+                    </video>
+                )}
             </motion.div>
 
             {/* LAYER 2: HIGH-END OVERLAYS (Grids & Gradients) */}
@@ -89,8 +93,8 @@ export function Hero() {
                 />
 
                 {/* 2.2: Ambient Lighting - Mix blend modes to "light up" the video pixels */}
-                <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-primary/20 blur-[140px] rounded-full mix-blend-screen opacity-40 animate-pulse" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 blur-[120px] rounded-full mix-blend-overlay opacity-50" />
+                <div className={`absolute top-[-10%] left-[-10%] rounded-full opacity-40 ${useLiteEffects ? "w-[38%] h-[38%] bg-primary/15 blur-[48px]" : "w-[60%] h-[60%] bg-primary/20 blur-[140px] mix-blend-screen animate-pulse"}`} />
+                <div className={`absolute bottom-[-10%] right-[-10%] rounded-full opacity-50 ${useLiteEffects ? "w-[32%] h-[32%] bg-blue-500/10 blur-[36px]" : "w-[50%] h-[50%] bg-blue-500/10 blur-[120px] mix-blend-overlay"}`} />
 
                 {/* 2.3: Modern Bottom Fade - Fades the video perfectly into the rest of the site */}
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background z-[12]" />
