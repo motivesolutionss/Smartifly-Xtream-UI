@@ -2357,3 +2357,93 @@ export const netflixClosePromptStyle: CSSProperties = {
   height: '100%',
   textAlign: 'center'
 };
+
+export const playerChannelRail: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: '12px',
+  padding: '8px 20px',
+  overflowX: 'auto',
+  width: '100%',
+  boxSizing: 'border-box',
+  ...hideScrollbar
+};
+
+export const playerChannelCard: CSSProperties = {
+  border: 0,
+  borderRadius: '12px',
+  width: '180px',
+  height: '110px',
+  minWidth: '180px',
+  flexShrink: 0,
+  display: 'inline-block',
+  padding: '12px',
+  background: 'rgba(255, 255, 255, 0.06)',
+  cursor: 'pointer',
+  position: 'relative',
+  boxSizing: 'border-box',
+  verticalAlign: 'top'
+};
+
+export const playerChannelCardActive: CSSProperties = {
+  border: '2px solid rgba(229, 9, 20, 0.7)',
+  background: 'rgba(229, 9, 20, 0.08)'
+};
+
+export const playerChannelCardFocused: CSSProperties = {
+  outline: 'none',
+  background: 'rgba(255, 255, 255, 0.16)',
+  boxShadow: 'inset 0 0 0 3px #e50914'
+};
+
+export const playerChannelCardLogo: CSSProperties = {
+  maxHeight: '64px',
+  maxWidth: '140px',
+  objectFit: 'contain',
+  opacity: 0.95
+};
+
+export const playerChannelCardTitle: CSSProperties = {
+  fontSize: '14px',
+  fontWeight: 700,
+  color: '#ffffff',
+  textAlign: 'center',
+  marginTop: '6px',
+  width: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap'
+};
+
+export const playerCenterControls: CSSProperties = {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '28px',
+  zIndex: 10
+};
+
+export const playerCenterButton: CSSProperties = {
+  border: 0,
+  borderRadius: '999px',
+  width: '68px',
+  height: '68px',
+  padding: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '24px',
+  color: '#f4f7fb',
+  background: 'rgba(255, 255, 255, 0.1)',
+  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.15)',
+  cursor: 'pointer',
+  boxSizing: 'border-box'
+};
+
+

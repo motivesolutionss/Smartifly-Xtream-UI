@@ -13,6 +13,8 @@ import {
   playerButton,
   playerButtonActive,
   playerButtonPrimary,
+  playerCenterControls,
+  playerCenterButton,
   playerControls,
   playerEyebrow,
   playerHud,
@@ -68,7 +70,13 @@ import {
   netflixCheckmarkStyle,
   netflixOptionsListStyle,
   netflixNoOptionsStyle,
-  netflixClosePromptStyle
+  netflixClosePromptStyle,
+  playerChannelRail,
+  playerChannelCard,
+  playerChannelCardActive,
+  playerChannelCardFocused,
+  playerChannelCardLogo,
+  playerChannelCardTitle
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
 import {
@@ -955,7 +963,14 @@ function PlayerScreen() {
   const [seekFeedback, setSeekFeedback] = useState<{ direction: 'backward' | 'forward'; seconds: number } | null>(null);
   const [loadNonce, setLoadNonce] = useState(0);
   const [liveSessionEpoch, setLiveSessionEpoch] = useState(0);
-  const [focusedId, setFocusedId] = useState<PlayerFocusId>('play');
+  const [focusedId, setFocusedId] = useState<PlayerFocusId>(() => {
+    return playback?.kind === 'live' ? 'back' : 'play';
+  });
+  const [hudFocusSection, setHudFocusSection] = useState<'center' | 'bottom' | 'rail'>(() => {
+    return playback?.kind === 'live' ? 'rail' : 'center';
+  });
+  const [focusedChannelIdx, setFocusedChannelIdx] = useState<number>(0);
+  const channelRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [liveEpg, setLiveEpg] = useState<XtreamShortEpgEntry[]>([]);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [showSettings, setShowSettings] = useState(false);
@@ -1148,6 +1163,16 @@ function PlayerScreen() {
   }, [playback]);
   const currentLiveStreamId = currentLiveQueueEntry?.streamId ?? null;
 
+  const currentLiveIndex = useMemo(() => {
+    if (!playback || playback.kind !== 'live' || !Array.isArray(playback.liveQueue) || playback.liveQueue.length === 0) {
+      return -1;
+    }
+    if (typeof playback.liveIndex === 'number' && playback.liveIndex >= 0 && playback.liveIndex < playback.liveQueue.length) {
+      return playback.liveIndex;
+    }
+    return playback.liveQueue.findIndex((entry) => entry.id === playback.id);
+  }, [playback]);
+
   useEffect(() => {
     if (playback?.kind !== 'live' || !activeStreamUrl) {
       return;
@@ -1276,7 +1301,9 @@ function PlayerScreen() {
   useEffect(() => {
     setActiveStreamIndex(0);
     setEngineOverride(null);
-  }, [playback?.id, playback?.streamUrl]);
+    setFocusedChannelIdx(currentLiveIndex >= 0 ? currentLiveIndex : 0);
+    setHudFocusSection('center');
+  }, [playback?.id, playback?.streamUrl, currentLiveIndex]);
 
   const resetVideoElement = useCallback((video: HTMLVideoElement | null) => {
     if (!video) {
@@ -3972,6 +3999,19 @@ function PlayerScreen() {
     setStatusMessage
   ]);
 
+  const handleCardClick = useCallback((targetIndex: number) => {
+    if (!playbackRef.current || playbackRef.current.kind !== 'live' || !Array.isArray(playbackRef.current.liveQueue) || playbackRef.current.liveQueue.length === 0) {
+      return;
+    }
+    const currentPlayback = playbackRef.current;
+    const currentIndex = currentPlayback.liveQueue.findIndex((entry) => entry.id === currentPlayback.id);
+    const fallbackIndex = typeof currentPlayback.liveIndex === 'number' && currentPlayback.liveIndex >= 0 ? currentPlayback.liveIndex : -1;
+    const resolvedIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
+    const resolvedNextIndex = resolvedIndex >= 0 ? resolvedIndex : 0;
+    const delta = targetIndex - resolvedNextIndex;
+    void switchLiveChannel(delta);
+  }, [switchLiveChannel]);
+
   useEffect(() => {
       if (!playback) {
         return;
@@ -4097,14 +4137,88 @@ function PlayerScreen() {
         return;
       }
 
-      if (isHudVisible && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      if (isHudVisible && (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         event.preventDefault();
-        const order: PlayerFocusId[] = ['back', 'rewind', 'play', 'forward', 'settings'];
-        const currentIndex = order.indexOf(focusedId);
-        const nextId = event.key === 'ArrowLeft'
-          ? order[Math.max(0, currentIndex - 1)]
-          : order[Math.min(order.length - 1, currentIndex + 1)];
-        focusButton(nextId);
+        if (isLive) {
+          revealLiveHud();
+        } else {
+          showHUD();
+        }
+
+        if (hudFocusSection === 'center') {
+          if (event.key === 'ArrowLeft') {
+            if (focusedId === 'forward') focusButton('play');
+            else if (focusedId === 'play') focusButton('rewind');
+          } else if (event.key === 'ArrowRight') {
+            if (focusedId === 'rewind') focusButton('play');
+            else if (focusedId === 'play') focusButton('forward');
+          } else if (event.key === 'ArrowDown') {
+            const hasQueue = playback.kind === 'live' && Array.isArray(playback.liveQueue) && playback.liveQueue.length > 0;
+            if (hasQueue) {
+              setHudFocusSection('rail');
+              const targetIdx = focusedChannelIdx < playback.liveQueue.length ? focusedChannelIdx : 0;
+              setTimeout(() => {
+                channelRefs.current[targetIdx]?.focus();
+                channelRefs.current[targetIdx]?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+              }, 0);
+            } else {
+              setHudFocusSection('bottom');
+              focusButton('back');
+            }
+          }
+        } else if (hudFocusSection === 'rail') {
+          const queue = playback.liveQueue || [];
+          const queueLength = queue.length;
+          if (event.key === 'ArrowLeft') {
+            if (queueLength > 0) {
+              const nextIndex = (focusedChannelIdx - 1 + queueLength) % queueLength;
+              setFocusedChannelIdx(nextIndex);
+              setTimeout(() => {
+                channelRefs.current[nextIndex]?.focus();
+                channelRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+              }, 0);
+            }
+          } else if (event.key === 'ArrowRight') {
+            if (queueLength > 0) {
+              const nextIndex = (focusedChannelIdx + 1) % queueLength;
+              setFocusedChannelIdx(nextIndex);
+              setTimeout(() => {
+                channelRefs.current[nextIndex]?.focus();
+                channelRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+              }, 0);
+            }
+          } else if (event.key === 'ArrowUp') {
+            if (!isLive) {
+              setHudFocusSection('center');
+              focusButton('play');
+            }
+          } else if (event.key === 'ArrowDown') {
+            setHudFocusSection('bottom');
+            focusButton('back');
+          }
+        } else if (hudFocusSection === 'bottom') {
+          if (event.key === 'ArrowLeft') {
+            if (focusedId === 'settings') focusButton('back');
+          } else if (event.key === 'ArrowRight') {
+            if (focusedId === 'back') focusButton('settings');
+          } else if (event.key === 'ArrowUp') {
+            const hasQueue = playback.kind === 'live' && Array.isArray(playback.liveQueue) && playback.liveQueue.length > 0;
+            if (hasQueue) {
+              setHudFocusSection('rail');
+              const targetIdx = focusedChannelIdx < playback.liveQueue.length ? focusedChannelIdx : 0;
+              setTimeout(() => {
+                channelRefs.current[targetIdx]?.focus();
+                channelRefs.current[targetIdx]?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+              }, 0);
+            } else if (!isLive) {
+              setHudFocusSection('center');
+              focusButton('play');
+            }
+          } else if (event.key === 'ArrowDown') {
+            setIsHudVisible(false);
+            clearSilentSeekSuppression();
+          }
+        }
         return;
       }
 
@@ -4115,18 +4229,30 @@ function PlayerScreen() {
         return;
       }
 
-      if (event.key === 'ArrowUp') {
+      if (!isHudVisible && event.key === 'ArrowUp') {
         event.preventDefault();
         if (isLive) {
           revealLiveHud();
+          const hasQueue = Array.isArray(playback.liveQueue) && playback.liveQueue.length > 0;
+          if (hasQueue) {
+            setHudFocusSection('rail');
+            const targetIdx = focusedChannelIdx < playback.liveQueue.length ? focusedChannelIdx : 0;
+            setTimeout(() => {
+              channelRefs.current[targetIdx]?.focus();
+              channelRefs.current[targetIdx]?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+            }, 0);
+          } else {
+            setHudFocusSection('bottom');
+            focusButton('back');
+          }
         } else {
           showHUD();
+          focusButton('play');
         }
-        focusButton('play');
         return;
       }
 
-      if (event.key === 'ArrowDown') {
+      if (!isHudVisible && event.key === 'ArrowDown') {
         event.preventDefault();
         setIsHudVisible(false);
         clearSilentSeekSuppression();
@@ -4135,9 +4261,15 @@ function PlayerScreen() {
 
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
-        if (isHudVisible && focusedId !== 'play') {
-          buttonRefs.current[focusedId]?.click();
-          return;
+        if (isHudVisible) {
+          if (hudFocusSection === 'rail') {
+            handleCardClick(focusedChannelIdx);
+            return;
+          }
+          if (focusedId !== 'play') {
+            buttonRefs.current[focusedId]?.click();
+            return;
+          }
         }
         togglePlayback();
         return;
@@ -4166,7 +4298,10 @@ function PlayerScreen() {
     settingsFocusSection,
     focusedOptionIdx,
     subtitles,
-    qualities
+    qualities,
+    hudFocusSection,
+    focusedChannelIdx,
+    handleCardClick
   ]);
 
   useEffect(() => {
@@ -4184,7 +4319,7 @@ function PlayerScreen() {
       activeElement.blur();
     }
 
-    setFocusedId('play');
+    setFocusedId(playback?.kind === 'live' ? 'back' : 'play');
   }, [isHudVisible, playback?.kind, revealLiveHud, showHUD]);
 
   useEffect(() => {
@@ -4272,10 +4407,12 @@ function PlayerScreen() {
             <h1 style={playerTitle}>{playback.title}</h1>
             {playback.episodeTitle ? <p style={playerSubtitle}>{playback.episodeTitle}</p> : null}
             
-            {isLive && currentProgram && (
+            {isLive && (currentProgram || nextProgram) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '14px', maxWidth: '680px' }}>
                 <p style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '15px', fontWeight: 600, lineHeight: 1.35, margin: 0 }}>
-                  {currentProgram.description ? truncateLine(currentProgram.description, 120) : 'No description available.'}
+                  {currentProgram 
+                    ? (currentProgram.description ? truncateLine(currentProgram.description, 120) : 'No description available.')
+                    : 'Guide unavailable for this channel'}
                 </p>
                 {nextProgram && (
                   <p style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
@@ -4292,25 +4429,96 @@ function PlayerScreen() {
           </div>
         </div>
 
+        {isHudVisible && !isLive ? (
+          <div style={playerCenterControls}>
+            <button
+              ref={(node) => {
+                buttonRefs.current.rewind = node;
+              }}
+              type="button"
+              className="player-center-button"
+              style={mergeStyle(playerCenterButton, focusedId === 'rewind' && playerButtonActive)}
+              onFocus={() => {
+                setFocusedId('rewind');
+                setHudFocusSection('center');
+              }}
+              onClick={() => {
+                if (isLive) {
+                  void switchLiveChannel(-1);
+                  return;
+                }
+                seekBy(-SEEK_STEP_SECONDS);
+              }}
+              aria-label={isLive ? 'Prev Channel' : 'Rewind 10 seconds'}
+              title={isLive ? 'Prev Channel' : 'Rewind 10 seconds'}
+            >
+              <PlayerIcon name="rewind" />
+            </button>
+
+            <button
+              ref={(node) => {
+                buttonRefs.current.play = node;
+              }}
+              type="button"
+              style={mergeStyle(playerButton, playerButtonPrimary, focusedId === 'play' && playerButtonActive)}
+              onFocus={() => {
+                setFocusedId('play');
+                setHudFocusSection('center');
+              }}
+              onClick={togglePlayback}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              <PlayerIcon name={playIconName} />
+            </button>
+
+            <button
+              ref={(node) => {
+                buttonRefs.current.forward = node;
+              }}
+              type="button"
+              className="player-center-button"
+              style={mergeStyle(playerCenterButton, focusedId === 'forward' && playerButtonActive)}
+              onFocus={() => {
+                setFocusedId('forward');
+                setHudFocusSection('center');
+              }}
+              onClick={() => {
+                if (isLive) {
+                  void switchLiveChannel(1);
+                  return;
+                }
+                seekBy(SEEK_STEP_SECONDS);
+              }}
+              aria-label={isLive ? 'Next Channel' : 'Forward 10 seconds'}
+              title={isLive ? 'Next Channel' : 'Forward 10 seconds'}
+            >
+              <PlayerIcon name="forward" />
+            </button>
+          </div>
+        ) : null}
+
         {isHudVisible ? (
           <footer style={playerHudDock}>
             <div style={playerProgressWrap}>
-              {isLive && currentProgram ? (
+              {isLive && (currentProgram || nextProgram) ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px', fontSize: '16px' }}>
-                  <span style={{ color: '#ff2438', fontWeight: 800 }}>
-                    {currentProgram.title}
+                  <span style={{ color: '#e50914', fontWeight: 800 }}>
+                    {currentProgram ? currentProgram.title : 'Guide unavailable for this channel'}
                   </span>
-                  <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontWeight: 700 }}>
-                    {formatEpgTime(currentProgram.startTime)} - {formatEpgTime(currentProgram.endTime)}
-                  </span>
+                  {currentProgram && (
+                    <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontWeight: 700 }}>
+                      {formatEpgTime(currentProgram.startTime)} - {formatEpgTime(currentProgram.endTime)}
+                    </span>
+                  )}
                 </div>
               ) : null}
 
               <div style={playerProgress} aria-hidden="true">
                 {isLive && currentProgram ? (
-                  <div style={{ ...playerProgressPlayed, width: `${currentProgramProgress * 100}%`, background: '#ff2438' }} />
+                  <div style={{ ...playerProgressPlayed, width: `${currentProgramProgress * 100}%`, background: '#e50914' }} />
                 ) : isLive ? (
-                  <div style={{ ...playerProgressPlayed, width: '100%', background: '#ff2438' }} />
+                  <div style={{ ...playerProgressPlayed, width: '100%', background: '#e50914' }} />
                 ) : (
                   <>
                     <div style={{ ...playerProgressBuffered, width: `${bufferPercent * 100}%` }} />
@@ -4324,7 +4532,7 @@ function PlayerScreen() {
                   {isLive ? (
                     <>
                       <span />
-                      <span style={{ color: '#ff2438', fontWeight: 800 }}>LIVE</span>
+                      <span style={{ color: '#e50914', fontWeight: 800 }}>LIVE</span>
                     </>
                   ) : (
                     <>
@@ -4336,96 +4544,98 @@ function PlayerScreen() {
               )}
             </div>
 
-            <div style={playerControls}>
-              <button
-                ref={(node) => {
-                  buttonRefs.current.back = node;
-                }}
-                type="button"
-                style={mergeStyle(playerButton, focusedId === 'back' && playerButtonActive)}
-                onFocus={() => setFocusedId('back')}
-                onClick={closePlayer}
-                aria-label="Back"
-                title="Back"
-              >
-                <PlayerIcon name="back" />
-              </button>
+            {/* Bottom Row containing Rail on the left and Utilities on the right */}
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {isLive && playback.liveQueue && playback.liveQueue.length > 0 && (
+                  <div 
+                    style={playerChannelRail} 
+                    className="player-channel-rail"
+                  >
+                    {playback.liveQueue.map((chan: any, idx: number) => {
+                      const isActive = chan.id === playback.id;
+                      const isFocused = hudFocusSection === 'rail' && focusedChannelIdx === idx;
+                      return (
+                        <button
+                          key={chan.id}
+                          ref={(node) => {
+                            channelRefs.current[idx] = node;
+                          }}
+                          type="button"
+                          className="player-channel-card"
+                          style={mergeStyle(
+                            playerChannelCard,
+                            isActive && playerChannelCardActive,
+                            isFocused && playerChannelCardFocused
+                          )}
+                          onFocus={() => {
+                            setFocusedChannelIdx(idx);
+                            setHudFocusSection('rail');
+                            revealLiveHud();
+                          }}
+                          onClick={() => handleCardClick(idx)}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', boxSizing: 'border-box' }}>
+                            {(chan.artwork || chan.logo) ? (
+                              <img 
+                                src={chan.artwork || chan.logo} 
+                                alt="" 
+                                style={playerChannelCardLogo} 
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : null}
+                            <span style={playerChannelCardTitle}>{chan.title}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-              <button
-                ref={(node) => {
-                  buttonRefs.current.rewind = node;
-                }}
-                type="button"
-                style={mergeStyle(playerButton, focusedId === 'rewind' && playerButtonActive)}
-                onFocus={() => setFocusedId('rewind')}
-                onClick={() => {
-                  if (isLive) {
-                    void switchLiveChannel(-1);
-                    return;
-                  }
+              <div style={mergeStyle(playerControls, { width: 'auto', justifyContent: 'flex-end', gap: '16px', padding: '0 20px', flexShrink: 0 })}>
+                <button
+                  ref={(node) => {
+                    buttonRefs.current.back = node;
+                  }}
+                  type="button"
+                  style={mergeStyle(playerButton, focusedId === 'back' && playerButtonActive)}
+                  onFocus={() => {
+                    setFocusedId('back');
+                    setHudFocusSection('bottom');
+                  }}
+                  onClick={closePlayer}
+                  aria-label="Back"
+                  title="Back"
+                >
+                  <PlayerIcon name="back" />
+                </button>
 
-                  seekBy(-SEEK_STEP_SECONDS);
-                }}
-                aria-label={isLive ? 'Prev Channel' : 'Rewind 10 seconds'}
-                title={isLive ? 'Prev Channel' : 'Rewind 10 seconds'}
-              >
-                <PlayerIcon name="rewind" />
-              </button>
-
-              <button
-                ref={(node) => {
-                  buttonRefs.current.play = node;
-                }}
-                type="button"
-                style={mergeStyle(playerButton, playerButtonPrimary, focusedId === 'play' && playerButtonActive)}
-                onFocus={() => setFocusedId('play')}
-                onClick={togglePlayback}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                title={isPlaying ? 'Pause' : 'Play'}
-              >
-                <PlayerIcon name={playIconName} />
-              </button>
-
-              <button
-                ref={(node) => {
-                  buttonRefs.current.forward = node;
-                }}
-                type="button"
-                style={mergeStyle(playerButton, focusedId === 'forward' && playerButtonActive)}
-                onFocus={() => setFocusedId('forward')}
-                onClick={() => {
-                  if (isLive) {
-                    void switchLiveChannel(1);
-                    return;
-                  }
-
-                  seekBy(SEEK_STEP_SECONDS);
-                }}
-                aria-label={isLive ? 'Next Channel' : 'Forward 10 seconds'}
-                title={isLive ? 'Next Channel' : 'Forward 10 seconds'}
-              >
-                <PlayerIcon name="forward" />
-              </button>
-
-              <button
-                ref={(node) => {
-                  buttonRefs.current.settings = node;
-                }}
-                type="button"
-                style={mergeStyle(playerButton, focusedId === 'settings' && playerButtonActive)}
-                onFocus={() => setFocusedId('settings')}
-                onClick={() => {
-                  setShowSettings(true);
-                  setSettingsView('root');
-                  setActiveCategory('subtitles');
-                  setSettingsFocusSection('categories');
-                  setFocusedOptionIdx(0);
-                }}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <PlayerIcon name="settings" />
-              </button>
+                <button
+                  ref={(node) => {
+                    buttonRefs.current.settings = node;
+                  }}
+                  type="button"
+                  style={mergeStyle(playerButton, focusedId === 'settings' && playerButtonActive)}
+                  onFocus={() => {
+                    setFocusedId('settings');
+                    setHudFocusSection('bottom');
+                  }}
+                  onClick={() => {
+                    setShowSettings(true);
+                    setSettingsView('root');
+                    setActiveCategory('subtitles');
+                    setSettingsFocusSection('categories');
+                    setFocusedOptionIdx(0);
+                  }}
+                  aria-label="Settings"
+                  title="Settings"
+                >
+                  <PlayerIcon name="settings" />
+                </button>
+              </div>
             </div>
           </footer>
         ) : null}
