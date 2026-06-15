@@ -52,7 +52,23 @@ import {
   playerVideo,
   playerVideoContain,
   playerVideoCover,
-  playerVideoFill
+  playerVideoFill,
+  netflixPanelStyle,
+  netflixLeftColumnStyle,
+  netflixRightColumnStyle,
+  netflixBrandHeaderStyle,
+  netflixCategoryButtonStyle,
+  netflixCategoryButtonActiveStyle,
+  netflixCategoryButtonFocusedStyle,
+  netflixCategoryTitleStyle,
+  netflixCategoryValueStyle,
+  netflixOptionButtonStyle,
+  netflixOptionButtonActiveStyle,
+  netflixOptionButtonFocusedStyle,
+  netflixCheckmarkStyle,
+  netflixOptionsListStyle,
+  netflixNoOptionsStyle,
+  netflixClosePromptStyle
 } from '../../styles/lgTvStyles';
 import { useAppStore } from '../../store/appStore';
 import {
@@ -954,6 +970,79 @@ function PlayerScreen() {
   const [qualities, setQualities] = useState<QualityTrackInfo[]>([]);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | number>('off');
   const [activeQualityId, setActiveQualityId] = useState<string | number>('auto');
+
+  type SettingsCategory = 'subtitles' | 'quality' | 'speed' | 'aspect' | 'mute' | 'close';
+
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>('subtitles');
+  const [settingsFocusSection, setSettingsFocusSection] = useState<'categories' | 'options'>('categories');
+  const [focusedOptionIdx, setFocusedOptionIdx] = useState(0);
+
+  const categoryRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const getOptionsForCategory = (category: SettingsCategory) => {
+    switch (category) {
+      case 'subtitles':
+        return [{ id: 'off', label: 'Off' }, ...subtitles.map(s => ({ id: s.id, label: s.label }))];
+      case 'quality':
+        return [{ id: 'auto', label: getActiveQualityLabel() }, ...qualities.map(q => ({ id: q.id, label: q.label }))];
+      case 'speed':
+        return SPEED_OPTIONS.map(r => ({ id: r, label: `${r}x` }));
+      case 'aspect':
+        return ASPECT_OPTIONS.map(m => ({ id: m, label: m }));
+      case 'mute':
+        return [{ id: 'on', label: 'On' }, { id: 'off', label: 'Off' }];
+      default:
+        return [];
+    }
+  };
+
+  const isOptionActive = (category: SettingsCategory, optionId: string | number) => {
+    switch (category) {
+      case 'subtitles':
+        return activeSubtitleId === optionId;
+      case 'quality':
+        return activeQualityId === optionId;
+      case 'speed':
+        return playbackRate === Number(optionId);
+      case 'aspect':
+        return aspectMode === optionId;
+      case 'mute':
+        return (isMuted ? 'on' : 'off') === optionId;
+      default:
+        return false;
+    }
+  };
+
+  const handleOptionSelect = (category: SettingsCategory, optionId: string | number) => {
+    switch (category) {
+      case 'subtitles':
+        handleSubtitleChange(optionId);
+        break;
+      case 'quality':
+        handleQualityChange(optionId);
+        break;
+      case 'speed':
+        setPlaybackRate(Number(optionId));
+        if (videoRef.current) {
+          videoRef.current.playbackRate = Number(optionId);
+        }
+        break;
+      case 'aspect':
+        setAspectMode(optionId as any);
+        break;
+      case 'mute':
+        const targetMute = optionId === 'on';
+        setIsMuted(targetMute);
+        if (videoRef.current) {
+          videoRef.current.muted = targetMute;
+          if (!targetMute) {
+            videoRef.current.volume = 1;
+          }
+        }
+        break;
+    }
+  };
 
   const handleNativeTracks = useCallback(() => {
     const video = videoRef.current;
@@ -3922,33 +4011,75 @@ function PlayerScreen() {
       }
 
       if (showSettings) {
-        const focusables = Array.from(settingsPanelRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? []);
-        const currentIndex = focusables.findIndex((button) => button === document.activeElement);
-
         if (event.key === 'Escape' || event.key === 'Backspace') {
           event.preventDefault();
           setShowSettings(false);
           setSettingsView('root');
+          focusButton('settings');
           return;
         }
 
-        if (event.key === 'Enter' && currentIndex >= 0) {
-          event.preventDefault();
-          focusables[currentIndex]?.click();
-          return;
-        }
+        if (settingsFocusSection === 'categories') {
+          const categories: SettingsCategory[] = ['subtitles', 'quality', 'speed', 'aspect', 'mute', 'close'];
+          const currentIndex = categories.indexOf(activeCategory);
 
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-          event.preventDefault();
-          if (focusables.length === 0) {
-            return;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            const nextIndex = (currentIndex + step + categories.length) % categories.length;
+            const nextCategory = categories[nextIndex]!;
+            setActiveCategory(nextCategory);
+            categoryRefs.current[nextCategory]?.focus();
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            if (activeCategory !== 'close') {
+              const opts = getOptionsForCategory(activeCategory);
+              if (opts.length > 0) {
+                setSettingsFocusSection('options');
+                setFocusedOptionIdx(0);
+                setTimeout(() => {
+                  optionRefs.current[0]?.focus();
+                }, 0);
+              }
+            }
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (activeCategory === 'close') {
+              setShowSettings(false);
+              focusButton('settings');
+            } else {
+              const opts = getOptionsForCategory(activeCategory);
+              if (opts.length > 0) {
+                setSettingsFocusSection('options');
+                setFocusedOptionIdx(0);
+                setTimeout(() => {
+                  optionRefs.current[0]?.focus();
+                }, 0);
+              }
+            }
           }
+        } else {
+          const optionsList = getOptionsForCategory(activeCategory);
+          const optionsCount = optionsList.length;
 
-          const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-          const nextIndex = currentIndex >= 0
-            ? (currentIndex + step + focusables.length) % focusables.length
-            : 0;
-          focusables[nextIndex]?.focus();
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (optionsCount > 0) {
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              const nextIndex = (focusedOptionIdx + step + optionsCount) % optionsCount;
+              setFocusedOptionIdx(nextIndex);
+              optionRefs.current[nextIndex]?.focus();
+            }
+          } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            setSettingsFocusSection('categories');
+            categoryRefs.current[activeCategory]?.focus();
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (optionsCount > 0 && optionRefs.current[focusedOptionIdx]) {
+              optionRefs.current[focusedOptionIdx]?.click();
+            }
+          }
         }
         return;
       }
@@ -4019,7 +4150,24 @@ function PlayerScreen() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closePlayer, focusedId, isHudVisible, isLive, playback, revealLiveHud, seekBy, showHUD, showSettings, settingsView, switchLiveChannel]);
+  }, [
+    closePlayer,
+    focusedId,
+    isHudVisible,
+    isLive,
+    playback,
+    revealLiveHud,
+    seekBy,
+    showHUD,
+    showSettings,
+    settingsView,
+    switchLiveChannel,
+    activeCategory,
+    settingsFocusSection,
+    focusedOptionIdx,
+    subtitles,
+    qualities
+  ]);
 
   useEffect(() => {
     if (isHudVisible) {
@@ -4044,9 +4192,12 @@ function PlayerScreen() {
       return;
     }
 
-    const firstButton = settingsPanelRef.current?.querySelector<HTMLButtonElement>('button');
-    firstButton?.focus();
-  }, [showSettings, settingsView]);
+    if (settingsFocusSection === 'categories') {
+      categoryRefs.current[activeCategory]?.focus();
+    } else {
+      optionRefs.current[focusedOptionIdx]?.focus();
+    }
+  }, [showSettings, settingsFocusSection, activeCategory, focusedOptionIdx]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -4263,7 +4414,13 @@ function PlayerScreen() {
                 type="button"
                 style={mergeStyle(playerButton, focusedId === 'settings' && playerButtonActive)}
                 onFocus={() => setFocusedId('settings')}
-                onClick={() => setShowSettings(true)}
+                onClick={() => {
+                  setShowSettings(true);
+                  setSettingsView('root');
+                  setActiveCategory('subtitles');
+                  setSettingsFocusSection('categories');
+                  setFocusedOptionIdx(0);
+                }}
                 aria-label="Settings"
                 title="Settings"
               >
@@ -4276,155 +4433,143 @@ function PlayerScreen() {
 
       {showSettings ? (
         <div className="player-settings" style={playerSettings} role="dialog" aria-modal="true" aria-label="Player settings">
-          <div className="player-settings-panel" style={playerSettingsPanel} ref={settingsPanelRef}>
-            {settingsView === 'root' ? (
-              <>
-                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('speed')}>
-                  <span>Speed</span>
-                  <strong>{playbackRate}x</strong>
-                </button>
-                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('aspect')}>
-                  <span>Aspect</span>
-                  <strong>{aspectMode}</strong>
-                </button>
-                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('subtitles')}>
-                  <span>Subtitles</span>
-                  <strong>{activeSubtitleId === 'off' ? 'Off' : subtitles.find((s) => s.id === activeSubtitleId)?.label || 'On'}</strong>
-                </button>
-                <button type="button" style={mergeStyle(playerSettingsItem, playerSettingsItemRow)} onClick={() => setSettingsView('quality')}>
-                  <span>Quality</span>
-                  <strong>{getActiveQualityLabel()}</strong>
-                </button>
-                <button
-                  type="button"
-                  style={mergeStyle(playerSettingsItem, playerSettingsItemRow)}
-                  onClick={() => {
-                    setIsMuted((current) => !current);
-                    if (videoRef.current) {
-                      videoRef.current.muted = !videoRef.current.muted;
-                      if (!videoRef.current.muted) {
-                        videoRef.current.volume = 1;
+          <div className="player-settings-panel" style={netflixPanelStyle} ref={settingsPanelRef}>
+            {/* Left Column: Categories */}
+            <div style={netflixLeftColumnStyle}>
+              <div style={netflixBrandHeaderStyle}>Settings</div>
+              {(['subtitles', 'quality', 'speed', 'aspect', 'mute'] as const).map((category) => {
+                const label = category === 'mute' ? 'Audio Mute' : category.charAt(0).toUpperCase() + category.slice(1);
+                let valueStr = '';
+                if (category === 'subtitles') {
+                  valueStr = activeSubtitleId === 'off' ? 'Off' : subtitles.find((s) => s.id === activeSubtitleId)?.label || 'On';
+                } else if (category === 'quality') {
+                  valueStr = getActiveQualityLabel();
+                } else if (category === 'speed') {
+                  valueStr = `${playbackRate}x`;
+                } else if (category === 'aspect') {
+                  valueStr = aspectMode;
+                } else if (category === 'mute') {
+                  valueStr = isMuted ? 'On' : 'Off';
+                }
+
+                const isActive = activeCategory === category;
+                const isFocused = settingsFocusSection === 'categories' && isActive;
+
+                return (
+                  <button
+                    key={category}
+                    ref={(node) => {
+                      categoryRefs.current[category] = node;
+                    }}
+                    type="button"
+                    className="netflix-category-btn"
+                    style={mergeStyle(
+                      netflixCategoryButtonStyle,
+                      isActive && netflixCategoryButtonActiveStyle,
+                      isFocused && netflixCategoryButtonFocusedStyle,
+                      isActive && isFocused && { boxShadow: 'inset 4px 0 0 0 #e50914, inset 0 0 0 2px #e50914' }
+                    )}
+                    onFocus={() => {
+                      setActiveCategory(category);
+                      setSettingsFocusSection('categories');
+                    }}
+                    onClick={() => {
+                      const opts = getOptionsForCategory(category);
+                      if (opts.length > 0) {
+                        setSettingsFocusSection('options');
+                        setFocusedOptionIdx(0);
+                        setTimeout(() => {
+                          optionRefs.current[0]?.focus();
+                        }, 0);
                       }
-                    }
-                  }}
-                >
-                  <span>Mute</span>
-                  <strong>{isMuted ? 'On' : 'Off'}</strong>
-                </button>
-                <button
-                  type="button"
-                  className="player-settings-close"
-                  style={mergeStyle(playerSettingsItem, playerSettingsItemClose)}
-                  onClick={() => {
-                    setShowSettings(false);
-                    setSettingsView('root');
-                    focusButton('play');
-                  }}
-                >
-                  Close
-                </button>
-              </>
-            ) : settingsView === 'speed' ? (
-              <>
-                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
-                  Back
-                </button>
-                <div style={playerSettingsList}>
-                  {SPEED_OPTIONS.map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, playbackRate === rate && playerSettingsItemActive)}
-                      onClick={() => {
-                        setPlaybackRate(rate);
-                        if (videoRef.current) {
-                          videoRef.current.playbackRate = rate;
-                        }
-                      }}
-                    >
-                      {rate}x
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : settingsView === 'aspect' ? (
-              <>
-                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
-                  Back
-                </button>
-                <div style={playerSettingsList}>
-                  {ASPECT_OPTIONS.map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, aspectMode === mode && playerSettingsItemActive)}
-                      onClick={() => setAspectMode(mode)}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : settingsView === 'subtitles' ? (
-              <>
-                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
-                  Back
-                </button>
-                <div style={playerSettingsList}>
-                  <button
-                    type="button"
-                    style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeSubtitleId === 'off' && playerSettingsItemActive)}
-                    onClick={() => handleSubtitleChange('off')}
+                    }}
                   >
-                    Off
+                    <span style={netflixCategoryTitleStyle}>{label}</span>
+                    <span style={netflixCategoryValueStyle}>{valueStr}</span>
                   </button>
-                  {subtitles.map((track) => (
-                    <button
-                      key={track.id}
-                      type="button"
-                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeSubtitleId === track.id && playerSettingsItemActive)}
-                      onClick={() => handleSubtitleChange(track.id)}
-                    >
-                      {track.label}
-                    </button>
-                  ))}
-                  {subtitles.length === 0 && (
-                    <button
-                      type="button"
-                      disabled
-                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, { opacity: 0.4, cursor: 'default' })}
-                    >
-                      None Available
-                    </button>
-                  )}
+                );
+              })}
+
+              <div style={{ marginTop: 'auto', height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '16px 0 8px 0' }} />
+              <button
+                ref={(node) => {
+                  categoryRefs.current['close'] = node;
+                }}
+                type="button"
+                className="netflix-category-btn"
+                style={mergeStyle(
+                  netflixCategoryButtonStyle,
+                  activeCategory === 'close' && netflixCategoryButtonActiveStyle,
+                  settingsFocusSection === 'categories' && activeCategory === 'close' && netflixCategoryButtonFocusedStyle
+                )}
+                onFocus={() => {
+                  setActiveCategory('close');
+                  setSettingsFocusSection('categories');
+                }}
+                onClick={() => {
+                  setShowSettings(false);
+                  focusButton('settings');
+                }}
+              >
+                <span style={{ fontWeight: 800 }}>Close</span>
+              </button>
+            </div>
+
+            {/* Right Column: Options list */}
+            <div style={netflixRightColumnStyle}>
+              {activeCategory !== 'close' ? (
+                <>
+                  <div style={netflixBrandHeaderStyle}>
+                    {activeCategory === 'mute' ? 'Audio Mute Options' : `${activeCategory.toUpperCase()} Options`}
+                  </div>
+                  <div style={netflixOptionsListStyle}>
+                    {getOptionsForCategory(activeCategory).map((opt, idx) => {
+                      const isActive = isOptionActive(activeCategory, opt.id);
+                      const isFocused = settingsFocusSection === 'options' && focusedOptionIdx === idx;
+
+                      return (
+                        <button
+                          key={opt.id}
+                          ref={(node) => {
+                            optionRefs.current[idx] = node;
+                          }}
+                          type="button"
+                          className="netflix-option-btn"
+                          style={mergeStyle(
+                            netflixOptionButtonStyle,
+                            isActive && netflixOptionButtonActiveStyle,
+                            isFocused && netflixOptionButtonFocusedStyle
+                          )}
+                          onFocus={() => {
+                            setSettingsFocusSection('options');
+                            setFocusedOptionIdx(idx);
+                          }}
+                          onClick={() => {
+                            handleOptionSelect(activeCategory, opt.id);
+                          }}
+                        >
+                          <span>{opt.label}</span>
+                          {isActive && <span style={netflixCheckmarkStyle}>✓</span>}
+                        </button>
+                      );
+                    })}
+
+                    {activeCategory === 'subtitles' && subtitles.length === 0 && (
+                      <div style={netflixNoOptionsStyle}>No subtitle tracks available</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={netflixClosePromptStyle}>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#ffffff', marginBottom: '12px' }}>
+                    Exit Settings
+                  </div>
+                  <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '15px' }}>
+                    Press Enter or select close to return to playback controls.
+                  </div>
                 </div>
-              </>
-            ) : (
-              <>
-                <button type="button" style={playerSettingsBack} onClick={() => setSettingsView('root')}>
-                  Back
-                </button>
-                <div style={playerSettingsList}>
-                  <button
-                    type="button"
-                    style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeQualityId === 'auto' && playerSettingsItemActive)}
-                    onClick={() => handleQualityChange('auto')}
-                  >
-                    Auto
-                  </button>
-                  {qualities.map((q) => (
-                    <button
-                      key={q.id}
-                      type="button"
-                      style={mergeStyle(playerSettingsItem, playerSettingsChoice, activeQualityId === q.id && playerSettingsItemActive)}
-                      onClick={() => handleQualityChange(q.id)}
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
         </div>
       ) : null}

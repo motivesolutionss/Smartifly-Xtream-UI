@@ -4160,13 +4160,13 @@ textarea:focus {
   -ms-overflow-style: none !important;
 }
 
-/* Player settings panel buttons focus state */
-.player-settings-panel button:focus {
-  outline: none !important;
-  box-shadow: 0 0 0 3px rgba(245, 208, 106, 0.8) !important;
+/* Player settings panel buttons reset to prevent user-agent borders, transition repaint lag, and custom focus outlines */
+.player-settings-panel button {
+  border: none !important;
+  transition: none !important;
 }
 
-.player-settings-panel button:not(.player-settings-close):focus {
-  background: rgba(255, 255, 255, 0.2) !important;
+.player-settings-panel button:focus {
+  outline: none !important;
 }
 

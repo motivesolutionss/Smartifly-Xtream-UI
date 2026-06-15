@@ -2205,3 +2205,155 @@ export const bootScreen: CSSProperties = {
     'radial-gradient(circle at 50% 44%, rgba(229, 9, 20, 0.16), transparent 28%), linear-gradient(145deg, #040507 0%, #0b0f15 52%, #020304 100%)',
   boxSizing: 'border-box'
 };
+
+
+export const netflixPanelStyle: CSSProperties = {
+  width: '840px',
+  height: '460px',
+  borderRadius: '16px',
+  background: 'rgba(20, 20, 20, 0.98)',
+  boxShadow: '0 24px 60px rgba(0, 0, 0, 0.8)',
+  display: 'flex',
+  flexDirection: 'row',
+  boxSizing: 'border-box',
+  overflow: 'hidden',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)'
+};
+
+export const netflixLeftColumnStyle: CSSProperties = {
+  width: '280px',
+  height: '100%',
+  borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '24px 20px',
+  boxSizing: 'border-box'
+};
+
+export const netflixRightColumnStyle: CSSProperties = {
+  flex: 1,
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '24px 30px',
+  boxSizing: 'border-box',
+  background: 'rgba(10, 10, 10, 0.3)'
+};
+
+export const netflixBrandHeaderStyle: CSSProperties = {
+  fontSize: '12px',
+  fontWeight: 900,
+  letterSpacing: '2px',
+  color: '#e50914',
+  textTransform: 'uppercase',
+  marginBottom: '16px',
+  opacity: 0.9
+};
+
+export const netflixCategoryButtonStyle: CSSProperties = {
+  border: 0,
+  background: 'transparent',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  justifyContent: 'center',
+  padding: '12px 18px',
+  width: '100%',
+  borderRadius: '10px',
+  marginBottom: '4px',
+  cursor: 'pointer',
+  textAlign: 'left',
+  color: 'rgba(255, 255, 255, 0.6)',
+  boxSizing: 'border-box'
+};
+
+export const netflixCategoryButtonActiveStyle: CSSProperties = {
+  color: '#ffffff',
+  background: 'rgba(255, 255, 255, 0.05)',
+  boxShadow: 'inset 4px 0 0 0 #e50914',
+  borderRadius: '0 10px 10px 0',
+  paddingLeft: '14px'
+};
+
+export const netflixCategoryButtonFocusedStyle: CSSProperties = {
+  outline: 'none',
+  background: 'rgba(255, 255, 255, 0.12)',
+  boxShadow: 'inset 0 0 0 2px #e50914',
+  color: '#ffffff'
+};
+
+export const netflixCategoryTitleStyle: CSSProperties = {
+  fontSize: '16px',
+  fontWeight: 700
+};
+
+export const netflixCategoryValueStyle: CSSProperties = {
+  fontSize: '12px',
+  opacity: 0.8,
+  marginTop: '2px',
+  fontWeight: 500
+};
+
+export const netflixOptionButtonStyle: CSSProperties = {
+  border: 0,
+  background: 'transparent',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '14px 20px',
+  width: '100%',
+  borderRadius: '10px',
+  marginBottom: '6px',
+  cursor: 'pointer',
+  textAlign: 'left',
+  color: 'rgba(255, 255, 255, 0.7)',
+  fontSize: '16px',
+  fontWeight: 600,
+  boxSizing: 'border-box'
+};
+
+export const netflixOptionButtonActiveStyle: CSSProperties = {
+  color: '#e50914',
+  background: 'rgba(229, 9, 20, 0.08)'
+};
+
+export const netflixOptionButtonFocusedStyle: CSSProperties = {
+  outline: 'none',
+  background: '#e50914',
+  color: '#ffffff',
+  boxShadow: 'none'
+};
+
+export const netflixCheckmarkStyle: CSSProperties = {
+  fontSize: '18px',
+  fontWeight: 900
+};
+
+export const netflixOptionsListStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  overflowY: 'auto',
+  flex: 1,
+  paddingRight: '6px',
+  boxSizing: 'border-box',
+  ...hideScrollbar
+};
+
+export const netflixNoOptionsStyle: CSSProperties = {
+  padding: '20px',
+  textAlign: 'center',
+  color: 'rgba(255, 255, 255, 0.35)',
+  fontSize: '15px',
+  fontWeight: 500
+};
+
+export const netflixClosePromptStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100%',
+  textAlign: 'center'
+};
