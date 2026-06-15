@@ -238,16 +238,19 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   const storedFocusId = useAppStore((state) => state.moviesFocusId);
   const storedLastFocusedCardId = useAppStore((state) => state.moviesLastFocusedCardId);
   const setMoviesBrowseState = useAppStore((state) => state.setMoviesBrowseState);
-  const [categories, setCategories] = useState<MovieCategory[]>([]);
-  const [movies, setMovies] = useState<MovieCard[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(storedCategoryId);
-  const [focusId, setFocusId] = useState(storedFocusId);
+  const moviesCatalog = useAppStore((state) => state.moviesCatalog);
+  const setMoviesCatalog = useAppStore((state) => state.setMoviesCatalog);
+
+  const [categories, setCategories] = useState<MovieCategory[]>(() => moviesCatalog?.categories ?? []);
+  const [movies, setMovies] = useState<MovieCard[]>(() => moviesCatalog?.movies ?? []);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(() => moviesCatalog?.selectedCategoryId ?? storedCategoryId);
+  const [focusId, setFocusId] = useState(() => moviesCatalog?.focusId ?? storedFocusId);
   const [visibleCount, setVisibleCount] = useState(MOVIE_BATCH_SIZE);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => !moviesCatalog);
   const categoryRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const lastFocusedMovieId = useRef<string | null>(storedLastFocusedCardId || null);
-  const pendingRestoreFocusId = useRef<string>(storedFocusId);
+  const pendingRestoreFocusId = useRef<string>(moviesCatalog?.focusId ?? storedFocusId);
 
   useEffect(() => {
     const username = session?.username?.trim();
@@ -265,7 +268,9 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
     const api = createXtreamApi(portalBaseUrl);
 
     async function loadMovies() {
-      setIsLoading(true);
+      if (!moviesCatalog) {
+        setIsLoading(true);
+      }
       try {
         const [categoriesResult, moviesResult] = await Promise.allSettled([
           api.getVodCategories(username, password),
@@ -286,7 +291,7 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
         setFocusId(nextCatalog.focusId);
         pendingRestoreFocusId.current = nextCatalog.focusId;
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !moviesCatalog) {
           setCategories([]);
           setMovies([]);
         }
@@ -359,6 +364,17 @@ function MoviesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
       lastFocusedCardId: lastFocusedMovieId.current ?? ''
     });
   }, [focusId, selectedCategoryId, setMoviesBrowseState]);
+
+  useEffect(() => {
+    if (categories.length > 0 && movies.length > 0) {
+      setMoviesCatalog({
+        categories,
+        movies,
+        selectedCategoryId,
+        focusId
+      });
+    }
+  }, [categories, movies, selectedCategoryId, focusId, setMoviesCatalog]);
 
   useEffect(() => {
     if (currentDestination !== 'movies' || !pendingRestoreFocusId.current) {

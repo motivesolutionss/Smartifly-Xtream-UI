@@ -190,16 +190,19 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
   const storedFocusId = useAppStore((state) => state.seriesFocusId);
   const storedLastFocusedCardId = useAppStore((state) => state.seriesLastFocusedCardId);
   const setSeriesBrowseState = useAppStore((state) => state.setSeriesBrowseState);
-  const [categories, setCategories] = useState<SeriesCategory[]>([]);
-  const [seriesItems, setSeriesItems] = useState<SeriesCard[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(storedCategoryId);
-  const [focusId, setFocusId] = useState(storedFocusId);
+  const seriesCatalog = useAppStore((state) => state.seriesCatalog);
+  const setSeriesCatalog = useAppStore((state) => state.setSeriesCatalog);
+
+  const [categories, setCategories] = useState<SeriesCategory[]>(() => seriesCatalog?.categories ?? []);
+  const [seriesItems, setSeriesItems] = useState<SeriesCard[]>(() => seriesCatalog?.series ?? []);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(() => seriesCatalog?.selectedCategoryId ?? storedCategoryId);
+  const [focusId, setFocusId] = useState(() => seriesCatalog?.focusId ?? storedFocusId);
   const [visibleCount, setVisibleCount] = useState(SERIES_BATCH_SIZE);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => !seriesCatalog);
   const categoryRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const lastFocusedSeriesId = useRef<string | null>(storedLastFocusedCardId || null);
-  const pendingRestoreFocusId = useRef<string>(storedFocusId);
+  const pendingRestoreFocusId = useRef<string>(seriesCatalog?.focusId ?? storedFocusId);
 
   useEffect(() => {
     const username = session?.username?.trim();
@@ -217,7 +220,9 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
     const api = createXtreamApi(portalBaseUrl);
 
     async function loadSeries() {
-      setIsLoading(true);
+      if (!seriesCatalog) {
+        setIsLoading(true);
+      }
       try {
         const [categoriesResult, seriesResult] = await Promise.allSettled([
           api.getSeriesCategories(username, password),
@@ -238,7 +243,7 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
         setFocusId(nextCatalog.focusId);
         pendingRestoreFocusId.current = nextCatalog.focusId;
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !seriesCatalog) {
           setCategories([]);
           setSeriesItems([]);
         }
@@ -311,6 +316,17 @@ function SeriesScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegio
       lastFocusedCardId: lastFocusedSeriesId.current ?? ''
     });
   }, [focusId, selectedCategoryId, setSeriesBrowseState]);
+
+  useEffect(() => {
+    if (categories.length > 0 && seriesItems.length > 0) {
+      setSeriesCatalog({
+        categories,
+        series: seriesItems,
+        selectedCategoryId,
+        focusId
+      });
+    }
+  }, [categories, seriesItems, selectedCategoryId, focusId, setSeriesCatalog]);
 
   useEffect(() => {
     if (currentDestination !== 'series' || !pendingRestoreFocusId.current) {

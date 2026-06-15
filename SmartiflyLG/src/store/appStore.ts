@@ -97,6 +97,27 @@ type LoginInput = {
   password: string;
 };
 
+export type ProcessedLiveCatalog = {
+  categories: any[];
+  channels: any[];
+  selectedCategoryId: string;
+  focusId: string;
+};
+
+export type ProcessedMoviesCatalog = {
+  categories: any[];
+  movies: any[];
+  selectedCategoryId: string;
+  focusId: string;
+};
+
+export type ProcessedSeriesCatalog = {
+  categories: any[];
+  series: any[];
+  selectedCategoryId: string;
+  focusId: string;
+};
+
 export type BootstrapStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type OnboardingScreen = 'welcome' | 'login' | 'register';
 export type ProfileSelectionSource = 'post-login' | 'home-sidebar';
@@ -111,6 +132,9 @@ type AppState = {
   bootstrapStatus: BootstrapStatus;
   bootstrapError: string | null;
   homeBootstrapData: HomeBootstrapData | null;
+  liveCatalog: ProcessedLiveCatalog | null;
+  moviesCatalog: ProcessedMoviesCatalog | null;
+  seriesCatalog: ProcessedSeriesCatalog | null;
   currentDestination: AppDestination;
   sidebarDestination: AppDestination;
   sidebarFocusTarget: 'profile' | AppDestination | 'settings';
@@ -153,6 +177,9 @@ type AppState = {
   setMoviesBrowseState: (state: { categoryId?: string, focusId?: string, lastFocusedCardId?: string }) => void;
   setSeriesBrowseState: (state: { categoryId?: string, focusId?: string, lastFocusedCardId?: string }) => void;
   setLiveBrowseState: (state: { categoryId?: string, focusId?: string, lastFocusedCardId?: string }) => void;
+  setLiveCatalog: (catalog: ProcessedLiveCatalog | null) => void;
+  setMoviesCatalog: (catalog: ProcessedMoviesCatalog | null) => void;
+  setSeriesCatalog: (catalog: ProcessedSeriesCatalog | null) => void;
   setSearchQuery: (query: string) => void;
   setSearchFocusId: (focusId: string) => void;
   setDetailsReturnState: (state: { focusId?: string, selectedSeasonId?: string }) => void;
@@ -283,6 +310,23 @@ function persistSelectedProfileId(profileId: string) {
   writeString(SELECTED_PROFILE_KEY, profileId);
 }
 
+function getEmptyCatalogState() {
+  return {
+    moviesCategoryId: '',
+    moviesFocusId: '',
+    moviesLastFocusedCardId: '',
+    seriesCategoryId: '',
+    seriesFocusId: '',
+    seriesLastFocusedCardId: '',
+    liveCategoryId: '',
+    liveFocusId: '',
+    liveLastFocusedCardId: '',
+    liveCatalog: null,
+    moviesCatalog: null,
+    seriesCatalog: null
+  };
+}
+
 function applyAuthenticatedState(setter: Parameters<typeof create<AppState>>[0], session: Session, profiles: UserProfile[]) {
   persistSessionState(session, profiles);
   setter({
@@ -299,17 +343,9 @@ function applyAuthenticatedState(setter: Parameters<typeof create<AppState>>[0],
     sidebarDestination: 'home',
     sidebarFocusTarget: 'home',
     homeFocusId: 'play',
-    moviesCategoryId: '',
-    moviesFocusId: '',
-    moviesLastFocusedCardId: '',
-    seriesCategoryId: '',
-    seriesFocusId: '',
-    seriesLastFocusedCardId: '',
-    liveCategoryId: '',
-    liveFocusId: '',
-    liveLastFocusedCardId: '',
     isAuthenticating: false,
-    statusMessage: `Connected as ${session.username}`
+    statusMessage: `Connected as ${session.username}`,
+    ...getEmptyCatalogState()
   });
 }
 
@@ -420,6 +456,9 @@ export const useAppStore = create<AppState>((set) => ({
   bootstrapStatus: initialHomeBootstrapData ? 'ready' : 'idle',
   bootstrapError: null,
   homeBootstrapData: initialHomeBootstrapData,
+  liveCatalog: null,
+  moviesCatalog: null,
+  seriesCatalog: null,
   currentDestination: 'home',
   sidebarDestination: 'home',
   sidebarFocusTarget: 'home',
@@ -644,7 +683,8 @@ export const useAppStore = create<AppState>((set) => ({
       bootstrapError: null,
       homeBootstrapData: null,
         sidebarFocusTarget: 'home',
-        statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage
+        statusMessage: selectedProfile ? `Profile selected: ${selectedProfile.name}` : state.statusMessage,
+        ...getEmptyCatalogState()
       };
     }),
   clearSelectedProfile: () =>
@@ -656,6 +696,7 @@ export const useAppStore = create<AppState>((set) => ({
         bootstrapStatus: 'idle',
         bootstrapError: null,
         homeBootstrapData: null,
+        ...getEmptyCatalogState()
       };
     }),
   addProfile: (name, avatarSeed, isKids = false, pinLock = '') =>
@@ -795,7 +836,8 @@ export const useAppStore = create<AppState>((set) => ({
         bootstrapStatus: 'idle',
         bootstrapError: null,
         homeBootstrapData: null,
-        statusMessage: 'Return to sign in'
+        statusMessage: 'Return to sign in',
+        ...getEmptyCatalogState()
       };
     }),
   setCurrentDestination: (currentDestination) =>
@@ -833,6 +875,9 @@ export const useAppStore = create<AppState>((set) => ({
       liveFocusId: focusId ?? state.liveFocusId,
       liveLastFocusedCardId: lastFocusedCardId ?? state.liveLastFocusedCardId
     })),
+  setLiveCatalog: (liveCatalog) => set({ liveCatalog }),
+  setMoviesCatalog: (moviesCatalog) => set({ moviesCatalog }),
+  setSeriesCatalog: (seriesCatalog) => set({ seriesCatalog }),
   setSearchQuery: (searchQuery) =>
     set({
       searchQuery
@@ -905,15 +950,6 @@ export const useAppStore = create<AppState>((set) => ({
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',
       homeFocusId: 'play',
-      moviesCategoryId: '',
-      moviesFocusId: '',
-      moviesLastFocusedCardId: '',
-      seriesCategoryId: '',
-      seriesFocusId: '',
-      seriesLastFocusedCardId: '',
-      liveCategoryId: '',
-      liveFocusId: '',
-      liveLastFocusedCardId: '',
       searchQuery: '',
       searchFocusId: 'query',
       selectedContent: null,
@@ -922,7 +958,8 @@ export const useAppStore = create<AppState>((set) => ({
       detailsFocusId: '',
       detailsSelectedSeasonId: '',
       isAuthenticating: false,
-      statusMessage: 'Enter a new Server Identity'
+      statusMessage: 'Enter a new Server Identity',
+      ...getEmptyCatalogState()
     });
   },
   signOut: () => {
@@ -951,15 +988,6 @@ export const useAppStore = create<AppState>((set) => ({
       sidebarDestination: 'home',
       sidebarFocusTarget: 'home',
       homeFocusId: 'play',
-      moviesCategoryId: '',
-      moviesFocusId: '',
-      moviesLastFocusedCardId: '',
-      seriesCategoryId: '',
-      seriesFocusId: '',
-      seriesLastFocusedCardId: '',
-      liveCategoryId: '',
-      liveFocusId: '',
-      liveLastFocusedCardId: '',
       searchQuery: '',
       searchFocusId: 'query',
       selectedContent: null,
@@ -968,7 +996,8 @@ export const useAppStore = create<AppState>((set) => ({
       detailsFocusId: '',
       detailsSelectedSeasonId: '',
       isAuthenticating: false,
-      statusMessage: 'Signed out'
+      statusMessage: 'Signed out',
+      ...getEmptyCatalogState()
     });
   }
 }));

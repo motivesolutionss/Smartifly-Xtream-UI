@@ -242,11 +242,14 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
   const setLiveBrowseState = useAppStore((state) => state.setLiveBrowseState);
   const storedCategoryId = useAppStore((state) => state.liveCategoryId);
   const storedFocusId = useAppStore((state) => state.liveFocusId);
-  const [categories, setCategories] = useState<LiveCategory[]>([]);
-  const [channels, setChannels] = useState<LiveCard[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(storedCategoryId);
-  const [focusId, setFocusId] = useState(storedFocusId);
-  const [isLoading, setIsLoading] = useState(false);
+  const liveCatalog = useAppStore((state) => state.liveCatalog);
+  const setLiveCatalog = useAppStore((state) => state.setLiveCatalog);
+
+  const [categories, setCategories] = useState<LiveCategory[]>(() => liveCatalog?.categories ?? []);
+  const [channels, setChannels] = useState<LiveCard[]>(() => liveCatalog?.channels ?? []);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(() => liveCatalog?.selectedCategoryId ?? storedCategoryId);
+  const [focusId, setFocusId] = useState(() => liveCatalog?.focusId ?? storedFocusId);
+  const [isLoading, setIsLoading] = useState(() => !liveCatalog);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [epgByChannel, setEpgByChannel] = useState<Record<string, LiveEpgCacheEntry>>({});
   const [epgLoadingChannelId, setEpgLoadingChannelId] = useState('');
@@ -279,7 +282,9 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
     const api = createXtreamApi(portalBaseUrl);
 
     async function loadLive() {
-      setIsLoading(true);
+      if (!liveCatalog) {
+        setIsLoading(true);
+      }
       try {
         const [categoriesResult, streamsResult] = await Promise.allSettled([
           api.getLiveCategories(username, password),
@@ -299,7 +304,7 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
         setSelectedCategoryId(nextCatalog.selectedCategoryId);
         setFocusId(nextCatalog.focusId);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !liveCatalog) {
           setCategories([]);
           setChannels([]);
         }
@@ -429,6 +434,17 @@ function LiveScreen({ onRequestSidebarFocus, contentFocusToken, onContentRegionC
       setLiveBrowseState({ categoryId: selectedCategoryId });
     }
   }, [selectedCategoryId, setLiveBrowseState]);
+
+  useEffect(() => {
+    if (categories.length > 0 && channels.length > 0) {
+      setLiveCatalog({
+        categories,
+        channels,
+        selectedCategoryId,
+        focusId
+      });
+    }
+  }, [categories, channels, selectedCategoryId, focusId, setLiveCatalog]);
 
   const handlePlayChannel = useCallback((channel: LiveCard) => {
     const username = session?.username?.trim();

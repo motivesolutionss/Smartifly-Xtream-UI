@@ -907,12 +907,12 @@ function DetailsScreen() {
   const detailsBackdropMode = getDetailsBackdropMode(heroArt, posterArt, resolvedBackdropUrl, backdropFailed);
 
   useEffect(() => {
-    if (heroArt !== prevHeroArt || selectedContent?.id !== prevContentId) {
+    if (prevContentId !== undefined && (heroArt !== prevHeroArt || selectedContent?.id !== prevContentId)) {
       setBackdropReady(false);
       setBackdropFailed(false);
-      setPrevHeroArt(heroArt);
-      setPrevContentId(selectedContent?.id);
     }
+    setPrevHeroArt(heroArt);
+    setPrevContentId(selectedContent?.id);
   }, [heroArt, prevHeroArt, selectedContent?.id, prevContentId]);
 
   // Automatically sync/update favorite with full metadata (e.g. backdropUrl) once fetched
@@ -1519,6 +1519,11 @@ function DetailsScreen() {
                 detailsBackdropMode === 'ambient' ? detailsBackdropAmbient : detailsBackdropCinematic,
                 detailsBackdropVisibleStyle(backdropReady)
               )}
+              ref={(el) => {
+                if (el && el.complete && !backdropReady && !backdropFailed) {
+                  setBackdropReady(true);
+                }
+              }}
               onLoad={() => setBackdropReady(true)}
               onError={() => {
                 setBackdropFailed(true);
