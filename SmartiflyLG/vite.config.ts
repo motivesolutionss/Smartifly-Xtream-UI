@@ -18,10 +18,12 @@ export default defineConfig({
 
         try {
           mkdirSync(vendorDir, { recursive: true });
-          copyFileSync(
-            join(process.cwd(), 'node_modules', 'hls.js', 'dist', 'hls.min.js'),
-            join(vendorDir, 'hls.min.js')
-          );
+          const isChrome38Compat = process.env.CHROME38_COMPAT === 'true';
+          const hlsSourceFile = isChrome38Compat
+            ? join(process.cwd(), 'public', 'vendor', 'hls-0.14.17.min.js')
+            : join(process.cwd(), 'node_modules', 'hls.js', 'dist', 'hls.min.js');
+
+          copyFileSync(hlsSourceFile, join(vendorDir, 'hls.min.js'));
           copyFileSync(
             join(process.cwd(), 'node_modules', 'shaka-player', 'dist', 'shaka-player.compiled.js'),
             join(vendorDir, 'shaka-player.compiled.js')
@@ -175,6 +177,10 @@ export default defineConfig({
     }
   ],
   base: './',
+  define: {
+    'process.env.CHROME38_COMPAT': JSON.stringify(process.env.CHROME38_COMPAT || 'false'),
+    'process.env.ENABLE_MEDIA_PROXY': JSON.stringify(process.env.ENABLE_MEDIA_PROXY || 'false')
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
