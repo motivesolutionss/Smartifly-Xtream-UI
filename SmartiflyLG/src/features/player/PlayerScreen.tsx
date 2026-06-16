@@ -101,7 +101,7 @@ import { choosePlaybackEngine, type PlaybackEngine, type PlaybackEngineDecision 
 import useSettingsStore from '../../store/settingsStore';
 import useWatchHistoryStore, { useTrackProgress, generateWatchHistoryId } from '../../store/watchHistoryStore';
 import { createXtreamApi, type XtreamShortEpgEntry } from '../../services/api';
-import { legacyChromiumBrowser } from '../../utils/legacyBrowser';
+import { legacyChromiumBrowser, chrome38CompatMode } from '../../utils/legacyBrowser';
 
 declare global {
   interface Window {
@@ -1884,6 +1884,25 @@ function PlayerScreen() {
       const probeVideo = document.createElement('video');
       const canPlayType = guessedMime ? probeVideo.canPlayType(guessedMime) : '';
 
+      if (chrome38CompatMode) {
+        console.groupCollapsed(`${PLAYER_LOG_PREFIX} stream diagnostics (skipped header probe for Chrome 38)`);
+        console.warn('summary', {
+          reason,
+          title: playback?.title,
+          id: playback?.id,
+          kind: playback?.kind,
+          engine: activeEngineRef.current,
+          streamUrl: probeStreamUrl,
+          guessedMime,
+          canPlayType,
+          mediaErrorCode: details?.mediaErrorCode ?? null,
+          mediaErrorMessage: details?.mediaErrorMessage ?? null,
+          errorMessage: details?.errorMessage ?? null
+        });
+        console.groupEnd();
+        return;
+      }
+
       try {
         const headers = await probeStreamHeaders(probeStreamUrl);
         console.groupCollapsed(`${PLAYER_LOG_PREFIX} stream diagnostics`);
@@ -2181,7 +2200,7 @@ function PlayerScreen() {
         });
 
         selectedEngine = engineOverride === 'hlsjs' ? 'hlsjs' : engineDecision.engine;
-        if (legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
+        if (!chrome38CompatMode && legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
           if (selectedEngine === 'hlsjs') {
             console.warn(`${PLAYER_LOG_PREFIX} overriding hls.js engine for legacy Chromium live HLS`, {
               activeStreamUrl,
@@ -2203,6 +2222,7 @@ function PlayerScreen() {
         const shouldSkipRedirectResolution =
           isManualLiveSwitchStartup ||
           isLegacyNativeLiveHls ||
+          chrome38CompatMode ||
           (playback.kind === 'live' && (selectedEngine === 'hlsjs' || selectedEngine === 'shaka'));
         console.debug(`${PLAYER_LOG_PREFIX} redirect resolution`, { shouldSkipRedirectResolution, activeStreamUrl, selectedEngine, isManualLiveSwitchStartup, ts: Date.now() });
 
@@ -2328,7 +2348,7 @@ function PlayerScreen() {
         });
 
         if (selectedEngine === 'hlsjs') {
-          if (legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
+          if (!chrome38CompatMode && legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
             console.warn(`${PLAYER_LOG_PREFIX} blocked hls.js startup for legacy Chromium live HLS`, {
               activeStreamUrl,
               selectedEngine,
@@ -3903,8 +3923,9 @@ function PlayerScreen() {
       if (activeEngineRef.current === 'native') {
         const nextFallbackIndex = activeStreamIndex + 1;
         const nextFallbackUrl = playbackSources[nextFallbackIndex];
-        const allowShakaFallback = !(isLive && isM3u8Url(activeStreamUrl));
+        const allowShakaFallback = !chrome38CompatMode && !(isLive && isM3u8Url(activeStreamUrl));
         const suppressLegacyLiveHlsFallback =
+          !chrome38CompatMode &&
           legacyChromiumBrowser &&
           isLive &&
           isM3u8Url(activeStreamUrl);
