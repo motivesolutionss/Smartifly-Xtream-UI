@@ -7,6 +7,8 @@ type ChoosePlaybackEngineArgs = {
   streamUrl: string;
   overrideEngine?: PlaybackEngine | null;
   preferNativeHlsForLiveM3u8?: boolean;
+  canUseNativeHls?: boolean;
+  legacyChromiumBrowser?: boolean;
   /** webOS live HLS: native demux often fails; one Shaka open avoids double-hitting the server */
   preferShakaForLiveHls?: boolean;
 };
@@ -40,6 +42,8 @@ export function choosePlaybackEngine({
   streamUrl,
   overrideEngine,
   preferNativeHlsForLiveM3u8 = false,
+  canUseNativeHls = false,
+  legacyChromiumBrowser = false,
   preferShakaForLiveHls = false
 }: ChoosePlaybackEngineArgs): PlaybackEngineDecision {
   if (overrideEngine === 'shaka') {
@@ -55,6 +59,16 @@ export function choosePlaybackEngine({
   // lighter on webOS TV hardware. Keep Shaka for explicit fallback or formats
   // that are more likely to need an MSE-based pipeline.
   const extension = getUrlExtension(streamUrl);
+
+  if (playback.kind === 'live' && extension === 'm3u8' && legacyChromiumBrowser) {
+    return {
+      engine: 'native',
+      reason: canUseNativeHls
+        ? 'Legacy Chromium live HLS prefers the native video pipeline first'
+        : 'Legacy Chromium live HLS is forced onto the native video pipeline for compatibility testing',
+      allowShakaFallback: true
+    };
+  }
 
   if (playback.kind === 'live' && extension === 'm3u8' && preferShakaForLiveHls) {
     return {

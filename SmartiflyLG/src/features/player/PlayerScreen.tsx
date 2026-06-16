@@ -2175,15 +2175,34 @@ function PlayerScreen() {
           streamUrl: activeStreamUrl,
           overrideEngine: engineOverride,
           preferNativeHlsForLiveM3u8,
+          canUseNativeHls: preferNativeHlsForLiveM3u8,
+          legacyChromiumBrowser,
           preferShakaForLiveHls
         });
 
         selectedEngine = engineOverride === 'hlsjs' ? 'hlsjs' : engineDecision.engine;
+        if (legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
+          if (selectedEngine === 'hlsjs') {
+            console.warn(`${PLAYER_LOG_PREFIX} overriding hls.js engine for legacy Chromium live HLS`, {
+              activeStreamUrl,
+              previousEngine: selectedEngine,
+              legacyChromiumBrowser,
+              preferNativeHlsForLiveM3u8
+            });
+          }
+          selectedEngine = 'native';
+        }
         activeEngineRef.current = selectedEngine;
         console.debug(`${PLAYER_LOG_PREFIX} engine decision`, { engineDecision, selectedEngine, ts: Date.now() });
 
+        const isLegacyNativeLiveHls =
+          legacyChromiumBrowser &&
+          playback.kind === 'live' &&
+          isM3u8Url(activeStreamUrl) &&
+          selectedEngine === 'native';
         const shouldSkipRedirectResolution =
           isManualLiveSwitchStartup ||
+          isLegacyNativeLiveHls ||
           (playback.kind === 'live' && (selectedEngine === 'hlsjs' || selectedEngine === 'shaka'));
         console.debug(`${PLAYER_LOG_PREFIX} redirect resolution`, { shouldSkipRedirectResolution, activeStreamUrl, selectedEngine, isManualLiveSwitchStartup, ts: Date.now() });
 
@@ -2307,6 +2326,18 @@ function PlayerScreen() {
           preferNativeHlsForLiveM3u8,
           useWebOSNativeHlsMediaOption
         });
+
+        if (selectedEngine === 'hlsjs') {
+          if (legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
+            console.warn(`${PLAYER_LOG_PREFIX} blocked hls.js startup for legacy Chromium live HLS`, {
+              activeStreamUrl,
+              selectedEngine,
+              legacyChromiumBrowser
+            });
+            selectedEngine = 'native';
+            activeEngineRef.current = selectedEngine;
+          }
+        }
 
         if (selectedEngine === 'hlsjs') {
           const hlsStartupTimeoutMs = Math.max(NATIVE_LOAD_TIMEOUT_MS, startupGraceMs);
@@ -3873,8 +3904,22 @@ function PlayerScreen() {
         const nextFallbackIndex = activeStreamIndex + 1;
         const nextFallbackUrl = playbackSources[nextFallbackIndex];
         const allowShakaFallback = !(isLive && isM3u8Url(activeStreamUrl));
+        const suppressLegacyLiveHlsFallback =
+          legacyChromiumBrowser &&
+          isLive &&
+          isM3u8Url(activeStreamUrl);
 
-        if (nextFallbackUrl) {
+        if (suppressLegacyLiveHlsFallback) {
+          console.debug(`${PLAYER_LOG_PREFIX} legacy native live HLS fallback suppressed`, {
+            url: activeStreamUrl,
+            code: mediaError?.code,
+            message: mediaError?.message,
+            nextFallbackUrl,
+            nextFallbackIndex
+          });
+        }
+
+        if (nextFallbackUrl && !suppressLegacyLiveHlsFallback) {
           console.debug(`${PLAYER_LOG_PREFIX} native fallback`, {
             from: activeStreamUrl,
             to: nextFallbackUrl,
@@ -3887,7 +3932,7 @@ function PlayerScreen() {
           return;
         }
 
-        if (!engineOverride && allowShakaFallback) {
+        if (!engineOverride && allowShakaFallback && !suppressLegacyLiveHlsFallback) {
           console.debug(`${PLAYER_LOG_PREFIX} native fallback to shaka`, {
             url: activeStreamUrl
           });
