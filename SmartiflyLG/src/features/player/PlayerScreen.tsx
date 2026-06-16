@@ -134,6 +134,7 @@ const MAX_RETRY_ATTEMPTS = 5;
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const ASPECT_OPTIONS = ['contain', 'cover', 'fill'] as const;
 const PLAYER_LOG_PREFIX = '[LG Player]';
+const useChrome38Proxy = process.env.ENABLE_MEDIA_PROXY === 'true';
 const WEBOS_HLS_MEDIA_OPTION_VALUE = JSON.stringify({ mediaTransportType: 'HLS' });
 const deadStreamUntilByUrl = new Map<string, number>();
 let manifestRequestTraceCounter = 0;
@@ -2252,6 +2253,38 @@ function PlayerScreen() {
           return;
         }
 
+        if (chrome38CompatMode && useChrome38Proxy && selectedEngine === 'hlsjs' && resolvedStreamUrl && resolvedStreamUrl.startsWith('http')) {
+          const originalUrl = resolvedStreamUrl;
+          resolvedStreamUrl = `http://${window.location.host}/proxy?url=${encodeURIComponent(resolvedStreamUrl)}`;
+          console.warn(`${PLAYER_LOG_PREFIX} routing stream through local CORS proxy`, {
+            original: originalUrl,
+            proxied: resolvedStreamUrl
+          });
+        }
+
+        if (chrome38CompatMode) {
+          if (playback.kind === 'live') {
+            console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
+              `chrome38CompatMode: true\n` +
+              `selectedEngine: ${selectedEngine}\n` +
+              `nativeHlsDisabledForDesktopChrome38: true\n` +
+              `fallbackSuppression: false\n` +
+              `proxyEnabled: ${useChrome38Proxy}`);
+          } else {
+            console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
+              `chrome38CompatMode: true\n` +
+              `selectedEngine: ${selectedEngine}\n` +
+              `skipRedirectResolution: true\n` +
+              `skipDiagnosticsProbe: true\n` +
+              `shakaDisabled: true\n` +
+              `mkvFallbackDisabled: true`);
+          }
+        } else {
+          console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
+            `chrome38CompatMode: false\n` +
+            `existing webOS native behavior unchanged`);
+        }
+
         nativeSourceUrl = resolvedStreamUrl;
         hlsSourceUrl = resolvedStreamUrl;
 
@@ -2489,74 +2522,74 @@ function PlayerScreen() {
             });
           } else {
             class PatchedPlaylistLoader extends DefaultLoader {
-            load(
-              context: LoaderContext,
-              config: LoaderConfiguration,
-              callbacks: LoaderCallbacks<LoaderContext>
-            ) {
-              // Serve the pre-rewritten text in-memory for the first manifest
-              // request so segment URIs are absolute. All subsequent live
-              // playlist polls go through normal XHR to the real origin.
-              if (!firstManifestServed && rewrittenPlaylistText) {
-                firstManifestServed = true;
-                const now = performance.now();
-                const stats: LoaderStats = {
-                  aborted: false,
-                  loaded: rewrittenPlaylistText.length,
-                  retry: 0,
-                  total: rewrittenPlaylistText.length,
-                  chunkCount: 0,
-                  bwEstimate: 5000000,
-                  loading: { start: now - 50, first: now - 20, end: now },
-                  parsing: { start: now, end: now + 5 },
-                  buffering: { start: now + 5, first: now + 10, end: now + 15 }
-                };
-                // Defer onSuccess by one tick so hls.js finishes its internal
-                // setup after load() returns before we fire the callback.
-                // Calling onSuccess synchronously inside load() causes hls.js
-                // to emit MANIFEST_LOADED before its internal state is ready,
-                // which triggers an immediate second loadSource() that aborts
-                // the first play() call and leaves readyState at 0 forever.
-                window.setTimeout(() => {
-                  callbacks.onSuccess(
-                    { data: rewrittenPlaylistText, url: resolvedStreamUrl, code: 200 },
-                    stats,
-                    context,
-                    null
-                  );
-                }, 0);
-                return;
+              load(
+                context: LoaderContext,
+                config: LoaderConfiguration,
+                callbacks: LoaderCallbacks<LoaderContext>
+              ) {
+                // Serve the pre-rewritten text in-memory for the first manifest
+                // request so segment URIs are absolute. All subsequent live
+                // playlist polls go through normal XHR to the real origin.
+                if (!firstManifestServed && rewrittenPlaylistText) {
+                  firstManifestServed = true;
+                  const now = performance.now();
+                  const stats: LoaderStats = {
+                    aborted: false,
+                    loaded: rewrittenPlaylistText.length,
+                    retry: 0,
+                    total: rewrittenPlaylistText.length,
+                    chunkCount: 0,
+                    bwEstimate: 5000000,
+                    loading: { start: now - 50, first: now - 20, end: now },
+                    parsing: { start: now, end: now + 5 },
+                    buffering: { start: now + 5, first: now + 10, end: now + 15 }
+                  };
+                  // Defer onSuccess by one tick so hls.js finishes its internal
+                  // setup after load() returns before we fire the callback.
+                  // Calling onSuccess synchronously inside load() causes hls.js
+                  // to emit MANIFEST_LOADED before its internal state is ready,
+                  // which triggers an immediate second loadSource() that aborts
+                  // the first play() call and leaves readyState at 0 forever.
+                  window.setTimeout(() => {
+                    callbacks.onSuccess(
+                      { data: rewrittenPlaylistText, url: resolvedStreamUrl, code: 200 },
+                      stats,
+                      context,
+                      null
+                    );
+                  }, 0);
+                  return;
+                }
+
+                super.load(context, config, callbacks);
               }
-
-              super.load(context, config, callbacks);
             }
-          }
 
-          const hlsPlayer = new hlsRuntime({
-            enableWorker: !isWebOS && !legacyChromiumBrowser,
-            lowLatencyMode: false,
-            // Disable automatic load start so hls.js doesn't begin live
-            // playlist polling before we've attached to the video element
-            // and had a chance to buffer the first fragment. Without this,
-            // the live refresh cycle fires _onMediaSourceOpen on every poll,
-            // resetting the SourceBuffer and discarding buffered data.
-            autoStartLoad: false,
-            backBufferLength: isLive ? 20 : 30,
-            maxBufferLength: isLive ? 30 : 60,
-            liveBackBufferLength: isLive ? 30 : 60,
-            manifestLoadingTimeOut: 5000,
-            levelLoadingTimeOut: 5000,
-            fragLoadingTimeOut: 5000,
-            // Reduce retry counts for live HLS to prevent duplicate/overlapping playlist opens
-            // that can trigger 403 errors on IPTV servers with per-connection limits
-            manifestLoadingMaxRetry: isLive ? 0 : 4,
-            levelLoadingMaxRetry: isLive ? 0 : 4,
-            fragLoadingMaxRetry: isLive ? 1 : 4,
-            pLoader: rewrittenPlaylistText ? (PatchedPlaylistLoader as unknown as PlaylistLoaderConstructor) : undefined,
-            // Forward the browser/TV User-Agent on every XHR so live playlist
-            // polling is not rejected by servers that enforce UA-based access
-            // control (e.g. Xtream Codes returning 403 without a proper UA).
-            xhrSetup: (xhr) => {
+            hlsPlayer = new hlsRuntime({
+              enableWorker: !isWebOS && !legacyChromiumBrowser,
+              lowLatencyMode: false,
+              // Disable automatic load start so hls.js doesn't begin live
+              // playlist polling before we've attached to the video element
+              // and had a chance to buffer the first fragment. Without this,
+              // the live refresh cycle fires _onMediaSourceOpen on every poll,
+              // resetting the SourceBuffer and discarding buffered data.
+              autoStartLoad: false,
+              backBufferLength: isLive ? 20 : 30,
+              maxBufferLength: isLive ? 30 : 60,
+              liveBackBufferLength: isLive ? 30 : 60,
+              manifestLoadingTimeOut: 5000,
+              levelLoadingTimeOut: 5000,
+              fragLoadingTimeOut: 5000,
+              // Reduce retry counts for live HLS to prevent duplicate/overlapping playlist opens
+              // that can trigger 403 errors on IPTV servers with per-connection limits
+              manifestLoadingMaxRetry: isLive ? 0 : 4,
+              levelLoadingMaxRetry: isLive ? 0 : 4,
+              fragLoadingMaxRetry: isLive ? 1 : 4,
+              pLoader: rewrittenPlaylistText ? (PatchedPlaylistLoader as unknown as PlaylistLoaderConstructor) : undefined,
+              // Forward the browser/TV User-Agent on every XHR so live playlist
+              // polling is not rejected by servers that enforce UA-based access
+              // control (e.g. Xtream Codes returning 403 without a proper UA).
+              xhrSetup: (xhr) => {
               const ua = window.navigator.userAgent;
               const requestTrace = {
                 streamUrl: resolvedStreamUrl,
@@ -2688,8 +2721,9 @@ function PlayerScreen() {
                 }
               }
             }
-          }
-          hlsPlayerRef.current = hlsPlayer;
+          });
+        }
+        hlsPlayerRef.current = hlsPlayer;
 
           // hls.js startup monitor armed log removed
 
@@ -2732,7 +2766,7 @@ function PlayerScreen() {
               // Keep the ERROR listener active so we receive logs and run recovery/escalation during playback.
             };
             const escalateToShaka = (reason: string) => {
-              if (liveHlsJsFallbackToShakaUsedRef.current) {
+              if (chrome38CompatMode || liveHlsJsFallbackToShakaUsedRef.current) {
                 return;
               }
 
@@ -3560,6 +3594,7 @@ function PlayerScreen() {
           // During fresh live open isolation (manual switch), prevent hls.js to shaka escalation
           // as it would create duplicate playlist opens and trigger 403 errors
           if (
+            !chrome38CompatMode &&
             playback.kind === 'live' &&
             selectedEngine === 'hlsjs' &&
             !liveHlsJsFallbackToShakaUsedRef.current &&
@@ -3950,14 +3985,27 @@ function PlayerScreen() {
       }
 
       if (activeEngineRef.current === 'native') {
+        if (chrome38CompatMode && (playback.kind === 'movie' || playback.kind === 'series') && mediaError?.code === 4) {
+          console.warn(`${PLAYER_LOG_PREFIX} Chrome 38 progressive stream failed with media error code 4 (SRC_NOT_SUPPORTED). Showing clear unsupported codec/container message.`);
+          startupAttemptInFlightRef.current = false;
+          clearRecoveryTimers();
+          setIsReady(false);
+          setRecoveryMessage('Unsupported codec/container (likely HEVC/AC3) for Chrome 38 desktop');
+          setStatusMessage('Unsupported codec/container');
+          return;
+        }
+
         const nextFallbackIndex = activeStreamIndex + 1;
         const nextFallbackUrl = playbackSources[nextFallbackIndex];
+        const isMkvFallback = nextFallbackUrl && nextFallbackUrl.split('?')[0].toLowerCase().endsWith('.mkv');
         const allowShakaFallback = !chrome38CompatMode && !(isLive && isM3u8Url(activeStreamUrl));
         const suppressLegacyLiveHlsFallback =
           !chrome38CompatMode &&
           legacyChromiumBrowser &&
           isLive &&
           isM3u8Url(activeStreamUrl);
+
+        const suppressFallback = suppressLegacyLiveHlsFallback || (chrome38CompatMode && isMkvFallback);
 
         if (suppressLegacyLiveHlsFallback) {
           console.debug(`${PLAYER_LOG_PREFIX} legacy native live HLS fallback suppressed`, {
@@ -3969,7 +4017,15 @@ function PlayerScreen() {
           });
         }
 
-        if (nextFallbackUrl && !suppressLegacyLiveHlsFallback) {
+        if (chrome38CompatMode && isMkvFallback) {
+          console.warn(`${PLAYER_LOG_PREFIX} Chrome 38 .mkv fallback suppressed`, {
+            url: activeStreamUrl,
+            nextFallbackUrl,
+            nextFallbackIndex
+          });
+        }
+
+        if (nextFallbackUrl && !suppressFallback) {
           console.debug(`${PLAYER_LOG_PREFIX} native fallback`, {
             from: activeStreamUrl,
             to: nextFallbackUrl,
