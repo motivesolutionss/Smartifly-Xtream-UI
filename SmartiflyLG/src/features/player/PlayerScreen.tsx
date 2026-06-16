@@ -2468,7 +2468,27 @@ function PlayerScreen() {
             };
           }
 
-          class PatchedPlaylistLoader extends DefaultLoader {
+          let hlsPlayer: any;
+          if (chrome38CompatMode) {
+            hlsPlayer = new hlsRuntime({
+              enableWorker: false,
+              autoStartLoad: false,
+              maxBufferLength: 30,
+              liveSyncDurationCount: 3,
+              manifestLoadingTimeOut: 10000,
+              levelLoadingTimeOut: 10000,
+              fragLoadingTimeOut: 15000,
+              xhrSetup: (xhr: XMLHttpRequest) => {
+                const ua = window.navigator.userAgent;
+                if (ua) {
+                  try {
+                    xhr.setRequestHeader('User-Agent', ua);
+                  } catch {}
+                }
+              }
+            });
+          } else {
+            class PatchedPlaylistLoader extends DefaultLoader {
             load(
               context: LoaderContext,
               config: LoaderConfiguration,
@@ -2668,7 +2688,7 @@ function PlayerScreen() {
                 }
               }
             }
-          });
+          }
           hlsPlayerRef.current = hlsPlayer;
 
           // hls.js startup monitor armed log removed
@@ -2746,7 +2766,11 @@ function PlayerScreen() {
               // but fragment loading only begins after we call startLoad(), which
               // prevents the live playlist poll cycle from firing _onMediaSourceOpen
               // before the SourceBuffer is ready.
-              hlsPlayer.startLoad();
+              if (chrome38CompatMode) {
+                hlsPlayer.startLoad(-1);
+              } else {
+                hlsPlayer.startLoad();
+              }
             };
 
             const onBufferCreated = (_event: string, data: { tracks?: Record<string, { id?: string; codec?: string; container?: string; levelCodec?: string }> }) => {
@@ -2835,6 +2859,11 @@ function PlayerScreen() {
               }
 
               window.clearTimeout(timeoutId);
+              if (chrome38CompatMode) {
+                finish();
+                attachedVideo.play();
+                return;
+              }
               timeoutId = window.setTimeout(() => {
                 fail(`hls.js startup timed out after ${hlsStartupTimeoutMs}ms`);
               }, hlsStartupTimeoutMs);
