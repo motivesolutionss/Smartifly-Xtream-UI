@@ -17,6 +17,17 @@ export function isLegacyChromiumBrowser() {
 
 export const legacyChromiumBrowser = isLegacyChromiumBrowser();
 
+export function isWebOSDevice() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const userAgent = navigator.userAgent || '';
+  return /web0s|webos/i.test(userAgent) || typeof (window as Window & { PalmSystem?: unknown }).PalmSystem !== 'undefined';
+}
+
+export const isWebOS = isWebOSDevice();
+export const chrome38CompatMode = legacyChromiumBrowser && !isWebOS;
+
 export function scrollIntoViewCompat(
   element: HTMLElement | null | undefined,
   options?: ScrollIntoViewOptions
