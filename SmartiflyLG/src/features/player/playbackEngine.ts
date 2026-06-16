@@ -1,4 +1,5 @@
 import type { PlaybackRequest } from '../../store/appStore';
+import { chrome38CompatMode } from '../../utils/legacyBrowser';
 
 export type PlaybackEngine = 'native' | 'shaka' | 'hlsjs';
 
@@ -46,6 +47,26 @@ export function choosePlaybackEngine({
   legacyChromiumBrowser = false,
   preferShakaForLiveHls = false
 }: ChoosePlaybackEngineArgs): PlaybackEngineDecision {
+  const extension = getUrlExtension(streamUrl);
+
+  if (chrome38CompatMode) {
+    if (playback.kind === 'live' && extension === 'm3u8') {
+      return {
+        engine: 'hlsjs',
+        reason: 'Chrome 38 desktop uses hls.js for HLS; native HLS is unavailable',
+        allowShakaFallback: false
+      };
+    }
+
+    if (playback.kind === 'movie' || playback.kind === 'series') {
+      return {
+        engine: 'native',
+        reason: 'Chrome 38 desktop uses native video element for progressive media',
+        allowShakaFallback: false
+      };
+    }
+  }
+
   if (overrideEngine === 'shaka') {
     return {
       engine: 'shaka',
@@ -58,7 +79,6 @@ export function choosePlaybackEngine({
   // Prefer the native <video> pipeline for these simple cases because it is
   // lighter on webOS TV hardware. Keep Shaka for explicit fallback or formats
   // that are more likely to need an MSE-based pipeline.
-  const extension = getUrlExtension(streamUrl);
 
   if (playback.kind === 'live' && extension === 'm3u8' && legacyChromiumBrowser) {
     return {
