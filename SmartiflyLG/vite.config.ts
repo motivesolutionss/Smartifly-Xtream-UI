@@ -8,6 +8,33 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      name: 'vite-media-proxy-middleware',
+      configureServer(server) {
+        server.middlewares.use('/proxy', async (req, res, next) => {
+          if (process.env.ENABLE_MEDIA_PROXY !== 'true') {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.end('Forbidden: Media proxy is disabled');
+            return;
+          }
+          const { handleProxyRequest } = await import('./scripts/media-proxy.mjs');
+          handleProxyRequest(req, res);
+        });
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use('/proxy', async (req, res, next) => {
+          if (process.env.ENABLE_MEDIA_PROXY !== 'true') {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.end('Forbidden: Media proxy is disabled');
+            return;
+          }
+          const { handleProxyRequest } = await import('./scripts/media-proxy.mjs');
+          handleProxyRequest(req, res);
+        });
+      }
+    },
+    {
       name: 'webos-non-module-output',
       closeBundle() {
         const indexPath = join(process.cwd(), 'dist', 'index.html');
