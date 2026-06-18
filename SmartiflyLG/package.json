@@ -7,6 +7,7 @@
     "dev": "vite",
     "start:legacy": "npm run build && vite preview --host 0.0.0.0",
     "build": "vite build",
+    "build:chrome38": "set CHROME38_COMPAT=true&& vite build",
     "probe:stream": "node scripts/probe-stream.mjs",
     "probe:switch": "node scripts/probe-live-switch.mjs",
     "webos:stage": "npm run build",

@@ -134,7 +134,6 @@ const MAX_RETRY_ATTEMPTS = 5;
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const ASPECT_OPTIONS = ['contain', 'cover', 'fill'] as const;
 const PLAYER_LOG_PREFIX = '[LG Player]';
-const useChrome38Proxy = process.env.ENABLE_MEDIA_PROXY === 'true';
 const WEBOS_HLS_MEDIA_OPTION_VALUE = JSON.stringify({ mediaTransportType: 'HLS' });
 const deadStreamUntilByUrl = new Map<string, number>();
 let manifestRequestTraceCounter = 0;
@@ -1192,6 +1191,7 @@ function PlayerScreen() {
   const startupAttemptInFlightRef = useRef(false);
   const startupGuardRetryTimerRef = useRef<number | null>(null);
   const startupGuardRetryUsedRef = useRef(false);
+  const chrome38NativeUnsupportedRef = useRef(false);
   const liveNoProgressWatchdogTimerRef = useRef<number | null>(null);
   const liveNoProgressRetryUsedRef = useRef(false);
   const suppressHudRevealRef = useRef(false);
@@ -1519,6 +1519,15 @@ function PlayerScreen() {
 
   const scheduleStartupGuardRetry = useCallback(
     (reason: string) => {
+      const currentPlayback = playbackRef.current;
+      if (
+        chrome38CompatMode &&
+        chrome38NativeUnsupportedRef.current &&
+        (currentPlayback?.kind === 'movie' || currentPlayback?.kind === 'series')
+      ) {
+        return false;
+      }
+
       if (!playbackStartupGuard || isLive || startupGuardRetryUsedRef.current) {
         return false;
       }
@@ -1544,6 +1553,15 @@ function PlayerScreen() {
 
       startupGuardRetryTimerRef.current = window.setTimeout(() => {
         startupGuardRetryTimerRef.current = null;
+        const latestPlayback = playbackRef.current;
+        if (
+          chrome38CompatMode &&
+          chrome38NativeUnsupportedRef.current &&
+          (latestPlayback?.kind === 'movie' || latestPlayback?.kind === 'series')
+        ) {
+          return;
+        }
+
         setRecoveryMessage('Retrying playback...');
         setStatusMessage('Retrying playback');
         setLoadNonce((value) => value + 1);
@@ -1657,6 +1675,14 @@ function PlayerScreen() {
   const requestRetry = useCallback(
     (reason: string) => {
       const currentPlayback = playbackRef.current;
+      if (
+        chrome38CompatMode &&
+        chrome38NativeUnsupportedRef.current &&
+        (currentPlayback?.kind === 'movie' || currentPlayback?.kind === 'series')
+      ) {
+        return;
+      }
+
       const switchContext = getLiveSwitchContext();
       const liveStreamId =
         currentPlayback?.kind === 'live'
@@ -1727,6 +1753,15 @@ function PlayerScreen() {
   );
 
   const scheduleWaitingRecovery = useCallback((reason: string) => {
+    const currentPlayback = playbackRef.current;
+    if (
+      chrome38CompatMode &&
+      chrome38NativeUnsupportedRef.current &&
+      (currentPlayback?.kind === 'movie' || currentPlayback?.kind === 'series')
+    ) {
+      return;
+    }
+
     if (waitingTimerRef.current) {
       return;
     }
@@ -1734,6 +1769,15 @@ function PlayerScreen() {
     const debounceMs = isWebOS ? WEBOS_WAITING_DEBOUNCE_MS : WAITING_DEBOUNCE_MS;
     waitingTimerRef.current = window.setTimeout(() => {
       waitingTimerRef.current = null;
+      const latestPlayback = playbackRef.current;
+      if (
+        chrome38CompatMode &&
+        chrome38NativeUnsupportedRef.current &&
+        (latestPlayback?.kind === 'movie' || latestPlayback?.kind === 'series')
+      ) {
+        return;
+      }
+
       const timeSinceStart = playbackStartedAtRef.current > 0 ? Date.now() - playbackStartedAtRef.current : Number.MAX_SAFE_INTEGER;
 
       if (!isLive && timeSinceStart < INITIAL_PLAY_GRACE_MS) {
@@ -1747,6 +1791,15 @@ function PlayerScreen() {
 
   const startStallWatchdog = useCallback(
     (reason = 'Stream stalled') => {
+      const currentPlayback = playbackRef.current;
+      if (
+        chrome38CompatMode &&
+        chrome38NativeUnsupportedRef.current &&
+        (currentPlayback?.kind === 'movie' || currentPlayback?.kind === 'series')
+      ) {
+        return;
+      }
+
       if (stallTimerRef.current) {
         return;
       }
@@ -1761,6 +1814,15 @@ function PlayerScreen() {
 
       stallTimerRef.current = window.setTimeout(() => {
         stallTimerRef.current = null;
+        const latestPlayback = playbackRef.current;
+        if (
+          chrome38CompatMode &&
+          chrome38NativeUnsupportedRef.current &&
+          (latestPlayback?.kind === 'movie' || latestPlayback?.kind === 'series')
+        ) {
+          return;
+        }
+
         requestRetry(reason);
       }, watchdogMs);
 
@@ -2054,6 +2116,7 @@ function PlayerScreen() {
     let cancelled = false;
     const startPlayback = (playback: NonNullable<typeof activePlayback>) => {
       const attachedVideo = video;
+    chrome38NativeUnsupportedRef.current = false;
     setIsReady(false);
     setIsPlaying(false);
     setCurrentTime(playback.resumePosition ?? 0);
@@ -2253,15 +2316,6 @@ function PlayerScreen() {
           return;
         }
 
-        if (chrome38CompatMode && useChrome38Proxy && selectedEngine === 'hlsjs' && resolvedStreamUrl && resolvedStreamUrl.startsWith('http')) {
-          const originalUrl = resolvedStreamUrl;
-          resolvedStreamUrl = `http://${window.location.host}/proxy?url=${encodeURIComponent(resolvedStreamUrl)}`;
-          console.warn(`${PLAYER_LOG_PREFIX} routing stream through local CORS proxy`, {
-            original: originalUrl,
-            proxied: resolvedStreamUrl
-          });
-        }
-
         if (chrome38CompatMode) {
           if (playback.kind === 'live') {
             console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
@@ -2269,7 +2323,8 @@ function PlayerScreen() {
               `selectedEngine: ${selectedEngine}\n` +
               `nativeHlsDisabledForDesktopChrome38: true\n` +
               `fallbackSuppression: false\n` +
-              `proxyEnabled: ${useChrome38Proxy}`);
+              `proxyRemoved: true\n` +
+              `directHlsOnly: true`);
           } else {
             console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
               `chrome38CompatMode: true\n` +
@@ -2283,6 +2338,51 @@ function PlayerScreen() {
           console.warn(`${PLAYER_LOG_PREFIX} verification logs:\n` +
             `chrome38CompatMode: false\n` +
             `existing webOS native behavior unchanged`);
+        }
+
+        if (chrome38CompatMode) {
+          console.warn('[LG Player][Chrome38 Load] post-verification before-engine-branch', {
+            selectedEngine,
+            playbackKind: playback.kind,
+            hasHlsRuntime: !!hlsRuntime,
+            resolvedStreamUrl
+          });
+          const chrome38HlsSupportSnapshot =
+            selectedEngine === 'hlsjs'
+              ? {
+                  hasHlsRuntime: !!hlsRuntime,
+                  hlsVersion: hlsRuntime?.version || window.Hls?.version || null,
+                  hasIsSupported: !!hlsRuntime?.isSupported,
+                  hlsIsSupported:
+                    typeof hlsRuntime?.isSupported === 'function'
+                      ? hlsRuntime.isSupported()
+                      : null,
+                  hasMediaSource: typeof window.MediaSource !== 'undefined',
+                  hasMediaSourceIsTypeSupported:
+                    typeof window.MediaSource !== 'undefined' &&
+                    typeof window.MediaSource.isTypeSupported === 'function',
+                  supportsAvcBaseline:
+                    typeof window.MediaSource !== 'undefined' &&
+                    typeof window.MediaSource.isTypeSupported === 'function'
+                      ? window.MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"')
+                      : null,
+                  supportsAvcMain:
+                    typeof window.MediaSource !== 'undefined' &&
+                    typeof window.MediaSource.isTypeSupported === 'function'
+                      ? window.MediaSource.isTypeSupported('video/mp4; codecs="avc1.4D401E,mp4a.40.2"')
+                      : null,
+                  supportsAvcHigh:
+                    typeof window.MediaSource !== 'undefined' &&
+                    typeof window.MediaSource.isTypeSupported === 'function'
+                      ? window.MediaSource.isTypeSupported('video/mp4; codecs="avc1.64001E,mp4a.40.2"')
+                      : null,
+                  videoCanPlayMpegUrl: attachedVideo?.canPlayType?.('application/vnd.apple.mpegurl') || '',
+                  selectedEngine,
+                  playbackKind: playback.kind,
+                  resolvedStreamUrl
+                }
+              : null;
+          console.warn('[LG Player][Chrome38 HLS] support snapshot before startup gate', chrome38HlsSupportSnapshot);
         }
 
         nativeSourceUrl = resolvedStreamUrl;
@@ -2335,18 +2435,66 @@ function PlayerScreen() {
         }
 
         if (selectedEngine === 'shaka' && (!shakaRuntime || !shakaRuntime.Player.isBrowserSupported())) {
+          if (chrome38CompatMode) {
+            console.warn('[LG Player][Chrome38 Load] early return before engine startup', {
+              reason: 'shaka browser support gate failed',
+              chrome38CompatMode,
+              selectedEngine,
+              playbackKind: playback.kind,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsIsSupported: typeof hlsRuntime?.isSupported === 'function' ? hlsRuntime.isSupported() : null,
+              hasVideo: !!attachedVideo,
+              resolvedStreamUrl,
+              abortSignalAborted: loadAbortController?.signal?.aborted ?? null,
+              cancelled,
+              loadGeneration,
+              currentLoadGeneration: loadGenerationRef.current
+            });
+          }
           startupAttemptInFlightRef.current = false;
           setStatusMessage('Playback is not supported in this browser');
           return;
         }
 
         if (selectedEngine === 'hlsjs' && (!hlsRuntime || !hlsRuntime.isSupported())) {
+          if (chrome38CompatMode) {
+            console.warn('[LG Player][Chrome38 Load] early return before engine startup', {
+              reason: !hlsRuntime ? 'missing hlsRuntime' : 'hlsRuntime.isSupported() returned false',
+              chrome38CompatMode,
+              selectedEngine,
+              playbackKind: playback.kind,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsIsSupported: typeof hlsRuntime?.isSupported === 'function' ? hlsRuntime.isSupported() : null,
+              hasVideo: !!attachedVideo,
+              resolvedStreamUrl,
+              abortSignalAborted: loadAbortController?.signal?.aborted ?? null,
+              cancelled,
+              loadGeneration,
+              currentLoadGeneration: loadGenerationRef.current
+            });
+          }
           startupAttemptInFlightRef.current = false;
           setStatusMessage('Playback is not supported in this browser');
           return;
         }
 
         if (!isLive && isStreamTemporarilyUnavailable(activeStreamUrl)) {
+          if (chrome38CompatMode) {
+            console.warn('[LG Player][Chrome38 Load] early return before engine startup', {
+              reason: 'stream temporarily unavailable cache',
+              chrome38CompatMode,
+              selectedEngine,
+              playbackKind: playback.kind,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsIsSupported: typeof hlsRuntime?.isSupported === 'function' ? hlsRuntime.isSupported() : null,
+              hasVideo: !!attachedVideo,
+              resolvedStreamUrl,
+              abortSignalAborted: loadAbortController?.signal?.aborted ?? null,
+              cancelled,
+              loadGeneration,
+              currentLoadGeneration: loadGenerationRef.current
+            });
+          }
           console.warn(`${PLAYER_LOG_PREFIX} stream is temporarily marked unavailable`, {
             streamUrl: activeStreamUrl,
             engine: selectedEngine
@@ -2380,7 +2528,26 @@ function PlayerScreen() {
           useWebOSNativeHlsMediaOption
         });
 
+        if (chrome38CompatMode) {
+          console.warn('[LG Player][Chrome38 Load] pre-engine-branch check', {
+            chrome38CompatMode,
+            selectedEngine,
+            hasHlsRuntime: !!hlsRuntime,
+            activeStreamUrl,
+            resolvedStreamUrl,
+            playbackKind: playback.kind
+          });
+        }
+
         if (selectedEngine === 'hlsjs') {
+          if (chrome38CompatMode) {
+            console.warn('[LG Player][Chrome38 HLS] entered hlsjs branch', {
+              chrome38CompatMode,
+              selectedEngine,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsVersion: hlsRuntime?.version || window.Hls?.version || null
+            });
+          }
           if (!chrome38CompatMode && legacyChromiumBrowser && playback.kind === 'live' && isM3u8Url(activeStreamUrl)) {
             console.warn(`${PLAYER_LOG_PREFIX} blocked hls.js startup for legacy Chromium live HLS`, {
               activeStreamUrl,
@@ -2390,10 +2557,18 @@ function PlayerScreen() {
             selectedEngine = 'native';
             activeEngineRef.current = selectedEngine;
           }
+        } else if (chrome38CompatMode) {
+          console.warn('[LG Player][Chrome38 Load] not entering hlsjs branch', {
+            selectedEngine,
+            playbackKind: playback.kind,
+            reason: 'selectedEngine is not hlsjs'
+          });
         }
 
         if (selectedEngine === 'hlsjs') {
           const hlsStartupTimeoutMs = Math.max(NATIVE_LOAD_TIMEOUT_MS, startupGraceMs);
+          const chrome38HlsTracePrefix = '[LG Player][Chrome38 HLS]';
+          const chrome38VideoTracePrefix = '[LG Player][Chrome38 Video]';
 
           // Build a custom playlist loader that serves the pre-rewritten manifest
           // text on the very first fetch, then falls back to normal XHR for all
@@ -2412,6 +2587,7 @@ function PlayerScreen() {
           const mediaSourceInstances = new WeakSet<MediaSource>();
           const sourceBufferInstances = new WeakSet<SourceBuffer>();
           let restoreMediaSourceDebugging = () => undefined;
+          let restoreChrome38VideoTracing = () => undefined;
 
           const logHlsVideoState = (eventName: string, extra: Record<string, unknown> = {}) => {
             logVideoSnapshot(`hlsjs-${eventName}`, attachedVideo, extra);
@@ -2503,6 +2679,17 @@ function PlayerScreen() {
 
           let hlsPlayer: any;
           if (chrome38CompatMode) {
+            console.warn(`${chrome38HlsTracePrefix} startup begin`, {
+              streamUrl: resolvedStreamUrl,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsVersion: hlsRuntime?.version || window.Hls?.version || null,
+              hasMediaSource: typeof window.MediaSource !== 'undefined',
+              mediaSourceIsTypeSupported:
+                typeof window.MediaSource !== 'undefined' && typeof window.MediaSource.isTypeSupported === 'function',
+              videoCanPlayMpegUrl: attachedVideo.canPlayType('application/vnd.apple.mpegurl'),
+              userAgent: navigator.userAgent
+            });
+
             hlsPlayer = new hlsRuntime({
               enableWorker: false,
               autoStartLoad: false,
@@ -2511,15 +2698,59 @@ function PlayerScreen() {
               manifestLoadingTimeOut: 10000,
               levelLoadingTimeOut: 10000,
               fragLoadingTimeOut: 15000,
-              xhrSetup: (xhr: XMLHttpRequest) => {
-                const ua = window.navigator.userAgent;
-                if (ua) {
+              xhrSetup: (xhr: XMLHttpRequest, url?: string) => {
+                console.warn(`${chrome38HlsTracePrefix} xhr setup`, {
+                  url: url || null
+                });
+
+                xhr.addEventListener('loadstart', () => {
+                  console.warn(`${chrome38HlsTracePrefix} xhr loadstart`, {
+                    url: url || xhr.responseURL || null
+                  });
+                });
+
+                xhr.addEventListener('load', () => {
+                  let responseTextPreview: string | null = null;
                   try {
-                    xhr.setRequestHeader('User-Agent', ua);
-                  } catch {}
-                }
+                    responseTextPreview =
+                      typeof xhr.responseText === 'string'
+                        ? xhr.responseText.slice(0, 120)
+                        : null;
+                  } catch {
+                    responseTextPreview = null;
+                  }
+                  console.warn(`${chrome38HlsTracePrefix} xhr load`, {
+                    url: url || xhr.responseURL || null,
+                    status: xhr.status,
+                    responseURL: xhr.responseURL || null,
+                    responseTextPreview
+                  });
+                });
+
+                xhr.addEventListener('error', () => {
+                  console.warn(`${chrome38HlsTracePrefix} xhr error`, {
+                    url: url || xhr.responseURL || null,
+                    status: xhr.status,
+                    responseURL: xhr.responseURL || null
+                  });
+                });
+
+                xhr.addEventListener('timeout', () => {
+                  console.warn(`${chrome38HlsTracePrefix} xhr timeout`, {
+                    url: url || xhr.responseURL || null,
+                    status: xhr.status
+                  });
+                });
+
+                xhr.addEventListener('abort', () => {
+                  console.warn(`${chrome38HlsTracePrefix} xhr abort`, {
+                    url: url || xhr.responseURL || null,
+                    status: xhr.status
+                  });
+                });
               }
             });
+            console.warn(`${chrome38HlsTracePrefix} instance created`);
           } else {
             class PatchedPlaylistLoader extends DefaultLoader {
               load(
@@ -2590,7 +2821,6 @@ function PlayerScreen() {
               // polling is not rejected by servers that enforce UA-based access
               // control (e.g. Xtream Codes returning 403 without a proper UA).
               xhrSetup: (xhr) => {
-              const ua = window.navigator.userAgent;
               const requestTrace = {
                 streamUrl: resolvedStreamUrl,
                 currentSrc: attachedVideo.currentSrc || null
@@ -2641,7 +2871,7 @@ function PlayerScreen() {
                     withCredentials: xhr.withCredentials,
                     ...summarizeCookieJar(),
                     locationHref: window.location.href,
-                    userAgent: ua
+                    userAgent: window.navigator.userAgent
                   });
                 }
                 return originalOpen(method, url, async, username ?? undefined, password ?? undefined);
@@ -2713,13 +2943,6 @@ function PlayerScreen() {
                 });
                 return originalSend(body);
               }) as typeof xhr.send;
-              if (ua) {
-                try {
-                  xhr.setRequestHeader('User-Agent', ua);
-                } catch {
-                  // Some environments block setting User-Agent via XHR — ignore.
-                }
-              }
             }
           });
         }
@@ -2729,6 +2952,12 @@ function PlayerScreen() {
 
           await new Promise<void>((resolve, reject) => {
             const hlsStartupStartedAt = Date.now();
+            let sawMediaAttached = false;
+            let sawManifestLoading = false;
+            let sawManifestLoaded = false;
+            let sawManifestParsed = false;
+            let sawFragLoaded = false;
+            let sawFragBuffered = false;
             let settled = false;
             const finish = () => {
               if (settled) {
@@ -2763,6 +2992,7 @@ function PlayerScreen() {
               hlsPlayer.off(hlsRuntime.Events.SUBTITLE_TRACKS_UPDATED, onSubtitleTracksUpdated);
               hlsPlayer.off(hlsRuntime.Events.SUBTITLE_TRACK_SWITCH, onSubtitleTrackSwitch);
               restoreMediaSourceDebugging();
+              restoreChrome38VideoTracing();
               // Keep the ERROR listener active so we receive logs and run recovery/escalation during playback.
             };
             const escalateToShaka = (reason: string) => {
@@ -2790,11 +3020,23 @@ function PlayerScreen() {
             };
 
             const onMediaAttached = () => {
+              sawMediaAttached = true;
               if (cancelled || loadGeneration !== loadGenerationRef.current) {
                 return;
               }
 
+              if (chrome38CompatMode) {
+                console.warn(`${chrome38HlsTracePrefix} MEDIA_ATTACHED`, {
+                  url: resolvedStreamUrl
+                });
+                console.warn(`${chrome38HlsTracePrefix} loadSource start`, {
+                  url: resolvedStreamUrl
+                });
+              }
               hlsPlayer.loadSource(resolvedStreamUrl);
+              if (chrome38CompatMode) {
+                console.warn(`${chrome38HlsTracePrefix} loadSource called`);
+              }
               // With autoStartLoad: false, we must call startLoad() explicitly.
               // This gives us control: the manifest is fetched (via loadSource),
               // but fragment loading only begins after we call startLoad(), which
@@ -2802,6 +3044,7 @@ function PlayerScreen() {
               // before the SourceBuffer is ready.
               if (chrome38CompatMode) {
                 hlsPlayer.startLoad(-1);
+                console.warn(`${chrome38HlsTracePrefix} startLoad called`);
               } else {
                 hlsPlayer.startLoad();
               }
@@ -2863,6 +3106,7 @@ function PlayerScreen() {
             };
 
             const onManifestParsed = () => {
+              sawManifestParsed = true;
               if (cancelled || loadGeneration !== loadGenerationRef.current) {
                 return;
               }
@@ -2927,6 +3171,7 @@ function PlayerScreen() {
             };
 
             const onFirstFragBuffered = () => {
+              sawFragBuffered = true;
               if (cancelled || loadGeneration !== loadGenerationRef.current) {
                 return;
               }
@@ -2991,11 +3236,20 @@ function PlayerScreen() {
                   data.details === 'manifestParsingError');
 
               if (isFatalManifestStartupError) {
+                if (chrome38CompatMode && playback.kind === 'live') {
+                  fail('Live HLS failed in Chrome 38. This server does not allow browser HLS requests without CORS. No proxy is enabled.');
+                  return;
+                }
                 fail(
                   data.response?.code
                     ? `manifest request failed with ${data.response.code}`
                     : data.details || data.type || 'hls.js fatal manifest error'
                 );
+                return;
+              }
+
+              if (chrome38CompatMode && playback.kind === 'live' && data.type === hlsRuntime.ErrorTypes.NETWORK_ERROR) {
+                fail('Live HLS failed in Chrome 38. This server does not allow browser HLS requests without CORS. No proxy is enabled.');
                 return;
               }
 
@@ -3039,6 +3293,126 @@ function PlayerScreen() {
               });
             }, 2000);
 
+            if (chrome38CompatMode) {
+              const traceEvents = [
+                'MEDIA_ATTACHED',
+                'MEDIA_DETACHED',
+                'MANIFEST_LOADING',
+                'MANIFEST_LOADED',
+                'MANIFEST_PARSED',
+                'LEVEL_LOADING',
+                'LEVEL_LOADED',
+                'FRAG_LOADING',
+                'FRAG_LOADED',
+                'FRAG_PARSING_INIT_SEGMENT',
+                'FRAG_PARSING_DATA',
+                'FRAG_PARSED',
+                'FRAG_BUFFERED',
+                'BUFFER_CREATED',
+                'BUFFER_APPENDING',
+                'BUFFER_APPENDED',
+                'BUFFER_EOS',
+                'ERROR'
+              ] as const;
+
+              traceEvents.forEach((eventName) => {
+                const eventValue = hlsRuntime.Events[eventName];
+                if (!eventValue) {
+                  return;
+                }
+
+                hlsPlayer.on(eventValue, (_event: string, data: any) => {
+                  if (eventName === 'MANIFEST_LOADING') {
+                    sawManifestLoading = true;
+                  } else if (eventName === 'MANIFEST_LOADED') {
+                    sawManifestLoaded = true;
+                  } else if (eventName === 'FRAG_LOADED') {
+                    sawFragLoaded = true;
+                  }
+
+                  console.warn(`${chrome38HlsTracePrefix} event ${eventName}`, {
+                    type: data?.type,
+                    details: data?.details,
+                    fatal: data?.fatal,
+                    url: data?.url || data?.frag?.url || data?.context?.url || null,
+                    responseCode: data?.response?.code || data?.networkDetails?.status || null,
+                    error: data?.error ? String(data.error) : null,
+                    reason: data?.reason || null,
+                    level: data?.level ?? null,
+                    fragSn: data?.frag?.sn ?? null,
+                    fragType: data?.frag?.type ?? null,
+                    mimeType: data?.mimeType || null,
+                    codec: data?.codec || null
+                  });
+                });
+              });
+
+              const videoTraceEvents = [
+                'loadstart',
+                'loadedmetadata',
+                'loadeddata',
+                'canplay',
+                'canplaythrough',
+                'playing',
+                'waiting',
+                'stalled',
+                'suspend',
+                'error',
+                'timeupdate',
+                'progress'
+              ] as const;
+
+              const videoListeners = videoTraceEvents.map((eventName) => {
+                const listener = () => {
+                  let buffered: { start: number; end: number } | null = null;
+                  try {
+                    buffered =
+                      attachedVideo.buffered && attachedVideo.buffered.length
+                        ? {
+                            start: attachedVideo.buffered.start(0),
+                            end: attachedVideo.buffered.end(attachedVideo.buffered.length - 1)
+                          }
+                        : null;
+                  } catch {
+                    buffered = null;
+                  }
+                  console.warn(`${chrome38VideoTracePrefix} event ${eventName}`, {
+                    currentTime: attachedVideo.currentTime,
+                    readyState: attachedVideo.readyState,
+                    networkState: attachedVideo.networkState,
+                    paused: attachedVideo.paused,
+                    currentSrc: attachedVideo.currentSrc,
+                    errorCode: attachedVideo.error?.code || null,
+                    errorMessage: attachedVideo.error?.message || null,
+                    buffered
+                  });
+                };
+                attachedVideo.addEventListener(eventName, listener);
+                return { eventName, listener };
+              });
+
+              restoreChrome38VideoTracing = () => {
+                videoListeners.forEach(({ eventName, listener }) => {
+                  attachedVideo.removeEventListener(eventName, listener);
+                });
+              };
+
+              window.setTimeout(() => {
+                console.warn(`${chrome38HlsTracePrefix} startup watchdog`, {
+                  sawMediaAttached,
+                  sawManifestLoading,
+                  sawManifestLoaded,
+                  sawManifestParsed,
+                  sawFragLoaded,
+                  sawFragBuffered,
+                  videoReadyState: attachedVideo.readyState,
+                  videoNetworkState: attachedVideo.networkState,
+                  videoErrorCode: attachedVideo.error?.code || null,
+                  currentSrc: attachedVideo.currentSrc
+                });
+              }, 15000);
+            }
+
             hlsPlayer.on(hlsRuntime.Events.MEDIA_ATTACHING, onMediaAttaching);
             hlsPlayer.on(hlsRuntime.Events.MEDIA_ATTACHED, onMediaAttached);
             hlsPlayer.on(hlsRuntime.Events.MANIFEST_PARSED, onManifestParsed);
@@ -3055,7 +3429,13 @@ function PlayerScreen() {
             // hls.js level/frag logs removed
 
             applyVideoAudioState(attachedVideo, 'hlsjs-before-attach');
+            if (chrome38CompatMode) {
+              console.warn(`${chrome38HlsTracePrefix} attachMedia start`);
+            }
             hlsPlayer.attachMedia(attachedVideo);
+            if (chrome38CompatMode) {
+              console.warn(`${chrome38HlsTracePrefix} attachMedia called`);
+            }
           });
         } else if (selectedEngine === 'native') {
           // Native path: use the resolved CDN URL with webOS HLS media option.
@@ -3456,6 +3836,22 @@ function PlayerScreen() {
         }
       } catch (error) {
         if (loadAbortController.signal.aborted) {
+          if (chrome38CompatMode) {
+            console.warn('[LG Player][Chrome38 Load] early return before engine startup', {
+              reason: 'loadAbortController.signal.aborted in catch',
+              chrome38CompatMode,
+              selectedEngine,
+              playbackKind: playback.kind,
+              hasHlsRuntime: !!hlsRuntime,
+              hlsIsSupported: typeof hlsRuntime?.isSupported === 'function' ? hlsRuntime.isSupported() : null,
+              hasVideo: !!attachedVideo,
+              resolvedStreamUrl,
+              abortSignalAborted: loadAbortController?.signal?.aborted ?? null,
+              cancelled,
+              loadGeneration,
+              currentLoadGeneration: loadGenerationRef.current
+            });
+          }
           startupAttemptInFlightRef.current = false;
           return;
         }
@@ -3511,6 +3907,42 @@ function PlayerScreen() {
 
           if (selectedEngine === 'hlsjs' && liveHlsJsFallbackToShakaUsedRef.current) {
             startupAttemptInFlightRef.current = false;
+            return;
+          }
+
+          if (
+            chrome38CompatMode &&
+            playback.kind === 'live' &&
+            selectedEngine === 'hlsjs' &&
+            message === 'Live HLS failed in Chrome 38. This server does not allow browser HLS requests without CORS. No proxy is enabled.'
+          ) {
+            startupAttemptInFlightRef.current = false;
+            clearRecoveryTimers();
+            setIsReady(false);
+            setRecoveryMessage(message);
+            setStatusMessage(message);
+            return;
+          }
+
+          if (
+            chrome38CompatMode &&
+            (playback.kind === 'movie' || playback.kind === 'series') &&
+            selectedEngine === 'native' &&
+            (errorCode === 4 || chrome38NativeUnsupportedRef.current)
+          ) {
+            console.warn('[LG Player][Chrome38 Native] unsupported progressive media; retry suppressed', {
+              mediaErrorCode: errorCode ?? null,
+              selectedEngine,
+              playbackKind: playback.kind,
+              streamUrl: resolvedStreamUrl
+            });
+            chrome38NativeUnsupportedRef.current = true;
+            startupAttemptInFlightRef.current = false;
+            clearRecoveryTimers();
+            clearStartupGuardRetry();
+            setIsReady(false);
+            setRecoveryMessage('Unsupported codec/container for Chrome 38 desktop. This file may use HEVC/H.265, AC3/EAC3, or another unsupported format.');
+            setStatusMessage('Unsupported codec/container');
             return;
           }
 
@@ -3685,6 +4117,22 @@ function PlayerScreen() {
             message: error instanceof Error ? error.message : 'Playback failed to start'
           });
           startupAttemptInFlightRef.current = false;
+          if (
+            chrome38CompatMode &&
+            playback.kind === 'live' &&
+            selectedEngine === 'hlsjs' &&
+            message === 'Live HLS failed in Chrome 38. This server does not allow browser HLS requests without CORS. No proxy is enabled.'
+          ) {
+            return;
+          }
+          if (
+            chrome38CompatMode &&
+            (playback.kind === 'movie' || playback.kind === 'series') &&
+            selectedEngine === 'native' &&
+            (errorCode === 4 || chrome38NativeUnsupportedRef.current)
+          ) {
+            return;
+          }
           if (playback.kind === 'live') {
             requestRetry(message);
             return;
@@ -3978,6 +4426,22 @@ function PlayerScreen() {
           engine: activeEngineRef.current,
           streamUrl: activeStreamUrl
         });
+        if (chrome38CompatMode && (playback.kind === 'movie' || playback.kind === 'series') && mediaError?.code === 4) {
+          console.warn('[LG Player][Chrome38 Native] unsupported progressive media; retry suppressed', {
+            mediaErrorCode: mediaError.code,
+            selectedEngine: activeEngineRef.current,
+            playbackKind: playback.kind,
+            streamUrl: activeStreamUrl
+          });
+          chrome38NativeUnsupportedRef.current = true;
+          startupAttemptInFlightRef.current = false;
+          clearRecoveryTimers();
+          clearStartupGuardRetry();
+          setIsReady(false);
+          setRecoveryMessage('Unsupported codec/container for Chrome 38 desktop. This file may use HEVC/H.265, AC3/EAC3, or another unsupported format.');
+          setStatusMessage('Unsupported codec/container');
+          return;
+        }
         if (scheduleStartupGuardRetry(mediaError?.message || 'Playback startup error')) {
           return;
         }
@@ -3986,11 +4450,18 @@ function PlayerScreen() {
 
       if (activeEngineRef.current === 'native') {
         if (chrome38CompatMode && (playback.kind === 'movie' || playback.kind === 'series') && mediaError?.code === 4) {
-          console.warn(`${PLAYER_LOG_PREFIX} Chrome 38 progressive stream failed with media error code 4 (SRC_NOT_SUPPORTED). Showing clear unsupported codec/container message.`);
+          console.warn('[LG Player][Chrome38 Native] unsupported progressive media; retry suppressed', {
+            mediaErrorCode: mediaError.code,
+            selectedEngine: activeEngineRef.current,
+            playbackKind: playback.kind,
+            streamUrl: activeStreamUrl
+          });
+          chrome38NativeUnsupportedRef.current = true;
           startupAttemptInFlightRef.current = false;
           clearRecoveryTimers();
+          clearStartupGuardRetry();
           setIsReady(false);
-          setRecoveryMessage('Unsupported codec/container (likely HEVC/AC3) for Chrome 38 desktop');
+          setRecoveryMessage('Unsupported codec/container for Chrome 38 desktop. This file may use HEVC/H.265, AC3/EAC3, or another unsupported format.');
           setStatusMessage('Unsupported codec/container');
           return;
         }

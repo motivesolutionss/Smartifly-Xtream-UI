@@ -1,39 +1,16 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { transformSync } from '@babel/core';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const isChrome38Compat = env.CHROME38_COMPAT === 'true' || process.env.CHROME38_COMPAT === 'true';
+
+  return {
   plugins: [
     react(),
-    {
-      name: 'vite-media-proxy-middleware',
-      configureServer(server) {
-        server.middlewares.use('/proxy', async (req, res, next) => {
-          if (process.env.ENABLE_MEDIA_PROXY !== 'true') {
-            res.statusCode = 403;
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.end('Forbidden: Media proxy is disabled');
-            return;
-          }
-          const { handleProxyRequest } = await import('./scripts/media-proxy.mjs');
-          handleProxyRequest(req, res);
-        });
-      },
-      configurePreviewServer(server) {
-        server.middlewares.use('/proxy', async (req, res, next) => {
-          if (process.env.ENABLE_MEDIA_PROXY !== 'true') {
-            res.statusCode = 403;
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.end('Forbidden: Media proxy is disabled');
-            return;
-          }
-          const { handleProxyRequest } = await import('./scripts/media-proxy.mjs');
-          handleProxyRequest(req, res);
-        });
-      }
-    },
     {
       name: 'webos-non-module-output',
       closeBundle() {
@@ -42,10 +19,10 @@ export default defineConfig({
         const distDir = join(process.cwd(), 'dist');
         const vendorDir = join(distDir, 'vendor');
         const cacheBust = Date.now().toString();
+        const hlsCacheBust = isChrome38Compat ? `chrome38-hls-01417-${cacheBust}` : cacheBust;
 
         try {
           mkdirSync(vendorDir, { recursive: true });
-          const isChrome38Compat = process.env.CHROME38_COMPAT === 'true';
           const hlsSourceFile = isChrome38Compat
             ? join(process.cwd(), 'public', 'vendor', 'hls-0.14.17.min.js')
             : join(process.cwd(), 'node_modules', 'hls.js', 'dist', 'hls.min.js');
@@ -125,13 +102,14 @@ export default defineConfig({
           "        setStatus('Loading polyfills...');",
           `        loadScript('./vendor/polyfills.js?v=${cacheBust}', function () {`,
           "          setStatus('Loading vendor player bundles...');",
-          `          loadScript('./vendor/hls.min.js?v=${cacheBust}', function () {`,
+          `          loadScript('./vendor/hls.min.js?v=${hlsCacheBust}', function () {`,
+          "            console.warn('[LG Player][Chrome38 HLS] loaded hls version', window.Hls && window.Hls.version || null);",
           "            setStatus('hls.js loaded. Loading Shaka...');",
           `            loadScript('./vendor/shaka-player.compiled.js?v=${cacheBust}', function () {`,
           "              setStatus('Shaka loaded. Loading app.js...');",
           '              loadAppBundle();',
           `            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=${cacheBust}');`,
-          `          }, 'The emulator could not load ./vendor/hls.min.js?v=${cacheBust}');`,
+          `          }, 'The emulator could not load ./vendor/hls.min.js?v=${hlsCacheBust}');`,
           `        }, 'The emulator could not load ./vendor/polyfills.js?v=${cacheBust}');`
         ].join(lineEnding);
 
@@ -205,8 +183,7 @@ export default defineConfig({
   ],
   base: './',
   define: {
-    'process.env.CHROME38_COMPAT': JSON.stringify(process.env.CHROME38_COMPAT || 'false'),
-    'process.env.ENABLE_MEDIA_PROXY': JSON.stringify(process.env.ENABLE_MEDIA_PROXY || 'false')
+    'process.env.CHROME38_COMPAT': JSON.stringify(isChrome38Compat ? 'true' : 'false')
   },
   build: {
     outDir: 'dist',
@@ -233,4 +210,5 @@ export default defineConfig({
       }
     }
   }
+};
 });

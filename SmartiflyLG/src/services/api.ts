@@ -299,6 +299,129 @@ function getActivationOsVersion() {
   return userAgent.slice(0, 50);
 }
 
+type SmartiflyRequestOptions = {
+  method?: 'GET' | 'POST';
+  body?: unknown;
+  timeoutMs?: number;
+};
+
+function buildSmartiflyUrl(path: string) {
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${normalizedPath}`;
+}
+
+function parseSmartiflyJson<T>(text: string): T {
+  if (!text || !text.trim()) {
+    throw new Error('Smartifly API returned an empty response');
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Smartifly API returned invalid JSON');
+  }
+}
+
+function smartiflyRequestJson<T>(
+  path: string,
+  options: SmartiflyRequestOptions = {}
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const method = options.method || 'GET';
+    const url = buildSmartiflyUrl(path);
+    const xhr = new XMLHttpRequest();
+
+    try {
+      xhr.open(method, url, true);
+      xhr.timeout = options.timeoutMs || 20000;
+
+      xhr.setRequestHeader('Accept', 'application/json');
+
+      if (method !== 'GET' && options.body !== undefined) {
+        xhr.setRequestHeader('Content-Type', 'application/json');
+      }
+
+      xhr.onload = function () {
+        const status = xhr.status || 0;
+        const text = xhr.responseText || '';
+
+        console.warn('[Smartifly API][XHR] response', {
+          method,
+          path,
+          status,
+          hasBody: text.length > 0
+        });
+
+        if (status >= 200 && status < 300) {
+          try {
+            resolve(parseSmartiflyJson<T>(text));
+          } catch (error) {
+            reject(error);
+          }
+          return;
+        }
+
+        let message = `Smartifly API failed with HTTP ${status}`;
+
+        try {
+          const payload = JSON.parse(text) as { message?: string; reason?: string; error?: string };
+          message = payload.message || payload.reason || payload.error || message;
+        } catch {
+          // Keep fallback message.
+        }
+
+        reject(new Error(message));
+      };
+
+      xhr.onerror = function () {
+        console.warn('[Smartifly API][XHR] network error', {
+          method,
+          path,
+          status: xhr.status,
+          statusText: xhr.statusText
+        });
+
+        reject(new Error(`Network request failed: ${method} ${path}`));
+      };
+
+      xhr.ontimeout = function () {
+        console.warn('[Smartifly API][XHR] timeout', {
+          method,
+          path
+        });
+
+        reject(new Error(`Network request timed out: ${method} ${path}`));
+      };
+
+      const payload =
+        method === 'GET' || options.body === undefined
+          ? null
+          : JSON.stringify(options.body);
+
+      console.warn('[Smartifly API][XHR] request', {
+        method,
+        path,
+        url,
+        hasBody: payload !== null
+      });
+
+      xhr.send(payload);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+export async function checkSmartiflyApiHealth() {
+  return smartiflyRequestJson<{ ok?: boolean; db?: string }>(
+    '/health',
+    { method: 'GET', timeoutMs: 10000 }
+  );
+}
+
+// Xtream portal requests are intentionally left on the existing path for now.
+// The webOS 3 activation issue is isolated to Smartifly backend API calls.
 async function requestJson<T>(baseUrl: string, params: Record<string, string | number | undefined>) {
   const searchParams = new URLSearchParams();
 
@@ -414,15 +537,13 @@ export async function validatePortalCode(code: string): Promise<PortalDetails> {
     throw new Error('Server Identity is required');
   }
 
-  const response = await fetch(`${API_BASE_URL}/public/portal/validate?code=${encodeURIComponent(normalizedCode)}`, {
-    method: 'GET',
-    cache: 'no-store'
-  });
+  const payload = await smartiflyRequestJson<PortalValidationPayload>(
+    `/public/portal/validate?code=${encodeURIComponent(normalizedCode)}`,
+    { method: 'GET' }
+  );
 
-  const payload = (await response.json()) as PortalValidationPayload;
-
-  if (!response.ok || !payload.success || !payload.portal) {
-    throw new Error(payload.message || `Server identity validation failed with HTTP ${response.status}`);
+  if (!payload.success || !payload.portal) {
+    throw new Error(payload.message || 'Server identity validation failed');
   }
 
   return {
@@ -434,49 +555,43 @@ export async function validatePortalCode(code: string): Promise<PortalDetails> {
 }
 
 export async function registerDevice(deviceId: string) {
-  const response = await fetch(`${API_BASE_URL}/public/device/register`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      deviceId,
-      mac: buildActivationMac(deviceId),
-      brand: 'LG',
-      model: 'webOS Emulator',
-      platform: 'WEBOS',
-      appVersion: 'lg-webos',
-      osVersion: getActivationOsVersion()
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Device registration failed with HTTP ${response.status}`);
-  }
+  await smartiflyRequestJson<{ success?: boolean; message?: string }>(
+    '/public/device/register',
+    {
+      method: 'POST',
+      body: {
+        deviceId,
+        mac: buildActivationMac(deviceId),
+        brand: 'LG',
+        model: 'webOS Emulator',
+        platform: 'WEBOS',
+        appVersion: 'lg-webos',
+        osVersion: getActivationOsVersion()
+      }
+    }
+  );
 }
 
 export async function fetchActivationSession(deviceId: string): Promise<DeviceActivationSession> {
-  const response = await fetch(`${API_BASE_URL}/public/qr/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      licenseKey: 'TRIAL',
-      deviceId,
-      mac: buildActivationMac(deviceId),
-      platform: 'WEBOS',
-      brand: 'LG',
-      model: 'webOS Emulator',
-      appVersion: 'lg-webos',
-      osVersion: getActivationOsVersion()
-    })
-  });
+  const payload = await smartiflyRequestJson<DeviceActivationSessionPayload>(
+    '/public/qr/generate',
+    {
+      method: 'POST',
+      body: {
+        licenseKey: 'TRIAL',
+        deviceId,
+        mac: buildActivationMac(deviceId),
+        platform: 'WEBOS',
+        brand: 'LG',
+        model: 'webOS Emulator',
+        appVersion: 'lg-webos',
+        osVersion: getActivationOsVersion()
+      }
+    }
+  );
 
-  const payload = (await response.json()) as DeviceActivationSessionPayload;
-
-  if (!response.ok || !payload.success || !payload.webLink || !payload.token || !payload.settingsCode) {
-    throw new Error(`Activation session failed${response.ok ? '' : ` with HTTP ${response.status}`}`);
+  if (!payload.success || !payload.webLink || !payload.token || !payload.settingsCode) {
+    throw new Error('Activation session failed');
   }
 
   return {
@@ -495,15 +610,13 @@ export async function checkDeviceActivation(deviceId: string): Promise<DeviceAct
     mac: buildActivationMac(deviceId)
   });
 
-  const response = await fetch(`${API_BASE_URL}/public/device/check?${searchParams.toString()}`, {
-    method: 'GET',
-    cache: 'no-store'
-  });
+  const payload = await smartiflyRequestJson<DeviceActivationStatusPayload>(
+    `/public/device/check?${searchParams.toString()}`,
+    { method: 'GET' }
+  );
 
-  const payload = (await response.json()) as DeviceActivationStatusPayload;
-
-  if (!response.ok || !payload.state) {
-    throw new Error(payload.reason || `Activation status failed with HTTP ${response.status}`);
+  if (!payload.state) {
+    throw new Error(payload.reason || 'Activation status failed');
   }
 
   return {

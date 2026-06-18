@@ -135,14 +135,14 @@ function pickImage(...values: Array<string | string[] | undefined>) {
     if (Array.isArray(value)) {
       for (const entry of value) {
         if (typeof entry === 'string' && entry.trim().length > 0) {
-          return entry;
+          return entry.trim().replace(/^https:\/\/image\.tmdb\.org/i, 'http://image.tmdb.org');
         }
       }
       continue;
     }
 
     if (typeof value === 'string' && value.trim().length > 0) {
-      return value;
+      return value.trim().replace(/^https:\/\/image\.tmdb\.org/i, 'http://image.tmdb.org');
     }
   }
 

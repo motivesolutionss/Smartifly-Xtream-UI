@@ -33,7 +33,7 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     // ✅ FIX: Use a clean URL for the QR code instead of a Data URI
     // This is much more compatible with Android TV image loaders
-    const cleanQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(result.webLink)}`;
+    const cleanQrUrl = `http://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(result.webLink)}`;
 
     return success(res, {
       settingsCode: result.settingsCode,

@@ -28,23 +28,6 @@ function resolvePath(urlPath) {
 createServer((req, res) => {
   const requestPath = req.url ? req.url.split('?')[0] : '/';
 
-  if (requestPath === '/proxy') {
-    if (process.env.ENABLE_MEDIA_PROXY !== 'true') {
-      res.statusCode = 403;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.end('Forbidden: Media proxy is disabled');
-      return;
-    }
-    import('./scripts/media-proxy.mjs').then(({ handleProxyRequest }) => {
-      handleProxyRequest(req, res);
-    }).catch((err) => {
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.end(`Internal server error: ${err.message}`);
-    });
-    return;
-  }
-
   let filePath = resolvePath(requestPath);
 
   if (requestPath === '/' || requestPath === '') {

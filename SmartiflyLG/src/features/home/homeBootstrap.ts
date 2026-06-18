@@ -106,7 +106,8 @@ function isAllowedHomeImageUrl(value: string | undefined) {
   }
 
   const trimmed = value.trim();
-  if (!trimmed.toLowerCase().startsWith('https://')) {
+  const lower = trimmed.toLowerCase();
+  if (!lower.startsWith('https://') && !lower.startsWith('http://')) {
     return false;
   }
 
@@ -134,19 +135,23 @@ function isAllowedHomeImageUrl(value: string | undefined) {
   return false;
 }
 
+function sanitizeTMDBUrl(url: string): string {
+  return url.replace(/^https:\/\/image\.tmdb\.org/i, 'http://image.tmdb.org');
+}
+
 function pickHomeImage(...values: Array<string | string[] | undefined>) {
   for (const value of values) {
     if (Array.isArray(value)) {
       for (const entry of value) {
         if (isAllowedHomeImageUrl(entry)) {
-          return entry.trim();
+          return sanitizeTMDBUrl(entry.trim());
         }
       }
       continue;
     }
 
     if (isAllowedHomeImageUrl(value)) {
-      return value.trim();
+      return sanitizeTMDBUrl(value.trim());
     }
   }
 
