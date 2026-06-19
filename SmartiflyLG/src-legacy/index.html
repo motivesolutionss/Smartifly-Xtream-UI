@@ -5,6 +5,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smartifly TV Legacy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./app.css" />
 </head>
 
@@ -68,6 +71,11 @@
         </div>
         <div class="sidebar-menu">
           <button id="sidebar-live" class="focusable sidebar-item active">Live TV</button>
+          <button id="sidebar-movies" class="focusable sidebar-item">Movies</button>
+          <button id="sidebar-series" class="focusable sidebar-item">Series</button>
+          <button id="sidebar-search" class="focusable sidebar-item">Search</button>
+          <button id="sidebar-watchlist" class="focusable sidebar-item">Watchlist</button>
+          <button id="sidebar-settings" class="focusable sidebar-item">Settings</button>
           <button id="sidebar-profile" class="focusable sidebar-item">Switch Profile</button>
           <button id="sidebar-logout" class="focusable sidebar-item">Log Out</button>
         </div>
@@ -97,7 +105,132 @@
     </div>
   </div>
 
-  <!-- 5. PLAYER VIEW -->
+  <!-- 5. SEARCH VIEW -->
+  <div id="view-search" class="view">
+    <div class="utility-view">
+      <div class="utility-shell">
+        <div class="utility-header">
+          <div class="utility-header-copy">
+            <div class="utility-kicker">SEARCH</div>
+            <div class="utility-title">Find Live TV, Movies, and Series</div>
+            <div id="search-summary" class="utility-subtitle">Choose a content type, enter a title, and search the portal catalog.</div>
+          </div>
+        </div>
+        <div id="search-controls" class="utility-controls utility-controls--wrap">
+          <input id="search-query-input" type="text" class="focusable utility-input" placeholder="Search titles, genres, and descriptions" />
+          <button id="search-btn-submit" class="focusable utility-chip utility-chip--primary">Search</button>
+          <button id="search-mode-live" class="focusable utility-chip">Live TV</button>
+          <button id="search-mode-movies" class="focusable utility-chip active">Movies</button>
+          <button id="search-mode-series" class="focusable utility-chip">Series</button>
+          <button id="search-btn-back" class="focusable utility-chip">Back</button>
+        </div>
+        <div id="search-results-scroll" class="utility-results-scroll">
+          <div id="search-results-grid" class="channels-grid utility-results-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. WATCHLIST VIEW -->
+  <div id="view-watchlist" class="view">
+    <div class="utility-view">
+      <div class="utility-shell">
+        <div class="utility-header">
+          <div class="utility-header-copy">
+            <div class="utility-kicker">WATCHLIST</div>
+            <div class="utility-title">Saved Favorites for This Profile</div>
+            <div id="watchlist-summary" class="utility-subtitle">Your saved movies and series appear here.</div>
+          </div>
+        </div>
+        <div id="watchlist-controls" class="utility-controls">
+          <button id="watchlist-filter-all" class="focusable utility-chip active">All</button>
+          <button id="watchlist-filter-movies" class="focusable utility-chip">Movies</button>
+          <button id="watchlist-filter-series" class="focusable utility-chip">Series</button>
+          <button id="watchlist-btn-back" class="focusable utility-chip">Back</button>
+        </div>
+        <div id="watchlist-results-scroll" class="utility-results-scroll">
+          <div id="watchlist-results-grid" class="channels-grid utility-results-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. SETTINGS VIEW -->
+  <div id="view-settings" class="view">
+    <div class="utility-view">
+      <div class="utility-shell">
+        <div class="utility-header">
+          <div class="utility-header-copy">
+            <div class="utility-kicker">SETTINGS</div>
+            <div class="utility-title">Account and App Controls</div>
+            <div class="utility-subtitle">Manage profile access, watchlist storage, and the current Smartifly portal session.</div>
+          </div>
+        </div>
+        <div class="settings-layout">
+          <div class="settings-info-grid">
+            <div class="settings-info-card">
+              <div class="settings-info-label">Portal</div>
+              <div id="settings-portal-code" class="settings-info-value">-</div>
+              <div id="settings-server-name" class="settings-info-note">-</div>
+            </div>
+            <div class="settings-info-card">
+              <div class="settings-info-label">Account</div>
+              <div id="settings-username" class="settings-info-value">-</div>
+              <div id="settings-profile" class="settings-info-note">-</div>
+            </div>
+            <div class="settings-info-card">
+              <div class="settings-info-label">Watchlist</div>
+              <div id="settings-watchlist-count" class="settings-info-value">0 saved</div>
+              <div class="settings-info-note">Movies and series saved locally for this profile.</div>
+            </div>
+          </div>
+          <div id="settings-actions" class="settings-actions">
+            <button id="settings-btn-switch-profile" class="focusable settings-action">Switch Profile</button>
+            <button id="settings-btn-clear-watchlist" class="focusable settings-action">Clear Watchlist</button>
+            <button id="settings-btn-logout" class="focusable settings-action">Log Out</button>
+            <button id="settings-btn-back" class="focusable settings-action settings-action--secondary">Back</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. CONTENT DETAIL VIEW -->
+  <div id="view-content-detail" class="view">
+    <div class="content-detail-view">
+      <div id="content-detail-backdrop" class="content-detail-backdrop"></div>
+      <div class="content-detail-scrim"></div>
+      <div class="content-detail-shell">
+        <div class="content-detail-main">
+          <div class="content-detail-poster-wrap">
+            <div class="content-detail-poster-frame">
+              <img id="detail-poster-image" class="content-detail-poster-image" alt="Poster" />
+            </div>
+          </div>
+          <div class="content-detail-copy">
+            <div id="detail-type-label" class="content-detail-type">MOVIE</div>
+            <div id="detail-main-title" class="content-detail-title">Loading...</div>
+            <div id="detail-main-meta" class="content-detail-meta">Please wait...</div>
+            <div id="detail-main-summary" class="content-detail-summary"></div>
+            <div id="detail-actions" class="content-detail-actions">
+              <button id="detail-btn-play" class="focusable content-detail-action content-detail-action--primary">Play</button>
+              <button id="detail-btn-favorite" class="focusable content-detail-action">Add to Favorites</button>
+              <button id="detail-btn-back" class="focusable content-detail-action">Back</button>
+            </div>
+          </div>
+        </div>
+        <div id="detail-series-section" class="content-detail-series-section" style="display: none;">
+          <div class="content-detail-section-heading">Episodes</div>
+          <div id="detail-seasons" class="content-detail-seasons"></div>
+          <div id="detail-episodes-scroll" class="content-detail-episodes-scroll">
+            <div id="detail-episodes" class="content-detail-episodes"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. PLAYER VIEW -->
   <div id="view-player" class="view player-view">
     <video id="player-video" playsinline webkit-playsinline preload="auto"></video>
     <div id="player-overlay" class="player-overlay">

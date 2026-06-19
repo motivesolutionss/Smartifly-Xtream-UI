@@ -4,6 +4,7 @@
   var PROFILES_KEY = 'smartifly-lg-profiles';
   var SELECTED_PROFILE_KEY = 'smartifly-lg-selected-profile';
   var PORTAL_KEY = 'smartifly-lg-last-portal';
+  var FAVORITES_KEY = 'smartifly-lg-favorites';
 
   // --- EPG STATE & TIMER ---
   var epgTimer = null;
@@ -14,15 +15,48 @@
     session: null,
     profiles: [],
     selectedProfile: null,
+    catalogMode: 'live',
     categories: [],
     channels: [],
     selectedCategoryId: '',
     selectedCategoryName: '',
-    focusedPanel: 'welcome', // 'welcome', 'login', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
+    focusedPanel: 'welcome', // 'welcome', 'login', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'detail-actions', 'detail-seasons', 'detail-episodes', 'search-controls', 'search-results', 'watchlist-controls', 'watchlist-results', 'settings-actions', 'player'
     focusedIndex: 0, // Index of focused item inside current panel
     activeChannel: null,
     activeChannelQueue: [],
-    activeChannelIndex: 0
+    activeChannelIndex: 0,
+    currentViewId: 'view-welcome',
+    playerReturnViewId: 'view-catalog',
+    playerReturnPanel: 'catalog-channels',
+    playerReturnIndex: 0,
+    detailItem: null,
+    detailMode: '',
+    detailSourceIndex: 0,
+    detailReturnViewId: 'view-catalog',
+    detailReturnPanel: 'catalog-channels',
+    detailReturnIndex: 0,
+    detailInfo: null,
+    detailSeasons: [],
+    detailSelectedSeasonIndex: 0,
+    detailEpisodes: [],
+    favorites: {},
+    searchMode: 'movies',
+    searchQuery: '',
+    searchResults: [],
+    searchCache: {},
+    watchlistFilter: 'all',
+    watchlistItems: []
+  };
+
+  var SIDEBAR_MODE_INDEX = {
+    live: 0,
+    movies: 1,
+    series: 2,
+    search: 3,
+    watchlist: 4,
+    settings: 5,
+    profile: 6,
+    logout: 7
   };
 
   // --- API CLIENT SETUP ---
@@ -185,6 +219,182 @@
     xhr.send();
   }
 
+  function apiGetVodCategories(portalBaseUrl, username, password, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_categories';
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 20000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.categories)) {
+            list = res.categories;
+          } else if (res && Array.isArray(res.vod_categories)) {
+            list = res.vod_categories;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse movie categories');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading movie categories');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading movie categories'); };
+    xhr.send();
+  }
+
+  function apiGetVodStreams(portalBaseUrl, username, password, categoryId, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_streams';
+    if (categoryId) {
+      url += '&category_id=' + encodeURIComponent(categoryId);
+    }
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.vod_streams)) {
+            list = res.vod_streams;
+          } else if (res && Array.isArray(res.movies)) {
+            list = res.movies;
+          } else if (res && Array.isArray(res.vod)) {
+            list = res.vod;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse movies');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading movies');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading movies'); };
+    xhr.send();
+  }
+
+  function apiGetSeriesCategories(portalBaseUrl, username, password, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_series_categories';
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 20000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.categories)) {
+            list = res.categories;
+          } else if (res && Array.isArray(res.series_categories)) {
+            list = res.series_categories;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse series categories');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading series categories');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading series categories'); };
+    xhr.send();
+  }
+
+  function apiGetSeries(portalBaseUrl, username, password, categoryId, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_series';
+    if (categoryId) {
+      url += '&category_id=' + encodeURIComponent(categoryId);
+    }
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.series)) {
+            list = res.series;
+          } else if (res && Array.isArray(res.series_list)) {
+            list = res.series_list;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse series');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading series');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading series'); };
+    xhr.send();
+  }
+
+  function apiGetVodInfo(portalBaseUrl, username, password, vodId, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_info&vod_id=' + encodeURIComponent(vodId);
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          onSuccess(JSON.parse(xhr.responseText));
+        } catch (e) {
+          onError('Failed to parse movie details');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading movie details');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading movie details'); };
+    xhr.send();
+  }
+
+  function apiGetSeriesInfo(portalBaseUrl, username, password, seriesId, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_series_info&series_id=' + encodeURIComponent(seriesId);
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          onSuccess(JSON.parse(xhr.responseText));
+        } catch (e) {
+          onError('Failed to parse series details');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading series details');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading series details'); };
+    xhr.send();
+  }
+
   function decodeXtreamBase64(str) {
     if (!str) return '';
     try {
@@ -216,6 +426,845 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function stripHtml(text) {
+    if (!text) return '';
+    return String(text).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function getFavoritesBucketKey(mode) {
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : 'default';
+    var profileId = state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default';
+    return portalCode + '::' + profileId + '::' + mode;
+  }
+
+  function loadFavoritesState() {
+    try {
+      var raw = localStorage.getItem(FAVORITES_KEY);
+      state.favorites = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      state.favorites = {};
+    }
+  }
+
+  function saveFavoritesState() {
+    try {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites || {}));
+    } catch (e) {}
+  }
+
+  function isFavoriteItem(mode, itemId) {
+    var bucket = state.favorites[getFavoritesBucketKey(mode)] || {};
+    return !!bucket[String(itemId)];
+  }
+
+  function toggleFavoriteItem(mode, item) {
+    var itemId = getCatalogItemId(item, mode);
+    var bucketKey = getFavoritesBucketKey(mode);
+    var bucket = state.favorites[bucketKey] || {};
+    var stringId = String(itemId);
+
+    if (bucket[stringId]) {
+      delete bucket[stringId];
+    } else {
+      bucket[stringId] = {
+        id: stringId,
+        mode: mode,
+        name: getCatalogItemName(item),
+        artwork: getCatalogItemArtwork(item, mode),
+        item: item,
+        categoryName: state.selectedCategoryName,
+        savedAt: new Date().toISOString()
+      };
+    }
+
+    state.favorites[bucketKey] = bucket;
+    saveFavoritesState();
+  }
+
+  function getContentTypeLabel(mode) {
+    if (mode === 'series') return 'Series';
+    if (mode === 'live') return 'Live TV';
+    return 'Movie';
+  }
+
+  function getBackdropArtwork(item, detailInfo, mode) {
+    if (detailInfo && detailInfo.info) {
+      if (Array.isArray(detailInfo.info.backdrop_path) && detailInfo.info.backdrop_path.length > 0) {
+        return detailInfo.info.backdrop_path[0];
+      }
+      if (detailInfo.info.cover_big) return detailInfo.info.cover_big;
+      if (detailInfo.info.movie_image) return detailInfo.info.movie_image;
+    }
+    return getCatalogItemArtwork(item, mode);
+  }
+
+  function normalizeSeriesSeasons(detailInfo) {
+    var seasons = [];
+    var seasonLookup = {};
+    var i;
+
+    if (detailInfo && Array.isArray(detailInfo.seasons)) {
+      for (i = 0; i < detailInfo.seasons.length; i++) {
+        var seasonEntry = detailInfo.seasons[i] || {};
+        var rawSeasonNo = seasonEntry.season_number != null ? seasonEntry.season_number : seasonEntry.season;
+        var key = String(rawSeasonNo != null ? rawSeasonNo : (i + 1));
+        seasonLookup[key] = {
+          key: key,
+          label: seasonEntry.name || ('Season ' + key),
+          seasonNumber: rawSeasonNo != null ? rawSeasonNo : (i + 1)
+        };
+      }
+    }
+
+    var episodesMap = detailInfo && detailInfo.episodes ? detailInfo.episodes : {};
+    for (var seasonKey in episodesMap) {
+      if (!episodesMap.hasOwnProperty(seasonKey)) continue;
+      if (!seasonLookup[seasonKey]) {
+        seasonLookup[seasonKey] = {
+          key: String(seasonKey),
+          label: 'Season ' + seasonKey,
+          seasonNumber: parseInt(seasonKey, 10) || seasonKey
+        };
+      }
+    }
+
+    for (var key in seasonLookup) {
+      if (seasonLookup.hasOwnProperty(key)) {
+        seasons.push(seasonLookup[key]);
+      }
+    }
+
+    seasons.sort(function (a, b) {
+      var aNum = parseInt(a.seasonNumber, 10);
+      var bNum = parseInt(b.seasonNumber, 10);
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+      return String(a.label).localeCompare(String(b.label));
+    });
+
+    return seasons;
+  }
+
+  function getEpisodesForSeason(detailInfo, seasonKey) {
+    var map = detailInfo && detailInfo.episodes ? detailInfo.episodes : {};
+    var list = map && map[seasonKey] ? map[seasonKey] : [];
+    return Array.isArray(list) ? list : [];
+  }
+
+  function getEpisodeId(episode) {
+    return episode && (episode.id || episode.stream_id || episode.episode_id || (episode.info && episode.info.movie_id)) || '';
+  }
+
+  function getEpisodeTitle(episode, index) {
+    if (!episode) return 'Episode';
+    return episode.title || episode.name || ('Episode ' + (index + 1));
+  }
+
+  function getEpisodeMeta(episode) {
+    var bits = [];
+    if (!episode) return '';
+    if (episode.episode_num != null) bits.push('Episode ' + episode.episode_num);
+    if (episode.info && episode.info.duration) bits.push(episode.info.duration);
+    if (episode.info && episode.info.release_date) bits.push(episode.info.release_date);
+    return bits.join(' • ');
+  }
+
+  function getCatalogConfig(mode) {
+    var activeMode = mode || state.catalogMode;
+
+    if (activeMode === 'movies') {
+      return {
+        sidebarId: 'sidebar-movies',
+        sectionLabel: 'Movies',
+        badgeLabel: 'MOVIE',
+        loadingCategoriesText: 'Loading movie categories...',
+        loadingItemsText: 'Loading movies...',
+        loadingTitleText: 'Loading Movies...',
+        loadingDetailText: 'Please wait...',
+        emptyItemsText: 'No movies in this category',
+        emptyDetailText: 'This category contains no movies.',
+        errorTitleText: 'Error Loading Movies',
+        loadCategories: apiGetVodCategories,
+        loadItems: apiGetVodStreams
+      };
+    }
+
+    if (activeMode === 'series') {
+      return {
+        sidebarId: 'sidebar-series',
+        sectionLabel: 'Series',
+        badgeLabel: 'SERIES',
+        loadingCategoriesText: 'Loading series categories...',
+        loadingItemsText: 'Loading series...',
+        loadingTitleText: 'Loading Series...',
+        loadingDetailText: 'Please wait...',
+        emptyItemsText: 'No series in this category',
+        emptyDetailText: 'This category contains no series.',
+        errorTitleText: 'Error Loading Series',
+        loadCategories: apiGetSeriesCategories,
+        loadItems: apiGetSeries
+      };
+    }
+
+    return {
+      sidebarId: 'sidebar-live',
+      sectionLabel: 'Live TV',
+      badgeLabel: 'LIVE',
+      loadingCategoriesText: 'Loading categories...',
+      loadingItemsText: 'Loading channels...',
+      loadingTitleText: 'Loading Channels...',
+      loadingDetailText: 'Please wait...',
+      emptyItemsText: 'No channels in this category',
+      emptyDetailText: 'This category contains no channels.',
+      errorTitleText: 'Error Loading Channels',
+      loadCategories: apiGetCategories,
+      loadItems: apiGetStreams
+    };
+  }
+
+  function getCatalogGridColumnCount() {
+    return state.catalogMode === 'live' ? 4 : 5;
+  }
+
+  function setSidebarActiveById(sidebarId) {
+    var sidebarIds = ['sidebar-live', 'sidebar-movies', 'sidebar-series', 'sidebar-search', 'sidebar-watchlist', 'sidebar-settings'];
+
+    for (var i = 0; i < sidebarIds.length; i++) {
+      var item = document.getElementById(sidebarIds[i]);
+      if (!item) continue;
+
+      if (sidebarIds[i] === sidebarId) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    }
+  }
+
+  function getSidebarFocusIndex(mode) {
+    var activeMode = mode || state.catalogMode;
+    return SIDEBAR_MODE_INDEX.hasOwnProperty(activeMode) ? SIDEBAR_MODE_INDEX[activeMode] : 0;
+  }
+
+  function setSidebarActiveItem(mode) {
+    var activeConfig = getCatalogConfig(mode);
+    setSidebarActiveById(activeConfig.sidebarId);
+  }
+
+  function getCatalogItemId(item, mode) {
+    var activeMode = mode || state.catalogMode;
+    if (!item) return '';
+    return activeMode === 'series' ? item.series_id : item.stream_id;
+  }
+
+  function getCatalogItemName(item) {
+    return item && item.name ? item.name : 'Untitled';
+  }
+
+  function getCatalogItemArtwork(item, mode) {
+    var activeMode = mode || state.catalogMode;
+    if (!item) return '';
+    if (activeMode === 'series') {
+      return item.cover || '';
+    }
+    return item.stream_icon || '';
+  }
+
+  function getCatalogItemSummary(item, mode) {
+    var activeMode = mode || state.catalogMode;
+    if (!item) return '';
+    if (item.plot) return item.plot;
+    if (item.genre) return item.genre;
+    return activeMode === 'series'
+      ? 'Browse episodes inside this series.'
+      : 'Select a title to explore this section.';
+  }
+
+  function getCatalogItemMeta(item, mode) {
+    var activeMode = mode || state.catalogMode;
+    var bits = [];
+
+    if (item && item.genre) bits.push(item.genre);
+    if (item && item.rating) bits.push('Rating ' + item.rating);
+    if (item && item.releaseDate) bits.push(item.releaseDate);
+    if (item && item.last_modified && activeMode === 'series') bits.push('Updated ' + item.last_modified);
+
+    return bits.join(' • ');
+  }
+
+  function renderCatalogDetails(item) {
+    var detailsCategory = document.getElementById('details-category-name');
+    var detailsTitle = document.getElementById('details-channel-name');
+    var detailsCopy = document.getElementById('details-epg-info');
+    var meta = getCatalogItemMeta(item);
+    var summary = getCatalogItemSummary(item);
+
+    detailsCategory.textContent = state.selectedCategoryName.toUpperCase();
+    detailsTitle.textContent = getCatalogItemName(item);
+
+    var html = '<div class="catalog-detail-copy">';
+    if (meta) {
+      html += '<div class="catalog-detail-meta">' + escapeHtml(meta) + '</div>';
+    }
+    html += '<div class="catalog-detail-body">' + escapeHtml(summary.length > 260 ? summary.slice(0, 260) + '...' : summary) + '</div>';
+    html += '</div>';
+    detailsCopy.innerHTML = html;
+  }
+
+  function buildDetailMetaLine(mode, item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var movieData = detailInfo && detailInfo.movie_data ? detailInfo.movie_data : {};
+    var bits = [];
+
+    if (info.genre || item.genre) bits.push(info.genre || item.genre);
+    if (info.rating || item.rating) bits.push('Rating ' + (info.rating || item.rating));
+    if (info.releaseDate || info.releasedate || info.release_date || movieData.releasedate || item.releaseDate) {
+      bits.push(info.releaseDate || info.releasedate || info.release_date || movieData.releasedate || item.releaseDate);
+    }
+    if (info.duration || movieData.duration) bits.push(info.duration || movieData.duration);
+    if (mode === 'series' && info.last_modified) bits.push('Updated ' + info.last_modified);
+
+    return bits.join(' • ');
+  }
+
+  function buildDetailSummary(mode, item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var summary = stripHtml(info.plot || item.plot || item.description || '');
+
+    if (!summary) {
+      summary = mode === 'series'
+        ? 'Open a season to browse episodes and start playback.'
+        : 'Open this title to start playback or save it to favorites.';
+    }
+
+    return summary;
+  }
+
+  function updateDetailFavoriteButton() {
+    var button = document.getElementById('detail-btn-favorite');
+    if (!button || !state.detailItem) return;
+    button.textContent = isFavoriteItem(state.detailMode, getCatalogItemId(state.detailItem, state.detailMode))
+      ? 'Remove Favorite'
+      : 'Add to Favorites';
+  }
+
+  function renderDetailActionCopy(mode, item, detailInfo) {
+    var typeLabel = document.getElementById('detail-type-label');
+    var title = document.getElementById('detail-main-title');
+    var meta = document.getElementById('detail-main-meta');
+    var summary = document.getElementById('detail-main-summary');
+    var poster = document.getElementById('detail-poster-image');
+    var backdrop = document.getElementById('content-detail-backdrop');
+    var artwork = getCatalogItemArtwork(item, mode);
+    var backdropArt = getBackdropArtwork(item, detailInfo, mode);
+
+    typeLabel.textContent = getContentTypeLabel(mode).toUpperCase();
+    title.textContent = getCatalogItemName(item);
+    meta.textContent = buildDetailMetaLine(mode, item, detailInfo) || (mode === 'series' ? 'Series' : 'Movie');
+    summary.textContent = buildDetailSummary(mode, item, detailInfo);
+
+    if (artwork) {
+      poster.style.display = 'block';
+      poster.src = artwork;
+    } else {
+      poster.style.display = 'none';
+      poster.removeAttribute('src');
+    }
+
+    if (backdropArt) {
+      backdrop.style.backgroundImage =
+        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
+        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%), ' +
+        'url("' + String(backdropArt).replace(/"/g, '%22') + '")';
+    } else {
+      backdrop.style.backgroundImage =
+        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
+        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%)';
+    }
+
+    updateDetailFavoriteButton();
+  }
+
+  function renderDetailSeasons() {
+    var container = document.getElementById('detail-seasons');
+    container.innerHTML = '';
+
+    for (var i = 0; i < state.detailSeasons.length; i++) {
+      var season = state.detailSeasons[i];
+      var button = document.createElement('button');
+      button.className = 'focusable content-detail-season-chip';
+      if (i === state.detailSelectedSeasonIndex) {
+        button.className += ' active';
+      }
+      button.setAttribute('tabindex', '-1');
+      button.setAttribute('data-index', i);
+      button.textContent = season.label;
+      button.onclick = function () {
+        var idx = parseInt(this.getAttribute('data-index'), 10);
+        selectDetailSeason(idx, true);
+      };
+      container.appendChild(button);
+    }
+  }
+
+  function renderDetailEpisodes() {
+    var container = document.getElementById('detail-episodes');
+    container.innerHTML = '';
+
+    if (!state.detailEpisodes.length) {
+      container.innerHTML = '<div class="content-detail-empty">No episodes available for this season.</div>';
+      return;
+    }
+
+    for (var i = 0; i < state.detailEpisodes.length; i++) {
+      var episode = state.detailEpisodes[i];
+      var button = document.createElement('button');
+      button.className = 'focusable content-detail-episode-card';
+      button.setAttribute('tabindex', '-1');
+      button.setAttribute('data-index', i);
+
+      var summary = stripHtml((episode.info && episode.info.plot) || episode.plot || '');
+      if (summary.length > 180) summary = summary.slice(0, 180) + '...';
+
+      var html = '<div class="content-detail-episode-label">EPISODE</div>';
+      html += '<div class="content-detail-episode-title">' + escapeHtml(getEpisodeTitle(episode, i)) + '</div>';
+      if (getEpisodeMeta(episode)) {
+        html += '<div class="content-detail-episode-meta">' + escapeHtml(getEpisodeMeta(episode)) + '</div>';
+      }
+      if (summary) {
+        html += '<div class="content-detail-episode-summary">' + escapeHtml(summary) + '</div>';
+      }
+      button.innerHTML = html;
+
+      button.onclick = function () {
+        var idx = parseInt(this.getAttribute('data-index'), 10);
+        playSeriesEpisode(state.detailEpisodes[idx], getCatalogItemName(state.detailItem));
+      };
+
+      container.appendChild(button);
+    }
+  }
+
+  function selectDetailSeason(index, moveFocus) {
+    if (index < 0 || index >= state.detailSeasons.length) return;
+    state.detailSelectedSeasonIndex = index;
+    var season = state.detailSeasons[index];
+    state.detailEpisodes = getEpisodesForSeason(state.detailInfo, season.key);
+    renderDetailSeasons();
+    renderDetailEpisodes();
+
+    if (moveFocus) {
+      state.focusedPanel = 'detail-seasons';
+      state.focusedIndex = index;
+      updateFocusUI();
+    }
+  }
+
+  function renderSeriesSection(detailInfo) {
+    var section = document.getElementById('detail-series-section');
+
+    state.detailSeasons = normalizeSeriesSeasons(detailInfo);
+    state.detailSelectedSeasonIndex = 0;
+    state.detailEpisodes = [];
+
+    if (!state.detailSeasons.length) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'flex';
+    selectDetailSeason(0, false);
+  }
+
+  function renderContentDetail(item, mode, detailInfo) {
+    state.detailInfo = detailInfo || null;
+    renderDetailActionCopy(mode, item, detailInfo);
+
+    if (mode === 'series') {
+      renderSeriesSection(detailInfo);
+    } else {
+      document.getElementById('detail-series-section').style.display = 'none';
+      state.detailSeasons = [];
+      state.detailEpisodes = [];
+      state.detailSelectedSeasonIndex = 0;
+    }
+  }
+
+  function showContentDetail(item, mode) {
+    var detailMode = mode || state.catalogMode;
+    var itemId = detailMode === 'series' ? item.series_id : item.stream_id;
+
+    state.detailItem = item;
+    state.detailMode = detailMode;
+    state.detailSourceIndex = state.focusedIndex;
+    state.detailReturnViewId = state.currentViewId || 'view-catalog';
+    state.detailReturnPanel = state.focusedPanel || 'catalog-channels';
+    state.detailReturnIndex = state.focusedIndex || 0;
+    state.detailInfo = null;
+    state.detailSeasons = [];
+    state.detailEpisodes = [];
+    state.detailSelectedSeasonIndex = 0;
+    state.focusedPanel = 'detail-actions';
+    state.focusedIndex = 0;
+
+    renderContentDetail(item, detailMode, null);
+    document.getElementById('detail-main-meta').textContent = 'Loading details...';
+    document.getElementById('detail-main-summary').textContent = 'Please wait while Smartifly loads the full content details.';
+    document.getElementById('detail-series-section').style.display = 'none';
+
+    showView('view-content-detail');
+    updateFocusUI();
+
+    function onDetailLoaded(detailInfo) {
+      if (!state.detailItem) return;
+      var activeId = detailMode === 'series' ? state.detailItem.series_id : state.detailItem.stream_id;
+      if (String(activeId) !== String(itemId)) return;
+      renderContentDetail(item, detailMode, detailInfo);
+      updateFocusUI();
+    }
+
+    function onDetailError(err) {
+      if (!state.detailItem) return;
+      var activeId = detailMode === 'series' ? state.detailItem.series_id : state.detailItem.stream_id;
+      if (String(activeId) !== String(itemId)) return;
+      document.getElementById('detail-main-meta').textContent = 'Details unavailable';
+      document.getElementById('detail-main-summary').textContent = err || 'Unable to load this content right now.';
+      document.getElementById('detail-series-section').style.display = 'none';
+      updateFocusUI();
+    }
+
+    if (detailMode === 'series') {
+      apiGetSeriesInfo(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, item.series_id, onDetailLoaded, onDetailError);
+    } else {
+      apiGetVodInfo(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, item.stream_id, onDetailLoaded, onDetailError);
+    }
+  }
+
+  function closeContentDetail() {
+    state.detailItem = null;
+    state.detailInfo = null;
+    state.detailSeasons = [];
+    state.detailEpisodes = [];
+    if ((state.detailReturnViewId || 'view-catalog') === 'view-watchlist') {
+      renderWatchlist();
+    }
+    state.focusedPanel = state.detailReturnPanel || 'catalog-channels';
+    state.focusedIndex = state.detailReturnIndex || 0;
+    showView(state.detailReturnViewId || 'view-catalog');
+    updateFocusUI();
+  }
+
+  function getModeGridColumnCount(mode) {
+    return mode === 'live' ? 4 : 5;
+  }
+
+  function createMediaCard(item, mode, index, onActivate) {
+    var config = getCatalogConfig(mode);
+    var card = document.createElement('div');
+    card.className = 'channel-card focusable';
+    card.setAttribute('tabindex', '-1');
+
+    if (mode !== 'live') {
+      card.className += ' channel-card--poster';
+    }
+    if (mode === 'live' && state.activeChannel && String(state.activeChannel.stream_id) === String(item.stream_id)) {
+      card.className += ' active';
+    }
+
+    card.setAttribute('data-id', getCatalogItemId(item, mode));
+    card.setAttribute('data-index', index);
+    card.setAttribute('data-name', getCatalogItemName(item));
+
+    var badge = document.createElement('div');
+    badge.className = 'channel-live-badge';
+    badge.textContent = config.badgeLabel;
+    card.appendChild(badge);
+
+    var logoWrap = document.createElement('div');
+    logoWrap.className = 'channel-logo-container';
+
+    if (getCatalogItemArtwork(item, mode)) {
+      var img = document.createElement('img');
+      img.src = getCatalogItemArtwork(item, mode);
+      img.onerror = function() {
+        this.style.display = 'none';
+        this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
+      };
+      logoWrap.appendChild(img);
+    } else {
+      logoWrap.textContent = getCatalogItemName(item);
+    }
+
+    card.appendChild(logoWrap);
+    card.onclick = function () { onActivate(index); };
+    return card;
+  }
+
+  function applySearchModeButtonState() {
+    var ids = ['search-mode-live', 'search-mode-movies', 'search-mode-series'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (!el) continue;
+      el.classList.remove('active');
+    }
+    var activeEl = document.getElementById('search-mode-' + state.searchMode);
+    if (activeEl) activeEl.classList.add('active');
+  }
+
+  function setWatchlistFilterButtonsActive() {
+    var ids = ['watchlist-filter-all', 'watchlist-filter-movies', 'watchlist-filter-series'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (!el) continue;
+      el.classList.remove('active');
+    }
+    var activeEl = document.getElementById('watchlist-filter-' + state.watchlistFilter);
+    if (activeEl) activeEl.classList.add('active');
+  }
+
+  function getFilterableSearchText(item, mode) {
+    var bits = [
+      getCatalogItemName(item),
+      item && item.genre ? item.genre : '',
+      getCatalogItemSummary(item, mode)
+    ];
+    return bits.join(' ').toLowerCase();
+  }
+
+  function filterSearchItems(items, query, mode) {
+    var q = String(query || '').trim().toLowerCase();
+    if (!q) return [];
+    var results = [];
+    for (var i = 0; i < items.length; i++) {
+      if (getFilterableSearchText(items[i], mode).indexOf(q) !== -1) {
+        results.push(items[i]);
+      }
+    }
+    return results;
+  }
+
+  function renderSearchResults() {
+    var container = document.getElementById('search-results-grid');
+    var summary = document.getElementById('search-summary');
+    container.innerHTML = '';
+
+    if (!state.searchQuery) {
+      summary.textContent = 'Choose a content type, enter a title, and search the portal catalog.';
+      container.innerHTML = '<div class="utility-empty">Enter a search term to begin.</div>';
+      return;
+    }
+
+    if (!state.searchResults.length) {
+      summary.textContent = 'No ' + getContentTypeLabel(state.searchMode).toLowerCase() + ' results matched "' + state.searchQuery + '".';
+      container.innerHTML = '<div class="utility-empty">No results found. Try a shorter title or switch content type.</div>';
+      return;
+    }
+
+    summary.textContent = state.searchResults.length + ' result' + (state.searchResults.length === 1 ? '' : 's') + ' in ' + getContentTypeLabel(state.searchMode) + ' for "' + state.searchQuery + '".';
+
+    for (var i = 0; i < state.searchResults.length; i++) {
+      container.appendChild(createMediaCard(state.searchResults[i], state.searchMode, i, function (idx) {
+        if (state.searchMode === 'live') {
+          playChannel(state.searchResults[idx], state.searchResults);
+        } else {
+          showContentDetail(state.searchResults[idx], state.searchMode);
+        }
+      }));
+    }
+  }
+
+  function executeSearch() {
+    var queryInput = document.getElementById('search-query-input');
+    var query = queryInput ? queryInput.value.trim() : '';
+    var config = getCatalogConfig(state.searchMode);
+    var container = document.getElementById('search-results-grid');
+
+    state.searchQuery = query;
+    state.searchResults = [];
+    state.focusedPanel = 'search-controls';
+    state.focusedIndex = 0;
+    applySearchModeButtonState();
+
+    if (!query) {
+      renderSearchResults();
+      updateFocusUI();
+      return;
+    }
+
+    container.innerHTML = '<div class="utility-empty">Searching ' + config.sectionLabel.toLowerCase() + '...</div>';
+    document.getElementById('search-summary').textContent = 'Scanning the full ' + config.sectionLabel.toLowerCase() + ' catalog for "' + query + '".';
+
+    function applyResults(items) {
+      state.searchCache[state.searchMode] = items;
+      state.searchResults = filterSearchItems(items, query, state.searchMode);
+      renderSearchResults();
+      updateFocusUI();
+    }
+
+    if (state.searchCache[state.searchMode]) {
+      applyResults(state.searchCache[state.searchMode]);
+      return;
+    }
+
+    config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, '', function (items) {
+      applyResults(items || []);
+    }, function (err) {
+      container.innerHTML = '<div class="utility-empty">' + escapeHtml(err || 'Search failed') + '</div>';
+      document.getElementById('search-summary').textContent = 'Search failed for ' + config.sectionLabel.toLowerCase() + '.';
+      updateFocusUI();
+    });
+  }
+
+  function openSearchView() {
+    setSidebarActiveById('sidebar-search');
+    showView('view-search');
+    state.focusedPanel = 'search-controls';
+    state.focusedIndex = 0;
+    document.getElementById('search-query-input').value = state.searchQuery || '';
+    applySearchModeButtonState();
+    renderSearchResults();
+    updateFocusUI();
+  }
+
+  function setSearchMode(mode) {
+    state.searchMode = mode;
+    applySearchModeButtonState();
+    if (state.searchQuery) {
+      executeSearch();
+    } else {
+      renderSearchResults();
+      updateFocusUI();
+    }
+  }
+
+  function getCurrentProfileFavoritesPrefix() {
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : 'default';
+    var profileId = state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default';
+    return portalCode + '::' + profileId + '::';
+  }
+
+  function buildFavoriteFallbackItem(entry) {
+    if (entry.mode === 'series') {
+      return {
+        series_id: entry.id,
+        name: entry.name,
+        cover: entry.artwork || ''
+      };
+    }
+    return {
+      stream_id: entry.id,
+      name: entry.name,
+      stream_icon: entry.artwork || '',
+      container_extension: 'mp4'
+    };
+  }
+
+  function collectWatchlistItems(filterMode) {
+    var prefix = getCurrentProfileFavoritesPrefix();
+    var results = [];
+
+    for (var key in state.favorites) {
+      if (!state.favorites.hasOwnProperty(key)) continue;
+      if (key.indexOf(prefix) !== 0) continue;
+
+      var bucket = state.favorites[key];
+      for (var itemKey in bucket) {
+        if (!bucket.hasOwnProperty(itemKey)) continue;
+        var entry = bucket[itemKey];
+        if (filterMode && filterMode !== 'all' && entry.mode !== filterMode) continue;
+        results.push({
+          id: entry.id,
+          mode: entry.mode,
+          savedAt: entry.savedAt,
+          categoryName: entry.categoryName || '',
+          item: entry.item || buildFavoriteFallbackItem(entry)
+        });
+      }
+    }
+
+    results.sort(function (a, b) {
+      return String(b.savedAt || '').localeCompare(String(a.savedAt || ''));
+    });
+    return results;
+  }
+
+  function renderWatchlist() {
+    var container = document.getElementById('watchlist-results-grid');
+    var summary = document.getElementById('watchlist-summary');
+    container.innerHTML = '';
+
+    setWatchlistFilterButtonsActive();
+    state.watchlistItems = collectWatchlistItems(state.watchlistFilter);
+
+    if (!state.watchlistItems.length) {
+      summary.textContent = 'No saved titles for this profile yet.';
+      container.innerHTML = '<div class="utility-empty">Use the favorite button on a movie or series to save it here.</div>';
+      return;
+    }
+
+    summary.textContent = state.watchlistItems.length + ' saved title' + (state.watchlistItems.length === 1 ? '' : 's') + ' in your watchlist.';
+
+    for (var i = 0; i < state.watchlistItems.length; i++) {
+      (function (idx) {
+        var entry = state.watchlistItems[idx];
+        container.appendChild(createMediaCard(entry.item, entry.mode, idx, function () {
+          showContentDetail(entry.item, entry.mode);
+        }));
+      })(i);
+    }
+  }
+
+  function openWatchlistView() {
+    setSidebarActiveById('sidebar-watchlist');
+    showView('view-watchlist');
+    state.focusedPanel = 'watchlist-controls';
+    state.focusedIndex = 0;
+    renderWatchlist();
+    updateFocusUI();
+  }
+
+  function setWatchlistFilter(filter) {
+    state.watchlistFilter = filter;
+    renderWatchlist();
+    updateFocusUI();
+  }
+
+  function clearCurrentProfileFavorites() {
+    var prefix = getCurrentProfileFavoritesPrefix();
+    for (var key in state.favorites) {
+      if (!state.favorites.hasOwnProperty(key)) continue;
+      if (key.indexOf(prefix) === 0) {
+        delete state.favorites[key];
+      }
+    }
+    saveFavoritesState();
+  }
+
+  function updateSettingsView() {
+    document.getElementById('settings-portal-code').textContent = state.session && state.session.portalCode ? state.session.portalCode : '-';
+    document.getElementById('settings-server-name').textContent = state.session && state.session.serverName ? state.session.serverName : '-';
+    document.getElementById('settings-username').textContent = state.session && state.session.username ? state.session.username : '-';
+    document.getElementById('settings-profile').textContent = state.selectedProfile ? ('Profile: ' + state.selectedProfile.name) : 'No active profile';
+
+    var count = collectWatchlistItems('all').length;
+    document.getElementById('settings-watchlist-count').textContent = count + ' saved';
+  }
+
+  function openSettingsView() {
+    setSidebarActiveById('sidebar-settings');
+    showView('view-settings');
+    state.focusedPanel = 'settings-actions';
+    state.focusedIndex = 0;
+    updateSettingsView();
+    updateFocusUI();
+  }
+
+  function returnToCatalogSidebar(sidebarKey) {
+    showView('view-catalog');
+    state.focusedPanel = 'catalog-sidebar';
+    state.focusedIndex = getSidebarFocusIndex(sidebarKey || state.catalogMode);
+    updateFocusUI();
   }
 
   function fetchEPGForChannel(channel) {
@@ -341,6 +1390,7 @@
     if (activeView) {
       activeView.classList.add('active');
     }
+    state.currentViewId = viewId;
   }
 
   // --- STORAGE HELPERS ---
@@ -357,6 +1407,8 @@
     } catch (e) {
       console.error('Failed to load local storage state:', e);
     }
+
+    loadFavoritesState();
   }
 
   function saveSessionState(session, profiles) {
@@ -525,19 +1577,32 @@
   function selectProfile(profile) {
     state.selectedProfile = profile;
     saveSelectedProfile(profile);
-    loadCatalog();
+    loadCatalog(state.catalogMode);
   }
 
   // --- CATALOG CONTROLLER ---
-  function loadCatalog() {
+  function loadCatalog(mode) {
+    if (mode) {
+      state.catalogMode = mode;
+    }
+
+    var config = getCatalogConfig();
     showView('view-catalog');
     state.focusedPanel = 'catalog-categories';
     state.focusedIndex = 0;
+    state.categories = [];
+    state.channels = [];
+    state.selectedCategoryId = '';
+    state.selectedCategoryName = '';
+    setSidebarActiveItem();
     
     var catNode = document.getElementById('categories-panel-list');
-    catNode.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">Loading categories...</div>';
+    catNode.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">' + config.loadingCategoriesText + '</div>';
+    document.getElementById('details-category-name').textContent = config.sectionLabel.toUpperCase();
+    document.getElementById('details-channel-name').textContent = config.loadingTitleText;
+    document.getElementById('details-epg-info').textContent = config.loadingDetailText;
     
-    apiGetCategories(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, function (cats) {
+    config.loadCategories(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, function (cats) {
       state.categories = cats;
       renderCategories();
       if (cats.length > 0) {
@@ -547,17 +1612,17 @@
         grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">No categories found</div>';
         // Fallback focus to sidebar if no categories
         state.focusedPanel = 'catalog-sidebar';
-        state.focusedIndex = 0;
+        state.focusedIndex = getSidebarFocusIndex();
         updateFocusUI();
       }
     }, function (err) {
       state.categories = [];
       catNode.innerHTML = '<div style="color:#ff3344; padding: 20px;">' + err + '</div>';
       var grid = document.getElementById('channels-grid-list');
-      grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">No channels loaded</div>';
+      grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">No content loaded</div>';
       // Fallback focus to sidebar on error
       state.focusedPanel = 'catalog-sidebar';
-      state.focusedIndex = 0;
+      state.focusedIndex = getSidebarFocusIndex();
       updateFocusUI();
     });
   }
@@ -593,6 +1658,7 @@
   }
 
   function selectCategory(categoryId) {
+    var config = getCatalogConfig();
     state.selectedCategoryId = categoryId;
     
     // Find category name
@@ -604,8 +1670,8 @@
     }
     
     document.getElementById('details-category-name').textContent = state.selectedCategoryName.toUpperCase();
-    document.getElementById('details-channel-name').textContent = 'Loading Channels...';
-    document.getElementById('details-epg-info').textContent = 'Please wait...';
+    document.getElementById('details-channel-name').textContent = config.loadingTitleText;
+    document.getElementById('details-epg-info').textContent = config.loadingDetailText;
     
     // Toggle active classes on DOM
     var items = document.querySelectorAll('.category-item');
@@ -618,9 +1684,9 @@
     }
 
     var grid = document.getElementById('channels-grid-list');
-    grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">Loading channels...</div>';
+    grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">' + config.loadingItemsText + '</div>';
 
-    apiGetStreams(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, categoryId, function (streams) {
+    config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, categoryId, function (streams) {
       state.channels = streams;
       renderChannels();
       updateFocusUI();
@@ -628,7 +1694,7 @@
       state.channels = [];
       grid.innerHTML = '<div style="color:#ff3344; padding: 20px;">' + err + '</div>';
       
-      document.getElementById('details-channel-name').textContent = 'Error Loading Channels';
+      document.getElementById('details-channel-name').textContent = config.errorTitleText;
       document.getElementById('details-epg-info').textContent = err;
       
       // Fallback focus to category panel or category item if channel loading fails
@@ -641,52 +1707,61 @@
   }
 
   function renderChannels() {
+    var config = getCatalogConfig();
     var container = document.getElementById('channels-grid-list');
     container.innerHTML = '';
 
     if (state.channels.length === 0) {
-      container.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">No channels in this category</div>';
+      container.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">' + config.emptyItemsText + '</div>';
       
-      document.getElementById('details-channel-name').textContent = 'No Channels';
-      document.getElementById('details-epg-info').textContent = 'This category contains no channels.';
+      document.getElementById('details-channel-name').textContent = 'No ' + config.sectionLabel;
+      document.getElementById('details-epg-info').textContent = config.emptyDetailText;
       return;
     }
 
-    // Set default header details to the first channel in the loaded list
+    // Set default header details to the first item in the loaded list
     var firstCh = state.channels[0];
     document.getElementById('details-category-name').textContent = state.selectedCategoryName.toUpperCase();
-    document.getElementById('details-channel-name').textContent = firstCh.name;
-    document.getElementById('details-epg-info').innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size:14px;">Loading guide...</div>';
-    
-    if (epgTimer) {
-      clearTimeout(epgTimer);
+    document.getElementById('details-channel-name').textContent = getCatalogItemName(firstCh);
+
+    if (state.catalogMode === 'live') {
+      document.getElementById('details-epg-info').innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size:14px;">Loading guide...</div>';
+      
+      if (epgTimer) {
+        clearTimeout(epgTimer);
+      }
+      fetchEPGForChannel(firstCh);
+    } else {
+      renderCatalogDetails(firstCh);
     }
-    fetchEPGForChannel(firstCh);
 
     for (var i = 0; i < state.channels.length; i++) {
       var ch = state.channels[i];
       var card = document.createElement('div');
       card.className = 'channel-card focusable';
       card.setAttribute('tabindex', '-1');
-      if (state.activeChannel && String(state.activeChannel.stream_id) === String(ch.stream_id)) {
+      if (state.catalogMode !== 'live') {
+        card.className += ' channel-card--poster';
+      }
+      if (state.catalogMode === 'live' && state.activeChannel && String(state.activeChannel.stream_id) === String(ch.stream_id)) {
         card.className += ' active';
       }
-      card.setAttribute('data-id', ch.stream_id);
+      card.setAttribute('data-id', getCatalogItemId(ch));
       card.setAttribute('data-index', i);
-      card.setAttribute('data-name', ch.name);
+      card.setAttribute('data-name', getCatalogItemName(ch));
       
-      // LIVE badge in top-left
+      // Content type badge in top-left
       var liveBadge = document.createElement('div');
       liveBadge.className = 'channel-live-badge';
-      liveBadge.textContent = 'LIVE';
+      liveBadge.textContent = config.badgeLabel;
       card.appendChild(liveBadge);
       
       var logoWrap = document.createElement('div');
       logoWrap.className = 'channel-logo-container';
       
-      if (ch.stream_icon) {
+      if (getCatalogItemArtwork(ch)) {
         var img = document.createElement('img');
-        img.src = ch.stream_icon;
+        img.src = getCatalogItemArtwork(ch);
         img.onerror = function() {
           this.style.display = 'none';
           this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
@@ -700,7 +1775,11 @@
       
       card.onclick = function() {
         var idx = parseInt(this.getAttribute('data-index'), 10);
-        playChannel(state.channels[idx]);
+        if (state.catalogMode === 'live') {
+          playChannel(state.channels[idx]);
+        } else {
+          showContentDetail(state.channels[idx], state.catalogMode);
+        }
       };
       
       container.appendChild(card);
@@ -752,6 +1831,12 @@
     video.src = tsUrl;
     video.load();
     video.play();
+  }
+
+  function rememberPlayerReturnState() {
+    state.playerReturnViewId = state.currentViewId || 'view-catalog';
+    state.playerReturnPanel = state.focusedPanel || 'catalog-channels';
+    state.playerReturnIndex = state.focusedIndex || 0;
   }
 
   function playStream(streamId) {
@@ -965,13 +2050,15 @@
     }
   }
 
-  function playChannel(channel) {
+  function playChannel(channel, queue) {
+    var activeQueue = queue || state.channels;
+    rememberPlayerReturnState();
     state.activeChannel = channel;
-    state.activeChannelQueue = state.channels;
+    state.activeChannelQueue = activeQueue;
     
     state.activeChannelIndex = 0;
-    for (var i = 0; i < state.channels.length; i++) {
-      if (state.channels[i].stream_id === channel.stream_id) {
+    for (var i = 0; i < activeQueue.length; i++) {
+      if (activeQueue[i].stream_id === channel.stream_id) {
         state.activeChannelIndex = i;
         break;
       }
@@ -986,6 +2073,112 @@
     playStream(channel.stream_id);
   }
 
+  function playMovie(movie, detailInfo) {
+    cleanupHls();
+    rememberPlayerReturnState();
+    state.activeChannel = null;
+    state.activeChannelQueue = [];
+    state.activeChannelIndex = 0;
+    state.focusedPanel = 'player';
+    showView('view-player');
+
+    document.getElementById('player-channel-name').textContent = movie.name || 'Loading Movie...';
+    document.getElementById('player-status-container').style.display = 'flex';
+
+    var video = document.getElementById('player-video');
+    while (video.firstChild) {
+      video.removeChild(video.firstChild);
+    }
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
+
+    var cleanBaseUrl = normalizeBaseUrl(state.session.portalBaseUrl)
+      .replace(/^(https?:\/\/)[^@\/]+@/, '$1');
+    var movieData = detailInfo && detailInfo.movie_data ? detailInfo.movie_data : {};
+    var extension = movie.container_extension || movieData.container_extension || 'mp4';
+    var movieUrl = cleanBaseUrl + '/movie/' +
+      encodeURIComponent(state.session.username) + '/' +
+      encodeURIComponent(state.session.userInfo.password) + '/' +
+      movie.stream_id + '.' + extension;
+
+    video.onwaiting = function() {
+      document.getElementById('player-status-container').style.display = 'flex';
+    };
+    video.onplaying = function() {
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+    video.onerror = function() {
+      document.getElementById('player-channel-name').textContent = 'Playback Error: Movie stream unavailable';
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+
+    video.src = movieUrl;
+    video.load();
+    video.play();
+  }
+
+  function playSeriesEpisode(episode, seriesTitle) {
+    if (!episode) return;
+
+    cleanupHls();
+    rememberPlayerReturnState();
+    state.activeChannel = null;
+    state.activeChannelQueue = [];
+    state.activeChannelIndex = 0;
+    state.focusedPanel = 'player';
+    showView('view-player');
+
+    var episodeTitle = getEpisodeTitle(episode, 0);
+    document.getElementById('player-channel-name').textContent = seriesTitle ? (seriesTitle + ' - ' + episodeTitle) : episodeTitle;
+    document.getElementById('player-status-container').style.display = 'flex';
+
+    var video = document.getElementById('player-video');
+    while (video.firstChild) {
+      video.removeChild(video.firstChild);
+    }
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
+
+    var cleanBaseUrl = normalizeBaseUrl(state.session.portalBaseUrl)
+      .replace(/^(https?:\/\/)[^@\/]+@/, '$1');
+    var extension = episode.container_extension || (episode.info && episode.info.container_extension) || 'mp4';
+    var episodeUrl = cleanBaseUrl + '/series/' +
+      encodeURIComponent(state.session.username) + '/' +
+      encodeURIComponent(state.session.userInfo.password) + '/' +
+      getEpisodeId(episode) + '.' + extension;
+
+    video.onwaiting = function() {
+      document.getElementById('player-status-container').style.display = 'flex';
+    };
+    video.onplaying = function() {
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+    video.onerror = function() {
+      document.getElementById('player-channel-name').textContent = 'Playback Error: Episode stream unavailable';
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+
+    video.src = episodeUrl;
+    video.load();
+    video.play();
+  }
+
+  function playDetailPrimary() {
+    if (!state.detailItem) return;
+
+    if (state.detailMode === 'series') {
+      if (!state.detailEpisodes.length && state.detailSeasons.length) {
+        state.detailEpisodes = getEpisodesForSeason(state.detailInfo, state.detailSeasons[state.detailSelectedSeasonIndex].key);
+      }
+      if (state.detailEpisodes.length) {
+        playSeriesEpisode(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
+      }
+      return;
+    }
+
+    playMovie(state.detailItem, state.detailInfo);
+  }
+
   function closePlayer() {
     cleanupHls();
     var video = document.getElementById('player-video');
@@ -993,20 +2186,23 @@
       video.pause();
       video.src = '';
     } catch (e) {}
-    
-    state.focusedPanel = 'catalog-channels';
-    
-    var cards = document.querySelectorAll('.channel-card');
-    for (var i = 0; i < cards.length; i++) {
-      var id = cards[i].getAttribute('data-id');
-      if (state.activeChannel && String(id) === String(state.activeChannel.stream_id)) {
-        cards[i].classList.add('active');
-      } else {
-        cards[i].classList.remove('active');
+
+    state.focusedPanel = state.playerReturnPanel || 'catalog-channels';
+    state.focusedIndex = state.playerReturnIndex || 0;
+
+    if ((state.playerReturnViewId || 'view-catalog') === 'view-catalog') {
+      var cards = document.querySelectorAll('.channel-card');
+      for (var i = 0; i < cards.length; i++) {
+        var id = cards[i].getAttribute('data-id');
+        if (state.activeChannel && String(id) === String(state.activeChannel.stream_id)) {
+          cards[i].classList.add('active');
+        } else {
+          cards[i].classList.remove('active');
+        }
       }
     }
-    
-    showView('view-catalog');
+
+    showView(state.playerReturnViewId || 'view-catalog');
     updateFocusUI();
   }
 
@@ -1045,6 +2241,30 @@
     if (state.focusedPanel === 'catalog-channels') {
       return document.getElementById('channels-grid-list').querySelectorAll('.focusable');
     }
+    if (state.focusedPanel === 'detail-actions') {
+      return document.getElementById('detail-actions').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'detail-seasons') {
+      return document.getElementById('detail-seasons').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'detail-episodes') {
+      return document.getElementById('detail-episodes').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'search-controls') {
+      return document.getElementById('search-controls').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'search-results') {
+      return document.getElementById('search-results-grid').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'watchlist-controls') {
+      return document.getElementById('watchlist-controls').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'watchlist-results') {
+      return document.getElementById('watchlist-results-grid').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-actions') {
+      return document.getElementById('settings-actions').querySelectorAll('.focusable');
+    }
     return [];
   }
 
@@ -1081,20 +2301,31 @@
       } else if (state.focusedPanel === 'catalog-channels') {
         scrollIntoViewIfNeeded(document.querySelector('.channels-scroll'), focusedEl);
         
-        // Dynamically update channels header details
+        // Dynamically update catalog header details
         var currentCh = state.channels[state.focusedIndex];
         if (currentCh) {
           document.getElementById('details-category-name').textContent = state.selectedCategoryName.toUpperCase();
-          document.getElementById('details-channel-name').textContent = currentCh.name;
-          document.getElementById('details-epg-info').innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size:14px;">Loading guide...</div>';
-          
-          if (epgTimer) {
-            clearTimeout(epgTimer);
+          document.getElementById('details-channel-name').textContent = getCatalogItemName(currentCh);
+
+          if (state.catalogMode === 'live') {
+            document.getElementById('details-epg-info').innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size:14px;">Loading guide...</div>';
+            
+            if (epgTimer) {
+              clearTimeout(epgTimer);
+            }
+            epgTimer = setTimeout(function () {
+              fetchEPGForChannel(currentCh);
+            }, 300);
+          } else {
+            renderCatalogDetails(currentCh);
           }
-          epgTimer = setTimeout(function () {
-            fetchEPGForChannel(currentCh);
-          }, 300);
         }
+      } else if (state.focusedPanel === 'detail-episodes') {
+        scrollIntoViewIfNeeded(document.getElementById('detail-episodes-scroll'), focusedEl);
+      } else if (state.focusedPanel === 'search-results') {
+        scrollIntoViewIfNeeded(document.getElementById('search-results-scroll'), focusedEl);
+      } else if (state.focusedPanel === 'watchlist-results') {
+        scrollIntoViewIfNeeded(document.getElementById('watchlist-results-scroll'), focusedEl);
       }
     }
   }
@@ -1110,6 +2341,206 @@
     } else if (elemBottom > containerBottom) {
       container.scrollTop = elemBottom - container.clientHeight;
     }
+  }
+
+  function hasDetailSeasons() {
+    return state.detailMode === 'series' && state.detailSeasons.length > 0;
+  }
+
+  function hasDetailEpisodes() {
+    return state.detailMode === 'series' && state.detailEpisodes.length > 0;
+  }
+
+  function isDetailPanel(panel) {
+    return panel === 'detail-actions' || panel === 'detail-seasons' || panel === 'detail-episodes';
+  }
+
+  function isSearchPanel(panel) {
+    return panel === 'search-controls' || panel === 'search-results';
+  }
+
+  function isWatchlistPanel(panel) {
+    return panel === 'watchlist-controls' || panel === 'watchlist-results';
+  }
+
+  function handleDetailNavigation(code, items) {
+    var handled = false;
+
+    console.log('[D-Pad] handleDetailNavigation - code:', code, 'panel:', state.focusedPanel, 'index:', state.focusedIndex, 'items.length:', items ? items.length : 0);
+
+    if (state.focusedPanel === 'detail-actions') {
+      if (code === 37 && state.focusedIndex > 0) {
+        state.focusedIndex--;
+        handled = true;
+      } else if (code === 39 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        handled = true;
+      } else if (code === 40) {
+        if (hasDetailSeasons()) {
+          state.focusedPanel = 'detail-seasons';
+          state.focusedIndex = state.detailSelectedSeasonIndex;
+          handled = true;
+        } else if (hasDetailEpisodes()) {
+          state.focusedPanel = 'detail-episodes';
+          state.focusedIndex = 0;
+          handled = true;
+        }
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'detail-seasons') {
+      if (code === 37 && state.focusedIndex > 0) {
+        state.focusedIndex--;
+        selectDetailSeason(state.focusedIndex, false);
+        handled = true;
+      } else if (code === 39 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        selectDetailSeason(state.focusedIndex, false);
+        handled = true;
+      } else if (code === 38) {
+        state.focusedPanel = 'detail-actions';
+        state.focusedIndex = 0;
+        handled = true;
+      } else if (code === 40) {
+        var hasEp = hasDetailEpisodes();
+        console.log('[D-Pad] Seasons down key pressed. hasDetailEpisodes:', hasEp, 'detailEpisodes:', state.detailEpisodes ? state.detailEpisodes.length : 0, 'detailMode:', state.detailMode);
+        if (hasEp) {
+          state.focusedPanel = 'detail-episodes';
+          state.focusedIndex = 0;
+          handled = true;
+        }
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'detail-episodes') {
+      if (code === 38) {
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+        } else if (hasDetailSeasons()) {
+          state.focusedPanel = 'detail-seasons';
+          state.focusedIndex = state.detailSelectedSeasonIndex;
+        } else {
+          state.focusedPanel = 'detail-actions';
+          state.focusedIndex = 0;
+        }
+        handled = true;
+      } else if (code === 40 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        handled = true;
+      } else if (code === 37) {
+        if (hasDetailSeasons()) {
+          state.focusedPanel = 'detail-seasons';
+          state.focusedIndex = state.detailSelectedSeasonIndex;
+        } else {
+          state.focusedPanel = 'detail-actions';
+          state.focusedIndex = 0;
+        }
+        handled = true;
+      }
+      return handled;
+    }
+
+    return handled;
+  }
+
+  function handleSearchNavigation(code, items) {
+    var handled = false;
+    var gridColumns = getModeGridColumnCount(state.searchMode);
+
+    if (state.focusedPanel === 'search-controls') {
+      if (code === 37 && state.focusedIndex > 0) {
+        state.focusedIndex--;
+        handled = true;
+      } else if (code === 39 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        handled = true;
+      } else if (code === 40 && state.searchResults.length > 0) {
+        state.focusedPanel = 'search-results';
+        state.focusedIndex = 0;
+        handled = true;
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'search-results') {
+      if (code === 38) {
+        if (state.focusedIndex >= gridColumns) {
+          state.focusedIndex -= gridColumns;
+        } else {
+          state.focusedPanel = 'search-controls';
+          state.focusedIndex = 0;
+        }
+        handled = true;
+      } else if (code === 40) {
+        if (state.focusedIndex + gridColumns < items.length) {
+          state.focusedIndex += gridColumns;
+          handled = true;
+        }
+      } else if (code === 37) {
+        if (state.focusedIndex % gridColumns > 0) {
+          state.focusedIndex--;
+        }
+        handled = true;
+      } else if (code === 39) {
+        if (state.focusedIndex % gridColumns < gridColumns - 1 && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+        }
+        handled = true;
+      }
+    }
+
+    return handled;
+  }
+
+  function handleWatchlistNavigation(code, items) {
+    var handled = false;
+    var gridColumns = 5;
+
+    if (state.focusedPanel === 'watchlist-controls') {
+      if (code === 37 && state.focusedIndex > 0) {
+        state.focusedIndex--;
+        handled = true;
+      } else if (code === 39 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        handled = true;
+      } else if (code === 40 && state.watchlistItems.length > 0) {
+        state.focusedPanel = 'watchlist-results';
+        state.focusedIndex = 0;
+        handled = true;
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'watchlist-results') {
+      if (code === 38) {
+        if (state.focusedIndex >= gridColumns) {
+          state.focusedIndex -= gridColumns;
+        } else {
+          state.focusedPanel = 'watchlist-controls';
+          state.focusedIndex = 0;
+        }
+        handled = true;
+      } else if (code === 40) {
+        if (state.focusedIndex + gridColumns < items.length) {
+          state.focusedIndex += gridColumns;
+          handled = true;
+        }
+      } else if (code === 37) {
+        if (state.focusedIndex % gridColumns > 0) {
+          state.focusedIndex--;
+        }
+        handled = true;
+      } else if (code === 39) {
+        if (state.focusedIndex % gridColumns < gridColumns - 1 && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+        }
+        handled = true;
+      }
+    }
+
+    return handled;
   }
 
   // KEYBOARD OR TELEVISION REMOTE CONTROLLER HANDLER
@@ -1128,6 +2559,18 @@
       } else if (state.focusedPanel === 'profiles') {
         // Log out / return to login
         logoutUser();
+        handled = true;
+      } else if (isDetailPanel(state.focusedPanel)) {
+        closeContentDetail();
+        handled = true;
+      } else if (isSearchPanel(state.focusedPanel)) {
+        returnToCatalogSidebar('search');
+        handled = true;
+      } else if (isWatchlistPanel(state.focusedPanel)) {
+        returnToCatalogSidebar('watchlist');
+        handled = true;
+      } else if (state.focusedPanel === 'settings-actions') {
+        returnToCatalogSidebar('settings');
         handled = true;
       } else if (state.focusedPanel === 'catalog-categories' || state.focusedPanel === 'catalog-channels' || state.focusedPanel === 'catalog-sidebar') {
         // Go back to profile selection
@@ -1158,13 +2601,22 @@
     }
 
     var items = getFocusableElements();
+    var gridColumns = getCatalogGridColumnCount();
 
-    if (code === 38) { // ArrowUp
+    if (isDetailPanel(state.focusedPanel)) {
+      handled = handleDetailNavigation(code, items);
+    } else if (isSearchPanel(state.focusedPanel)) {
+      handled = handleSearchNavigation(code, items);
+    } else if (isWatchlistPanel(state.focusedPanel)) {
+      handled = handleWatchlistNavigation(code, items);
+    }
+
+    if (!handled && code === 38) { // ArrowUp
       if (items.length > 0) {
         if (state.focusedPanel === 'catalog-channels') {
-          // 4-column grid: go up by 4 items
-          if (state.focusedIndex >= 4) {
-            state.focusedIndex -= 4;
+          // Grid navigation: move one row up
+          if (state.focusedIndex >= gridColumns) {
+            state.focusedIndex -= gridColumns;
             handled = true;
           }
         } else {
@@ -1175,17 +2627,17 @@
           }
         }
       }
-    } else if (code === 40) { // ArrowDown
+    } else if (!handled && code === 40) { // ArrowDown
       if (items.length > 0) {
         if (state.focusedPanel === 'catalog-channels') {
-          // 4-column grid: go down by 4 items
-          if (state.focusedIndex + 4 < items.length) {
-            state.focusedIndex += 4;
+          // Grid navigation: move one row down
+          if (state.focusedIndex + gridColumns < items.length) {
+            state.focusedIndex += gridColumns;
             handled = true;
           } else {
             // If we are not on the last row, let's go to the last item
-            var currentRow = Math.floor(state.focusedIndex / 4);
-            var totalRows = Math.ceil(items.length / 4);
+            var currentRow = Math.floor(state.focusedIndex / gridColumns);
+            var totalRows = Math.ceil(items.length / gridColumns);
             if (currentRow < totalRows - 1) {
               state.focusedIndex = items.length - 1;
               handled = true;
@@ -1199,10 +2651,10 @@
           }
         }
       }
-    } else if (code === 37) { // ArrowLeft
+    } else if (!handled && code === 37) { // ArrowLeft
       if (state.focusedPanel === 'catalog-channels') {
         // Grid left navigation
-        if (items.length > 0 && state.focusedIndex % 4 > 0) {
+        if (items.length > 0 && state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
           handled = true;
         } else {
@@ -1214,7 +2666,7 @@
       } else if (state.focusedPanel === 'catalog-categories') {
         // Go to sidebar
         state.focusedPanel = 'catalog-sidebar';
-        state.focusedIndex = 0; // default focus on 'Live TV'
+        state.focusedIndex = getSidebarFocusIndex();
         handled = true;
       } else if (state.focusedPanel === 'profiles') {
         // Left horizontal profile selection
@@ -1223,10 +2675,10 @@
           handled = true;
         }
       }
-    } else if (code === 39) { // ArrowRight
+    } else if (!handled && code === 39) { // ArrowRight
       if (state.focusedPanel === 'catalog-sidebar') {
         // Go to categories
-        if (state.categories.length > 0) {
+        if (state.categories.length > 0 && state.focusedIndex <= 2) {
           state.focusedPanel = 'catalog-categories';
           state.focusedIndex = getActiveCategoryIndex();
           handled = true;
@@ -1240,7 +2692,7 @@
         }
       } else if (state.focusedPanel === 'catalog-channels') {
         // Grid right navigation
-        if (items.length > 0 && state.focusedIndex % 4 < 3 && state.focusedIndex < items.length - 1) {
+        if (items.length > 0 && state.focusedIndex % gridColumns < gridColumns - 1 && state.focusedIndex < items.length - 1) {
           state.focusedIndex++;
           handled = true;
         }
@@ -1295,8 +2747,96 @@
   };
 
   document.getElementById('sidebar-live').onclick = function () {
-    // Already in Live view, reload catalog
-    loadCatalog();
+    loadCatalog('live');
+  };
+
+  document.getElementById('sidebar-movies').onclick = function () {
+    loadCatalog('movies');
+  };
+
+  document.getElementById('sidebar-series').onclick = function () {
+    loadCatalog('series');
+  };
+
+  document.getElementById('sidebar-search').onclick = function () {
+    openSearchView();
+  };
+
+  document.getElementById('sidebar-watchlist').onclick = function () {
+    openWatchlistView();
+  };
+
+  document.getElementById('sidebar-settings').onclick = function () {
+    openSettingsView();
+  };
+
+  document.getElementById('search-btn-submit').onclick = function () {
+    executeSearch();
+  };
+
+  document.getElementById('search-mode-live').onclick = function () {
+    setSearchMode('live');
+  };
+
+  document.getElementById('search-mode-movies').onclick = function () {
+    setSearchMode('movies');
+  };
+
+  document.getElementById('search-mode-series').onclick = function () {
+    setSearchMode('series');
+  };
+
+  document.getElementById('search-btn-back').onclick = function () {
+    returnToCatalogSidebar('search');
+  };
+
+  document.getElementById('watchlist-filter-all').onclick = function () {
+    setWatchlistFilter('all');
+  };
+
+  document.getElementById('watchlist-filter-movies').onclick = function () {
+    setWatchlistFilter('movies');
+  };
+
+  document.getElementById('watchlist-filter-series').onclick = function () {
+    setWatchlistFilter('series');
+  };
+
+  document.getElementById('watchlist-btn-back').onclick = function () {
+    returnToCatalogSidebar('watchlist');
+  };
+
+  document.getElementById('detail-btn-play').onclick = function () {
+    playDetailPrimary();
+  };
+
+  document.getElementById('detail-btn-favorite').onclick = function () {
+    if (!state.detailItem) return;
+    toggleFavoriteItem(state.detailMode, state.detailItem);
+    updateDetailFavoriteButton();
+  };
+
+  document.getElementById('detail-btn-back').onclick = function () {
+    closeContentDetail();
+  };
+
+  document.getElementById('settings-btn-switch-profile').onclick = function () {
+    setupProfilesView();
+  };
+
+  document.getElementById('settings-btn-clear-watchlist').onclick = function () {
+    clearCurrentProfileFavorites();
+    renderWatchlist();
+    updateSettingsView();
+    updateFocusUI();
+  };
+
+  document.getElementById('settings-btn-logout').onclick = function () {
+    logoutUser();
+  };
+
+  document.getElementById('settings-btn-back').onclick = function () {
+    returnToCatalogSidebar('settings');
   };
 
   document.getElementById('sidebar-profile').onclick = function () {
@@ -1316,6 +2856,11 @@
     state.session = null;
     state.profiles = [];
     state.selectedProfile = null;
+    state.searchMode = 'movies';
+    state.searchQuery = '';
+    state.searchResults = [];
+    state.searchCache = {};
+    state.watchlistItems = [];
     setupWelcomeView();
   }
 
