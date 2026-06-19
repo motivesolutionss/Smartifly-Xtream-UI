@@ -21,66 +21,17 @@
     channels: [],
     selectedCategoryId: '',
     selectedCategoryName: '',
-    focusedPanel: 'welcome', // 'welcome', 'login', 'profiles', 'profile-form', 'catalog-sidebar', 'home-rails', 'catalog-categories', 'catalog-channels', 'detail-actions', 'detail-seasons', 'detail-episodes', 'search-header', 'search-keyboard', 'search-results', 'watchlist-controls', 'watchlist-results', 'settings-actions', 'player'
+    focusedPanel: 'welcome', // 'welcome', 'login-wizard', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
     focusedIndex: 0, // Index of focused item inside current panel
     activeChannel: null,
     activeChannelQueue: [],
     activeChannelIndex: 0,
-    currentViewId: 'view-welcome',
-    playerReturnViewId: 'view-catalog',
-    playerReturnPanel: 'catalog-channels',
-    playerReturnIndex: 0,
-    detailItem: null,
-    detailMode: '',
-    detailSourceIndex: 0,
-    detailReturnViewId: 'view-catalog',
-    detailReturnPanel: 'catalog-channels',
-    detailReturnIndex: 0,
-    detailInfo: null,
-    detailSeasons: [],
-    detailSelectedSeasonIndex: 0,
-    detailEpisodes: [],
-    favorites: {},
-    searchQuery: '',
-    searchResults: [],
-    searchCache: {},
-    searchRails: [],
-    searchLoading: false,
-    searchKeyboardShifted: false,
-    searchKeyboardRows: [],
-    searchQueryDebounce: null,
-    watchlistFilter: 'all',
-    watchlistItems: [],
-    watchHistory: [],
-    homeCatalogCache: {
-      live: null,
-      movies: null,
-      series: null
-    },
-    homeSections: [],
-    homeHeroEntry: null,
-    homeLoading: false,
-    catalogScreen: 'home',
-    loginPending: false,
-    loginRequestId: 0,
-    loginResolvedPortal: null,
-    profileFormDraft: {
-      name: '',
-      avatarSeed: '',
-      isKids: false
-    }
-  };
-
-  var SIDEBAR_MODE_INDEX = {
-    home: 0,
-    live: 1,
-    movies: 2,
-    series: 3,
-    search: 4,
-    watchlist: 5,
-    settings: 6,
-    profile: 7,
-    logout: 8
+    wizardStepIndex: 0,
+    wizardValues: { portal: '', username: '', password: '' },
+    keyboardIsShifted: false,
+    keyboardMode: 'letters',
+    activationTimer: null,
+    activationDeviceId: ''
   };
 
   var MAX_HOME_RAIL_ITEMS = 12;
@@ -296,6 +247,111 @@
       }
     };
     xhr.onerror = function () { onError('Network error'); };
+    xhr.send();
+  }
+
+  function buildActivationMac(deviceId) {
+    var normalized = deviceId.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    var last6 = normalized.slice(-6);
+    while (last6.length < 6) {
+      last6 = '0' + last6;
+    }
+    return '00:1A:79:' + last6;
+  }
+
+  function getActivationOsVersion() {
+    var ua = (window.navigator && window.navigator.userAgent) || 'webos';
+    return ua.slice(0, 50);
+  }
+
+  function apiRegisterDevice(deviceId, mac, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = API_BASE_URL + '/public/device/register';
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 15000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onSuccess();
+      } else {
+        onError('Registration failed: HTTP ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () { onError('Network error registering device'); };
+    xhr.send(JSON.stringify({
+      deviceId: deviceId,
+      mac: mac,
+      brand: 'LG',
+      model: 'webOS Emulator',
+      platform: 'WEBOS',
+      appVersion: 'lg-webos',
+      osVersion: getActivationOsVersion()
+    }));
+  }
+
+  function apiFetchActivationSession(deviceId, mac, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = API_BASE_URL + '/public/qr/generate';
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 15000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          if (res.success && res.webLink && res.token && res.settingsCode) {
+            onSuccess(res);
+          } else {
+            onError(res.message || 'Activation session generation failed');
+          }
+        } catch (e) {
+          onError('Invalid JSON response');
+        }
+      } else {
+        onError('Session fetch failed: HTTP ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () { onError('Network error fetching session'); };
+    xhr.send(JSON.stringify({
+      licenseKey: 'TRIAL',
+      deviceId: deviceId,
+      mac: mac,
+      platform: 'WEBOS',
+      brand: 'LG',
+      model: 'webOS Emulator',
+      appVersion: 'lg-webos',
+      osVersion: getActivationOsVersion()
+    }));
+  }
+
+  function apiCheckDeviceActivation(deviceId, mac, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = API_BASE_URL + '/public/device/check?deviceId=' + encodeURIComponent(deviceId) + '&mac=' + encodeURIComponent(mac);
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 15000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          if (res.state) {
+            onSuccess(res);
+          } else {
+            onError(res.reason || 'Activation check failed');
+          }
+        } catch (e) {
+          onError('Invalid status response');
+        }
+      } else {
+        onError('Check status failed: HTTP ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () { onError('Network error checking status'); };
     xhr.send();
   }
 
@@ -2901,7 +2957,255 @@
     if (activeView) {
       activeView.classList.add('active');
     }
-    state.currentViewId = viewId;
+  }
+
+  // --- PREMIUM STEP-BY-STEP LOGIN WIZARD ---
+  var WIZARD_STEPS = [
+    {
+      id: 'portal',
+      eyebrow: 'STEP 01 - IDENTITY',
+      title: 'Connect to your server',
+      desc: 'Enter your unique Server Identity code to establish a secure handshake.',
+      label: 'Server Identity',
+      placeholder: 'e.g. SMARTIFLY-01'
+    },
+    {
+      id: 'username',
+      eyebrow: 'STEP 02 - ACCOUNT',
+      title: 'Enter your username',
+      desc: 'Use the Xtream username assigned to this subscription.',
+      label: 'Username',
+      placeholder: 'e.g. smartifly_user'
+    },
+    {
+      id: 'password',
+      eyebrow: 'STEP 03 - SECRET',
+      title: 'Confirm your password',
+      desc: 'Enter the account password, then continue to authenticate.',
+      label: 'Password',
+      placeholder: 'Enter password'
+    }
+  ];
+
+  var KEYBOARD_ALPHA = [
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '-'],
+    ['Shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '_', 'Backspace']
+  ];
+
+  var KEYBOARD_SYMBOLS = [
+    ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')'],
+    ['?', '/', '\\', ':', ';', '"', "'", '+', '=', '.'],
+    [',', '[', ']', '{', '}', '|', '<', '>', '~', '-'],
+    ['ABC', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '_', 'Backspace']
+  ];
+
+  var QUICK_ROWS_CONFIG = {
+    portal: [
+      ['@gmail.com', '@yahoo.com', '@outlook.com'],
+      ['!#$', '@', '.', '.com']
+    ],
+    username: [
+      ['@gmail.com', '@yahoo.com', '@outlook.com'],
+      ['!#$', '@', '.', '.com']
+    ],
+    password: [
+      ['@gmail.com', '@yahoo.com', '@outlook.com'],
+      ['!#$', '@', '.', '.com']
+    ]
+  };
+
+  function getKeyboardRowsForStep(stepId, isShifted, keyboardMode) {
+    var alphaRows = keyboardMode === 'symbols' ? KEYBOARD_SYMBOLS : KEYBOARD_ALPHA;
+    var rows = [
+      alphaRows[0],
+      alphaRows[1],
+      alphaRows[2],
+      alphaRows[3]
+    ];
+    
+    var quick = QUICK_ROWS_CONFIG[stepId] || [];
+    for (var i = 0; i < quick.length; i++) {
+      rows.push(quick[i]);
+    }
+    
+    var nextLabel = (stepId === 'password') ? 'Connect' : 'Next';
+    rows.push(['Back', 'Space', nextLabel]);
+    
+    return rows;
+  }
+
+  function renderLoginWizard() {
+    var step = WIZARD_STEPS[state.wizardStepIndex];
+    if (!step) return;
+
+    // 1. Left pane texts
+    document.getElementById('login-wizard-eyebrow').textContent = step.eyebrow;
+    document.getElementById('login-wizard-title').textContent = step.title;
+    document.getElementById('login-wizard-desc').textContent = step.desc;
+
+    // 2. Right pane input preview
+    var labelEl = document.getElementById('login-preview-label');
+    var previewEl = document.getElementById('login-wizard-preview');
+    if (labelEl && previewEl) {
+      labelEl.textContent = step.label;
+      previewEl.placeholder = step.placeholder;
+      
+      var val = state.wizardValues[step.id] || '';
+      if (step.id === 'password') {
+        previewEl.value = val.replace(/./g, '•');
+      } else {
+        previewEl.value = val;
+      }
+    }
+
+    // 3. Embedded keyboard rendering
+    var container = document.getElementById('login-wizard-keyboard');
+    if (!container) return;
+    container.innerHTML = '';
+
+    var rows = getKeyboardRowsForStep(step.id, state.keyboardIsShifted, state.keyboardMode);
+    var flatIndexCounter = 0;
+
+    for (var r = 0; r < rows.length; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'keyboard-row';
+      
+      var rowData = rows[r];
+      for (var c = 0; c < rowData.length; c++) {
+        var keyVal = rowData[c];
+        var keyBtn = document.createElement('div');
+        
+        var btnClass = 'key-btn focusable';
+        if (keyVal === 'Shift') btnClass += ' key-shift';
+        else if (keyVal === 'Space') btnClass += ' key-space';
+        else if (keyVal === 'Backspace') btnClass += ' key-backspace';
+        else if (keyVal === 'ABC' || keyVal === 'Symbols' || keyVal === '!#$' || keyVal === 'Letters') btnClass += ' key-symbols';
+        else if (keyVal.charAt(0) === '@' || keyVal === '.com' || keyVal === '.') btnClass += ' key-shortcut';
+        else if (keyVal === 'Back') btnClass += ' key-action-back';
+        else if (keyVal === 'Space') btnClass += ' key-action-space';
+        else if (keyVal === 'Next' || keyVal === 'Connect') btnClass += ' key-action-next';
+        
+        keyBtn.className = btnClass;
+        keyBtn.setAttribute('tabindex', '-1');
+        keyBtn.setAttribute('data-index', flatIndexCounter);
+        keyBtn.setAttribute('data-key', keyVal);
+        
+        var displayVal = keyVal;
+        if (keyVal === '!#$') displayVal = 'Symbols';
+        
+        if (state.keyboardIsShifted && keyVal.length === 1 && keyVal >= 'a' && keyVal <= 'z') {
+          displayVal = keyVal.toUpperCase();
+        }
+        keyBtn.textContent = displayVal;
+        
+        keyBtn.onclick = function() {
+          handleWizardKeyPress(this.getAttribute('data-key'));
+        };
+        
+        rowEl.appendChild(keyBtn);
+        flatIndexCounter++;
+      }
+      container.appendChild(rowEl);
+    }
+  }
+
+  function handleWizardKeyPress(key) {
+    var step = WIZARD_STEPS[state.wizardStepIndex];
+    if (!step) return;
+
+    var currentVal = state.wizardValues[step.id] || '';
+
+    if (key === 'Shift') {
+      state.keyboardIsShifted = !state.keyboardIsShifted;
+      renderLoginWizard();
+      updateFocusUI();
+    } else if (key === 'Symbols' || key === '!#$') {
+      state.keyboardMode = 'symbols';
+      renderLoginWizard();
+      updateFocusUI();
+    } else if (key === 'ABC' || key === 'Letters') {
+      state.keyboardMode = 'letters';
+      renderLoginWizard();
+      updateFocusUI();
+    } else if (key === 'Backspace') {
+      if (currentVal.length > 0) {
+        state.wizardValues[step.id] = currentVal.slice(0, -1);
+        renderLoginWizard();
+      }
+    } else if (key === 'Space') {
+      state.wizardValues[step.id] = currentVal + ' ';
+      renderLoginWizard();
+    } else if (key === 'Back') {
+      if (state.wizardStepIndex > 0) {
+        state.wizardStepIndex--;
+        renderLoginWizard();
+        updateFocusUI();
+      } else {
+        setupWelcomeView();
+      }
+    } else if (key === 'Next' || key === 'Connect') {
+      var val = (state.wizardValues[step.id] || '').trim();
+      if (!val) {
+        document.getElementById('login-wizard-status').textContent = 'Field cannot be empty';
+        return;
+      }
+      document.getElementById('login-wizard-status').textContent = '';
+
+      if (state.wizardStepIndex === WIZARD_STEPS.length - 1) {
+        executeLoginWizard();
+      } else {
+        state.wizardStepIndex++;
+        renderLoginWizard();
+        updateFocusUI();
+      }
+    } else {
+      var charToAdd = key;
+      if (state.keyboardIsShifted && key.length === 1 && key >= 'a' && key <= 'z') {
+        charToAdd = key.toUpperCase();
+      }
+      state.wizardValues[step.id] = currentVal + charToAdd;
+      
+      if (step.id === 'portal') {
+        state.wizardValues[step.id] = state.wizardValues[step.id].toUpperCase();
+      }
+      
+      renderLoginWizard();
+    }
+  }
+
+  function getWizardRowColFromIndex(index) {
+    var step = WIZARD_STEPS[state.wizardStepIndex];
+    var rows = getKeyboardRowsForStep(step.id, state.keyboardIsShifted, state.keyboardMode);
+    
+    var idx = 0;
+    for (var r = 0; r < rows.length; r++) {
+      var rowData = rows[r];
+      if (index >= idx && index < idx + rowData.length) {
+        return { row: r, col: index - idx, rowLength: rowData.length };
+      }
+      idx += rowData.length;
+    }
+    return { row: 0, col: 0, rowLength: 10 };
+  }
+
+  function getWizardIndexFromRowCol(row, col) {
+    var step = WIZARD_STEPS[state.wizardStepIndex];
+    var rows = getKeyboardRowsForStep(step.id, state.keyboardIsShifted, state.keyboardMode);
+    
+    if (row < 0) row = 0;
+    if (row >= rows.length) row = rows.length - 1;
+    
+    var rowData = rows[row];
+    if (col < 0) col = 0;
+    if (col >= rowData.length) col = rowData.length - 1;
+    
+    var idx = 0;
+    for (var r = 0; r < row; r++) {
+      idx += rows[r].length;
+    }
+    return idx + col;
   }
 
   // --- STORAGE HELPERS ---
@@ -2993,75 +3297,36 @@
 
   // --- LOGIN CONTROLLER ---
   function setupLoginView() {
-    state.focusedPanel = 'login';
-    state.focusedIndex = 0;
-    state.loginPending = false;
-    state.loginRequestId = 0;
-    state.loginResolvedPortal = null;
+    state.focusedPanel = 'login-wizard';
+    state.focusedIndex = 10; // Default focus to letter 'q' (index 10)
+    state.wizardStepIndex = 0;
     
     // Autofill last portal code if available
     var lastPortal = localStorage.getItem(PORTAL_KEY);
-    if (lastPortal) {
-      document.getElementById('login-code').value = lastPortal;
+    state.wizardValues = {
+      portal: lastPortal || '',
+      username: '',
+      password: ''
+    };
+    
+    state.keyboardIsShifted = false;
+    state.keyboardMode = 'letters';
+
+    var statusNode = document.getElementById('login-wizard-status');
+    if (statusNode) {
+      statusNode.textContent = '';
     }
     
-    document.getElementById('login-user').value = '';
-    document.getElementById('login-pass').value = '';
-    clearLoginErrors();
-    setLoginResolvedPortal(null);
-    setLoginStatus('Enter your portal identity and Xtream credentials.', 'idle');
-    setLoginPending(false);
-    
     showView('view-login');
+    renderLoginWizard();
     updateFocusUI();
   }
 
-  function clearLoginErrors() {
-    var fieldIds = ['code', 'user', 'pass'];
-    for (var i = 0; i < fieldIds.length; i++) {
-      var fieldId = fieldIds[i];
-      var inputNode = document.getElementById('login-' + fieldId);
-      var errorNode = document.getElementById('login-error-' + fieldId);
-      if (inputNode) {
-        inputNode.classList.remove('input-error');
-      }
-      if (errorNode) {
-        errorNode.textContent = '';
-      }
-    }
-  }
-
-  function setLoginFieldError(fieldId, message) {
-    var inputNode = document.getElementById('login-' + fieldId);
-    var errorNode = document.getElementById('login-error-' + fieldId);
-    if (inputNode) {
-      inputNode.classList.add('input-error');
-    }
-    if (errorNode) {
-      errorNode.textContent = message || '';
-    }
-  }
-
-  function setLoginStatus(message, tone) {
-    var statusNode = document.getElementById('login-status');
-    if (!statusNode) return;
-
-    statusNode.textContent = message || '';
-    statusNode.className = 'status-text status-text--' + (tone || 'idle');
-  }
-
-  function setLoginResolvedPortal(portal) {
-    state.loginResolvedPortal = portal || null;
-
-    var nameNode = document.getElementById('login-server-name');
-    var urlNode = document.getElementById('login-server-url');
-    if (!nameNode || !urlNode) return;
-
-    if (!portal) {
-      nameNode.textContent = 'Waiting for validation';
-      urlNode.textContent = 'Enter a portal code and continue to resolve the target server.';
-      return;
-    }
+  function executeLoginWizard() {
+    var code = state.wizardValues.portal;
+    var user = state.wizardValues.username;
+    var pass = state.wizardValues.password;
+    var statusNode = document.getElementById('login-wizard-status');
 
     nameNode.textContent = portal.name || portal.portalCode || 'Resolved portal';
     urlNode.textContent = normalizeBaseUrl(portal.baseUrl || '');
@@ -3162,33 +3427,224 @@
           serverInfo: authRes.server_info,
           authenticatedAt: new Date().toISOString()
         };
-        var profiles = createDefaultProfiles(values.user);
+
+        // Create default profiles if missing
+        var profiles = [
+          { id: 'primary', name: user, avatarSeed: user.slice(0, 2).toUpperCase() },
+          { id: 'kids', name: 'Kids', avatarSeed: 'KD', isKids: true }
+        ];
 
         state.session = session;
         state.profiles = profiles;
-        state.selectedProfile = null;
         saveSessionState(session, profiles);
-        saveSelectedProfile(null);
-        setLoginStatus('Authenticated. Loading profile selection...', 'success');
-        setLoginPending(false);
-
+        
         setupProfilesView();
       }, function (err) {
-        if (requestId !== state.loginRequestId) {
-          return;
-        }
-
-        setLoginPending(false);
-        setLoginStatus(err || 'Xtream login failed.', 'error');
+        statusNode.textContent = err;
+        statusNode.style.color = '#ff3344';
       });
     }, function (err) {
-      if (requestId !== state.loginRequestId) {
+      statusNode.textContent = err;
+      statusNode.style.color = '#ff3344';
+    });
+  }
+
+  // --- ACTIVATION CONTROLLER ---
+  function setupActivationView() {
+    state.focusedPanel = 'activation';
+    state.focusedIndex = 0;
+
+    // Stop any previous timers
+    cleanupActivation();
+
+    // Retrieve or generate Device ID
+    var DEVICE_ID_KEY = 'smartifly-lg-device-id';
+    var deviceId = localStorage.getItem(DEVICE_ID_KEY);
+    if (!deviceId) {
+      var chars = '0123456789ABCDEF';
+      var suffix = '';
+      for (var i = 0; i < 8; i++) {
+        suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      deviceId = 'SF-LG-' + suffix;
+      localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    }
+    state.activationDeviceId = deviceId;
+
+    // Render placeholders
+    document.getElementById('activation-device-id').textContent = deviceId;
+    document.getElementById('activation-code').textContent = '------';
+    document.getElementById('activation-link').textContent = 'Generating activation link...';
+
+    var dotNode = document.getElementById('activation-status-dot');
+    var badgeNode = document.getElementById('activation-status-badge');
+    var titleNode = document.getElementById('activation-status-title');
+    var descNode = document.getElementById('activation-status-desc');
+
+    if (dotNode) dotNode.className = 'status-dot';
+    if (dotNode) dotNode.style.backgroundColor = '#e50914';
+    if (badgeNode) {
+      badgeNode.textContent = 'AWAITING BINDING';
+      badgeNode.style.color = '#ff8088';
+    }
+    if (titleNode) titleNode.textContent = 'Preparing LG activation...';
+    if (descNode) descNode.textContent = 'Activation pending';
+
+    var qrPlaceholder = document.getElementById('activation-qr-placeholder');
+    var qrImg = document.getElementById('activation-qr-img');
+    if (qrPlaceholder) qrPlaceholder.style.display = 'block';
+    if (qrImg) qrImg.style.display = 'none';
+
+    showView('view-activation');
+    updateFocusUI();
+
+    var mac = buildActivationMac(deviceId);
+
+    apiRegisterDevice(deviceId, mac, function() {
+      apiFetchActivationSession(deviceId, mac, function(session) {
+        if (state.focusedPanel !== 'activation') return;
+
+        // Show code and link
+        if (document.getElementById('activation-code')) {
+          document.getElementById('activation-code').textContent = session.settingsCode || '--------';
+        }
+        if (document.getElementById('activation-link')) {
+          document.getElementById('activation-link').textContent = session.webLink || '';
+        }
+
+        // Show QR
+        if (session.qrCode && qrImg && qrPlaceholder) {
+          qrImg.src = session.qrCode;
+          qrImg.style.display = 'block';
+          qrPlaceholder.style.display = 'none';
+        }
+
+        if (titleNode) titleNode.textContent = 'Waiting for account binding...';
+
+        // Start polling
+        state.activationTimer = setTimeout(function() {
+          pollActivation(deviceId, mac);
+        }, 5000);
+
+      }, function(err) {
+        showActivationError(err);
+      });
+    }, function(err) {
+      showActivationError(err);
+    });
+  }
+
+  function pollActivation(deviceId, mac) {
+    if (state.focusedPanel !== 'activation') return;
+
+    apiCheckDeviceActivation(deviceId, mac, function(res) {
+      var normalized = (res.statusCode || res.state || '').toUpperCase();
+      
+      if (document.getElementById('activation-status-desc')) {
+        document.getElementById('activation-status-desc').textContent = res.reason || 'Activation pending';
+      }
+
+      if (normalized === 'ACTIVE' || normalized === 'ACTIVATED') {
+        if (res.license) {
+          if (document.getElementById('activation-status-title')) {
+            document.getElementById('activation-status-title').textContent = 'Activation approved. Syncing account...';
+          }
+          var dotNode = document.getElementById('activation-status-dot');
+          var badgeNode = document.getElementById('activation-status-badge');
+          
+          if (dotNode) dotNode.style.backgroundColor = '#2de067'; // green dot
+          if (badgeNode) {
+            badgeNode.textContent = 'ACTIVATED';
+            badgeNode.style.color = '#2de067';
+          }
+
+          completeLegacyDeviceActivation(res.license, deviceId);
+        } else {
+          showActivationError('Handoff error: activation approved but no license details.');
+        }
         return;
       }
 
-      setLoginPending(false);
-      setLoginStatus(err || 'Portal validation failed.', 'error');
+      if (normalized === 'BLOCKED' || normalized === 'BLACKLISTED' || normalized === 'DISABLED') {
+        showActivationError(res.reason || 'This device has been blocked.');
+        return;
+      }
+
+      if (normalized === 'EXPIRED') {
+        showActivationError(res.reason || 'Activation session expired.');
+        return;
+      }
+
+      // Continue polling
+      state.activationTimer = setTimeout(function() {
+        pollActivation(deviceId, mac);
+      }, 5000);
+
+    }, function(err) {
+      showActivationError(err);
     });
+  }
+
+  function completeLegacyDeviceActivation(license, deviceId) {
+    var serverUrl = license.server && license.server.url && license.server.url.trim();
+    var serverName = (license.server && license.server.name && license.server.name.trim()) || 'Smartifly Server';
+    var username = license.xtreamUser && license.xtreamUser.trim();
+    var password = license.xtreamPass && license.xtreamPass.trim();
+
+    if (!serverUrl || !username || !password) {
+      showActivationError('Missing server credentials in license.');
+      return;
+    }
+
+    apiAuthenticate(serverUrl, username, password, function(authRes) {
+      var portalCode = serverName.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'LG-ACTIVATED';
+      var session = {
+        portalCode: portalCode,
+        portalBaseUrl: serverUrl,
+        serverName: serverName,
+        username: username,
+        userInfo: authRes.user_info,
+        serverInfo: authRes.server_info,
+        authenticatedAt: new Date().toISOString()
+      };
+
+      var profiles = [
+        { id: 'primary', name: username, avatarSeed: username.slice(0, 2).toUpperCase() },
+        { id: 'kids', name: 'Kids', avatarSeed: 'KD', isKids: true }
+      ];
+
+      state.session = session;
+      state.profiles = profiles;
+      saveSessionState(session, profiles);
+
+      setupProfilesView();
+    }, function(err) {
+      showActivationError('Xtream login failed: ' + err);
+    });
+  }
+
+  function showActivationError(message) {
+    var dotNode = document.getElementById('activation-status-dot');
+    var badgeNode = document.getElementById('activation-status-badge');
+    var titleNode = document.getElementById('activation-status-title');
+    var descNode = document.getElementById('activation-status-desc');
+
+    if (titleNode) titleNode.textContent = 'Activation Attention';
+    if (descNode) descNode.textContent = message;
+    if (dotNode) dotNode.style.backgroundColor = '#ff5f6d'; // red/pink error
+    if (badgeNode) {
+      badgeNode.textContent = 'ACTIVATION ATTENTION';
+      badgeNode.style.color = '#ffb0b6';
+    }
+
+    cleanupActivation();
+  }
+
+  function cleanupActivation() {
+    if (state.activationTimer) {
+      clearTimeout(state.activationTimer);
+      state.activationTimer = null;
+    }
   }
 
   // --- PROFILES CONTROLLER ---
@@ -3216,7 +3672,7 @@
       card.setAttribute('data-index', i);
       
       var avatar = document.createElement('div');
-      avatar.className = 'profile-avatar' + (profile.isKids ? ' profile-avatar--kids' : '');
+      avatar.className = 'profile-avatar' + (profile.isKids ? ' kids' : '');
       avatar.textContent = profile.avatarSeed;
       
       var name = document.createElement('div');
@@ -4165,7 +4621,7 @@
     if (state.focusedPanel === 'welcome') {
       return document.getElementById('view-welcome').querySelectorAll('.focusable');
     }
-    if (state.focusedPanel === 'login') {
+    if (state.focusedPanel === 'login' || state.focusedPanel === 'login-wizard') {
       return document.getElementById('view-login').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'profiles') {
@@ -4193,6 +4649,12 @@
     }
     if (state.focusedPanel === 'catalog-channels') {
       return document.getElementById('channels-grid-list').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'keyboard') {
+      return document.getElementById('keyboard-keys-grid').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'activation') {
+      return document.getElementById('view-activation').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'detail-actions') {
       return document.getElementById('detail-actions').querySelectorAll('.focusable');
@@ -4787,17 +5249,28 @@
 
     // Handle back button separately across panels
     if (code === 8 || code === 461 || code === 27) { // Backspace, webOS Back, Escape
-      if (state.focusedPanel === 'player') {
+      if (state.focusedPanel === 'login-wizard') {
+        if (code === 8) {
+          // PC backspace: delete character in wizard keyboard
+          handleWizardKeyPress('Backspace');
+        } else {
+          // webOS back/Escape: go back a step or return to welcome
+          handleWizardKeyPress('Back');
+        }
+        handled = true;
+      } else if (state.focusedPanel === 'player') {
         closePlayer();
         handled = true;
       } else if (state.focusedPanel === 'profile-form') {
         closeProfileFormModal(false);
         handled = true;
       } else if (state.focusedPanel === 'login') {
-        if (!state.loginPending) {
-          setupWelcomeView();
-          handled = true;
-        }
+        setupWelcomeView();
+        handled = true;
+      } else if (state.focusedPanel === 'activation') {
+        cleanupActivation();
+        setupWelcomeView();
+        handled = true;
       } else if (state.focusedPanel === 'profiles') {
         // Log out / return to login
         logoutUser();
@@ -4863,10 +5336,21 @@
 
     if (!handled && code === 38) { // ArrowUp
       if (items.length > 0) {
-        if (state.focusedPanel === 'catalog-channels') {
-          // Grid navigation: move one row up
-          if (state.focusedIndex >= gridColumns) {
-            state.focusedIndex -= gridColumns;
+        if (state.focusedPanel === 'login-wizard') {
+          var pos = getWizardRowColFromIndex(state.focusedIndex);
+          var step = WIZARD_STEPS[state.wizardStepIndex];
+          var rows = getKeyboardRowsForStep(step.id, state.keyboardIsShifted, state.keyboardMode);
+          if (pos.row > 0) {
+            var targetRow = pos.row - 1;
+            var targetRowLength = rows[targetRow].length;
+            var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
+            state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'catalog-channels') {
+          // 4-column grid: go up by 4 items
+          if (state.focusedIndex >= 4) {
+            state.focusedIndex -= 4;
             handled = true;
           }
         } else {
@@ -4879,10 +5363,21 @@
       }
     } else if (!handled && code === 40) { // ArrowDown
       if (items.length > 0) {
-        if (state.focusedPanel === 'catalog-channels') {
-          // Grid navigation: move one row down
-          if (state.focusedIndex + gridColumns < items.length) {
-            state.focusedIndex += gridColumns;
+        if (state.focusedPanel === 'login-wizard') {
+          var pos = getWizardRowColFromIndex(state.focusedIndex);
+          var step = WIZARD_STEPS[state.wizardStepIndex];
+          var rows = getKeyboardRowsForStep(step.id, state.keyboardIsShifted, state.keyboardMode);
+          if (pos.row < rows.length - 1) {
+            var targetRow = pos.row + 1;
+            var targetRowLength = rows[targetRow].length;
+            var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
+            state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'catalog-channels') {
+          // 4-column grid: go down by 4 items
+          if (state.focusedIndex + 4 < items.length) {
+            state.focusedIndex += 4;
             handled = true;
           } else {
             // If we are not on the last row, let's go to the last item
@@ -4901,8 +5396,14 @@
           }
         }
       }
-    } else if (!handled && code === 37) { // ArrowLeft
-      if (state.focusedPanel === 'catalog-channels') {
+    } else if (code === 37) { // ArrowLeft
+      if (state.focusedPanel === 'login-wizard') {
+        var pos = getWizardRowColFromIndex(state.focusedIndex);
+        if (pos.col > 0) {
+          state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col - 1);
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'catalog-channels') {
         // Grid left navigation
         if (items.length > 0 && state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
@@ -4930,21 +5431,16 @@
           handled = true;
         }
       }
-    } else if (!handled && code === 39) { // ArrowRight
-      if (state.focusedPanel === 'catalog-sidebar') {
-        if (state.catalogScreen === 'home') {
-          if (state.focusedIndex === getSidebarFocusIndex('home')) {
-            if (state.homeHeroEntry) {
-              focusHomeHero(0);
-              handled = true;
-            } else if (document.getElementById('home-rails').querySelectorAll('.focusable').length > 0) {
-              state.focusedPanel = 'home-rails';
-              state.focusedIndex = 0;
-              updateFocusUI();
-              handled = true;
-            }
-          }
-        } else if (state.categories.length > 0 && state.focusedIndex <= getSidebarFocusIndex('series')) {
+    } else if (code === 39) { // ArrowRight
+      if (state.focusedPanel === 'login-wizard') {
+        var pos = getWizardRowColFromIndex(state.focusedIndex);
+        if (pos.col < pos.rowLength - 1) {
+          state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col + 1);
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'catalog-sidebar') {
+        // Go to categories
+        if (state.categories.length > 0 && state.focusedIndex <= 2) {
           state.focusedPanel = 'catalog-categories';
           state.focusedIndex = getActiveCategoryIndex();
           handled = true;
@@ -4978,12 +5474,7 @@
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
         if (activeEl) {
-          if (activeEl.tagName === 'INPUT') {
-            activeEl.focus();
-          } else {
-            // Simulate click
-            activeEl.click();
-          }
+          activeEl.click();
           handled = true;
         }
       }
@@ -5009,76 +5500,13 @@
     setupLoginView();
   };
 
-  document.getElementById('login-btn-submit').onclick = function () {
-    executeLogin();
+  document.getElementById('welcome-btn-create').onclick = function () {
+    setupActivationView();
   };
 
-  document.getElementById('login-btn-back').onclick = function () {
-    if (!state.loginPending) {
-      setupWelcomeView();
-    }
-  };
-
-  document.getElementById('login-code').oninput = function () {
-    this.value = String(this.value || '').toUpperCase();
-    this.classList.remove('input-error');
-    document.getElementById('login-error-code').textContent = '';
-    setLoginResolvedPortal(null);
-    if (!state.loginPending) {
-      setLoginStatus('Server identity updated. Reconnect to validate the portal.', 'idle');
-    }
-  };
-
-  document.getElementById('login-user').oninput = function () {
-    this.classList.remove('input-error');
-    document.getElementById('login-error-user').textContent = '';
-    if (!state.loginPending) {
-      setLoginStatus('Username updated.', 'idle');
-    }
-  };
-
-  document.getElementById('login-pass').oninput = function () {
-    this.classList.remove('input-error');
-    document.getElementById('login-error-pass').textContent = '';
-    if (!state.loginPending) {
-      setLoginStatus('Password updated.', 'idle');
-    }
-  };
-
-  document.getElementById('profile-form-kids').onclick = function () {
-    state.profileFormDraft.isKids = !state.profileFormDraft.isKids;
-    syncProfileFormToggle();
-    setProfileFormStatus(state.profileFormDraft.isKids ? 'Kids mode enabled for this profile.' : 'Kids mode disabled for this profile.', 'info');
-  };
-
-  document.getElementById('profile-form-name').oninput = function () {
-    this.classList.remove('input-error');
-    document.getElementById('profile-form-name-error').textContent = '';
-    state.profileFormDraft.name = String(this.value || '');
-
-    var avatarNode = document.getElementById('profile-form-avatar');
-    if (!String(avatarNode.value || '').trim()) {
-      avatarNode.value = deriveProfileInitials(state.profileFormDraft.name);
-    }
-  };
-
-  document.getElementById('profile-form-avatar').oninput = function () {
-    this.value = sanitizeProfileInitials(this.value || '');
-    this.classList.remove('input-error');
-    document.getElementById('profile-form-avatar-error').textContent = '';
-    state.profileFormDraft.avatarSeed = this.value;
-  };
-
-  document.getElementById('profile-form-save').onclick = function () {
-    saveNewProfile();
-  };
-
-  document.getElementById('profile-form-cancel').onclick = function () {
-    closeProfileFormModal(false);
-  };
-
-  document.getElementById('sidebar-home').onclick = function () {
-    openHomeView();
+  document.getElementById('activation-btn-cancel').onclick = function () {
+    cleanupActivation();
+    setupWelcomeView();
   };
 
   document.getElementById('sidebar-live').onclick = function () {

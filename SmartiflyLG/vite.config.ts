@@ -164,6 +164,7 @@ export default defineConfig(({ mode }) => {
               abortCode
             ].join('\n');
             const polyfillsPath = join(process.cwd(), 'dist', 'vendor', 'polyfills.js');
+            mkdirSync(join(process.cwd(), 'dist', 'vendor'), { recursive: true });
             writeFileSync(polyfillsPath, polyfillsJs, 'utf8');
 
             const finalAppJs = [
@@ -260,6 +261,13 @@ export default defineConfig(({ mode }) => {
               const files = readdirSync(assetsDir);
               files.forEach((file) => {
                 copyFileSync(join(assetsDir, file), join(legacyAssetsDir, file));
+              });
+            }
+            const srcLegacyAssetsDir = join(srcLegacyDir, 'assets');
+            if (existsSync(srcLegacyAssetsDir)) {
+              const files = readdirSync(srcLegacyAssetsDir);
+              files.forEach((file) => {
+                copyFileSync(join(srcLegacyAssetsDir, file), join(legacyAssetsDir, file));
               });
             }
             // Copy hls.min.js to dist/legacy/vendor/hls.min.js

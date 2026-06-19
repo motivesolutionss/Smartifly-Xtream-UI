@@ -5,64 +5,184 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Smartifly TV Legacy</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./app.css" />
 </head>
 
 <body>
   <!-- 1. WELCOME VIEW -->
   <div id="view-welcome" class="view active">
-    <div class="welcome-container">
-      <img src="./assets/smartifly_icon.png" class="logo" alt="Smartifly Logo" />
-      <h2>Welcome to Smartifly TV</h2>
-      <p style="color: rgba(255, 255, 255, 0.6); max-width: 400px; line-height: 1.5;">
-        Activate streaming on your legacy LG TV. Sign in with your server code and credentials.
-      </p>
-      <div style="margin-top: 10px; display: flex; gap: 20px;">
-        <button id="welcome-btn-signin" class="focusable btn-primary" style="width: 200px;">Sign In</button>
+    <div class="welcome-screen-container">
+      <!-- Left Branding Panel -->
+      <div class="welcome-left-panel">
+        <div class="welcome-brand">
+          <img src="./assets/smartifly_icon.png" alt="Smartifly" class="welcome-logo-img" />
+        </div>
+        
+        <h1 class="welcome-heading">The Future<br>of Television.</h1>
+        
+        <p class="welcome-subtitle">
+          Experience 4K IPTV, live cable, and premium streaming in one unified, high-performance interface.
+        </p>
+        
+        <div class="welcome-buttons-container">
+          <button id="welcome-btn-signin" class="focusable btn-primary welcome-btn-action">
+            <svg class="btn-svg" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+            Sign In
+          </button>
+          
+          <button id="welcome-btn-create" class="focusable btn-secondary welcome-btn-action">
+            <svg class="btn-svg" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+              <path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7l-2 3v1h8v-1l-2-3h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/>
+            </svg>
+            Create Account
+          </button>
+        </div>
+        
+        <div class="welcome-stable-badge-container">
+          <span class="badge-stable">STABLE</span>
+          <span class="badge-stable-text">Unified Stream Hub - 4K HDR Optimized</span>
+        </div>
+      </div>
+      
+      <!-- Right Graphic Panel -->
+      <div class="welcome-right-panel" aria-hidden="true">
+        <div class="showcase-stack">
+          <div class="showcase-card card-left">
+            <img src="./assets/left_pillar.png" alt="" />
+          </div>
+          <div class="showcase-card card-center">
+            <img src="./assets/center_pillar.png" alt="" />
+          </div>
+          <div class="showcase-card card-right">
+            <img src="./assets/right_pillar.png" alt="" />
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 2. LOGIN VIEW -->
-  <div id="view-login" class="view">
-    <div class="legacy-login-screen">
-      <div class="legacy-login-shell">
-        <div class="legacy-login-head">
-          <img src="./assets/smartifly_icon.png" class="legacy-login-logo" alt="Smartifly Logo" />
-          <div class="legacy-login-kicker">Sign In</div>
-          <h1>Connect your Smartifly portal</h1>
-          <p>Enter your portal server identity code and Xtream credentials to authenticate.</p>
+  <!-- 1.5. ACTIVATION VIEW -->
+  <div id="view-activation" class="view">
+    <div class="activation-screen-container">
+      <!-- Left Column (Instructions) -->
+      <div class="activation-left-panel">
+        <div class="activation-brand">
+          <img src="./assets/smartifly_icon.png" alt="Smartifly" class="activation-logo-img" />
         </div>
-        <div class="legacy-login-form">
-          <div class="legacy-login-field">
-            <label for="login-code">Server Identity Code</label>
-            <input type="text" id="login-code" class="focusable legacy-input" placeholder="e.g. MOTIVE-02" autocomplete="off" spellcheck="false" />
-            <div id="login-error-code" class="legacy-field-error"></div>
+        <div style="margin-top: auto;">
+          <p class="activation-eyebrow">Enterprise Activation</p>
+          <h1 class="activation-heading">Connect your<br>LG account</h1>
+          <p class="activation-subtitle">
+            Scan the QR code or open the activation link on your phone. Once you bind the account, this TV will sign in automatically.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Right Column (Card Layout) -->
+      <div class="activation-right-panel">
+        <div class="activation-card">
+          <!-- Status indicator -->
+          <div class="activation-status-row">
+            <span id="activation-status-dot" class="status-dot"></span>
+            <span id="activation-status-badge" class="status-badge">AWAITING BINDING</span>
           </div>
-          <div class="legacy-login-field">
-            <label for="login-user">Username</label>
-            <input type="text" id="login-user" class="focusable legacy-input" placeholder="Enter username" autocomplete="off" spellcheck="false" />
-            <div id="login-error-user" class="legacy-field-error"></div>
-          </div>
-          <div class="legacy-login-field">
-            <label for="login-pass">Password</label>
-            <input type="password" id="login-pass" class="focusable legacy-input" placeholder="Enter password" autocomplete="off" />
-            <div id="login-error-pass" class="legacy-field-error"></div>
-          </div>
-          <div class="legacy-login-meta">
-            <div class="legacy-login-server-card">
-              <div class="legacy-login-server-label">Resolved Server</div>
-              <div id="login-server-name" class="legacy-login-server-name">Waiting for validation</div>
-              <div id="login-server-url" class="legacy-login-server-url">Enter a portal code to resolve the target server.</div>
+          
+          <div class="activation-grid">
+            <!-- Left Area: QR code -->
+            <div class="activation-qr-container">
+              <div id="activation-qr-placeholder" class="qr-placeholder"></div>
+              <img id="activation-qr-img" src="" alt="Activation QR" class="qr-img" style="display: none;" />
             </div>
-            <div id="login-status" class="status-text status-text--idle">Enter your portal identity and Xtream credentials.</div>
+            
+            <!-- Right Area: Parameters -->
+            <div class="activation-details">
+              <div class="detail-item">
+                <span class="detail-label">DEVICE ID</span>
+                <span id="activation-device-id" class="detail-value">SF-LG-XXXXXXXX</span>
+              </div>
+              
+              <div class="detail-item">
+                <span class="detail-label">ACTIVATION CODE</span>
+                <span id="activation-code" class="detail-value code-value">------</span>
+              </div>
+              
+              <div class="detail-item">
+                <span class="detail-label">PORTAL LINK</span>
+                <span id="activation-link" class="detail-value link-value">Generating activation link...</span>
+              </div>
+              
+              <div class="detail-item" style="margin-bottom: 0;">
+                <span class="detail-label">STATUS</span>
+                <span id="activation-status-title" class="detail-value status-title">Preparing LG activation...</span>
+                <span id="activation-status-desc" class="status-desc">Activation pending</span>
+              </div>
+            </div>
           </div>
-          <div class="legacy-login-actions">
-            <button id="login-btn-submit" class="focusable btn-primary legacy-btn-primary">Connect Portal</button>
-            <button id="login-btn-back" class="focusable legacy-btn-secondary">Back</button>
+          
+          <!-- Actions footer -->
+          <div class="activation-actions">
+            <button id="activation-btn-cancel" class="focusable btn-secondary activation-btn-cancel">
+              Cancel & Return
+            </button>
+            <p class="activation-polling-text">
+              Polling every 5 seconds until this TV is activated.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. LOGIN VIEW (embedded step-by-step wizard) -->
+  <div id="view-login" class="view">
+    <div class="login-screen-container">
+      <!-- Left Column (Branding & Collage Background) -->
+      <div class="login-left-panel">
+        <img src="./assets/loginscreen_image.png" alt="" class="login-collage-img" />
+        <div class="login-left-overlay"></div>
+        <div class="login-left-content">
+          <img src="./assets/smartifly_icon.png" alt="Smartifly" class="login-logo-img" />
+          <h2 class="login-left-heading">Unified Stream Hub</h2>
+          <p class="login-left-desc">
+            Experience 4K IPTV, live cable, and premium streaming in one unified, high-performance interface.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Right Column (Wizard Form & Keyboard) -->
+      <div class="login-right-panel">
+        <div class="login-right-inner">
+          <!-- Step Header -->
+          <div class="login-step-header">
+            <span id="login-wizard-eyebrow" class="login-eyebrow">STEP 01 - IDENTITY</span>
+            <span class="login-header-line"></span>
+          </div>
+          
+          <h1 id="login-wizard-title" class="login-heading">Connect to your server</h1>
+          <p id="login-wizard-desc" class="login-subtitle">
+            Enter your unique Server Identity code to establish a secure handshake.
+          </p>
+          
+          <!-- Large Card Container -->
+          <div class="login-card">
+            <!-- Label and Input Preview -->
+            <label class="login-input-label-block">
+              <span id="login-preview-label" class="login-input-label">Server Identity</span>
+              <input type="text" id="login-wizard-preview" class="login-input-preview-box" readonly placeholder="e.g. SMARTIFLY-01" />
+            </label>
+            
+            <!-- Embedded QWERTY keyboard -->
+            <div id="login-wizard-keyboard" class="login-keyboard-grid">
+              <!-- Dynamically injected rows and buttons -->
+            </div>
+            
+            <!-- Status message / Error panel -->
+            <p id="login-wizard-status" class="login-status-message"></p>
           </div>
         </div>
       </div>
@@ -71,41 +191,14 @@
 
   <!-- 3. PROFILES VIEW -->
   <div id="view-profiles" class="view">
-    <div class="profiles-shell">
-      <div class="profiles-container">
-        <img src="./assets/smartifly_icon.png" class="profiles-logo" alt="Smartifly" />
-        <div class="profiles-copy">
-          <div class="profiles-kicker">PROFILE SELECTION</div>
-          <h2>Who is watching?</h2>
-          <p>Choose an existing profile or add a new one. Profiles stay linked to this local session and preserve their own watchlist and playback context.</p>
-        </div>
-        <div id="profiles-list-container" class="profiles-list">
-          <!-- Dynamically injected profile cards -->
-        </div>
-        <div id="profiles-screen-status" class="profiles-status">Select a profile to continue.</div>
+    <div class="profile-screen">
+      <div class="profile-screen-copy">
+        <p class="profile-eyebrow">Profiles</p>
+        <h1 class="profile-heading">Who's watching?</h1>
+        <p class="profile-subheading">Choose a profile before entering the Smartifly TV shell.</p>
       </div>
-      <div id="profile-form-modal" class="profile-form-modal hidden">
-        <div class="profile-form-dialog">
-          <div class="profile-form-kicker">ADD PROFILE</div>
-          <h3>Create another local profile</h3>
-          <p>Use a clear display name and optional initials. Kids mode changes the visual treatment and keeps the profile easy to identify.</p>
-          <div class="profile-form-field">
-            <label for="profile-form-name">Profile Name</label>
-            <input id="profile-form-name" type="text" class="focusable profile-form-input" placeholder="e.g. Ayesha" maxlength="24" autocomplete="off" spellcheck="false" />
-            <div id="profile-form-name-error" class="legacy-field-error"></div>
-          </div>
-          <div class="profile-form-field">
-            <label for="profile-form-avatar">Initials</label>
-            <input id="profile-form-avatar" type="text" class="focusable profile-form-input" placeholder="e.g. AY" maxlength="2" autocomplete="off" spellcheck="false" />
-            <div id="profile-form-avatar-error" class="legacy-field-error"></div>
-          </div>
-          <button id="profile-form-kids" class="focusable profile-form-toggle" type="button">Kids Mode: Off</button>
-          <div id="profile-form-status" class="status-text status-text--idle">Create up to 6 local profiles for this account.</div>
-          <div class="profile-form-actions">
-            <button id="profile-form-save" class="focusable btn-primary legacy-btn-primary" type="button">Save Profile</button>
-            <button id="profile-form-cancel" class="focusable legacy-btn-secondary" type="button">Cancel</button>
-          </div>
-        </div>
+      <div id="profiles-list-container" class="profile-grid">
+        <!-- Dynamically injected profile cards -->
       </div>
     </div>
   </div>
