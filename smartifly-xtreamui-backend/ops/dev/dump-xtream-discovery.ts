@@ -11,6 +11,11 @@ type LiveStreamRecord = JsonRecord & {
   epg_channel_id?: string;
 };
 
+type LiveCategoryRecord = JsonRecord & {
+  category_id?: string | number;
+  category_name?: string;
+};
+
 type AuthRecord = JsonRecord & {
   user_info?: {
     allowed_output_formats?: string[];
@@ -247,7 +252,7 @@ async function main() {
     password,
     action: 'get_live_categories'
   });
-  const categories = readArray<JsonRecord>(categoriesPayload, ['categories', 'live_categories']);
+  const categories = readArray<LiveCategoryRecord>(categoriesPayload, ['categories', 'live_categories']);
   const selectedCategory =
     categories.find((category) => matchText(category.category_name, categoryName) || matchText(category.category_name, channelQuery)) ??
     categories[0] ??
@@ -273,9 +278,10 @@ async function main() {
       >).map((stream) => ({
         ...stream,
         categoryId: String(stream.category_id ?? ''),
-        categoryName:
+        categoryName: String(
           categories.find((category) => String(category.category_id ?? '') === String(stream.category_id ?? ''))
             ?.category_name ?? ''
+        )
       }))
     : (await Promise.all(
         categories.map(async (category) => {

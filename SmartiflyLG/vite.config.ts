@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, readdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -177,6 +177,109 @@ export default defineConfig(({ mode }) => {
             console.error('Failed to post-process app.js:', e);
             throw e;
           }
+        }
+
+        // --- PARTITIONING FOR ADAPTIVE BOOTSTRAPPING ---
+        console.log('Partitioning build output for Adaptive Bootstrapping...');
+        const modernDir = join(distDir, 'modern');
+        const legacyDir = join(distDir, 'legacy');
+        const modernVendorDir = join(modernDir, 'vendor');
+        const modernAssetsDir = join(modernDir, 'assets');
+
+        try {
+          // Create subdirectories
+          mkdirSync(modernDir, { recursive: true });
+          mkdirSync(legacyDir, { recursive: true });
+          mkdirSync(modernVendorDir, { recursive: true });
+          mkdirSync(modernAssetsDir, { recursive: true });
+
+          // 1. Move React index.html and app.js to modern/
+          const modernIndexPath = join(modernDir, 'index.html');
+          if (existsSync(indexPath)) {
+            copyFileSync(indexPath, modernIndexPath);
+            unlinkSync(indexPath);
+          }
+          const modernAppJsPath = join(modernDir, 'app.js');
+          if (existsSync(appJsPath)) {
+            copyFileSync(appJsPath, modernAppJsPath);
+            unlinkSync(appJsPath);
+          }
+
+          // 2. Move vendor files to modern/vendor
+          if (existsSync(vendorDir)) {
+            const files = readdirSync(vendorDir);
+            files.forEach((file) => {
+              const srcFile = join(vendorDir, file);
+              if (existsSync(srcFile)) {
+                copyFileSync(srcFile, join(modernVendorDir, file));
+                unlinkSync(srcFile);
+              }
+            });
+            try {
+              rmdirSync(vendorDir);
+            } catch (err) {
+              console.error('Failed to delete dist/vendor:', err);
+            }
+          }
+
+          // 3. Copy assets to modern/assets
+          const assetsDir = join(distDir, 'assets');
+          if (existsSync(assetsDir)) {
+            const files = readdirSync(assetsDir);
+            files.forEach((file) => {
+              copyFileSync(join(assetsDir, file), join(modernAssetsDir, file));
+            });
+          }
+
+          // 4. Copy legacy files from src-legacy/ to dist/legacy/
+          const srcLegacyDir = join(process.cwd(), 'src-legacy');
+          if (existsSync(srcLegacyDir)) {
+            const legacyFiles = ['index.html', 'app.css', 'app.js'];
+            const apiBaseUrl = env.VITE_API_BASE_URL || 'https://api.smartifly.co/v1';
+            
+            legacyFiles.forEach((file) => {
+              const srcFile = join(srcLegacyDir, file);
+              if (existsSync(srcFile)) {
+                if (file === 'app.js') {
+                  let content = readFileSync(srcFile, 'utf8');
+                  content = content.replace(
+                    "var API_BASE_URL = 'https://api.smartifly.co/v1';",
+                    "var API_BASE_URL = " + JSON.stringify(apiBaseUrl) + ";"
+                  );
+                  writeFileSync(join(legacyDir, file), content, 'utf8');
+                } else {
+                  copyFileSync(srcFile, join(legacyDir, file));
+                }
+              }
+            });
+            // Copy assets folder into dist/legacy/assets
+            const legacyAssetsDir = join(legacyDir, 'assets');
+            mkdirSync(legacyAssetsDir, { recursive: true });
+            const assetsDir = join(distDir, 'assets');
+            if (existsSync(assetsDir)) {
+              const files = readdirSync(assetsDir);
+              files.forEach((file) => {
+                copyFileSync(join(assetsDir, file), join(legacyAssetsDir, file));
+              });
+            }
+            // Copy hls.min.js to dist/legacy/vendor/hls.min.js
+            const legacyVendorDir = join(legacyDir, 'vendor');
+            mkdirSync(legacyVendorDir, { recursive: true });
+            const legacyHlsSource = join(process.cwd(), 'public', 'vendor', 'hls-0.14.17.min.js');
+            copyFileSync(legacyHlsSource, join(legacyVendorDir, 'hls.min.js'));
+
+            console.log('Legacy app successfully packaged with injected API URL: ' + apiBaseUrl);
+          }
+
+          // 5. Copy Gatekeeper from src-gatekeeper/index.html to dist/index.html
+          const srcGatekeeperPath = join(process.cwd(), 'src-gatekeeper', 'index.html');
+          if (existsSync(srcGatekeeperPath)) {
+            copyFileSync(srcGatekeeperPath, indexPath);
+            console.log('Gatekeeper successfully packaged!');
+          }
+        } catch (err) {
+          console.error('Failed to partition build output:', err);
+          throw err;
         }
       }
     }

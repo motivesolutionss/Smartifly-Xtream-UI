@@ -1,0 +1,574 @@
+/* --- SYSTEM RESET --- */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #07090f;
+  color: #f3f6fb;
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* --- VIEW SYSTEM --- */
+.view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  background-color: #07090f;
+}
+
+.view.active {
+  display: block;
+}
+
+/* --- COMMONS & GRID LAYOUTS --- */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #1c2230;
+  border-top-color: #e50914;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  -webkit-animation: spin 1s linear infinite;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+/* --- FOCUS SYSTEM --- */
+.focusable {
+  outline: none;
+  border: 2px solid transparent;
+}
+
+/* --- WELCOME & LOGIN VIEW --- */
+.welcome-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 20px;
+  text-align: center;
+  background-color: #07090f;
+}
+
+.logo {
+  width: 250px;
+  height: auto;
+}
+
+.login-card {
+  width: 500px;
+  background-color: #0d121d;
+  border: 1px solid #1c2230;
+  border-radius: 12px;
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-card h2 {
+  margin: 0 0 10px;
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.form-group label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.form-group input {
+  height: 48px;
+  background-color: #1a202c;
+  border: 2px solid #283040;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #fff;
+  font-size: 16px;
+}
+
+.form-group input.focused {
+  border-color: #e50914 !important;
+  background-color: #202736 !important;
+}
+
+.btn-primary {
+  height: 52px;
+  background-color: #e50914;
+  color: #fff;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-primary.focused {
+  border-color: #fff !important;
+  background-color: #ff1f2a !important;
+}
+
+.status-text {
+  font-size: 14px;
+  color: #ff3344;
+  height: 20px;
+  text-align: center;
+}
+
+/* --- PROFILES VIEW --- */
+.profiles-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 40px;
+}
+
+.profiles-list {
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.profile-card {
+  width: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0;
+}
+
+.profile-avatar {
+  width: 130px;
+  height: 130px;
+  border-radius: 12px;
+  background-color: #121824;
+  font-size: 44px;
+  font-weight: 800;
+  color: #e50914;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4px solid #283040;
+}
+
+.profile-card.focused .profile-avatar {
+  border-color: #e50914;
+  color: #fff;
+  background-color: #1c2536;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 8px;
+}
+
+.profile-card.focused .profile-name {
+  color: #e50914;
+}
+
+/* --- CATALOG LAYOUT (PANELS) --- */
+.catalog-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Sidebar Panel */
+.sidebar {
+  width: 220px;
+  background-color: #04060a;
+  border-right: 1px solid #161c28;
+  display: flex;
+  flex-direction: column;
+  padding: 25px 12px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  margin-bottom: 25px;
+}
+
+.sidebar-logo {
+  width: 140px;
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-item {
+  height: 46px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #909bb0;
+  background-color: transparent;
+  cursor: pointer;
+  text-align: left;
+  border: none !important;
+  border-left: 4px solid transparent !important;
+}
+
+.sidebar-item.active {
+  color: #fff;
+  background-color: #0d121d;
+}
+
+.sidebar-item.focused {
+  color: #fff !important;
+  background-color: #1c2333 !important;
+  border-left: 4px solid #e50914 !important;
+}
+
+/* Categories List */
+.categories-panel {
+  width: 300px;
+  background-color: #090e16;
+  border-right: 1px solid #161c28;
+  overflow-y: scroll;
+  padding: 20px 12px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.categories-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.category-item {
+  height: 52px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 17px;
+  font-weight: bold;
+  color: #909bb0;
+  background-color: transparent;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: none !important;
+  border-left: 4px solid transparent !important;
+}
+
+.category-item.active {
+  color: #e50914;
+  background-color: #0d121d;
+}
+
+.category-item.focused {
+  color: #fff !important;
+  background-color: #1c2333 !important;
+  border-left: 4px solid #e50914 !important;
+}
+
+/* Main Content (Channel Grid) */
+.channels-panel {
+  flex: 1;
+  background-color: #0c101b;
+  padding: 25px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.channel-details-header {
+  height: 150px;
+  margin-bottom: 25px;
+  color: #fff;
+  padding-left: 10px;
+}
+
+.details-category {
+  font-size: 13px;
+  font-weight: 800;
+  color: #e50914;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.details-title {
+  font-size: 38px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.details-epg {
+  font-size: 15px;
+  color: #8a96a9;
+  font-weight: 500;
+}
+
+.channels-scroll {
+  flex: 1;
+  overflow-y: scroll;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.channels-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.channels-grid {
+  display: block;
+  width: 100%;
+  padding-bottom: 40px;
+  position: relative;
+}
+
+.channels-grid::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+.channel-card {
+  box-sizing: border-box;
+  float: left;
+  width: 23.5%;
+  margin: 0.75%;
+  height: 160px;
+  background-color: #ffffff;
+  border: 4px solid transparent;
+  border-radius: 20px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+}
+
+.channel-card.focused {
+  border-color: #e50914 !important;
+  background-color: #ffffff !important;
+}
+
+.channel-card.active {
+  border-color: #f8b3b3;
+  background-color: #fcdede;
+}
+
+.channel-card.active.focused {
+  border-color: #e50914 !important;
+  background-color: #ffffff !important;
+}
+
+.channel-live-badge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background-color: #e50914;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  z-index: 10;
+  letter-spacing: 1px;
+}
+
+.channel-logo-container {
+  width: 100%;
+  height: 100%;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-weight: bold;
+  font-size: 22px;
+  color: #07090f;
+  padding: 10px;
+  text-align: center;
+  word-break: break-word;
+}
+
+.channel-logo-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* --- NATIVE PLAYER VIEW --- */
+.player-view {
+  background-color: #000;
+  position: relative;
+}
+
+/* Video fills the player view absolutely — matches React app's playerVideo style.
+   position:absolute + top/left/width/height fills the view.
+   display:block prevents inline box issues (height:100% not resolving).
+   object-fit:contain maintains aspect ratio like the React app's videoFitStyle.
+   background:#000 !important prevents webOS Chrome38's white video placeholder. */
+#player-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background-color: #000 !important;
+  z-index: 1;
+}
+
+.player-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.player-header {
+  background-color: #07090f;
+  border-bottom: 2px solid #e50914;
+  padding: 16px 30px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: #fff;
+}
+
+.player-title {
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.player-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -50px;
+  margin-left: -100px;
+  width: 200px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  color: #fff;
+}
+
+.player-status p {
+  margin: 0;
+  font-weight: bold;
+  font-size: 16px;
+  color: #fff;
+  background-color: rgba(7, 9, 15, 0.8);
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+/* --- EPG DETAILS STYLING --- */
+.epg-container {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.epg-current-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f6fb;
+  margin-bottom: 2px;
+}
+
+.epg-meta {
+  font-size: 14px;
+  color: #8a96a9;
+  line-height: 1.4;
+}
+
+.epg-time {
+  font-weight: 700;
+  color: #ffffff;
+  margin-right: 12px;
+}
+
+.epg-desc {
+  color: #8a96a9;
+}
+
+.epg-progress-bar {
+  width: 450px;
+  height: 4px;
+  background-color: #232a38;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.epg-progress-fill {
+  height: 100%;
+  background-color: #e50914;
+}
+
+.epg-next {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffaa00;
+}
+

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07090f" />
+  <title>Smartifly Gatekeeper</title>
+  <style>
+    body {
+      margin: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: #07090f;
+      color: #f3f6fb;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @-webkit-keyframes spin {
+      from {
+        -webkit-transform: rotate(0deg);
+      }
+      to {
+        -webkit-transform: rotate(360deg);
+      }
+    }
+
+    .boot-spinner {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      border-radius: 999px;
+      border: 5px solid rgba(255, 255, 255, 0.08);
+      border-top-color: #e50914;
+      animation: spin 1.1s linear infinite;
+      -webkit-animation: spin 1.1s linear infinite;
+      box-shadow: 0 0 36px rgba(229, 9, 20, 0.18);
+      box-sizing: border-box;
+      will-change: transform;
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+    }
+
+    .boot-logo-img {
+      width: 236px;
+      max-width: 42vw;
+      margin-top: 2px;
+    }
+
+    .boot-subtitle {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+
+    .boot-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 38px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.22);
+      font-size: 9px;
+      letter-spacing: 3px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    #diag-status {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+    <div class="boot-spinner" aria-hidden="true"></div>
+    <img class="boot-logo-img" src="./assets/smartifly_icon.png" alt="Smartifly" />
+    <p class="boot-subtitle">PREMIUM STREAMING ENGINE</p>
+    <div id="diag-status">Initializing system...</div>
+  </div>
+  <p class="boot-footer">v2025.05 • GATEKEEPER BOOT</p>
+
+  <script>
+    (function () {
+      var statusNode = document.getElementById('diag-status');
+      
+      function setStatus(msg) {
+        if (statusNode) {
+          statusNode.textContent = msg;
+        }
+      }
+
+      function detectCapabilities() {
+        var ua = navigator.userAgent;
+        var caps = {
+          isWebOS: false,
+          webOSVersion: null,
+          chromeVersion: null,
+          useLegacyApp: false
+        };
+
+        // 1. Detect webOS
+        if (ua.indexOf('Web0S') > -1 || ua.indexOf('webOS') > -1) {
+          caps.isWebOS = true;
+          var match = ua.match(/webOS\.TV-([\d\.]+)/i) || ua.match(/Web0S; Novel\/([\d\.]+)/i);
+          if (match && match[1]) {
+            caps.webOSVersion = parseFloat(match[1]);
+          }
+        }
+
+        // 2. Detect Chrome Engine version
+        var chromeMatch = ua.match(/Chrome\/(\d+)/);
+        if (chromeMatch && chromeMatch[1]) {
+          caps.chromeVersion = parseInt(chromeMatch[1], 10);
+        }
+
+        // 3. Fallback Decisions
+        // If webOS is detected, check version.
+        // webOS <= 4.x runs Chrome <= 53.
+        // If it runs under Chrome 68 (webOS 5.0), fall back to legacy.
+        // If it has NO Chrome version (webOS 1.x/2.x), it runs ancient Safari/WebKit. Fall back.
+        if (caps.isWebOS) {
+          if (!caps.chromeVersion || caps.chromeVersion < 68) {
+            caps.useLegacyApp = true;
+          }
+        } else {
+          // Non-webOS (e.g. desktop browsers for dev testing)
+          // If developer simulates Chrome 38, fall back.
+          if (caps.chromeVersion && caps.chromeVersion < 68) {
+            caps.useLegacyApp = true;
+          }
+        }
+
+        return caps;
+      }
+
+      try {
+        var caps = detectCapabilities();
+        
+        if (caps.useLegacyApp) {
+          setStatus('Optimizing for legacy TV (Chrome ' + (caps.chromeVersion || 'WebKit') + ')...');
+          window.setTimeout(function() {
+            window.location.replace('./legacy/index.html');
+          }, 400);
+        } else {
+          setStatus('Launching modern engine (Chrome ' + (caps.chromeVersion || 'Modern') + ')...');
+          window.setTimeout(function() {
+            window.location.replace('./modern/index.html');
+          }, 400);
+        }
+      } catch (err) {
+        // Safe fallback in case of parser crashes
+        console.error('Gatekeeper error:', err);
+        window.location.replace('./legacy/index.html');
+      }
+    })();
+  </script>
+</body>
+
+</html>

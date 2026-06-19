@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smartifly TV Legacy</title>
+  <link rel="stylesheet" href="./app.css" />
+</head>
+
+<body>
+  <!-- 1. WELCOME VIEW -->
+  <div id="view-welcome" class="view active">
+    <div class="welcome-container">
+      <img src="./assets/smartifly_icon.png" class="logo" alt="Smartifly Logo" />
+      <h2>Welcome to Smartifly TV</h2>
+      <p style="color: rgba(255, 255, 255, 0.6); max-width: 400px; line-height: 1.5;">
+        Activate streaming on your legacy LG TV. Sign in with your server code and credentials.
+      </p>
+      <div style="margin-top: 10px; display: flex; gap: 20px;">
+        <button id="welcome-btn-signin" class="focusable btn-primary" style="width: 200px;">Sign In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. LOGIN VIEW -->
+  <div id="view-login" class="view">
+    <div class="welcome-container">
+      <div class="login-card">
+        <h2>Sign In</h2>
+        <div class="form-group">
+          <label for="login-code">Server Identity Code</label>
+          <input type="text" id="login-code" class="focusable" placeholder="e.g. PORTAL-XYZ" />
+        </div>
+        <div class="form-group">
+          <label for="login-user">Username</label>
+          <input type="text" id="login-user" class="focusable" placeholder="Enter username" />
+        </div>
+        <div class="form-group">
+          <label for="login-pass">Password</label>
+          <input type="password" id="login-pass" class="focusable" placeholder="Enter password" />
+        </div>
+        <div id="login-status" class="status-text"></div>
+        <button id="login-btn-submit" class="focusable btn-primary">Connect Portal</button>
+        <button id="login-btn-back" class="focusable btn-primary" style="background-color: #2b3342; margin-top: 0;">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. PROFILES VIEW -->
+  <div id="view-profiles" class="view">
+    <div class="profiles-container">
+      <img src="./assets/smartifly_icon.png" style="width: 140px;" alt="Smartifly" />
+      <h2 style="font-size: 32px; margin: 0;">Who is watching?</h2>
+      <div id="profiles-list-container" class="profiles-list">
+        <!-- Dynamically injected profile cards -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. CATALOG VIEW -->
+  <div id="view-catalog" class="view">
+    <div class="catalog-container">
+      <!-- Sidebar Panel -->
+      <div class="sidebar">
+        <div class="sidebar-brand">
+          <img src="./assets/smartifly_icon.png" class="sidebar-logo" alt="Smartifly" />
+        </div>
+        <div class="sidebar-menu">
+          <button id="sidebar-live" class="focusable sidebar-item active">Live TV</button>
+          <button id="sidebar-profile" class="focusable sidebar-item">Switch Profile</button>
+          <button id="sidebar-logout" class="focusable sidebar-item">Log Out</button>
+        </div>
+        <div style="margin-top: auto; padding-left: 10px; font-size: 11px; color: rgba(255,255,255,0.3)">
+          v2025.05 • LEGACY PORT
+        </div>
+      </div>
+
+      <!-- Categories Panel -->
+      <div id="categories-panel-list" class="categories-panel">
+        <!-- Dynamically injected category buttons -->
+      </div>
+
+      <!-- Channels Panel -->
+      <div class="channels-panel">
+        <div class="channel-details-header">
+          <div id="details-category-name" class="details-category">LIVE TV</div>
+          <div id="details-channel-name" class="details-title">Loading Channels...</div>
+          <div id="details-epg-info" class="details-epg">Guide unavailable for this channel</div>
+        </div>
+        <div class="channels-scroll">
+          <div id="channels-grid-list" class="channels-grid">
+            <!-- Dynamically injected channel items -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. PLAYER VIEW -->
+  <div id="view-player" class="view player-view">
+    <video id="player-video" playsinline webkit-playsinline preload="auto"></video>
+    <div id="player-overlay" class="player-overlay">
+      <div class="player-header">
+        <img src="./assets/smartifly_icon.png" style="width: 100px;" alt="Smartifly" />
+        <div id="player-channel-name" class="player-title">Loading Stream...</div>
+      </div>
+      <div id="player-status-container" class="player-status">
+        <div class="spinner"></div>
+        <p style="margin: 0; font-weight: bold; font-size: 16px; text-shadow: 0 2px 4px #000;">Buffering Stream...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Core Legacy JS Script -->
+  <script src="./vendor/hls.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>
