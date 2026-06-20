@@ -10,6 +10,33 @@
   // --- EPG STATE & TIMER ---
   var epgTimer = null;
   var hlsInstance = null;
+  var profileKeyboardRows = []; // Cached rows for profile name keyboard navigation
+
+  // --- STATE DEFINITION ---
+  var state = {
+    session: null,
+    profiles: [],
+    selectedProfile: null,
+    catalogMode: 'live',
+    categories: [],
+    channels: [],
+    selectedCategoryId: '',
+    selectedCategoryName: '',
+    focusedPanel: 'welcome', // 'welcome', 'login-wizard', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
+    focusedIndex: 0, // Index of focused item inside current panel
+    activeChannel: null,
+(function () {
+  // --- LOCAL STORAGE KEYS ---
+  var SESSION_KEY = 'smartifly-lg-session';
+  var PROFILES_KEY = 'smartifly-lg-profiles';
+  var SELECTED_PROFILE_KEY = 'smartifly-lg-selected-profile';
+  var PORTAL_KEY = 'smartifly-lg-last-portal';
+  var FAVORITES_KEY = 'smartifly-lg-favorites';
+
+  // --- EPG STATE & TIMER ---
+  var epgTimer = null;
+  var hlsInstance = null;
+  var profileKeyboardRows = []; // Cached rows for profile name keyboard navigation
 
   // --- STATE DEFINITION ---
   var state = {
@@ -31,7 +58,9 @@
     keyboardIsShifted: false,
     keyboardMode: 'letters',
     activationTimer: null,
-    activationDeviceId: ''
+    activationDeviceId: '',
+    profileModalCaller: 'settings',
+    profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters' }
   };
 
   var MAX_HOME_RAIL_ITEMS = 12;
@@ -997,6 +1026,14 @@
 
   function getSidebarFocusIndex(mode) {
     var activeMode = mode || state.catalogMode;
+    var SIDEBAR_MODE_INDEX = {
+      'live': 0,
+      'movies': 1,
+      'series': 2,
+      'search': 3,
+      'watchlist': 4,
+      'settings': 5
+    };
     return SIDEBAR_MODE_INDEX.hasOwnProperty(activeMode) ? SIDEBAR_MODE_INDEX[activeMode] : 0;
   }
 
@@ -1058,6 +1095,14 @@
       return item.cover || '';
     }
     return item.stream_icon || '';
+  }
+
+  function getLegacyArtworkUrl(url) {
+    if (!url) return '';
+    if (/^https:\/\//i.test(url)) {
+      return url.replace(/^https:\/\//i, 'http://');
+    }
+    return url;
   }
 
   function getCatalogItemSummary(item, mode) {
@@ -1154,13 +1199,22 @@
 
     if (artwork) {
       poster.style.display = 'block';
-      poster.src = artwork;
+      poster.src = getLegacyArtworkUrl(artwork);
     } else {
       poster.style.display = 'none';
       poster.removeAttribute('src');
     }
 
-    applyDetailBackdrop(backdropArt, artwork);
+    if (backdropArt) {
+      backdrop.style.backgroundImage =
+        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
+        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%), ' +
+        'url("' + String(getLegacyArtworkUrl(backdropArt)).replace(/"/g, '%22') + '")';
+    } else {
+      backdrop.style.backgroundImage =
+        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
+        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%)';
+    }
 
     updateDetailFavoriteButton();
   }
@@ -1469,7 +1523,7 @@
 
     if (getCatalogItemArtwork(item, mode)) {
       var img = document.createElement('img');
-      img.src = getCatalogItemArtwork(item, mode);
+      img.src = getLegacyArtworkUrl(getCatalogItemArtwork(item, mode));
       img.onerror = function() {
         this.style.display = 'none';
         this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
@@ -2143,22 +2197,420 @@
   }
 
   function updateSettingsView() {
-    document.getElementById('settings-portal-code').textContent = state.session && state.session.portalCode ? state.session.portalCode : '-';
-    document.getElementById('settings-server-name').textContent = state.session && state.session.serverName ? state.session.serverName : '-';
-    document.getElementById('settings-username').textContent = state.session && state.session.username ? state.session.username : '-';
-    document.getElementById('settings-profile').textContent = state.selectedProfile ? ('Profile: ' + state.selectedProfile.name) : 'No active profile';
-
-    var count = collectWatchlistItems('all').length;
-    document.getElementById('settings-watchlist-count').textContent = count + ' saved';
+    renderSettingsTabs();
   }
 
   function openSettingsView() {
     setSidebarActiveById('sidebar-settings');
     showView('view-settings');
-    state.focusedPanel = 'settings-actions';
+    state.focusedPanel = 'settings-tabs';
     state.focusedIndex = 0;
-    updateSettingsView();
+    state.settingsActiveTab = 'account';
+    renderSettingsTabs();
     updateFocusUI();
+  }
+
+  function renderSettingsTabs() {
+    var tabs = ['account', 'profiles', 'app', 'about'];
+    for (var i = 0; i < tabs.length; i++) {
+      var btn = document.getElementById('settings-tab-' + tabs[i]);
+      var panel = document.getElementById('settings-panel-' + tabs[i]);
+      if (btn && panel) {
+        if (tabs[i] === state.settingsActiveTab) {
+          btn.classList.add('active');
+          panel.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+          panel.classList.remove('active');
+        }
+      }
+    }
+
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : '-';
+    var serverName = state.session && state.session.serverName ? state.session.serverName : '-';
+    var username = state.session && state.session.username ? state.session.username : '-';
+
+    var accountTitleEl = document.getElementById('settings-account-title');
+    if (accountTitleEl) accountTitleEl.textContent = 'Signed in as ' + username;
+    
+    var accServerEl = document.getElementById('settings-account-server');
+    if (accServerEl) accServerEl.textContent = serverName;
+    
+    var accPortalEl = document.getElementById('settings-account-portal');
+    if (accPortalEl) accPortalEl.textContent = portalCode;
+
+    var accLoginEl = document.getElementById('settings-account-logintime');
+    if (accLoginEl) {
+      var dateObj = new Date();
+      accLoginEl.textContent = dateObj.toLocaleDateString() + ', ' + dateObj.toLocaleTimeString();
+    }
+
+    renderSettingsProfilesList();
+
+    var appScopeEl = document.getElementById('settings-app-scope');
+    if (appScopeEl) {
+      var profileName = state.selectedProfile ? state.selectedProfile.name : 'primary';
+      appScopeEl.textContent = portalCode.toUpperCase() + '::' + username + '::' + profileName;
+    }
+
+    var aboutProfileEl = document.getElementById('settings-about-profile');
+    if (aboutProfileEl) {
+      aboutProfileEl.textContent = state.selectedProfile ? state.selectedProfile.name : '-';
+    }
+  }
+
+  function renderSettingsProfilesList() {
+    var container = document.getElementById('settings-profiles-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!state.profiles || state.profiles.length === 0) {
+      container.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding:10px;">No profiles found</div>';
+      return;
+    }
+
+    var avatarColors = ['color-red', 'color-blue'];
+
+    for (var i = 0; i < state.profiles.length; i++) {
+      var profile = state.profiles[i];
+      var isPrimary = (i === 0);
+
+      var card = document.createElement('div');
+      card.className = 'focusable settings-profile-card';
+      card.setAttribute('data-profile-id', profile.id);
+      
+      var avatar = document.createElement('div');
+      var colorClass = avatarColors[i % avatarColors.length];
+      avatar.className = 'profile-card-avatar ' + colorClass;
+      var initials = (profile.name || '').substring(0, 2).toUpperCase();
+      avatar.textContent = initials;
+      card.appendChild(avatar);
+
+      var details = document.createElement('div');
+      details.className = 'profile-card-details';
+      
+      var name = document.createElement('div');
+      name.className = 'profile-card-name';
+      name.textContent = profile.name;
+      details.appendChild(name);
+
+      var role = document.createElement('div');
+      role.className = 'profile-card-role';
+      role.textContent = isPrimary ? 'Primary profile' : 'Kids profile';
+      details.appendChild(role);
+
+      card.appendChild(details);
+
+      (function (p) {
+        card.onclick = function () {
+          state.profileModalCaller = 'settings';
+          openProfileFormModal(p);
+        };
+      })(profile);
+
+      container.appendChild(card);
+    }
+
+    var addCard = document.createElement('div');
+    addCard.className = 'focusable settings-profile-card card-add';
+    addCard.textContent = '+ Add Profile';
+    addCard.onclick = function () {
+      state.profileModalCaller = 'settings';
+      openProfileFormModal(null);
+    };
+    container.appendChild(addCard);
+  }
+
+  // --- PROFILE FORM MODAL LOGIC ---
+
+  function saveProfilesToStorage() {
+    try {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(state.profiles));
+    } catch (e) {}
+  }
+
+  function getVisibleModalItems() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return [];
+    var all = modal.querySelectorAll('.focusable');
+    var visible = [];
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].style.display !== 'none') {
+        visible.push(all[i]);
+      }
+    }
+    return visible;
+  }
+
+  function updateProfileModalFocus() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return;
+    var items = getVisibleModalItems();
+    // Clear all
+    var all = modal.querySelectorAll('.focusable');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove('is-focused');
+    }
+    // Apply to current visible item
+    if (state.profileModal.focusIndex >= items.length) {
+      state.profileModal.focusIndex = items.length - 1;
+    }
+    var target = items[state.profileModal.focusIndex];
+    if (target) {
+      target.classList.add('is-focused');
+      // Only auto-focus buttons; let user press Enter to activate the input
+      if (target.tagName !== 'INPUT') {
+        target.focus();
+      }
+    }
+  }
+
+  function openProfileFormModal(profile) {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return;
+    var titleEl    = document.getElementById('spm-title');
+    var nameInput  = document.getElementById('spm-name-input');
+    var kidsBtn    = document.getElementById('spm-kids-btn');
+    var deleteBtn  = document.getElementById('spm-delete-btn');
+
+    state.profileModal.mode     = profile ? 'edit' : 'add';
+    state.profileModal.targetId = profile ? profile.id : null;
+    state.profileModal.isKids   = profile ? !!profile.isKids : false;
+    state.profileModal.focusIndex = 0;
+
+    titleEl.textContent  = profile ? 'Edit Profile' : 'Add Profile';
+    nameInput.value      = profile ? profile.name : '';
+    kidsBtn.textContent  = state.profileModal.isKids ? 'ON' : 'OFF';
+    if (state.profileModal.isKids) {
+      kidsBtn.classList.add('kids-on');
+    } else {
+      kidsBtn.classList.remove('kids-on');
+    }
+
+    var canDelete = profile && profile.id !== 'primary';
+    deleteBtn.style.display = canDelete ? '' : 'none';
+
+    modal.style.display  = 'flex';
+    state.focusedPanel   = 'settings-profile-modal';
+    updateProfileModalFocus();
+  }
+
+  function closeProfileFormModal() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (modal) modal.style.display = 'none';
+    if (state.profileModalCaller === 'profiles') {
+      // Re-render the who's watching screen and return focus there
+      setupProfilesView();
+    } else {
+      // Return focus to settings profiles list
+      renderSettingsProfilesList();
+      state.focusedPanel = 'settings-profiles';
+      state.focusedIndex = 0;
+      updateFocusUI();
+    }
+  }
+
+  function saveProfileFromModal() {
+    var nameInput = document.getElementById('spm-name-input');
+    var name = nameInput ? nameInput.value.trim() : '';
+    if (!name) return;
+    var isKids    = state.profileModal.isKids;
+    var avatarSeed = name.slice(0, 2).toUpperCase();
+
+    if (state.profileModal.mode === 'add') {
+      state.profiles.push({
+        id: 'p_' + Date.now(),
+        name: name,
+        avatarSeed: avatarSeed,
+        isKids: isKids
+      });
+    } else {
+      for (var j = 0; j < state.profiles.length; j++) {
+        if (state.profiles[j].id === state.profileModal.targetId) {
+          state.profiles[j].name      = name;
+          state.profiles[j].avatarSeed = avatarSeed;
+          state.profiles[j].isKids    = isKids;
+          break;
+        }
+      }
+    }
+
+    saveProfilesToStorage();
+    if (state.profileModalCaller === 'settings') {
+        renderSettingsProfilesList();
+    }
+    closeProfileFormModal();
+  }
+
+  function deleteProfileFromModal() {
+    if (!state.profileModal.targetId || state.profileModal.targetId === 'primary') return;
+    state.profiles = state.profiles.filter(function (p) {
+      return p.id !== state.profileModal.targetId;
+    });
+    saveProfilesToStorage();
+    if (state.profileModalCaller === 'settings') {
+        renderSettingsProfilesList();
+    }
+    closeProfileFormModal();
+  }
+
+  // --- PROFILE NAME ON-SCREEN KEYBOARD ---
+
+  function getProfileKeyboardRows(isShifted, kbMode) {
+    var alphaRows = kbMode === 'symbols' ? KEYBOARD_SYMBOLS : KEYBOARD_ALPHA;
+    return [
+      alphaRows[0],
+      alphaRows[1],
+      alphaRows[2],
+      alphaRows[3],
+      ['Back', 'Space', '!#$', 'Done']
+    ];
+  }
+
+  function getProfileKeyboardRowColFromIndex(index) {
+    var idx = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      for (var c = 0; c < profileKeyboardRows[r].length; c++) {
+        if (idx === index) {
+          return { row: r, col: c, rowLength: profileKeyboardRows[r].length };
+        }
+        idx++;
+      }
+    }
+    return { row: 0, col: 0, rowLength: 1 };
+  }
+
+  function getProfileKeyboardIndexFromRowCol(row, col) {
+    var idx = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      if (r === row) return idx + col;
+      idx += profileKeyboardRows[r].length;
+    }
+    return 0;
+  }
+
+  function renderProfileNameKeyboard() {
+    profileKeyboardRows = getProfileKeyboardRows(
+      state.profileModal.keyboardIsShifted,
+      state.profileModal.keyboardMode
+    );
+
+    var preview = document.getElementById('pnk-preview');
+    if (preview) preview.value = state.profileModal.nameBuffer || '';
+
+    var container = document.getElementById('pnk-keyboard');
+    if (!container) return;
+    container.innerHTML = '';
+
+    var flatIndex = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'keyboard-row';
+      var rowData = profileKeyboardRows[r];
+      for (var c = 0; c < rowData.length; c++) {
+        var keyVal = rowData[c];
+        var btnClass = 'key-btn focusable';
+        if (keyVal === 'Shift') btnClass += ' key-shift';
+        else if (keyVal === 'Space') btnClass += ' key-space';
+        else if (keyVal === 'Backspace') btnClass += ' key-backspace';
+        else if (keyVal === '!#$' || keyVal === 'ABC') btnClass += ' key-symbols';
+        else if (keyVal === 'Back') btnClass += ' key-action-back';
+        else if (keyVal === 'Done') btnClass += ' key-action-next';
+
+        var keyBtn = document.createElement('div');
+        keyBtn.className = btnClass;
+        keyBtn.setAttribute('tabindex', '-1');
+        keyBtn.setAttribute('data-index', flatIndex);
+        keyBtn.setAttribute('data-key', keyVal);
+
+        var displayVal = keyVal;
+        if (state.profileModal.keyboardIsShifted && keyVal.length === 1 && keyVal >= 'a' && keyVal <= 'z') {
+          displayVal = keyVal.toUpperCase();
+        }
+        if (keyVal === '!#$') displayVal = 'Sym';
+        keyBtn.textContent = displayVal;
+
+        (function(k) {
+          keyBtn.onclick = function() { handleProfileNameKeyPress(k); };
+        })(keyVal);
+
+        rowEl.appendChild(keyBtn);
+        flatIndex++;
+      }
+      container.appendChild(rowEl);
+    }
+  }
+
+  function openProfileNameKeyboard() {
+    state.profileModal.nameBuffer = '';
+    var nameInput = document.getElementById('spm-name-input');
+    if (nameInput && typeof nameInput.value === 'string' && nameInput.value !== 'null') {
+      state.profileModal.nameBuffer = nameInput.value;
+    }
+    state.profileModal.keyboardIsShifted = false;
+    state.profileModal.keyboardMode = 'letters';
+
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'flex';
+
+    renderProfileNameKeyboard();
+    state.focusedPanel = 'profile-name-keyboard';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function closeProfileNameKeyboard(save) {
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    if (save) {
+      var nameInput = document.getElementById('spm-name-input');
+      if (nameInput) nameInput.value = state.profileModal.nameBuffer;
+    }
+
+    // Return focus to profile form modal
+    state.focusedPanel = 'settings-profile-modal';
+    state.profileModal.focusIndex = 0; // back to Name row
+    updateProfileModalFocus();
+  }
+
+  function handleProfileNameKeyPress(key) {
+    var buf = state.profileModal.nameBuffer;
+
+    if (key === 'Back') {
+      closeProfileNameKeyboard(false);
+    } else if (key === 'Done') {
+      closeProfileNameKeyboard(true);
+    } else if (key === 'Backspace') {
+      if (buf.length > 0) {
+        state.profileModal.nameBuffer = buf.slice(0, -1);
+        renderProfileNameKeyboard();
+      }
+    } else if (key === 'Space') {
+      state.profileModal.nameBuffer = buf + ' ';
+      renderProfileNameKeyboard();
+    } else if (key === 'Shift') {
+      state.profileModal.keyboardIsShifted = !state.profileModal.keyboardIsShifted;
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else if (key === '!#$' || key === 'Symbols') {
+      state.profileModal.keyboardMode = 'symbols';
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else if (key === 'ABC' || key === 'Letters') {
+      state.profileModal.keyboardMode = 'letters';
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else {
+      var charToAdd = key;
+      if (state.profileModal.keyboardIsShifted && key.length === 1 && key >= 'a' && key <= 'z') {
+        charToAdd = key.toUpperCase();
+      }
+      if (buf.length < 24) {
+        state.profileModal.nameBuffer = buf + charToAdd;
+        renderProfileNameKeyboard();
+      }
+    }
   }
 
   function returnToCatalogSidebar(sidebarKey) {
@@ -2949,13 +3401,23 @@
 
   // --- VIEWS ROUTING ---
   function showView(viewId) {
+    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-search' || viewId === 'view-watchlist' || viewId === 'view-settings');
+    var targetViewId = isCatalogSubView ? 'view-catalog' : viewId;
+
     var views = document.querySelectorAll('.view');
     for (var i = 0; i < views.length; i++) {
       views[i].classList.remove('active');
     }
-    var activeView = document.getElementById(viewId);
+    var activeView = document.getElementById(targetViewId);
     if (activeView) {
       activeView.classList.add('active');
+    }
+
+    if (isCatalogSubView) {
+      document.getElementById('catalog-content-panel').style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
+      document.getElementById('search-content-panel').style.display = (viewId === 'view-search') ? 'flex' : 'none';
+      document.getElementById('watchlist-content-panel').style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
+      document.getElementById('settings-content-panel').style.display = (viewId === 'view-settings') ? 'flex' : 'none';
     }
   }
 
@@ -3657,71 +4119,76 @@
 
   function setupProfilesView(focusIndex) {
     state.focusedPanel = 'profiles';
-    state.focusedIndex = typeof focusIndex === 'number' ? focusIndex : 0;
-    
+    state.focusedIndex = 0;
+
     var container = document.getElementById('profiles-list-container');
     container.innerHTML = '';
 
+    // Render one slot per profile (card + edit button)
     for (var i = 0; i < state.profiles.length; i++) {
       var profile = state.profiles[i];
-      
+
+      var slot = document.createElement('div');
+      slot.className = 'profile-slot';
+
+      // --- Select card ---
       var card = document.createElement('div');
       card.className = 'profile-card focusable';
       card.setAttribute('tabindex', '-1');
       card.setAttribute('data-id', profile.id);
       card.setAttribute('data-index', i);
-      
+
       var avatar = document.createElement('div');
       avatar.className = 'profile-avatar' + (profile.isKids ? ' kids' : '');
       avatar.textContent = profile.avatarSeed;
-      
+
       var name = document.createElement('div');
       name.className = 'profile-name';
       name.textContent = profile.name;
 
-      var meta = document.createElement('div');
-      meta.className = 'profile-card-meta';
-      meta.textContent = profile.isKids ? 'Kids profile' : 'Local profile';
-      
       card.appendChild(avatar);
       card.appendChild(name);
-      card.appendChild(meta);
-      
-      card.onclick = function (e) {
-        var idx = parseInt(this.getAttribute('data-index'), 10);
-        selectProfile(state.profiles[idx]);
-      };
-      
-      container.appendChild(card);
+
+      (function (p) {
+        card.onclick = function () { selectProfile(p); };
+      })(profile);
+
+      slot.appendChild(card);
+
+      // --- Edit button ---
+      var editBtn = document.createElement('div');
+      editBtn.className = 'profile-edit-btn focusable';
+      editBtn.setAttribute('tabindex', '-1');
+      editBtn.setAttribute('data-index', i);
+      editBtn.textContent = '\u270E Edit';
+
+      (function (p) {
+        editBtn.onclick = function () {
+          state.profileModalCaller = 'profiles';
+          openProfileFormModal(p);
+        };
+      })(profile);
+
+      slot.appendChild(editBtn);
+      container.appendChild(slot);
     }
 
+    // --- + Add Profile card ---
+    var addSlot = document.createElement('div');
+    addSlot.className = 'profile-slot';
+
     var addCard = document.createElement('div');
-    addCard.className = 'profile-card profile-card--add focusable';
+    addCard.className = 'profile-card focusable card-add';
     addCard.setAttribute('tabindex', '-1');
     addCard.setAttribute('data-index', state.profiles.length);
-
-    var addAvatar = document.createElement('div');
-    addAvatar.className = 'profile-avatar profile-avatar--add';
-    addAvatar.textContent = '+';
-
-    var addName = document.createElement('div');
-    addName.className = 'profile-name';
-    addName.textContent = 'Add Profile';
-
-    var addMeta = document.createElement('div');
-    addMeta.className = 'profile-card-meta';
-    addMeta.textContent = 'Create another local viewer profile';
-
-    addCard.appendChild(addAvatar);
-    addCard.appendChild(addName);
-    addCard.appendChild(addMeta);
+    addCard.textContent = '+ Add Profile';
     addCard.onclick = function () {
-      openProfileFormModal();
+      state.profileModalCaller = 'profiles';
+      openProfileFormModal(null);
     };
-    container.appendChild(addCard);
 
-    closeProfileFormModal(true);
-    setProfilesStatus('Select a profile to continue or add another viewer.');
+    addSlot.appendChild(addCard);
+    container.appendChild(addSlot);
 
     showView('view-profiles');
     updateFocusUI();
@@ -3870,8 +4337,8 @@
     setCatalogScreen('browse');
     var config = getCatalogConfig();
     showView('view-catalog');
-    state.focusedPanel = 'catalog-categories';
-    state.focusedIndex = 0;
+    state.focusedPanel = 'catalog-sidebar';
+    state.focusedIndex = getSidebarFocusIndex(state.catalogMode);
     state.categories = [];
     state.channels = [];
     state.selectedCategoryId = '';
@@ -4043,7 +4510,7 @@
       
       if (getCatalogItemArtwork(ch)) {
         var img = document.createElement('img');
-        img.src = getCatalogItemArtwork(ch);
+        img.src = getLegacyArtworkUrl(getCatalogItemArtwork(ch));
         img.onerror = function() {
           this.style.display = 'none';
           this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
@@ -4625,10 +5092,10 @@
       return document.getElementById('view-login').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'profiles') {
-      return document.getElementById('profiles-list-container').querySelectorAll('.focusable');
+      return document.getElementById('profiles-list-container').querySelectorAll('.profile-card.focusable');
     }
-    if (state.focusedPanel === 'profile-form') {
-      return document.getElementById('profile-form-modal').querySelectorAll('.focusable');
+    if (state.focusedPanel === 'profiles-edit') {
+      return document.getElementById('profiles-list-container').querySelectorAll('.profile-edit-btn.focusable');
     }
     if (state.focusedPanel === 'catalog-sidebar') {
       return document.querySelector('.sidebar-menu').querySelectorAll('.focusable');
@@ -4683,8 +5150,28 @@
     if (state.focusedPanel === 'watchlist-results') {
       return document.getElementById('watchlist-results-grid').querySelectorAll('.focusable');
     }
-    if (state.focusedPanel === 'settings-actions') {
-      return document.getElementById('settings-actions').querySelectorAll('.focusable');
+    if (state.focusedPanel === 'settings-tabs') {
+      return document.getElementById('settings-tabs-list').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-account') {
+      return document.getElementById('settings-panel-account').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-profiles') {
+      return document.getElementById('settings-profiles-list').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-app') {
+      return document.getElementById('settings-panel-app').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-about') {
+      return document.getElementById('settings-panel-about').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-profile-modal') {
+      var spmModal = document.getElementById('settings-profile-modal');
+      return spmModal ? spmModal.querySelectorAll('.focusable') : [];
+    }
+    if (state.focusedPanel === 'profile-name-keyboard') {
+      var pnkEl = document.getElementById('pnk-keyboard');
+      return pnkEl ? pnkEl.querySelectorAll('.focusable') : [];
     }
     return [];
   }
@@ -4961,6 +5448,10 @@
     return false;
   }
 
+  function isSettingsPanel(panel) {
+    return panel === 'settings-tabs' || panel === 'settings-account' || panel === 'settings-profiles' || panel === 'settings-app' || panel === 'settings-about';
+  }
+
   function handleDetailNavigation(code, items) {
     var handled = false;
 
@@ -5047,26 +5538,101 @@
     return handled;
   }
 
+  function handleSettingsNavigation(code, items) {
+    var handled = false;
+    var tabs = ['account', 'profiles', 'app', 'about'];
+
+    if (state.focusedPanel === 'settings-tabs') {
+      if (code === 38) { // ArrowUp
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          state.settingsActiveTab = tabs[state.focusedIndex];
+          renderSettingsTabs();
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 40) { // ArrowDown
+        if (state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          state.settingsActiveTab = tabs[state.focusedIndex];
+          renderSettingsTabs();
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 37) { // ArrowLeft
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = 5; // Settings sidebar item index
+        updateFocusUI();
+        handled = true;
+      } else if (code === 39) { // ArrowRight
+        var targetPanel = 'settings-' + state.settingsActiveTab;
+        var contentPanelEl = document.getElementById('settings-panel-' + state.settingsActiveTab);
+        var contentItems = contentPanelEl ? contentPanelEl.querySelectorAll('.focusable') : [];
+        if (contentItems.length > 0) {
+          state.focusedPanel = targetPanel;
+          state.focusedIndex = 0;
+          updateFocusUI();
+          handled = true;
+        }
+      }
+    } else {
+      // Right side content panels: account, profiles, app, about
+      if (code === 37) { // ArrowLeft
+        if (state.focusedPanel === 'settings-app' && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          updateFocusUI();
+          handled = true;
+        } else {
+          var activeTabIdx = tabs.indexOf(state.settingsActiveTab);
+          state.focusedPanel = 'settings-tabs';
+          state.focusedIndex = activeTabIdx >= 0 ? activeTabIdx : 0;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 39) { // ArrowRight
+        if (state.focusedPanel === 'settings-app' && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 38) { // ArrowUp
+        if (state.focusedPanel !== 'settings-app' && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 40) { // ArrowDown
+        if (state.focusedPanel !== 'settings-app' && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          updateFocusUI();
+          handled = true;
+        }
+      }
+    }
+
+    return handled;
+  }
+
   function handleSearchNavigation(code, items) {
     var handled = false;
     var totalResults = getSearchResultsCount();
 
-    if (state.focusedPanel === 'search-header') {
+    if (state.focusedPanel === 'search-controls') {
       if (code === 37) {
-        state.focusedPanel = 'catalog-sidebar';
-        state.focusedIndex = getSidebarFocusIndex('search');
-        updateFocusUI();
-        handled = true;
-      } else if (code === 39) {
-        if (totalResults > 0) {
-          var firstSection = findSearchRailInDirection(0, 1);
-          if (firstSection >= 0) {
-            focusSearchResult(firstSection, 0);
-            handled = true;
-          }
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 3; // Search index is 3
+          handled = true;
         }
-      } else if (code === 40) {
-        focusSearchKeyboard(0, 0);
+      } else if (code === 39 && state.focusedIndex < items.length - 1) {
+        state.focusedIndex++;
+        handled = true;
+      } else if (code === 40 && state.searchResults.length > 0) {
+        state.focusedPanel = 'search-results';
+        state.focusedIndex = 0;
         handled = true;
       }
       return handled;
@@ -5166,6 +5732,16 @@
           }
         } else {
           focusSearchResult(sectionIndex, cardIndex - 1);
+        if (state.focusedIndex + gridColumns < items.length) {
+          state.focusedIndex += gridColumns;
+          handled = true;
+        }
+      } else if (code === 37) {
+        if (state.focusedIndex % gridColumns > 0) {
+          state.focusedIndex--;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 3;
         }
         handled = true;
       } else if (code === 39) {
@@ -5198,9 +5774,15 @@
     var gridColumns = 5;
 
     if (state.focusedPanel === 'watchlist-controls') {
-      if (code === 37 && state.focusedIndex > 0) {
-        state.focusedIndex--;
-        handled = true;
+      if (code === 37) {
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 4; // Watchlist index is 4
+          handled = true;
+        }
       } else if (code === 39 && state.focusedIndex < items.length - 1) {
         state.focusedIndex++;
         handled = true;
@@ -5229,6 +5811,9 @@
       } else if (code === 37) {
         if (state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 4;
         }
         handled = true;
       } else if (code === 39) {
@@ -5284,8 +5869,10 @@
       } else if (isWatchlistPanel(state.focusedPanel)) {
         returnToCatalogSidebar('watchlist');
         handled = true;
-      } else if (state.focusedPanel === 'settings-actions') {
-        returnToCatalogSidebar('settings');
+      } else if (state.focusedPanel === 'profiles-edit') {
+        // Back from edit buttons row — go up to profile cards row
+        state.focusedPanel = 'profiles';
+        updateFocusUI();
         handled = true;
       } else if (state.focusedPanel === 'catalog-categories' || state.focusedPanel === 'catalog-channels' || state.focusedPanel === 'catalog-sidebar' || state.focusedPanel === 'home-rails') {
         // Go back to profile selection
@@ -5397,10 +5984,20 @@
         }
       }
     } else if (code === 37) { // ArrowLeft
-      if (state.focusedPanel === 'login-wizard') {
+      if (state.focusedPanel === 'settings-actions') {
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = 5; // Settings sidebar item index
+        handled = true;
+      } else if (state.focusedPanel === 'login-wizard') {
         var pos = getWizardRowColFromIndex(state.focusedIndex);
         if (pos.col > 0) {
           state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col - 1);
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+        if (pPos.col > 0) {
+          state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col - 1);
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-channels') {
@@ -5438,11 +6035,34 @@
           state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col + 1);
           handled = true;
         }
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+        if (pPos.col < pPos.rowLength - 1) {
+          state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col + 1);
+          handled = true;
+        }
       } else if (state.focusedPanel === 'catalog-sidebar') {
-        // Go to categories
-        if (state.categories.length > 0 && state.focusedIndex <= 2) {
-          state.focusedPanel = 'catalog-categories';
-          state.focusedIndex = getActiveCategoryIndex();
+        if (state.focusedIndex === 3) {
+          openSearchView();
+          handled = true;
+        } else if (state.focusedIndex === 4) {
+          openWatchlistView();
+          handled = true;
+        } else if (state.focusedIndex === 5) {
+          openSettingsView();
+          handled = true;
+        } else if (state.focusedIndex <= 2) {
+          var modes = ['live', 'movies', 'series'];
+          var targetMode = modes[state.focusedIndex];
+          if (state.catalogMode !== targetMode) {
+            loadCatalog(targetMode);
+          } else {
+            // Same mode but may be coming from search/watchlist/settings,
+            // so always ensure the catalog panel is visible.
+            showView('view-catalog');
+            state.focusedPanel = 'catalog-categories';
+            state.focusedIndex = getActiveCategoryIndex();
+          }
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-categories') {
@@ -5474,7 +6094,11 @@
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
         if (activeEl) {
-          activeEl.click();
+          if (state.focusedPanel === 'profile-name-keyboard') {
+            handleProfileNameKeyPress(activeEl.getAttribute('data-key'));
+          } else {
+            activeEl.click();
+          }
           handled = true;
         }
       }
@@ -5571,32 +6195,48 @@
     closeContentDetail();
   };
 
-  document.getElementById('settings-btn-switch-profile').onclick = function () {
-    setupProfilesView();
+  document.getElementById('settings-btn-logout-new').onclick = function () {
+    logoutUser();
   };
 
-  document.getElementById('settings-btn-clear-watchlist').onclick = function () {
+  document.getElementById('settings-btn-reload').onclick = function () {
+    window.location.reload();
+  };
+
+  document.getElementById('settings-btn-clear-watchlist-new').onclick = function () {
     clearCurrentProfileFavorites();
     renderWatchlist();
     updateSettingsView();
     updateFocusUI();
+    alert('Watchlist cleared!');
   };
 
-  document.getElementById('settings-btn-logout').onclick = function () {
-    logoutUser();
+  document.getElementById('settings-btn-reset').onclick = function () {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(PROFILES_KEY);
+      localStorage.removeItem(SELECTED_PROFILE_KEY);
+    } catch (e) {}
+    window.location.reload();
   };
 
-  document.getElementById('settings-btn-back').onclick = function () {
-    returnToCatalogSidebar('settings');
+  document.getElementById('settings-btn-buildinfo').onclick = function () {
+    alert('LG BUILD: Smartifly TV Legacy\nVERSION: v0.1.0\nSTATUS: Connected\nENGINE: LG webOS shell (Chrome 38 Compatibility Mode)');
   };
 
-  document.getElementById('sidebar-profile').onclick = function () {
-    setupProfilesView();
-  };
-
-  document.getElementById('sidebar-logout').onclick = function () {
-    logoutUser();
-  };
+  var settingsTabs = ['account', 'profiles', 'app', 'about'];
+  settingsTabs.forEach(function (tabName, index) {
+    var btn = document.getElementById('settings-tab-' + tabName);
+    if (btn) {
+      btn.onclick = function () {
+        state.focusedPanel = 'settings-tabs';
+        state.focusedIndex = index;
+        state.settingsActiveTab = tabName;
+        renderSettingsTabs();
+        updateFocusUI();
+      };
+    }
+  });
 
   function logoutUser() {
     try {

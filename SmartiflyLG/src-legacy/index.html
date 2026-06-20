@@ -331,64 +331,147 @@
     </div>
   </div>
 
-  <!-- 6. WATCHLIST VIEW -->
-  <div id="view-watchlist" class="view">
-    <div class="utility-view">
-      <div class="utility-shell">
-        <div class="utility-header">
-          <div class="utility-header-copy">
-            <div class="utility-kicker">WATCHLIST</div>
-            <div class="utility-title">Saved Favorites for This Profile</div>
-            <div id="watchlist-summary" class="utility-subtitle">Your saved movies and series appear here.</div>
+      <!-- Watchlist Content Panel -->
+      <div id="watchlist-content-panel" class="utility-view" style="display: none; flex: 1; min-width: 0;">
+        <div class="utility-shell">
+          <div class="utility-header">
+            <div class="utility-header-copy">
+              <div class="utility-kicker">WATCHLIST</div>
+              <div class="utility-title">Saved Favorites for This Profile</div>
+              <div id="watchlist-summary" class="utility-subtitle">Your saved movies and series appear here.</div>
+            </div>
           </div>
-        </div>
-        <div id="watchlist-controls" class="utility-controls">
-          <button id="watchlist-filter-all" class="focusable utility-chip active">All</button>
-          <button id="watchlist-filter-movies" class="focusable utility-chip">Movies</button>
-          <button id="watchlist-filter-series" class="focusable utility-chip">Series</button>
-          <button id="watchlist-btn-back" class="focusable utility-chip">Back</button>
-        </div>
-        <div id="watchlist-results-scroll" class="utility-results-scroll">
-          <div id="watchlist-results-grid" class="channels-grid utility-results-grid"></div>
+          <div id="watchlist-controls" class="utility-controls">
+            <button id="watchlist-filter-all" class="focusable utility-chip active">All</button>
+            <button id="watchlist-filter-movies" class="focusable utility-chip">Movies</button>
+            <button id="watchlist-filter-series" class="focusable utility-chip">Series</button>
+            <button id="watchlist-btn-back" class="focusable utility-chip">Back</button>
+          </div>
+          <div id="watchlist-results-scroll" class="utility-results-scroll">
+            <div id="watchlist-results-grid" class="channels-grid utility-results-grid"></div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- 7. SETTINGS VIEW -->
-  <div id="view-settings" class="view">
-    <div class="utility-view">
-      <div class="utility-shell">
-        <div class="utility-header">
-          <div class="utility-header-copy">
-            <div class="utility-kicker">SETTINGS</div>
-            <div class="utility-title">Account and App Controls</div>
-            <div class="utility-subtitle">Manage profile access, watchlist storage, and the current Smartifly portal session.</div>
+      <!-- Settings Content Panel -->
+      <div id="settings-content-panel" class="utility-view" style="display: none; flex: 1; min-width: 0;">
+        <div class="settings-split-container">
+          <!-- Left side: Category Header & Vertical Tabs -->
+          <div class="settings-left-col">
+            <div class="settings-tab-header">
+              <div class="utility-kicker">SETTINGS</div>
+              <h1 class="settings-main-title">Device and account</h1>
+              <p class="settings-main-subtitle">Adjust playback, profile, and app preferences from one TV-friendly control panel.</p>
+            </div>
+            <div id="settings-tabs-list" class="settings-tabs-list">
+              <button id="settings-tab-account" class="focusable settings-tab-btn active">
+                <span class="tab-title">Account</span>
+                <span class="tab-desc">Session and sign out</span>
+              </button>
+              <button id="settings-tab-profiles" class="focusable settings-tab-btn">
+                <span class="tab-title">Profiles</span>
+                <span class="tab-desc">Switch active profile</span>
+              </button>
+              <button id="settings-tab-app" class="focusable settings-tab-btn">
+                <span class="tab-title">App</span>
+                <span class="tab-desc">Local app controls</span>
+              </button>
+              <button id="settings-tab-about" class="focusable settings-tab-btn">
+                <span class="tab-title">About</span>
+                <span class="tab-desc">Build details</span>
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="settings-layout">
-          <div class="settings-info-grid">
-            <div class="settings-info-card">
-              <div class="settings-info-label">Portal</div>
-              <div id="settings-portal-code" class="settings-info-value">-</div>
-              <div id="settings-server-name" class="settings-info-note">-</div>
+
+          <!-- Right side: Tab Content Area -->
+          <div class="settings-right-col">
+            <!-- 1. Account Tab Content -->
+            <div id="settings-panel-account" class="settings-tab-panel active">
+              <div class="panel-header">
+                <div class="panel-kicker">ACCOUNT</div>
+                <h2 id="settings-account-title" class="panel-title">Signed in as -</h2>
+              </div>
+              <div class="settings-info-grid">
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Server</div>
+                  <div id="settings-account-server" class="settings-info-value">-</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Portal</div>
+                  <div id="settings-account-portal" class="settings-info-value">-</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Login Time</div>
+                  <div id="settings-account-logintime" class="settings-info-value">-</div>
+                </div>
+              </div>
+              <div class="panel-actions">
+                <button id="settings-btn-logout-new" class="focusable settings-action btn-danger">Sign out</button>
+              </div>
             </div>
-            <div class="settings-info-card">
-              <div class="settings-info-label">Account</div>
-              <div id="settings-username" class="settings-info-value">-</div>
-              <div id="settings-profile" class="settings-info-note">-</div>
+
+            <!-- 2. Profiles Tab Content -->
+            <div id="settings-panel-profiles" class="settings-tab-panel">
+              <div class="panel-header">
+                <div class="panel-kicker">PROFILES</div>
+                <h2 class="panel-title">Choose or manage profiles</h2>
+              </div>
+              <div id="settings-profiles-list" class="settings-profiles-list">
+                <!-- Dynamically populated vertical cards like modern Profiles section -->
+              </div>
             </div>
-            <div class="settings-info-card">
-              <div class="settings-info-label">Watchlist</div>
-              <div id="settings-watchlist-count" class="settings-info-value">0 saved</div>
-              <div class="settings-info-note">Movies and series saved locally for this profile.</div>
+
+            <!-- 3. App Tab Content -->
+            <div id="settings-panel-app" class="settings-tab-panel">
+              <div class="panel-header">
+                <div class="panel-kicker">APP</div>
+                <h2 class="panel-title">Local app controls</h2>
+              </div>
+              <div class="settings-info-grid">
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Version</div>
+                  <div class="settings-info-value">v0.1.0</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Watchlist Scope</div>
+                  <div id="settings-app-scope" class="settings-info-value">-</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Theme</div>
+                  <div class="settings-info-value">LG webOS shell</div>
+                </div>
+              </div>
+              <div class="panel-actions horizontal">
+                <button id="settings-btn-reload" class="focusable settings-action btn-danger">Reload app</button>
+                <button id="settings-btn-clear-watchlist-new" class="focusable settings-action">Clear watchlist</button>
+                <button id="settings-btn-reset" class="focusable settings-action">Reset settings</button>
+              </div>
             </div>
-          </div>
-          <div id="settings-actions" class="settings-actions">
-            <button id="settings-btn-switch-profile" class="focusable settings-action">Switch Profile</button>
-            <button id="settings-btn-clear-watchlist" class="focusable settings-action">Clear Watchlist</button>
-            <button id="settings-btn-logout" class="focusable settings-action">Log Out</button>
-            <button id="settings-btn-back" class="focusable settings-action settings-action--secondary">Back</button>
+
+            <!-- 4. About Tab Content -->
+            <div id="settings-panel-about" class="settings-tab-panel">
+              <div class="panel-header">
+                <div class="panel-kicker">ABOUT</div>
+                <h2 class="panel-title">Build and account info</h2>
+              </div>
+              <div class="settings-info-grid">
+                <div class="settings-info-card">
+                  <div class="settings-info-label">LG Build</div>
+                  <div class="settings-info-value">Smartifly LG</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Status</div>
+                  <div class="settings-info-value">Connected</div>
+                </div>
+                <div class="settings-info-card">
+                  <div class="settings-info-label">Profile</div>
+                  <div id="settings-about-profile" class="settings-info-value">-</div>
+                </div>
+              </div>
+              <div class="panel-actions">
+                <button id="settings-btn-buildinfo" class="focusable settings-action">Build info</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -453,6 +536,42 @@
       <div id="player-status-container" class="player-status">
         <div class="spinner"></div>
         <p style="margin: 0; font-weight: bold; font-size: 16px; text-shadow: 0 2px 4px #000;">Buffering Stream...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Name On-Screen Keyboard Overlay -->
+  <div id="profile-name-keyboard-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(5,7,12,0.96); z-index:300; flex-direction:column; align-items:center; justify-content:center;">
+    <div style="width:660px;">
+      <p style="margin:0 0 10px; color:rgba(255,255,255,0.4); font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">Profile Name</p>
+      <input id="pnk-preview" type="text" readonly class="login-input-preview-box" placeholder="Start typing..." style="margin-bottom:18px;" />
+      <div id="pnk-keyboard" class="login-keyboard-grid"></div>
+      <p style="margin:14px 0 0; color:rgba(255,255,255,0.25); font-size:13px; text-align:center;">D-Pad to navigate · Enter to type · Done to confirm · Back to cancel</p>
+    </div>
+  </div>
+
+  <!-- Profile Form Modal -->
+  <div id="settings-profile-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(5,7,12,0.88); z-index:200; align-items:center; justify-content:center;">
+    <div class="spm-card">
+      <div id="spm-title" class="spm-title">Add Profile</div>
+
+      <!-- Name row -->
+      <div class="spm-row">
+        <label for="spm-name-input">Name</label>
+        <input id="spm-name-input" class="focusable" type="text" maxlength="24" placeholder="Enter name" autocomplete="off" tabindex="-1" />
+      </div>
+
+      <!-- Kids row -->
+      <div class="spm-row">
+        <label>Kids Profile</label>
+        <button id="spm-kids-btn" class="focusable spm-kids-btn" tabindex="-1">OFF</button>
+      </div>
+
+      <!-- Actions -->
+      <div class="spm-actions">
+        <button id="spm-save-btn"   class="focusable" tabindex="-1">Save</button>
+        <button id="spm-cancel-btn" class="focusable" tabindex="-1">Cancel</button>
+        <button id="spm-delete-btn" class="focusable" tabindex="-1" style="display:none;">Delete</button>
       </div>
     </div>
   </div>

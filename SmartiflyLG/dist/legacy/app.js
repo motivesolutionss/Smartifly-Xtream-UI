@@ -9,6 +9,7 @@
   // --- EPG STATE & TIMER ---
   var epgTimer = null;
   var hlsInstance = null;
+  var profileKeyboardRows = []; // Cached rows for profile name keyboard navigation
 
   // --- STATE DEFINITION ---
   var state = {
@@ -20,56 +21,18 @@
     channels: [],
     selectedCategoryId: '',
     selectedCategoryName: '',
-<<<<<<< HEAD
-    focusedPanel: 'welcome', // 'welcome', 'login', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'detail-actions', 'detail-seasons', 'detail-episodes', 'search-controls', 'search-results', 'watchlist-controls', 'watchlist-results', 'settings-actions', 'player'
-=======
     focusedPanel: 'welcome', // 'welcome', 'login-wizard', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
->>>>>>> 86abab6 (ui change)
     focusedIndex: 0, // Index of focused item inside current panel
     activeChannel: null,
     activeChannelQueue: [],
     activeChannelIndex: 0,
-<<<<<<< HEAD
-    currentViewId: 'view-welcome',
-    playerReturnViewId: 'view-catalog',
-    playerReturnPanel: 'catalog-channels',
-    playerReturnIndex: 0,
-    detailItem: null,
-    detailMode: '',
-    detailSourceIndex: 0,
-    detailReturnViewId: 'view-catalog',
-    detailReturnPanel: 'catalog-channels',
-    detailReturnIndex: 0,
-    detailInfo: null,
-    detailSeasons: [],
-    detailSelectedSeasonIndex: 0,
-    detailEpisodes: [],
-    favorites: {},
-    searchMode: 'movies',
-    searchQuery: '',
-    searchResults: [],
-    searchCache: {},
-    watchlistFilter: 'all',
-    watchlistItems: []
-  };
-
-  var SIDEBAR_MODE_INDEX = {
-    live: 0,
-    movies: 1,
-    series: 2,
-    search: 3,
-    watchlist: 4,
-    settings: 5,
-    profile: 6,
-    logout: 7
-=======
     wizardStepIndex: 0,
     wizardValues: { portal: '', username: '', password: '' },
     keyboardIsShifted: false,
     keyboardMode: 'letters',
     activationTimer: null,
-    activationDeviceId: ''
->>>>>>> 86abab6 (ui change)
+    activationDeviceId: '',
+    profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters' }
   };
 
   // --- API CLIENT SETUP ---
@@ -232,48 +195,6 @@
     xhr.send();
   }
 
-<<<<<<< HEAD
-  function apiGetVodCategories(portalBaseUrl, username, password, onSuccess, onError) {
-    var xhr = new XMLHttpRequest();
-    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_categories';
-    xhr.open('GET', url, true);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.timeout = 20000;
-
-    xhr.onload = function () {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          var res = JSON.parse(xhr.responseText);
-          var list = [];
-          if (Array.isArray(res)) {
-            list = res;
-          } else if (res && Array.isArray(res.categories)) {
-            list = res.categories;
-          } else if (res && Array.isArray(res.vod_categories)) {
-            list = res.vod_categories;
-          }
-          onSuccess(list);
-        } catch (e) {
-          onError('Failed to parse movie categories');
-        }
-      } else {
-        onError('HTTP ' + xhr.status + ' loading movie categories');
-      }
-    };
-    xhr.onerror = function () { onError('Network error loading movie categories'); };
-    xhr.send();
-  }
-
-  function apiGetVodStreams(portalBaseUrl, username, password, categoryId, onSuccess, onError) {
-    var xhr = new XMLHttpRequest();
-    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_streams';
-    if (categoryId) {
-      url += '&category_id=' + encodeURIComponent(categoryId);
-    }
-    xhr.open('GET', url, true);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.timeout = 30000;
-=======
   function buildActivationMac(deviceId) {
     var normalized = deviceId.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     var last6 = normalized.slice(-6);
@@ -322,42 +243,11 @@
     xhr.setRequestHeader('Accept', 'application/json');
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.timeout = 15000;
->>>>>>> 86abab6 (ui change)
 
     xhr.onload = function () {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           var res = JSON.parse(xhr.responseText);
-<<<<<<< HEAD
-          var list = [];
-          if (Array.isArray(res)) {
-            list = res;
-          } else if (res && Array.isArray(res.vod_streams)) {
-            list = res.vod_streams;
-          } else if (res && Array.isArray(res.movies)) {
-            list = res.movies;
-          } else if (res && Array.isArray(res.vod)) {
-            list = res.vod;
-          }
-          onSuccess(list);
-        } catch (e) {
-          onError('Failed to parse movies');
-        }
-      } else {
-        onError('HTTP ' + xhr.status + ' loading movies');
-      }
-    };
-    xhr.onerror = function () { onError('Network error loading movies'); };
-    xhr.send();
-  }
-
-  function apiGetSeriesCategories(portalBaseUrl, username, password, onSuccess, onError) {
-    var xhr = new XMLHttpRequest();
-    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_series_categories';
-    xhr.open('GET', url, true);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.timeout = 20000;
-=======
           if (res.success && res.webLink && res.token && res.settingsCode) {
             onSuccess(res);
           } else {
@@ -389,13 +279,105 @@
     xhr.open('GET', url, true);
     xhr.setRequestHeader('Accept', 'application/json');
     xhr.timeout = 15000;
->>>>>>> 86abab6 (ui change)
 
     xhr.onload = function () {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           var res = JSON.parse(xhr.responseText);
-<<<<<<< HEAD
+          if (res.state) {
+            onSuccess(res);
+          } else {
+            onError(res.reason || 'Activation check failed');
+          }
+        } catch (e) {
+          onError('Invalid status response');
+        }
+      } else {
+        onError('Check status failed: HTTP ' + xhr.status);
+      }
+    };
+    xhr.onerror = function () { onError('Network error checking status'); };
+    xhr.send();
+  }
+
+  function apiGetVodCategories(portalBaseUrl, username, password, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_categories';
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 20000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.categories)) {
+            list = res.categories;
+          } else if (res && Array.isArray(res.vod_categories)) {
+            list = res.vod_categories;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse movie categories');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading movie categories');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading movie categories'); };
+    xhr.send();
+  }
+
+  function apiGetVodStreams(portalBaseUrl, username, password, categoryId, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_vod_streams';
+    if (categoryId) {
+      url += '&category_id=' + encodeURIComponent(categoryId);
+    }
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 30000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
+          var list = [];
+          if (Array.isArray(res)) {
+            list = res;
+          } else if (res && Array.isArray(res.vod_streams)) {
+            list = res.vod_streams;
+          } else if (res && Array.isArray(res.movies)) {
+            list = res.movies;
+          } else if (res && Array.isArray(res.vod)) {
+            list = res.vod;
+          }
+          onSuccess(list);
+        } catch (e) {
+          onError('Failed to parse movies');
+        }
+      } else {
+        onError('HTTP ' + xhr.status + ' loading movies');
+      }
+    };
+    xhr.onerror = function () { onError('Network error loading movies'); };
+    xhr.send();
+  }
+
+  function apiGetSeriesCategories(portalBaseUrl, username, password, onSuccess, onError) {
+    var xhr = new XMLHttpRequest();
+    var url = normalizeBaseUrl(portalBaseUrl) + '/player_api.php?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password) + '&action=get_series_categories';
+    xhr.open('GET', url, true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = 20000;
+
+    xhr.onload = function () {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var res = JSON.parse(xhr.responseText);
           var list = [];
           if (Array.isArray(res)) {
             list = res;
@@ -491,21 +473,6 @@
       }
     };
     xhr.onerror = function () { onError('Network error loading series details'); };
-=======
-          if (res.state) {
-            onSuccess(res);
-          } else {
-            onError(res.reason || 'Activation check failed');
-          }
-        } catch (e) {
-          onError('Invalid status response');
-        }
-      } else {
-        onError('Check status failed: HTTP ' + xhr.status);
-      }
-    };
-    xhr.onerror = function () { onError('Network error checking status'); };
->>>>>>> 86abab6 (ui change)
     xhr.send();
   }
 
@@ -758,6 +725,14 @@
 
   function getSidebarFocusIndex(mode) {
     var activeMode = mode || state.catalogMode;
+    var SIDEBAR_MODE_INDEX = {
+      'live': 0,
+      'movies': 1,
+      'series': 2,
+      'search': 3,
+      'watchlist': 4,
+      'settings': 5
+    };
     return SIDEBAR_MODE_INDEX.hasOwnProperty(activeMode) ? SIDEBAR_MODE_INDEX[activeMode] : 0;
   }
 
@@ -783,6 +758,14 @@
       return item.cover || '';
     }
     return item.stream_icon || '';
+  }
+
+  function getLegacyArtworkUrl(url) {
+    if (!url) return '';
+    if (/^https:\/\//i.test(url)) {
+      return url.replace(/^https:\/\//i, 'http://');
+    }
+    return url;
   }
 
   function getCatalogItemSummary(item, mode) {
@@ -880,7 +863,7 @@
 
     if (artwork) {
       poster.style.display = 'block';
-      poster.src = artwork;
+      poster.src = getLegacyArtworkUrl(artwork);
     } else {
       poster.style.display = 'none';
       poster.removeAttribute('src');
@@ -890,7 +873,7 @@
       backdrop.style.backgroundImage =
         'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
         'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%), ' +
-        'url("' + String(backdropArt).replace(/"/g, '%22') + '")';
+        'url("' + String(getLegacyArtworkUrl(backdropArt)).replace(/"/g, '%22') + '")';
     } else {
       backdrop.style.backgroundImage =
         'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
@@ -1100,7 +1083,7 @@
 
     if (getCatalogItemArtwork(item, mode)) {
       var img = document.createElement('img');
-      img.src = getCatalogItemArtwork(item, mode);
+      img.src = getLegacyArtworkUrl(getCatalogItemArtwork(item, mode));
       img.onerror = function() {
         this.style.display = 'none';
         this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
@@ -1356,22 +1339,408 @@
   }
 
   function updateSettingsView() {
-    document.getElementById('settings-portal-code').textContent = state.session && state.session.portalCode ? state.session.portalCode : '-';
-    document.getElementById('settings-server-name').textContent = state.session && state.session.serverName ? state.session.serverName : '-';
-    document.getElementById('settings-username').textContent = state.session && state.session.username ? state.session.username : '-';
-    document.getElementById('settings-profile').textContent = state.selectedProfile ? ('Profile: ' + state.selectedProfile.name) : 'No active profile';
-
-    var count = collectWatchlistItems('all').length;
-    document.getElementById('settings-watchlist-count').textContent = count + ' saved';
+    renderSettingsTabs();
   }
 
   function openSettingsView() {
     setSidebarActiveById('sidebar-settings');
     showView('view-settings');
-    state.focusedPanel = 'settings-actions';
+    state.focusedPanel = 'settings-tabs';
     state.focusedIndex = 0;
-    updateSettingsView();
+    state.settingsActiveTab = 'account';
+    renderSettingsTabs();
     updateFocusUI();
+  }
+
+  function renderSettingsTabs() {
+    var tabs = ['account', 'profiles', 'app', 'about'];
+    for (var i = 0; i < tabs.length; i++) {
+      var btn = document.getElementById('settings-tab-' + tabs[i]);
+      var panel = document.getElementById('settings-panel-' + tabs[i]);
+      if (btn && panel) {
+        if (tabs[i] === state.settingsActiveTab) {
+          btn.classList.add('active');
+          panel.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+          panel.classList.remove('active');
+        }
+      }
+    }
+
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : '-';
+    var serverName = state.session && state.session.serverName ? state.session.serverName : '-';
+    var username = state.session && state.session.username ? state.session.username : '-';
+
+    var accountTitleEl = document.getElementById('settings-account-title');
+    if (accountTitleEl) accountTitleEl.textContent = 'Signed in as ' + username;
+    
+    var accServerEl = document.getElementById('settings-account-server');
+    if (accServerEl) accServerEl.textContent = serverName;
+    
+    var accPortalEl = document.getElementById('settings-account-portal');
+    if (accPortalEl) accPortalEl.textContent = portalCode;
+
+    var accLoginEl = document.getElementById('settings-account-logintime');
+    if (accLoginEl) {
+      var dateObj = new Date();
+      accLoginEl.textContent = dateObj.toLocaleDateString() + ', ' + dateObj.toLocaleTimeString();
+    }
+
+    renderSettingsProfilesList();
+
+    var appScopeEl = document.getElementById('settings-app-scope');
+    if (appScopeEl) {
+      var profileName = state.selectedProfile ? state.selectedProfile.name : 'primary';
+      appScopeEl.textContent = portalCode.toUpperCase() + '::' + username + '::' + profileName;
+    }
+
+    var aboutProfileEl = document.getElementById('settings-about-profile');
+    if (aboutProfileEl) {
+      aboutProfileEl.textContent = state.selectedProfile ? state.selectedProfile.name : '-';
+    }
+  }
+
+  function renderSettingsProfilesList() {
+    var container = document.getElementById('settings-profiles-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!state.profiles || state.profiles.length === 0) {
+      container.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding:10px;">No profiles found</div>';
+      return;
+    }
+
+    var avatarColors = ['color-red', 'color-blue'];
+
+    for (var i = 0; i < state.profiles.length; i++) {
+      var profile = state.profiles[i];
+      var isPrimary = (i === 0);
+
+      var card = document.createElement('div');
+      card.className = 'focusable settings-profile-card';
+      card.setAttribute('data-profile-id', profile.id);
+      
+      var avatar = document.createElement('div');
+      var colorClass = avatarColors[i % avatarColors.length];
+      avatar.className = 'profile-card-avatar ' + colorClass;
+      var initials = (profile.name || '').substring(0, 2).toUpperCase();
+      avatar.textContent = initials;
+      card.appendChild(avatar);
+
+      var details = document.createElement('div');
+      details.className = 'profile-card-details';
+      
+      var name = document.createElement('div');
+      name.className = 'profile-card-name';
+      name.textContent = profile.name;
+      details.appendChild(name);
+
+      var role = document.createElement('div');
+      role.className = 'profile-card-role';
+      role.textContent = isPrimary ? 'Primary profile' : 'Kids profile';
+      details.appendChild(role);
+
+      card.appendChild(details);
+
+      (function (p) {
+        card.onclick = function () {
+          openProfileFormModal(p);
+        };
+      })(profile);
+
+      container.appendChild(card);
+    }
+
+    var addCard = document.createElement('div');
+    addCard.className = 'focusable settings-profile-card card-add';
+    addCard.textContent = '+ Add Profile';
+    addCard.onclick = function () {
+      openProfileFormModal(null);
+    };
+    container.appendChild(addCard);
+  }
+
+  // --- PROFILE FORM MODAL LOGIC ---
+
+  function saveProfilesToStorage() {
+    try {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(state.profiles));
+    } catch (e) {}
+  }
+
+  function getVisibleModalItems() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return [];
+    var all = modal.querySelectorAll('.focusable');
+    var visible = [];
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].style.display !== 'none') {
+        visible.push(all[i]);
+      }
+    }
+    return visible;
+  }
+
+  function updateProfileModalFocus() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return;
+    var items = getVisibleModalItems();
+    // Clear all
+    var all = modal.querySelectorAll('.focusable');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove('is-focused');
+    }
+    // Apply to current visible item
+    if (state.profileModal.focusIndex >= items.length) {
+      state.profileModal.focusIndex = items.length - 1;
+    }
+    var target = items[state.profileModal.focusIndex];
+    if (target) {
+      target.classList.add('is-focused');
+      // Only auto-focus buttons; let user press Enter to activate the input
+      if (target.tagName !== 'INPUT') {
+        target.focus();
+      }
+    }
+  }
+
+  function openProfileFormModal(profile) {
+    var modal = document.getElementById('settings-profile-modal');
+    if (!modal) return;
+    var titleEl    = document.getElementById('spm-title');
+    var nameInput  = document.getElementById('spm-name-input');
+    var kidsBtn    = document.getElementById('spm-kids-btn');
+    var deleteBtn  = document.getElementById('spm-delete-btn');
+
+    state.profileModal.mode     = profile ? 'edit' : 'add';
+    state.profileModal.targetId = profile ? profile.id : null;
+    state.profileModal.isKids   = profile ? !!profile.isKids : false;
+    state.profileModal.focusIndex = 0;
+
+    titleEl.textContent  = profile ? 'Edit Profile' : 'Add Profile';
+    nameInput.value      = profile ? profile.name : '';
+    kidsBtn.textContent  = state.profileModal.isKids ? 'ON' : 'OFF';
+    if (state.profileModal.isKids) {
+      kidsBtn.classList.add('kids-on');
+    } else {
+      kidsBtn.classList.remove('kids-on');
+    }
+
+    var canDelete = profile && profile.id !== 'primary';
+    deleteBtn.style.display = canDelete ? '' : 'none';
+
+    modal.style.display  = 'flex';
+    state.focusedPanel   = 'settings-profile-modal';
+    updateProfileModalFocus();
+  }
+
+  function closeProfileFormModal() {
+    var modal = document.getElementById('settings-profile-modal');
+    if (modal) modal.style.display = 'none';
+    // Return focus to profiles list
+    state.focusedPanel  = 'settings-profiles';
+    state.focusedIndex  = 0;
+    updateFocusUI();
+  }
+
+  function saveProfileFromModal() {
+    var nameInput = document.getElementById('spm-name-input');
+    var name = nameInput ? nameInput.value.trim() : '';
+    if (!name) return;
+    var isKids    = state.profileModal.isKids;
+    var avatarSeed = name.slice(0, 2).toUpperCase();
+
+    if (state.profileModal.mode === 'add') {
+      state.profiles.push({
+        id: 'p_' + Date.now(),
+        name: name,
+        avatarSeed: avatarSeed,
+        isKids: isKids
+      });
+    } else {
+      for (var j = 0; j < state.profiles.length; j++) {
+        if (state.profiles[j].id === state.profileModal.targetId) {
+          state.profiles[j].name      = name;
+          state.profiles[j].avatarSeed = avatarSeed;
+          state.profiles[j].isKids    = isKids;
+          break;
+        }
+      }
+    }
+
+    saveProfilesToStorage();
+    renderSettingsProfilesList();
+    closeProfileFormModal();
+  }
+
+  function deleteProfileFromModal() {
+    if (!state.profileModal.targetId || state.profileModal.targetId === 'primary') return;
+    state.profiles = state.profiles.filter(function (p) {
+      return p.id !== state.profileModal.targetId;
+    });
+    saveProfilesToStorage();
+    renderSettingsProfilesList();
+    closeProfileFormModal();
+  }
+
+  // --- PROFILE NAME ON-SCREEN KEYBOARD ---
+
+  function getProfileKeyboardRows(isShifted, kbMode) {
+    var alphaRows = kbMode === 'symbols' ? KEYBOARD_SYMBOLS : KEYBOARD_ALPHA;
+    return [
+      alphaRows[0],
+      alphaRows[1],
+      alphaRows[2],
+      alphaRows[3],
+      ['Back', 'Space', '!#$', 'Done']
+    ];
+  }
+
+  function getProfileKeyboardRowColFromIndex(index) {
+    var idx = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      for (var c = 0; c < profileKeyboardRows[r].length; c++) {
+        if (idx === index) {
+          return { row: r, col: c, rowLength: profileKeyboardRows[r].length };
+        }
+        idx++;
+      }
+    }
+    return { row: 0, col: 0, rowLength: 1 };
+  }
+
+  function getProfileKeyboardIndexFromRowCol(row, col) {
+    var idx = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      if (r === row) return idx + col;
+      idx += profileKeyboardRows[r].length;
+    }
+    return 0;
+  }
+
+  function renderProfileNameKeyboard() {
+    profileKeyboardRows = getProfileKeyboardRows(
+      state.profileModal.keyboardIsShifted,
+      state.profileModal.keyboardMode
+    );
+
+    var preview = document.getElementById('pnk-preview');
+    if (preview) preview.value = state.profileModal.nameBuffer || '';
+
+    var container = document.getElementById('pnk-keyboard');
+    if (!container) return;
+    container.innerHTML = '';
+
+    var flatIndex = 0;
+    for (var r = 0; r < profileKeyboardRows.length; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'keyboard-row';
+      var rowData = profileKeyboardRows[r];
+      for (var c = 0; c < rowData.length; c++) {
+        var keyVal = rowData[c];
+        var btnClass = 'key-btn focusable';
+        if (keyVal === 'Shift') btnClass += ' key-shift';
+        else if (keyVal === 'Space') btnClass += ' key-space';
+        else if (keyVal === 'Backspace') btnClass += ' key-backspace';
+        else if (keyVal === '!#$' || keyVal === 'ABC') btnClass += ' key-symbols';
+        else if (keyVal === 'Back') btnClass += ' key-action-back';
+        else if (keyVal === 'Done') btnClass += ' key-action-next';
+
+        var keyBtn = document.createElement('div');
+        keyBtn.className = btnClass;
+        keyBtn.setAttribute('tabindex', '-1');
+        keyBtn.setAttribute('data-index', flatIndex);
+        keyBtn.setAttribute('data-key', keyVal);
+
+        var displayVal = keyVal;
+        if (state.profileModal.keyboardIsShifted && keyVal.length === 1 && keyVal >= 'a' && keyVal <= 'z') {
+          displayVal = keyVal.toUpperCase();
+        }
+        if (keyVal === '!#$') displayVal = 'Sym';
+        keyBtn.textContent = displayVal;
+
+        (function(k) {
+          keyBtn.onclick = function() { handleProfileNameKeyPress(k); };
+        })(keyVal);
+
+        rowEl.appendChild(keyBtn);
+        flatIndex++;
+      }
+      container.appendChild(rowEl);
+    }
+  }
+
+  function openProfileNameKeyboard() {
+    state.profileModal.nameBuffer = '';
+    var nameInput = document.getElementById('spm-name-input');
+    if (nameInput && typeof nameInput.value === 'string' && nameInput.value !== 'null') {
+      state.profileModal.nameBuffer = nameInput.value;
+    }
+    state.profileModal.keyboardIsShifted = false;
+    state.profileModal.keyboardMode = 'letters';
+
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'flex';
+
+    renderProfileNameKeyboard();
+    state.focusedPanel = 'profile-name-keyboard';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function closeProfileNameKeyboard(save) {
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    if (save) {
+      var nameInput = document.getElementById('spm-name-input');
+      if (nameInput) nameInput.value = state.profileModal.nameBuffer;
+    }
+
+    // Return focus to profile form modal
+    state.focusedPanel = 'settings-profile-modal';
+    state.profileModal.focusIndex = 0; // back to Name row
+    updateProfileModalFocus();
+  }
+
+  function handleProfileNameKeyPress(key) {
+    var buf = state.profileModal.nameBuffer;
+
+    if (key === 'Back') {
+      closeProfileNameKeyboard(false);
+    } else if (key === 'Done') {
+      closeProfileNameKeyboard(true);
+    } else if (key === 'Backspace') {
+      if (buf.length > 0) {
+        state.profileModal.nameBuffer = buf.slice(0, -1);
+        renderProfileNameKeyboard();
+      }
+    } else if (key === 'Space') {
+      state.profileModal.nameBuffer = buf + ' ';
+      renderProfileNameKeyboard();
+    } else if (key === 'Shift') {
+      state.profileModal.keyboardIsShifted = !state.profileModal.keyboardIsShifted;
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else if (key === '!#$' || key === 'Symbols') {
+      state.profileModal.keyboardMode = 'symbols';
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else if (key === 'ABC' || key === 'Letters') {
+      state.profileModal.keyboardMode = 'letters';
+      renderProfileNameKeyboard();
+      updateFocusUI();
+    } else {
+      var charToAdd = key;
+      if (state.profileModal.keyboardIsShifted && key.length === 1 && key >= 'a' && key <= 'z') {
+        charToAdd = key.toUpperCase();
+      }
+      if (buf.length < 24) {
+        state.profileModal.nameBuffer = buf + charToAdd;
+        renderProfileNameKeyboard();
+      }
+    }
   }
 
   function returnToCatalogSidebar(sidebarKey) {
@@ -1496,15 +1865,24 @@
 
   // --- VIEWS ROUTING ---
   function showView(viewId) {
+    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-search' || viewId === 'view-watchlist' || viewId === 'view-settings');
+    var targetViewId = isCatalogSubView ? 'view-catalog' : viewId;
+
     var views = document.querySelectorAll('.view');
     for (var i = 0; i < views.length; i++) {
       views[i].classList.remove('active');
     }
-    var activeView = document.getElementById(viewId);
+    var activeView = document.getElementById(targetViewId);
     if (activeView) {
       activeView.classList.add('active');
     }
-    state.currentViewId = viewId;
+
+    if (isCatalogSubView) {
+      document.getElementById('catalog-content-panel').style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
+      document.getElementById('search-content-panel').style.display = (viewId === 'view-search') ? 'flex' : 'none';
+      document.getElementById('watchlist-content-panel').style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
+      document.getElementById('settings-content-panel').style.display = (viewId === 'view-settings') ? 'flex' : 'none';
+    }
   }
 
   // --- PREMIUM STEP-BY-STEP LOGIN WIZARD ---
@@ -2152,8 +2530,8 @@
 
     var config = getCatalogConfig();
     showView('view-catalog');
-    state.focusedPanel = 'catalog-categories';
-    state.focusedIndex = 0;
+    state.focusedPanel = 'catalog-sidebar';
+    state.focusedIndex = getSidebarFocusIndex(state.catalogMode);
     state.categories = [];
     state.channels = [];
     state.selectedCategoryId = '';
@@ -2325,7 +2703,7 @@
       
       if (getCatalogItemArtwork(ch)) {
         var img = document.createElement('img');
-        img.src = getCatalogItemArtwork(ch);
+        img.src = getLegacyArtworkUrl(getCatalogItemArtwork(ch));
         img.onerror = function() {
           this.style.display = 'none';
           this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
@@ -2805,7 +3183,12 @@
     if (state.focusedPanel === 'catalog-channels') {
       return document.getElementById('channels-grid-list').querySelectorAll('.focusable');
     }
-<<<<<<< HEAD
+    if (state.focusedPanel === 'keyboard') {
+      return document.getElementById('keyboard-keys-grid').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'activation') {
+      return document.getElementById('view-activation').querySelectorAll('.focusable');
+    }
     if (state.focusedPanel === 'detail-actions') {
       return document.getElementById('detail-actions').querySelectorAll('.focusable');
     }
@@ -2827,15 +3210,28 @@
     if (state.focusedPanel === 'watchlist-results') {
       return document.getElementById('watchlist-results-grid').querySelectorAll('.focusable');
     }
-    if (state.focusedPanel === 'settings-actions') {
-      return document.getElementById('settings-actions').querySelectorAll('.focusable');
-=======
-    if (state.focusedPanel === 'keyboard') {
-      return document.getElementById('keyboard-keys-grid').querySelectorAll('.focusable');
+    if (state.focusedPanel === 'settings-tabs') {
+      return document.getElementById('settings-tabs-list').querySelectorAll('.focusable');
     }
-    if (state.focusedPanel === 'activation') {
-      return document.getElementById('view-activation').querySelectorAll('.focusable');
->>>>>>> 86abab6 (ui change)
+    if (state.focusedPanel === 'settings-account') {
+      return document.getElementById('settings-panel-account').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-profiles') {
+      return document.getElementById('settings-profiles-list').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-app') {
+      return document.getElementById('settings-panel-app').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-about') {
+      return document.getElementById('settings-panel-about').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'settings-profile-modal') {
+      var spmModal = document.getElementById('settings-profile-modal');
+      return spmModal ? spmModal.querySelectorAll('.focusable') : [];
+    }
+    if (state.focusedPanel === 'profile-name-keyboard') {
+      var pnkEl = document.getElementById('pnk-keyboard');
+      return pnkEl ? pnkEl.querySelectorAll('.focusable') : [];
     }
     return [];
   }
@@ -2935,6 +3331,10 @@
     return panel === 'watchlist-controls' || panel === 'watchlist-results';
   }
 
+  function isSettingsPanel(panel) {
+    return panel === 'settings-tabs' || panel === 'settings-account' || panel === 'settings-profiles' || panel === 'settings-app' || panel === 'settings-about';
+  }
+
   function handleDetailNavigation(code, items) {
     var handled = false;
 
@@ -3017,14 +3417,95 @@
     return handled;
   }
 
+  function handleSettingsNavigation(code, items) {
+    var handled = false;
+    var tabs = ['account', 'profiles', 'app', 'about'];
+
+    if (state.focusedPanel === 'settings-tabs') {
+      if (code === 38) { // ArrowUp
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          state.settingsActiveTab = tabs[state.focusedIndex];
+          renderSettingsTabs();
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 40) { // ArrowDown
+        if (state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          state.settingsActiveTab = tabs[state.focusedIndex];
+          renderSettingsTabs();
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 37) { // ArrowLeft
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = 5; // Settings sidebar item index
+        updateFocusUI();
+        handled = true;
+      } else if (code === 39) { // ArrowRight
+        var targetPanel = 'settings-' + state.settingsActiveTab;
+        var contentPanelEl = document.getElementById('settings-panel-' + state.settingsActiveTab);
+        var contentItems = contentPanelEl ? contentPanelEl.querySelectorAll('.focusable') : [];
+        if (contentItems.length > 0) {
+          state.focusedPanel = targetPanel;
+          state.focusedIndex = 0;
+          updateFocusUI();
+          handled = true;
+        }
+      }
+    } else {
+      // Right side content panels: account, profiles, app, about
+      if (code === 37) { // ArrowLeft
+        if (state.focusedPanel === 'settings-app' && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          updateFocusUI();
+          handled = true;
+        } else {
+          var activeTabIdx = tabs.indexOf(state.settingsActiveTab);
+          state.focusedPanel = 'settings-tabs';
+          state.focusedIndex = activeTabIdx >= 0 ? activeTabIdx : 0;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 39) { // ArrowRight
+        if (state.focusedPanel === 'settings-app' && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 38) { // ArrowUp
+        if (state.focusedPanel !== 'settings-app' && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          updateFocusUI();
+          handled = true;
+        }
+      } else if (code === 40) { // ArrowDown
+        if (state.focusedPanel !== 'settings-app' && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          updateFocusUI();
+          handled = true;
+        }
+      }
+    }
+
+    return handled;
+  }
+
   function handleSearchNavigation(code, items) {
     var handled = false;
     var gridColumns = getModeGridColumnCount(state.searchMode);
 
     if (state.focusedPanel === 'search-controls') {
-      if (code === 37 && state.focusedIndex > 0) {
-        state.focusedIndex--;
-        handled = true;
+      if (code === 37) {
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 3; // Search index is 3
+          handled = true;
+        }
       } else if (code === 39 && state.focusedIndex < items.length - 1) {
         state.focusedIndex++;
         handled = true;
@@ -3053,6 +3534,9 @@
       } else if (code === 37) {
         if (state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 3;
         }
         handled = true;
       } else if (code === 39) {
@@ -3071,9 +3555,15 @@
     var gridColumns = 5;
 
     if (state.focusedPanel === 'watchlist-controls') {
-      if (code === 37 && state.focusedIndex > 0) {
-        state.focusedIndex--;
-        handled = true;
+      if (code === 37) {
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 4; // Watchlist index is 4
+          handled = true;
+        }
       } else if (code === 39 && state.focusedIndex < items.length - 1) {
         state.focusedIndex++;
         handled = true;
@@ -3102,6 +3592,9 @@
       } else if (code === 37) {
         if (state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = 4;
         }
         handled = true;
       } else if (code === 39) {
@@ -3154,7 +3647,13 @@
       } else if (isWatchlistPanel(state.focusedPanel)) {
         returnToCatalogSidebar('watchlist');
         handled = true;
-      } else if (state.focusedPanel === 'settings-actions') {
+      } else if (state.focusedPanel === 'settings-profile-modal') {
+        closeProfileFormModal();
+        handled = true;
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        closeProfileNameKeyboard(false);
+        handled = true;
+      } else if (isSettingsPanel(state.focusedPanel)) {
         returnToCatalogSidebar('settings');
         handled = true;
       } else if (state.focusedPanel === 'catalog-categories' || state.focusedPanel === 'catalog-channels' || state.focusedPanel === 'catalog-sidebar') {
@@ -3185,6 +3684,13 @@
       return;
     }
 
+    // Physical Backspace on profile name keyboard = delete char
+    if (code === 8 && state.focusedPanel === 'profile-name-keyboard') {
+      handleProfileNameKeyPress('Backspace');
+      event.preventDefault();
+      return;
+    }
+
     var items = getFocusableElements();
     var gridColumns = getCatalogGridColumnCount();
 
@@ -3194,16 +3700,58 @@
       handled = handleSearchNavigation(code, items);
     } else if (isWatchlistPanel(state.focusedPanel)) {
       handled = handleWatchlistNavigation(code, items);
+    } else if (state.focusedPanel === 'settings-profile-modal') {
+      // Modal keyboard navigation — uses only visible focusable items
+      var pm = state.profileModal;
+      var modalItems = getVisibleModalItems();
+      var maxModalIdx = modalItems.length - 1;
+
+      if (code === 38) { // ArrowUp
+        if (pm.focusIndex > 0) {
+          pm.focusIndex--;
+          updateProfileModalFocus();
+          handled = true;
+        }
+      } else if (code === 40) { // ArrowDown
+        if (pm.focusIndex < maxModalIdx) {
+          pm.focusIndex++;
+          updateProfileModalFocus();
+          handled = true;
+        }
+      } else if (code === 13) { // Enter
+        var focusedItem = modalItems[pm.focusIndex];
+        if (focusedItem) {
+          var itemId = focusedItem.id;
+          if (focusedItem.tagName === 'INPUT') {
+            openProfileNameKeyboard();
+            handled = true;
+          } else if (itemId === 'spm-kids-btn') {
+            pm.isKids = !pm.isKids;
+            focusedItem.textContent = pm.isKids ? 'ON' : 'OFF';
+            if (pm.isKids) {
+              focusedItem.classList.add('kids-on');
+            } else {
+              focusedItem.classList.remove('kids-on');
+            }
+            handled = true;
+          } else if (itemId === 'spm-save-btn') {
+            saveProfileFromModal();
+            handled = true;
+          } else if (itemId === 'spm-cancel-btn') {
+            closeProfileFormModal();
+            handled = true;
+          } else if (itemId === 'spm-delete-btn') {
+            deleteProfileFromModal();
+            handled = true;
+          }
+        }
+      }
+    } else if (isSettingsPanel(state.focusedPanel)) {
+      handled = handleSettingsNavigation(code, items);
     }
 
     if (!handled && code === 38) { // ArrowUp
       if (items.length > 0) {
-<<<<<<< HEAD
-        if (state.focusedPanel === 'catalog-channels') {
-          // Grid navigation: move one row up
-          if (state.focusedIndex >= gridColumns) {
-            state.focusedIndex -= gridColumns;
-=======
         if (state.focusedPanel === 'login-wizard') {
           var pos = getWizardRowColFromIndex(state.focusedIndex);
           var step = WIZARD_STEPS[state.wizardStepIndex];
@@ -3215,11 +3763,19 @@
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
+        } else if (state.focusedPanel === 'profile-name-keyboard') {
+          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+          if (pPos.row > 0) {
+            var pTargetRow = pPos.row - 1;
+            var pTargetLen = profileKeyboardRows[pTargetRow].length;
+            var pTargetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (pTargetLen - 1));
+            state.focusedIndex = getProfileKeyboardIndexFromRowCol(pTargetRow, pTargetCol);
+            handled = true;
+          }
         } else if (state.focusedPanel === 'catalog-channels') {
           // 4-column grid: go up by 4 items
           if (state.focusedIndex >= 4) {
             state.focusedIndex -= 4;
->>>>>>> 86abab6 (ui change)
             handled = true;
           }
         } else {
@@ -3232,12 +3788,6 @@
       }
     } else if (!handled && code === 40) { // ArrowDown
       if (items.length > 0) {
-<<<<<<< HEAD
-        if (state.focusedPanel === 'catalog-channels') {
-          // Grid navigation: move one row down
-          if (state.focusedIndex + gridColumns < items.length) {
-            state.focusedIndex += gridColumns;
-=======
         if (state.focusedPanel === 'login-wizard') {
           var pos = getWizardRowColFromIndex(state.focusedIndex);
           var step = WIZARD_STEPS[state.wizardStepIndex];
@@ -3249,11 +3799,19 @@
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
+        } else if (state.focusedPanel === 'profile-name-keyboard') {
+          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+          if (pPos.row < profileKeyboardRows.length - 1) {
+            var pTargetRow = pPos.row + 1;
+            var pTargetLen = profileKeyboardRows[pTargetRow].length;
+            var pTargetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (pTargetLen - 1));
+            state.focusedIndex = getProfileKeyboardIndexFromRowCol(pTargetRow, pTargetCol);
+            handled = true;
+          }
         } else if (state.focusedPanel === 'catalog-channels') {
           // 4-column grid: go down by 4 items
           if (state.focusedIndex + 4 < items.length) {
             state.focusedIndex += 4;
->>>>>>> 86abab6 (ui change)
             handled = true;
           } else {
             // If we are not on the last row, let's go to the last item
@@ -3272,19 +3830,24 @@
           }
         }
       }
-<<<<<<< HEAD
-    } else if (!handled && code === 37) { // ArrowLeft
-      if (state.focusedPanel === 'catalog-channels') {
-=======
     } else if (code === 37) { // ArrowLeft
-      if (state.focusedPanel === 'login-wizard') {
+      if (state.focusedPanel === 'settings-actions') {
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = 5; // Settings sidebar item index
+        handled = true;
+      } else if (state.focusedPanel === 'login-wizard') {
         var pos = getWizardRowColFromIndex(state.focusedIndex);
         if (pos.col > 0) {
           state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col - 1);
           handled = true;
         }
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+        if (pPos.col > 0) {
+          state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col - 1);
+          handled = true;
+        }
       } else if (state.focusedPanel === 'catalog-channels') {
->>>>>>> 86abab6 (ui change)
         // Grid left navigation
         if (items.length > 0 && state.focusedIndex % gridColumns > 0) {
           state.focusedIndex--;
@@ -3307,10 +3870,6 @@
           handled = true;
         }
       }
-<<<<<<< HEAD
-    } else if (!handled && code === 39) { // ArrowRight
-      if (state.focusedPanel === 'catalog-sidebar') {
-=======
     } else if (code === 39) { // ArrowRight
       if (state.focusedPanel === 'login-wizard') {
         var pos = getWizardRowColFromIndex(state.focusedIndex);
@@ -3318,12 +3877,34 @@
           state.focusedIndex = getWizardIndexFromRowCol(pos.row, pos.col + 1);
           handled = true;
         }
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+        if (pPos.col < pPos.rowLength - 1) {
+          state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col + 1);
+          handled = true;
+        }
       } else if (state.focusedPanel === 'catalog-sidebar') {
->>>>>>> 86abab6 (ui change)
-        // Go to categories
-        if (state.categories.length > 0 && state.focusedIndex <= 2) {
-          state.focusedPanel = 'catalog-categories';
-          state.focusedIndex = getActiveCategoryIndex();
+        if (state.focusedIndex === 3) {
+          openSearchView();
+          handled = true;
+        } else if (state.focusedIndex === 4) {
+          openWatchlistView();
+          handled = true;
+        } else if (state.focusedIndex === 5) {
+          openSettingsView();
+          handled = true;
+        } else if (state.focusedIndex <= 2) {
+          var modes = ['live', 'movies', 'series'];
+          var targetMode = modes[state.focusedIndex];
+          if (state.catalogMode !== targetMode) {
+            loadCatalog(targetMode);
+          } else {
+            // Same mode but may be coming from search/watchlist/settings,
+            // so always ensure the catalog panel is visible.
+            showView('view-catalog');
+            state.focusedPanel = 'catalog-categories';
+            state.focusedIndex = getActiveCategoryIndex();
+          }
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-categories') {
@@ -3350,7 +3931,11 @@
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
         if (activeEl) {
-          activeEl.click();
+          if (state.focusedPanel === 'profile-name-keyboard') {
+            handleProfileNameKeyPress(activeEl.getAttribute('data-key'));
+          } else {
+            activeEl.click();
+          }
           handled = true;
         }
       }
@@ -3459,32 +4044,48 @@
     closeContentDetail();
   };
 
-  document.getElementById('settings-btn-switch-profile').onclick = function () {
-    setupProfilesView();
+  document.getElementById('settings-btn-logout-new').onclick = function () {
+    logoutUser();
   };
 
-  document.getElementById('settings-btn-clear-watchlist').onclick = function () {
+  document.getElementById('settings-btn-reload').onclick = function () {
+    window.location.reload();
+  };
+
+  document.getElementById('settings-btn-clear-watchlist-new').onclick = function () {
     clearCurrentProfileFavorites();
     renderWatchlist();
     updateSettingsView();
     updateFocusUI();
+    alert('Watchlist cleared!');
   };
 
-  document.getElementById('settings-btn-logout').onclick = function () {
-    logoutUser();
+  document.getElementById('settings-btn-reset').onclick = function () {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(PROFILES_KEY);
+      localStorage.removeItem(SELECTED_PROFILE_KEY);
+    } catch (e) {}
+    window.location.reload();
   };
 
-  document.getElementById('settings-btn-back').onclick = function () {
-    returnToCatalogSidebar('settings');
+  document.getElementById('settings-btn-buildinfo').onclick = function () {
+    alert('LG BUILD: Smartifly TV Legacy\nVERSION: v0.1.0\nSTATUS: Connected\nENGINE: LG webOS shell (Chrome 38 Compatibility Mode)');
   };
 
-  document.getElementById('sidebar-profile').onclick = function () {
-    setupProfilesView();
-  };
-
-  document.getElementById('sidebar-logout').onclick = function () {
-    logoutUser();
-  };
+  var settingsTabs = ['account', 'profiles', 'app', 'about'];
+  settingsTabs.forEach(function (tabName, index) {
+    var btn = document.getElementById('settings-tab-' + tabName);
+    if (btn) {
+      btn.onclick = function () {
+        state.focusedPanel = 'settings-tabs';
+        state.focusedIndex = index;
+        state.settingsActiveTab = tabName;
+        renderSettingsTabs();
+        updateFocusUI();
+      };
+    }
+  });
 
   function logoutUser() {
     try {
