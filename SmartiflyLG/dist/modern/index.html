@@ -330,17 +330,17 @@
           document.body.appendChild(bundleScript);
         };
         setStatus('Loading polyfills...');
-        loadScript('./vendor/polyfills.js?v=1781945828903', function () {
+        loadScript('./vendor/polyfills.js?v=1781955806950', function () {
           setStatus('Loading vendor player bundles...');
-          loadScript('./vendor/hls.min.js?v=chrome38-hls-01417-1781945828903', function () {
+          loadScript('./vendor/hls.min.js?v=chrome38-hls-01417-1781955806950', function () {
             console.warn('[LG Player][Chrome38 HLS] loaded hls version', window.Hls && window.Hls.version || null);
             setStatus('hls.js loaded. Loading Shaka...');
-            loadScript('./vendor/shaka-player.compiled.js?v=1781945828903', function () {
+            loadScript('./vendor/shaka-player.compiled.js?v=1781955806950', function () {
               setStatus('Shaka loaded. Loading app.js...');
               loadAppBundle();
-            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=1781945828903');
-          }, 'The emulator could not load ./vendor/hls.min.js?v=chrome38-hls-01417-1781945828903');
-        }, 'The emulator could not load ./vendor/polyfills.js?v=1781945828903');
+            }, 'The emulator could not load ./vendor/shaka-player.compiled.js?v=1781955806950');
+          }, 'The emulator could not load ./vendor/hls.min.js?v=chrome38-hls-01417-1781955806950');
+        }, 'The emulator could not load ./vendor/polyfills.js?v=1781955806950');
     })();
   </script>
 </body>

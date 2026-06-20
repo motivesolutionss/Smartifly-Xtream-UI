@@ -1001,12 +1001,13 @@
   function getSidebarFocusIndex(mode) {
     var activeMode = mode || state.catalogMode;
     var SIDEBAR_MODE_INDEX = {
-      'live': 0,
-      'movies': 1,
-      'series': 2,
-      'search': 3,
-      'watchlist': 4,
-      'settings': 5
+      'home': 0,
+      'live': 1,
+      'movies': 2,
+      'series': 3,
+      'search': 4,
+      'watchlist': 5,
+      'settings': 6
     };
     return SIDEBAR_MODE_INDEX.hasOwnProperty(activeMode) ? SIDEBAR_MODE_INDEX[activeMode] : 0;
   }
@@ -3370,7 +3371,7 @@
 
   // --- VIEWS ROUTING ---
   function showView(viewId) {
-    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-search' || viewId === 'view-watchlist' || viewId === 'view-settings');
+    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-watchlist' || viewId === 'view-settings');
     var targetViewId = isCatalogSubView ? 'view-catalog' : viewId;
 
     var views = document.querySelectorAll('.view');
@@ -3383,16 +3384,16 @@
     }
 
     if (isCatalogSubView) {
-      var catalogPanel = document.getElementById('catalog-content-panel');
-      var searchPanel = document.getElementById('search-content-panel');
+      var categoriesPanel = document.getElementById('categories-panel-list');
+      var channelsPanel = document.querySelector('.channels-panel');
       var watchlistPanel = document.getElementById('watchlist-content-panel');
       var settingsPanel = document.getElementById('settings-content-panel');
 
-      if (catalogPanel) {
-        catalogPanel.style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
+      if (categoriesPanel) {
+        categoriesPanel.style.display = (viewId === 'view-catalog') ? '' : 'none';
       }
-      if (searchPanel) {
-        searchPanel.style.display = (viewId === 'view-search') ? 'flex' : 'none';
+      if (channelsPanel) {
+        channelsPanel.style.display = (viewId === 'view-catalog') ? '' : 'none';
       }
       if (watchlistPanel) {
         watchlistPanel.style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
@@ -3693,6 +3694,44 @@
   function init() {
     loadLocalState();
     
+    // Bind profile modal events
+    var spmNameInput = document.getElementById('spm-name-input');
+    if (spmNameInput) {
+      spmNameInput.onclick = function () {
+        openProfileNameKeyboard();
+      };
+    }
+    var spmKidsBtn = document.getElementById('spm-kids-btn');
+    if (spmKidsBtn) {
+      spmKidsBtn.onclick = function () {
+        state.profileModal.isKids = !state.profileModal.isKids;
+        spmKidsBtn.textContent = state.profileModal.isKids ? 'ON' : 'OFF';
+        if (state.profileModal.isKids) {
+          spmKidsBtn.classList.add('kids-on');
+        } else {
+          spmKidsBtn.classList.remove('kids-on');
+        }
+      };
+    }
+    var spmSaveBtn = document.getElementById('spm-save-btn');
+    if (spmSaveBtn) {
+      spmSaveBtn.onclick = function () {
+        saveProfileFromModal();
+      };
+    }
+    var spmCancelBtn = document.getElementById('spm-cancel-btn');
+    if (spmCancelBtn) {
+      spmCancelBtn.onclick = function () {
+        closeProfileFormModal();
+      };
+    }
+    var spmDeleteBtn = document.getElementById('spm-delete-btn');
+    if (spmDeleteBtn) {
+      spmDeleteBtn.onclick = function () {
+        deleteProfileFromModal();
+      };
+    }
+    
     // Scroll lock to prevent cut-off of Hero when focused
     var homeScroll = document.getElementById('home-scroll');
     if (homeScroll) {
@@ -3767,13 +3806,89 @@
   }
 
   function executeLoginWizard() {
+    if (state.loginPending) {
+      return;
+    }
+
     var code = state.wizardValues.portal;
     var user = state.wizardValues.username;
     var pass = state.wizardValues.password;
     var statusNode = document.getElementById('login-wizard-status');
 
-    nameNode.textContent = portal.name || portal.portalCode || 'Resolved portal';
-    urlNode.textContent = normalizeBaseUrl(portal.baseUrl || '');
+    if (!code || !user || !pass) {
+      if (statusNode) {
+        statusNode.textContent = 'All fields are required';
+        statusNode.style.color = '#ff3344';
+      }
+      return;
+    }
+
+    state.loginRequestId = (state.loginRequestId || 0) + 1;
+    var requestId = state.loginRequestId;
+
+    setLoginPending(true);
+    if (statusNode) {
+      statusNode.textContent = 'Validating server identity...';
+      statusNode.style.color = '#ffffff';
+    }
+
+    apiValidatePortalCode(code, function (portal) {
+      if (requestId !== state.loginRequestId) {
+        return;
+      }
+
+      if (statusNode) {
+        statusNode.textContent = 'Connecting to ' + (portal.name || portal.portalCode || 'portal') + '...';
+        statusNode.style.color = '#ffffff';
+      }
+
+      apiAuthenticate(portal.baseUrl, user, pass, function (authRes) {
+        if (requestId !== state.loginRequestId) {
+          return;
+        }
+
+        var session = {
+          portalCode: portal.portalCode,
+          portalBaseUrl: portal.baseUrl,
+          serverName: portal.name,
+          username: user,
+          userInfo: authRes.user_info,
+          serverInfo: authRes.server_info,
+          authenticatedAt: new Date().toISOString()
+        };
+
+        // Create default profiles if missing
+        var profiles = [
+          { id: 'primary', name: user, avatarSeed: user.slice(0, 2).toUpperCase() },
+          { id: 'kids', name: 'Kids', avatarSeed: 'KD', isKids: true }
+        ];
+
+        state.session = session;
+        state.profiles = profiles;
+        saveSessionState(session, profiles);
+        setLoginPending(false);
+        
+        setupProfilesView();
+      }, function (err) {
+        if (requestId !== state.loginRequestId) {
+          return;
+        }
+        setLoginPending(false);
+        if (statusNode) {
+          statusNode.textContent = err || 'Xtream login failed.';
+          statusNode.style.color = '#ff3344';
+        }
+      });
+    }, function (err) {
+      if (requestId !== state.loginRequestId) {
+        return;
+      }
+      setLoginPending(false);
+      if (statusNode) {
+        statusNode.textContent = err || 'Portal validation failed.';
+        statusNode.style.color = '#ff3344';
+      }
+    });
   }
 
   function setLoginPending(isPending) {
@@ -4176,133 +4291,7 @@
     updateFocusUI();
   }
 
-  function clearProfileFormErrors() {
-    var nameNode = document.getElementById('profile-form-name');
-    var avatarNode = document.getElementById('profile-form-avatar');
-    var nameErrorNode = document.getElementById('profile-form-name-error');
-    var avatarErrorNode = document.getElementById('profile-form-avatar-error');
 
-    if (nameNode) nameNode.classList.remove('input-error');
-    if (avatarNode) avatarNode.classList.remove('input-error');
-    if (nameErrorNode) nameErrorNode.textContent = '';
-    if (avatarErrorNode) avatarErrorNode.textContent = '';
-  }
-
-  function setProfileFormFieldError(fieldId, message) {
-    var inputNode = document.getElementById('profile-form-' + fieldId);
-    var errorNode = document.getElementById('profile-form-' + fieldId + '-error');
-    if (inputNode) {
-      inputNode.classList.add('input-error');
-    }
-    if (errorNode) {
-      errorNode.textContent = message || '';
-    }
-  }
-
-  function setProfileFormStatus(message, tone) {
-    var statusNode = document.getElementById('profile-form-status');
-    if (!statusNode) return;
-    statusNode.textContent = message || '';
-    statusNode.className = 'status-text status-text--' + (tone || 'idle');
-  }
-
-  function syncProfileFormToggle() {
-    var toggleNode = document.getElementById('profile-form-kids');
-    if (!toggleNode) return;
-
-    toggleNode.textContent = 'Kids Mode: ' + (state.profileFormDraft.isKids ? 'On' : 'Off');
-    if (state.profileFormDraft.isKids) {
-      toggleNode.classList.add('profile-form-toggle--active');
-    } else {
-      toggleNode.classList.remove('profile-form-toggle--active');
-    }
-  }
-
-  function openProfileFormModal() {
-    state.profileFormDraft = {
-      name: '',
-      avatarSeed: '',
-      isKids: false
-    };
-
-    document.getElementById('profile-form-name').value = '';
-    document.getElementById('profile-form-avatar').value = '';
-    clearProfileFormErrors();
-    syncProfileFormToggle();
-    setProfileFormStatus('Create up to 6 local profiles for this account.', 'idle');
-
-    document.getElementById('profile-form-modal').classList.remove('hidden');
-    state.focusedPanel = 'profile-form';
-    state.focusedIndex = 0;
-    updateFocusUI();
-  }
-
-  function closeProfileFormModal(keepProfilePanel) {
-    document.getElementById('profile-form-modal').classList.add('hidden');
-    clearProfileFormErrors();
-    setProfileFormStatus('Create up to 6 local profiles for this account.', 'idle');
-
-    if (!keepProfilePanel) {
-      state.focusedPanel = 'profiles';
-      state.focusedIndex = state.profiles.length;
-      updateFocusUI();
-    }
-  }
-
-  function saveNewProfile() {
-    var draftName = String(document.getElementById('profile-form-name').value || '').trim();
-    var draftAvatar = sanitizeProfileInitials(document.getElementById('profile-form-avatar').value || '');
-
-    clearProfileFormErrors();
-
-    if (!draftName) {
-      setProfileFormFieldError('name', 'Profile name is required.');
-      setProfileFormStatus('Add a profile name before saving.', 'error');
-      return;
-    }
-
-    if (draftName.length < 2) {
-      setProfileFormFieldError('name', 'Profile name must be at least 2 characters.');
-      setProfileFormStatus('Profile name is too short.', 'error');
-      return;
-    }
-
-    if (state.profiles.length >= 6) {
-      setProfileFormStatus('A maximum of 6 local profiles is supported on this device.', 'error');
-      return;
-    }
-
-    for (var i = 0; i < state.profiles.length; i++) {
-      if (state.profiles[i].name.toLowerCase() === draftName.toLowerCase()) {
-        setProfileFormFieldError('name', 'A profile with this name already exists.');
-        setProfileFormStatus('Use a different profile name.', 'error');
-        return;
-      }
-    }
-
-    if (!draftAvatar) {
-      draftAvatar = deriveProfileInitials(draftName);
-    }
-
-    if (!draftAvatar) {
-      setProfileFormFieldError('avatar', 'Enter initials or use a clearer profile name.');
-      setProfileFormStatus('Initials could not be derived from the profile name.', 'error');
-      return;
-    }
-
-    var newProfile = {
-      id: buildProfileId(),
-      name: draftName,
-      avatarSeed: draftAvatar,
-      isKids: !!state.profileFormDraft.isKids
-    };
-
-    state.profiles.push(newProfile);
-    saveSessionState(state.session, state.profiles);
-    closeProfileFormModal(true);
-    setupProfilesView(state.profiles.length - 1);
-    setProfilesStatus('Profile "' + newProfile.name + '" added successfully.');
-  }
 
   function selectProfile(profile) {
     state.selectedProfile = profile;
@@ -5543,7 +5532,7 @@
         }
       } else if (code === 37) { // ArrowLeft
         state.focusedPanel = 'catalog-sidebar';
-        state.focusedIndex = 5; // Settings sidebar item index
+        state.focusedIndex = 6; // Settings sidebar item index
         updateFocusUI();
         handled = true;
       } else if (code === 39) { // ArrowRight
@@ -5606,7 +5595,7 @@
           handled = true;
         } else {
           state.focusedPanel = 'catalog-sidebar';
-          state.focusedIndex = 3; // Search index is 3
+          state.focusedIndex = 4; // Search index is 4
           handled = true;
         }
       } else if (code === 39 && state.focusedIndex < items.length - 1) {
@@ -5752,7 +5741,7 @@
           handled = true;
         } else {
           state.focusedPanel = 'catalog-sidebar';
-          state.focusedIndex = 4; // Watchlist index is 4
+          state.focusedIndex = 5; // Watchlist index is 5
           handled = true;
         }
       } else if (code === 39 && state.focusedIndex < items.length - 1) {
@@ -5785,7 +5774,7 @@
           state.focusedIndex--;
         } else {
           state.focusedPanel = 'catalog-sidebar';
-          state.focusedIndex = 4;
+          state.focusedIndex = 5; // Watchlist index is 5
         }
         handled = true;
       } else if (code === 39) {
@@ -5801,6 +5790,10 @@
 
   // KEYBOARD OR TELEVISION REMOTE CONTROLLER HANDLER
   window.addEventListener('keydown', function (event) {
+    if (state.loginPending) {
+      event.preventDefault();
+      return;
+    }
     var code = event.keyCode || event.which;
     var handled = false;
 
@@ -5818,8 +5811,11 @@
       } else if (state.focusedPanel === 'player') {
         closePlayer();
         handled = true;
-      } else if (state.focusedPanel === 'profile-form') {
-        closeProfileFormModal(false);
+      } else if (state.focusedPanel === 'settings-profile-modal') {
+        closeProfileFormModal();
+        handled = true;
+      } else if (state.focusedPanel === 'profile-name-keyboard') {
+        closeProfileNameKeyboard(false);
         handled = true;
       } else if (state.focusedPanel === 'login') {
         setupWelcomeView();
@@ -5883,7 +5879,29 @@
     var items = getFocusableElements();
     var gridColumns = getCatalogGridColumnCount();
 
-    if (isDetailPanel(state.focusedPanel)) {
+    if (state.focusedPanel === 'settings-profile-modal') {
+      if (code === 38) { // ArrowUp
+        if (state.profileModal.focusIndex > 0) {
+          state.profileModal.focusIndex--;
+          updateProfileModalFocus();
+        }
+        handled = true;
+      } else if (code === 40) { // ArrowDown
+        var visibleItems = getVisibleModalItems();
+        if (state.profileModal.focusIndex < visibleItems.length - 1) {
+          state.profileModal.focusIndex++;
+          updateProfileModalFocus();
+        }
+        handled = true;
+      } else if (code === 13) { // Enter Key
+        var visibleItems = getVisibleModalItems();
+        var activeEl = visibleItems[state.profileModal.focusIndex];
+        if (activeEl) {
+          activeEl.click();
+        }
+        handled = true;
+      }
+    } else if (isDetailPanel(state.focusedPanel)) {
       handled = handleDetailNavigation(code, items);
     } else if (isHomePanel(state.focusedPanel)) {
       handled = handleHomeNavigation(code, items);
@@ -5891,6 +5909,8 @@
       handled = handleSearchNavigation(code, items);
     } else if (isWatchlistPanel(state.focusedPanel)) {
       handled = handleWatchlistNavigation(code, items);
+    } else if (isSettingsPanel(state.focusedPanel)) {
+      handled = handleSettingsNavigation(code, items);
     }
 
     if (!handled && code === 38) { // ArrowUp
@@ -5904,6 +5924,15 @@
             var targetRowLength = rows[targetRow].length;
             var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'profile-name-keyboard') {
+          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+          if (pPos.row > 0) {
+            var targetRow = pPos.row - 1;
+            var targetRowLength = profileKeyboardRows[targetRow].length;
+            var targetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (targetRowLength - 1));
+            state.focusedIndex = getProfileKeyboardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
         } else if (state.focusedPanel === 'catalog-channels') {
@@ -5931,6 +5960,15 @@
             var targetRowLength = rows[targetRow].length;
             var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'profile-name-keyboard') {
+          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
+          if (pPos.row < profileKeyboardRows.length - 1) {
+            var targetRow = pPos.row + 1;
+            var targetRowLength = profileKeyboardRows[targetRow].length;
+            var targetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (targetRowLength - 1));
+            state.focusedIndex = getProfileKeyboardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
         } else if (state.focusedPanel === 'catalog-channels') {
@@ -5990,11 +6028,6 @@
         handled = true;
       } else if (state.focusedPanel === 'profiles') {
         // Left horizontal profile selection
-        if (items.length > 0 && state.focusedIndex > 0) {
-          state.focusedIndex--;
-          handled = true;
-        }
-      } else if (state.focusedPanel === 'profile-form') {
         if (items.length > 0 && state.focusedIndex > 0) {
           state.focusedIndex--;
           handled = true;
@@ -6059,12 +6092,8 @@
           state.focusedIndex++;
           handled = true;
         }
-      } else if (state.focusedPanel === 'profile-form') {
-        if (items.length > 0 && state.focusedIndex < items.length - 1) {
-          state.focusedIndex++;
-          handled = true;
-        }
       }
+
     } else if (code === 13) { // Enter Key
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
