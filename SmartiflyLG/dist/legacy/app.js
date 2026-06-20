@@ -5,6 +5,7 @@
   var SELECTED_PROFILE_KEY = 'smartifly-lg-selected-profile';
   var PORTAL_KEY = 'smartifly-lg-last-portal';
   var FAVORITES_KEY = 'smartifly-lg-favorites';
+  var HISTORY_KEY = 'smartifly-lg-history';
 
   // --- EPG STATE & TIMER ---
   var epgTimer = null;
@@ -32,11 +33,68 @@
     keyboardMode: 'letters',
     activationTimer: null,
     activationDeviceId: '',
+    profileModalCaller: 'settings',
     profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters' }
   };
 
+  var MAX_HOME_RAIL_ITEMS = 12;
+  var MAX_SEARCH_RAIL_ITEMS = 12;
+  var SEARCH_KEYBOARD_LAYOUT = [
+    ['1', '2', '3', '4', '5'],
+    ['6', '7', '8', '9', '0'],
+    ['a', 'b', 'c', 'd', 'e'],
+    ['f', 'g', 'h', 'i', 'j'],
+    ['k', 'l', 'm', 'n', 'o'],
+    ['p', 'q', 'r', 's', 't'],
+    ['u', 'v', 'w', 'x', 'y'],
+    ['z', '-', '.', 'shift', 'backspace'],
+    ['clear', 'space', 'search']
+  ];
+
   // --- API CLIENT SETUP ---
   var API_BASE_URL = "http://10.20.30.30:5000/v1";
+
+  function createDefaultProfiles(username) {
+    var cleanUsername = String(username || '').trim();
+    var primaryName = cleanUsername.length > 0 ? cleanUsername : 'Primary';
+
+    return [
+      {
+        id: 'primary',
+        name: primaryName,
+        avatarSeed: primaryName.slice(0, 2).toUpperCase()
+      },
+      {
+        id: 'kids',
+        name: 'Kids',
+        avatarSeed: 'KD',
+        isKids: true
+      }
+    ];
+  }
+
+  function buildProfileId() {
+    return 'profile-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function sanitizeProfileInitials(value) {
+    return String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 2);
+  }
+
+  function deriveProfileInitials(name) {
+    var clean = String(name || '').trim();
+    if (!clean) return '';
+
+    var parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return sanitizeProfileInitials(parts[0].charAt(0) + parts[1].charAt(0));
+    }
+
+    return sanitizeProfileInitials(clean.slice(0, 2));
+  }
 
   function normalizeBaseUrl(url) {
     if (!url) return '';
@@ -529,9 +587,24 @@
     }
   }
 
+  function loadWatchHistoryState() {
+    try {
+      var raw = localStorage.getItem(HISTORY_KEY);
+      state.watchHistory = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      state.watchHistory = [];
+    }
+  }
+
   function saveFavoritesState() {
     try {
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites || {}));
+    } catch (e) {}
+  }
+
+  function saveWatchHistoryState() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(state.watchHistory || []));
     } catch (e) {}
   }
 
@@ -570,15 +643,209 @@
     return 'Movie';
   }
 
+  function updateWatchHistory(mode, item, extra) {
+    if (!item) return;
+
+    var entry = {
+      id: String(getCatalogItemId(item, mode)),
+      mode: mode,
+      portalCode: state.session && state.session.portalCode ? state.session.portalCode : 'default',
+      profileId: state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default',
+      name: getCatalogItemName(item),
+      artwork: getCatalogItemArtwork(item, mode),
+      item: item,
+      playedAt: new Date().toISOString(),
+      meta: extra || ''
+    };
+    var deduped = [];
+    var i;
+
+    deduped.push(entry);
+    for (i = 0; i < state.watchHistory.length; i++) {
+      var existing = state.watchHistory[i];
+      if (!existing) continue;
+      if (String(existing.id) === entry.id && existing.mode === entry.mode && existing.portalCode === entry.portalCode && existing.profileId === entry.profileId) {
+        continue;
+      }
+      deduped.push(existing);
+      if (deduped.length >= MAX_HOME_RAIL_ITEMS + 3) break;
+    }
+
+    state.watchHistory = deduped;
+    saveWatchHistoryState();
+  }
+
+  function getCurrentProfileHistoryEntries() {
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : 'default';
+    var profileId = state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default';
+    var entries = [];
+
+    for (var i = 0; i < state.watchHistory.length; i++) {
+      var entry = state.watchHistory[i];
+      if (!entry) continue;
+      if (entry.portalCode === portalCode && entry.profileId === profileId) {
+        entries.push(entry);
+      }
+      if (entries.length >= MAX_HOME_RAIL_ITEMS) break;
+    }
+    return entries;
+  }
+
+  function isValidImageUrl(url) {
+    if (!url) return false;
+    var s = String(url).trim().toLowerCase();
+    return s !== '' && s !== 'null' && s !== 'undefined' && s !== 'none';
+  }
+
+  function normalizeLegacyImageUrl(url) {
+    if (!isValidImageUrl(url)) return '';
+    return String(url).trim().replace(/^https:\/\/image\.tmdb\.org/i, 'http://image.tmdb.org');
+  }
+
+  function pickLegacyImageValue(value) {
+    if (!value) return '';
+
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) {
+        var arrUrl = normalizeLegacyImageUrl(value[i]);
+        if (arrUrl) return arrUrl;
+      }
+      return '';
+    }
+
+    if (typeof value === 'string') {
+      var raw = value.trim();
+      if (!raw) return '';
+
+      if ((raw.charAt(0) === '[' && raw.charAt(raw.length - 1) === ']') || (raw.charAt(0) === '"' && raw.charAt(raw.length - 1) === '"')) {
+        try {
+          return pickLegacyImageValue(JSON.parse(raw));
+        } catch (e) {}
+      }
+
+      return normalizeLegacyImageUrl(raw);
+    }
+
+    return '';
+  }
+
+  function getDetailPosterArtwork(item, detailInfo, mode) {
+    if (detailInfo && detailInfo.info) {
+      var infoPoster = pickLegacyImageValue(detailInfo.info.movie_image) ||
+        pickLegacyImageValue(detailInfo.info.cover) ||
+        pickLegacyImageValue(detailInfo.info.cover_big);
+      if (infoPoster) return infoPoster;
+    }
+    if (item) {
+      var itemPoster = pickLegacyImageValue(item.movie_image) ||
+        pickLegacyImageValue(item.cover) ||
+        pickLegacyImageValue(item.cover_big);
+      if (itemPoster) return itemPoster;
+    }
+    return pickLegacyImageValue(getCatalogItemArtwork(item, mode));
+  }
+
   function getBackdropArtwork(item, detailInfo, mode) {
     if (detailInfo && detailInfo.info) {
-      if (Array.isArray(detailInfo.info.backdrop_path) && detailInfo.info.backdrop_path.length > 0) {
-        return detailInfo.info.backdrop_path[0];
-      }
-      if (detailInfo.info.cover_big) return detailInfo.info.cover_big;
-      if (detailInfo.info.movie_image) return detailInfo.info.movie_image;
+      var infoBackdrop = pickLegacyImageValue(detailInfo.info.backdrop_path) ||
+        pickLegacyImageValue(detailInfo.info.backdrop);
+      if (infoBackdrop) return infoBackdrop;
     }
-    return getCatalogItemArtwork(item, mode);
+    if (item) {
+      var itemBackdrop = pickLegacyImageValue(item.backdrop_path) ||
+        pickLegacyImageValue(item.backdrop);
+      if (itemBackdrop) return itemBackdrop;
+    }
+    return getDetailPosterArtwork(item, detailInfo, mode);
+  }
+
+  function escapeCssUrl(url) {
+    return String(url).replace(/"/g, '%22');
+  }
+
+  function safeTrim(value) {
+    return value == null ? '' : String(value).trim();
+  }
+
+  function getDetailTrailerUrl(item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    return safeTrim(info.youtube_trailer || (item && item.youtube_trailer) || '');
+  }
+
+  function getYouTubeVideoId(urlOrId) {
+    var trimmed = safeTrim(urlOrId);
+    if (!trimmed) return null;
+    if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+    var ytRegexes = [
+      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i,
+      /embed\/([^"&?\/\s]{11})/i
+    ];
+
+    for (var i = 0; i < ytRegexes.length; i++) {
+      var match = trimmed.match(ytRegexes[i]);
+      if (match && match[1]) return match[1];
+    }
+
+    return null;
+  }
+
+  function getYouTubeEmbedUrl(urlOrId) {
+    var youtubeId = getYouTubeVideoId(urlOrId);
+    if (!youtubeId) return null;
+    return 'https://www.youtube.com/embed/' + youtubeId + '?autoplay=1&rel=0&playsinline=1';
+  }
+
+  function buildTrailerEntries(item, detailInfo) {
+    var trailerUrl = getDetailTrailerUrl(item, detailInfo);
+    if (!trailerUrl) return [];
+
+    var backdrop = getBackdropArtwork(item, detailInfo, 'series');
+    var poster = getDetailPosterArtwork(item, detailInfo, 'series');
+
+    return [{
+      id: 'trailer-' + (item && item.series_id ? item.series_id : 'detail'),
+      stream_id: 'trailer',
+      title: 'Official Trailer',
+      episode_num: 'Trailer',
+      container_extension: 'mp4',
+      __isTrailer: true,
+      __trailerUrl: trailerUrl,
+      info: {
+        duration: 'Trailer',
+        movie_image: backdrop || poster || '',
+        plot: 'Watch the trailer.'
+      }
+    }];
+  }
+
+  function applyDetailBackdrop(backdropArt, fallbackArt) {
+    var detailView = document.querySelector('#view-content-detail .content-detail-view');
+    var backdrop = document.getElementById('content-detail-backdrop');
+    var backdropImage = document.getElementById('content-detail-backdrop-image');
+    var primary = normalizeLegacyImageUrl(backdropArt);
+    var fallback = normalizeLegacyImageUrl(fallbackArt);
+    var activeUrl = primary || fallback;
+
+    if (detailView) {
+      detailView.style.backgroundImage = 'none';
+    }
+
+    if (!backdrop) return;
+
+    backdrop.style.backgroundImage = activeUrl ? 'url("' + escapeCssUrl(activeUrl) + '")' : 'none';
+    backdrop.style.backgroundPosition = 'center';
+    backdrop.style.backgroundSize = 'cover';
+    backdrop.style.backgroundRepeat = 'no-repeat';
+    backdrop.style.backgroundAttachment = 'scroll';
+
+    if (backdropImage) {
+      backdropImage.onload = null;
+      backdropImage.onerror = null;
+      backdropImage.style.opacity = '0';
+      backdropImage.style.display = 'none';
+      backdropImage.removeAttribute('src');
+    }
   }
 
   function normalizeSeriesSeasons(detailInfo) {
@@ -591,9 +858,13 @@
         var seasonEntry = detailInfo.seasons[i] || {};
         var rawSeasonNo = seasonEntry.season_number != null ? seasonEntry.season_number : seasonEntry.season;
         var key = String(rawSeasonNo != null ? rawSeasonNo : (i + 1));
+        var seasonLabel = seasonEntry.name || ('Season ' + key);
+        if (/special/i.test(seasonLabel) || key === '0') {
+          seasonLabel = 'Trailer';
+        }
         seasonLookup[key] = {
           key: key,
-          label: seasonEntry.name || ('Season ' + key),
+          label: seasonLabel,
           seasonNumber: rawSeasonNo != null ? rawSeasonNo : (i + 1)
         };
       }
@@ -605,7 +876,7 @@
       if (!seasonLookup[seasonKey]) {
         seasonLookup[seasonKey] = {
           key: String(seasonKey),
-          label: 'Season ' + seasonKey,
+          label: seasonKey === '0' ? 'Trailer' : ('Season ' + seasonKey),
           seasonNumber: parseInt(seasonKey, 10) || seasonKey
         };
       }
@@ -630,6 +901,9 @@
   function getEpisodesForSeason(detailInfo, seasonKey) {
     var map = detailInfo && detailInfo.episodes ? detailInfo.episodes : {};
     var list = map && map[seasonKey] ? map[seasonKey] : [];
+    if ((seasonKey === '0' || seasonKey === 'trailer') && (!Array.isArray(list) || !list.length)) {
+      list = buildTrailerEntries(state.detailItem, detailInfo);
+    }
     return Array.isArray(list) ? list : [];
   }
 
@@ -645,6 +919,7 @@
   function getEpisodeMeta(episode) {
     var bits = [];
     if (!episode) return '';
+    if (episode.__isTrailer) return 'Trailer';
     if (episode.episode_num != null) bits.push('Episode ' + episode.episode_num);
     if (episode.info && episode.info.duration) bits.push(episode.info.duration);
     if (episode.info && episode.info.release_date) bits.push(episode.info.release_date);
@@ -709,7 +984,7 @@
   }
 
   function setSidebarActiveById(sidebarId) {
-    var sidebarIds = ['sidebar-live', 'sidebar-movies', 'sidebar-series', 'sidebar-search', 'sidebar-watchlist', 'sidebar-settings'];
+    var sidebarIds = ['sidebar-home', 'sidebar-live', 'sidebar-movies', 'sidebar-series', 'sidebar-search', 'sidebar-watchlist', 'sidebar-settings'];
 
     for (var i = 0; i < sidebarIds.length; i++) {
       var item = document.getElementById(sidebarIds[i]);
@@ -747,8 +1022,44 @@
     return activeMode === 'series' ? item.series_id : item.stream_id;
   }
 
+  function cleanContentTitle(title, item) {
+    if (!title) return '';
+    var cleaned = String(title);
+
+    // Extract year suffix (e.g. (2010), [2010], or just 2010)
+    var yearMatch = cleaned.match(/(?:[ \-\(_\[]|\b)(19\d{2}|20\d{2})(?:\b|[\)\]_]|$)/);
+    if (yearMatch) {
+      var year = yearMatch[1];
+      if (item && !item.releaseDate && !item.releasedate) {
+        item.releaseDate = year;
+      }
+    }
+
+    // Remove year suffixes from the end of the title
+    cleaned = cleaned.replace(/(?:\s*[\-\(_\[]|\s+)(19\d{2}|20\d{2})(?:\s*[\)\]]|\s*)$/gi, '');
+
+    // Common junk tags to strip
+    var junkRegex = /\b(?:1080p?|720p?|2160p|4k|uhd|fhd|sd|3d|hevc|x265|x264|h264|h265|bluray|bdrip|webrip|web-?dl|dvdrip|hdtv|dd5\.1|5\.1|dual|multi|dublaj|dubbed|subbed|altyazılı|alt|hd|fhd)\b/gi;
+    cleaned = cleaned.replace(junkRegex, '');
+
+    // Remove specific language tags like -TR-, -EN-, -TR-EN-
+    cleaned = cleaned.replace(/[-_]?(?:TR|EN|TR[-_]EN|EN[-_]TR)[-_]?/gi, '');
+
+    // Clean up empty parentheses/brackets
+    cleaned = cleaned.replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, '');
+
+    // Clean up trailing and leading separators and whitespace
+    cleaned = cleaned.replace(/^[\s\-\.\_\/\\|:]+|[\s\-\.\_\/\\|:]+$/g, '');
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    cleaned = cleaned.replace(/\s*-\s*-\s*/g, ' - ');
+    cleaned = cleaned.replace(/^[\s\-\.\_\/\\|:]+|[\s\-\.\_\/\\|:]+$/g, '');
+
+    return cleaned;
+  }
+
   function getCatalogItemName(item) {
-    return item && item.name ? item.name : 'Untitled';
+    if (!item || !item.name) return 'Untitled';
+    return cleanContentTitle(item.name, item);
   }
 
   function getCatalogItemArtwork(item, mode) {
@@ -852,8 +1163,7 @@
     var meta = document.getElementById('detail-main-meta');
     var summary = document.getElementById('detail-main-summary');
     var poster = document.getElementById('detail-poster-image');
-    var backdrop = document.getElementById('content-detail-backdrop');
-    var artwork = getCatalogItemArtwork(item, mode);
+    var artwork = getDetailPosterArtwork(item, detailInfo, mode);
     var backdropArt = getBackdropArtwork(item, detailInfo, mode);
 
     typeLabel.textContent = getContentTypeLabel(mode).toUpperCase();
@@ -869,16 +1179,7 @@
       poster.removeAttribute('src');
     }
 
-    if (backdropArt) {
-      backdrop.style.backgroundImage =
-        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
-        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%), ' +
-        'url("' + String(getLegacyArtworkUrl(backdropArt)).replace(/"/g, '%22') + '")';
-    } else {
-      backdrop.style.backgroundImage =
-        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
-        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%)';
-    }
+    applyDetailBackdrop(backdropArt, artwork);
 
     updateDetailFavoriteButton();
   }
@@ -905,6 +1206,44 @@
     }
   }
 
+  function parseEpisodeTitleInfo(title, index, seriesName) {
+    var cleanTitle = title || '';
+    if (seriesName) {
+      var prefix = seriesName + ' - ';
+      if (cleanTitle.indexOf(prefix) === 0) {
+        cleanTitle = cleanTitle.substring(prefix.length);
+      } else if (cleanTitle.indexOf(seriesName) === 0) {
+        cleanTitle = cleanTitle.substring(seriesName.length).replace(/^[ \-\:\.]+/g, '');
+      }
+    }
+    var code = '';
+    var name = cleanTitle;
+    var matchSE = cleanTitle.match(/(S\d+E\d+)/i);
+    if (matchSE) {
+      code = matchSE[1].toUpperCase();
+      name = cleanTitle.replace(matchSE[1], '').replace(/^[ \-\:\.]+|[ \-\:\.]+$/g, '');
+    } else {
+      var matchE = cleanTitle.match(/(E\d+)/i);
+      if (matchE) {
+        code = matchE[1].toUpperCase();
+        name = cleanTitle.replace(matchE[1], '').replace(/^[ \-\:\.]+|[ \-\:\.]+$/g, '');
+      } else {
+        var matchX = cleanTitle.match(/(\d+x\d+)/i);
+        if (matchX) {
+          code = matchX[1];
+          name = cleanTitle.replace(matchX[1], '').replace(/^[ \-\:\.]+|[ \-\:\.]+$/g, '');
+        }
+      }
+    }
+    if (!name.trim()) {
+      name = 'Episode ' + (index + 1);
+    }
+    return {
+      code: code,
+      name: name
+    };
+  }
+
   function renderDetailEpisodes() {
     var container = document.getElementById('detail-episodes');
     container.innerHTML = '';
@@ -914,6 +1253,9 @@
       return;
     }
 
+    var backdropArt = getBackdropArtwork(state.detailItem, state.detailInfo, state.detailMode);
+    var seriesName = getCatalogItemName(state.detailItem);
+
     for (var i = 0; i < state.detailEpisodes.length; i++) {
       var episode = state.detailEpisodes[i];
       var button = document.createElement('button');
@@ -921,22 +1263,59 @@
       button.setAttribute('tabindex', '-1');
       button.setAttribute('data-index', i);
 
-      var summary = stripHtml((episode.info && episode.info.plot) || episode.plot || '');
-      if (summary.length > 180) summary = summary.slice(0, 180) + '...';
+      // Extract image path (still image first, then backdrop fallback)
+      var imgUrl = '';
+      if (isValidImageUrl(episode.still)) {
+        imgUrl = normalizeLegacyImageUrl(episode.still);
+      } else if (isValidImageUrl(episode.still_path)) {
+        imgUrl = normalizeLegacyImageUrl(episode.still_path);
+      } else if (episode.info && isValidImageUrl(episode.info.still_path)) {
+        imgUrl = normalizeLegacyImageUrl(episode.info.still_path);
+      } else if (episode.info && isValidImageUrl(episode.info.movie_image)) {
+        imgUrl = normalizeLegacyImageUrl(episode.info.movie_image);
+      } else if (isValidImageUrl(backdropArt)) {
+        imgUrl = normalizeLegacyImageUrl(backdropArt);
+      }
 
-      var html = '<div class="content-detail-episode-label">EPISODE</div>';
-      html += '<div class="content-detail-episode-title">' + escapeHtml(getEpisodeTitle(episode, i)) + '</div>';
-      if (getEpisodeMeta(episode)) {
-        html += '<div class="content-detail-episode-meta">' + escapeHtml(getEpisodeMeta(episode)) + '</div>';
+      // Parse title info to strip series prefix and obtain clean code and name
+      var titleInfo = parseEpisodeTitleInfo(episode.title || episode.name, i, seriesName);
+      var epCode = episode.__isTrailer ? 'TRAILER' : (titleInfo.code || ('EP ' + (episode.episode_num || (i + 1))));
+      var epName = episode.__isTrailer ? (safeTrim(episode.title || episode.name) || 'Official Trailer') : titleInfo.name;
+
+      var html = '<div class="episode-card-image-wrap">';
+      if (imgUrl) {
+        // Use background-image on a div to cover/fit perfectly in Chrome 38 without object-fit stretching.
+        // Include a hidden img tag with onerror to handle image loading failures.
+        html += '<div class="episode-card-image" style="background-image: url(\'' + String(imgUrl).replace(/'/g, '\\\'') + '\');">';
+        html += '  <img src="' + imgUrl + '" style="display:none;" onerror="this.parentNode.style.backgroundImage=\'url(./assets/fallback_image.jpeg)\'; this.onerror=null;" />';
+        html += '</div>';
+      } else {
+        html += '<div class="episode-card-image-placeholder"></div>';
       }
-      if (summary) {
-        html += '<div class="content-detail-episode-summary">' + escapeHtml(summary) + '</div>';
+      html += '  <div class="episode-card-badge">' + escapeHtml(epCode) + '</div>';
+      html += '</div>';
+      html += '<div class="episode-card-content">';
+      html += '  <div class="episode-card-title">' + escapeHtml(epName) + '</div>';
+      
+      var metaText = getEpisodeMeta(episode);
+      if (metaText) {
+        metaText = metaText.replace(/^Episode \d+ • /i, '');
+        // Remove duplicate episode code from metadata line if present
+        metaText = metaText.replace(new RegExp('^' + epCode + '\\s*•?\\s*', 'i'), '');
+        html += '  <div class="episode-card-meta">' + escapeHtml(metaText) + '</div>';
       }
+      html += '</div>';
+
       button.innerHTML = html;
 
       button.onclick = function () {
         var idx = parseInt(this.getAttribute('data-index'), 10);
-        playSeriesEpisode(state.detailEpisodes[idx], getCatalogItemName(state.detailItem));
+        var selectedEpisode = state.detailEpisodes[idx];
+        if (selectedEpisode && selectedEpisode.__isTrailer) {
+          playDetailTrailer(selectedEpisode, getCatalogItemName(state.detailItem));
+          return;
+        }
+        playSeriesEpisode(selectedEpisode, getCatalogItemName(state.detailItem));
       };
 
       container.appendChild(button);
@@ -962,6 +1341,22 @@
     var section = document.getElementById('detail-series-section');
 
     state.detailSeasons = normalizeSeriesSeasons(detailInfo);
+    if (getDetailTrailerUrl(state.detailItem, detailInfo)) {
+      var hasTrailerSeason = false;
+      for (var i = 0; i < state.detailSeasons.length; i++) {
+        if (state.detailSeasons[i].key === '0' || state.detailSeasons[i].key === 'trailer' || state.detailSeasons[i].label === 'Trailer') {
+          hasTrailerSeason = true;
+          break;
+        }
+      }
+      if (!hasTrailerSeason) {
+        state.detailSeasons.unshift({
+          key: 'trailer',
+          label: 'Trailer',
+          seasonNumber: -1
+        });
+      }
+    }
     state.detailSelectedSeasonIndex = 0;
     state.detailEpisodes = [];
 
@@ -975,7 +1370,15 @@
   }
 
   function renderContentDetail(item, mode, detailInfo) {
+    var detailView = document.querySelector('#view-content-detail .content-detail-view');
     state.detailInfo = detailInfo || null;
+
+    if (detailView) {
+      detailView.classList.remove('detail-mode-movie');
+      detailView.classList.remove('detail-mode-series');
+      detailView.classList.add(mode === 'series' ? 'detail-mode-series' : 'detail-mode-movie');
+    }
+
     renderDetailActionCopy(mode, item, detailInfo);
 
     if (mode === 'series') {
@@ -1045,6 +1448,8 @@
     state.detailEpisodes = [];
     if ((state.detailReturnViewId || 'view-catalog') === 'view-watchlist') {
       renderWatchlist();
+    } else if ((state.detailReturnViewId || 'view-catalog') === 'view-catalog' && state.detailReturnPanel === 'home-rails') {
+      refreshHomeView();
     }
     state.focusedPanel = state.detailReturnPanel || 'catalog-channels';
     state.focusedIndex = state.detailReturnIndex || 0;
@@ -1098,17 +1503,6 @@
     return card;
   }
 
-  function applySearchModeButtonState() {
-    var ids = ['search-mode-live', 'search-mode-movies', 'search-mode-series'];
-    for (var i = 0; i < ids.length; i++) {
-      var el = document.getElementById(ids[i]);
-      if (!el) continue;
-      el.classList.remove('active');
-    }
-    var activeEl = document.getElementById('search-mode-' + state.searchMode);
-    if (activeEl) activeEl.classList.add('active');
-  }
-
   function setWatchlistFilterButtonsActive() {
     var ids = ['watchlist-filter-all', 'watchlist-filter-movies', 'watchlist-filter-series'];
     for (var i = 0; i < ids.length; i++) {
@@ -1123,8 +1517,16 @@
   function getFilterableSearchText(item, mode) {
     var bits = [
       getCatalogItemName(item),
+      item && item.name ? String(item.name) : '',
       item && item.genre ? item.genre : '',
-      getCatalogItemSummary(item, mode)
+      getCatalogItemSummary(item, mode),
+      item && item.category_id ? String(item.category_id) : '',
+      item && item.releaseDate ? String(item.releaseDate) : '',
+      item && item.releasedate ? String(item.releasedate) : '',
+      item && item.rating ? String(item.rating) : '',
+      item && item.rating_5based ? String(item.rating_5based) : '',
+      item && item.added ? String(item.added) : '',
+      item && item.last_modified ? String(item.last_modified) : ''
     ];
     return bits.join(' ').toLowerCase();
   }
@@ -1141,98 +1543,519 @@
     return results;
   }
 
-  function renderSearchResults() {
-    var container = document.getElementById('search-results-grid');
-    var summary = document.getElementById('search-summary');
-    container.innerHTML = '';
+  function getSearchKeyboardRows() {
+    var shifted = !!state.searchKeyboardShifted;
+    var rows = [];
 
-    if (!state.searchQuery) {
-      summary.textContent = 'Choose a content type, enter a title, and search the portal catalog.';
-      container.innerHTML = '<div class="utility-empty">Enter a search term to begin.</div>';
-      return;
-    }
+    for (var i = 0; i < SEARCH_KEYBOARD_LAYOUT.length; i++) {
+      var rawRow = SEARCH_KEYBOARD_LAYOUT[i];
+      var row = [];
 
-    if (!state.searchResults.length) {
-      summary.textContent = 'No ' + getContentTypeLabel(state.searchMode).toLowerCase() + ' results matched "' + state.searchQuery + '".';
-      container.innerHTML = '<div class="utility-empty">No results found. Try a shorter title or switch content type.</div>';
-      return;
-    }
-
-    summary.textContent = state.searchResults.length + ' result' + (state.searchResults.length === 1 ? '' : 's') + ' in ' + getContentTypeLabel(state.searchMode) + ' for "' + state.searchQuery + '".';
-
-    for (var i = 0; i < state.searchResults.length; i++) {
-      container.appendChild(createMediaCard(state.searchResults[i], state.searchMode, i, function (idx) {
-        if (state.searchMode === 'live') {
-          playChannel(state.searchResults[idx], state.searchResults);
+      for (var j = 0; j < rawRow.length; j++) {
+        var value = rawRow[j];
+        if (value === 'shift') {
+          row.push({ action: 'shift', label: shifted ? 'LOWER' : 'UPPER', span: 1, accent: false });
+        } else if (value === 'backspace') {
+          row.push({ action: 'backspace', label: 'DEL', span: 1, accent: false });
+        } else if (value === 'clear') {
+          row.push({ action: 'clear', label: 'CLEAR', span: 1, accent: false });
+        } else if (value === 'space') {
+          row.push({ action: 'space', label: 'SPACE', span: 2, accent: false });
+        } else if (value === 'search') {
+          row.push({ action: 'search', label: 'SEARCH', span: 2, accent: true });
         } else {
-          showContentDetail(state.searchResults[idx], state.searchMode);
+          row.push({
+            action: 'char',
+            label: shifted ? String(value).toUpperCase() : String(value),
+            value: shifted ? String(value).toUpperCase() : String(value),
+            span: 1,
+            accent: false
+          });
         }
-      }));
+      }
+
+      rows.push(row);
+    }
+
+    state.searchKeyboardRows = rows;
+    return rows;
+  }
+
+  function getSearchKeyboardFlatIndex(row, col) {
+    var rows = state.searchKeyboardRows.length ? state.searchKeyboardRows : getSearchKeyboardRows();
+    var index = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (i === row) {
+        return index + Math.max(0, Math.min(col, rows[i].length - 1));
+      }
+      index += rows[i].length;
+    }
+    return 0;
+  }
+
+  function getSearchKeyboardPosition(flatIndex) {
+    var rows = state.searchKeyboardRows.length ? state.searchKeyboardRows : getSearchKeyboardRows();
+    var index = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (flatIndex < index + row.length) {
+        return { row: i, col: flatIndex - index };
+      }
+      index += row.length;
+    }
+    return { row: 0, col: 0 };
+  }
+
+  function getSearchCardArtwork(item, mode) {
+    var url = '';
+    if (!item) return '';
+
+    if (mode === 'movies') {
+      url = item.stream_icon || item.backdrop_path || item.direct_source || '';
+    } else if (mode === 'series') {
+      if (typeof item.backdrop_path === 'string' && item.backdrop_path) {
+        url = item.backdrop_path;
+      } else if (item.backdrop_path && item.backdrop_path.length) {
+        url = item.backdrop_path[0];
+      }
+      url = url || item.cover || '';
+    } else {
+      url = item.stream_icon || item.direct_source || '';
+    }
+
+    return normalizeLegacyImageUrl(url);
+  }
+
+  function getSearchCardMeta(item, mode) {
+    var bits = [];
+    if (mode !== 'live') {
+      var rDate = item.releaseDate || item.releasedate;
+      if (!rDate && item.name) {
+        var yearMatch = String(item.name).match(/(?:[ \-\(_\[]|\b)(19\d{2}|20\d{2})(?:\b|[\)\]_]|$)/);
+        if (yearMatch) {
+          rDate = yearMatch[1];
+        }
+      }
+
+      if (rDate) {
+        bits.push(String(rDate).split('-')[0]);
+      } else if (item.added) {
+        var addedStr = String(item.added);
+        if (/^\d+$/.test(addedStr)) {
+          var val = parseInt(addedStr, 10);
+          var date;
+          if (addedStr.length === 10) {
+            date = new Date(val * 1000);
+          } else if (addedStr.length === 13) {
+            date = new Date(val);
+          }
+          if (date && !isNaN(date.getTime())) {
+            bits.push(String(date.getFullYear()));
+          } else {
+            bits.push(addedStr.split('-')[0]);
+          }
+        } else {
+          bits.push(addedStr.split('-')[0]);
+        }
+      }
+      if (item.rating_5based || item.rating) {
+        bits.push('Rating ' + (item.rating_5based || item.rating));
+      }
+    } else if (item.category_id) {
+      bits.push('Category ' + item.category_id);
+    }
+
+    return bits;
+  }
+
+  function buildSearchSuggestionRails() {
+    var rails = [];
+    var preferredIds = ['movies', 'series', 'live'];
+
+    for (var i = 0; i < preferredIds.length; i++) {
+      var railId = preferredIds[i];
+      var section = null;
+      for (var j = 0; j < state.homeSections.length; j++) {
+        if (state.homeSections[j].id === railId) {
+          section = state.homeSections[j];
+          break;
+        }
+      }
+
+      if (!section || !section.entries || !section.entries.length) {
+        continue;
+      }
+
+      var items = [];
+      for (var k = 0; k < section.entries.length && k < MAX_SEARCH_RAIL_ITEMS; k++) {
+        items.push({
+          mode: section.entries[k].mode,
+          item: section.entries[k].item
+        });
+      }
+
+      rails.push({
+        id: railId,
+        label: section.title,
+        items: items
+      });
+    }
+
+    return rails;
+  }
+
+  function buildSearchResultRails(query) {
+    var q = String(query || '').trim();
+    if (!q) {
+      return buildSearchSuggestionRails();
+    }
+
+    var movieResults = filterSearchItems(state.searchCache.movies || [], q, 'movies').slice(0, MAX_SEARCH_RAIL_ITEMS);
+    var seriesResults = filterSearchItems(state.searchCache.series || [], q, 'series').slice(0, MAX_SEARCH_RAIL_ITEMS);
+    var liveResults = filterSearchItems(state.searchCache.live || [], q, 'live').slice(0, MAX_SEARCH_RAIL_ITEMS);
+
+    return [
+      {
+        id: 'movies',
+        label: 'Movies',
+        items: movieResults.map(function (item) { return { mode: 'movies', item: item }; })
+      },
+      {
+        id: 'series',
+        label: 'Series',
+        items: seriesResults.map(function (item) { return { mode: 'series', item: item }; })
+      },
+      {
+        id: 'live',
+        label: 'Live Channels',
+        items: liveResults.map(function (item) { return { mode: 'live', item: item }; })
+      }
+    ];
+  }
+
+  function updateSearchQueryDisplay() {
+    var node = document.getElementById('search-query-display');
+    if (!node) return;
+    node.textContent = state.searchQuery || 'Type a title, genre, or year';
+  }
+
+  function renderSearchKeyboard() {
+    var container = document.getElementById('search-keyboard');
+    var rows = getSearchKeyboardRows();
+    var html = '';
+
+    for (var i = 0; i < rows.length; i++) {
+      html += '<div class="legacy-search-keyboard-row">';
+      for (var j = 0; j < rows[i].length; j++) {
+        var key = rows[i][j];
+        var classes = 'focusable legacy-search-key';
+        if (key.accent) classes += ' legacy-search-key--accent';
+        if (key.span > 1) classes += ' legacy-search-key--span-' + key.span;
+        html += '<button type="button" tabindex="-1" class="' + classes + '" data-row="' + i + '" data-col="' + j + '">' + escapeHtml(key.label) + '</button>';
+      }
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+
+    var buttons = container.querySelectorAll('.legacy-search-key');
+    for (var idx = 0; idx < buttons.length; idx++) {
+      buttons[idx].onclick = function () {
+        var row = parseInt(this.getAttribute('data-row'), 10) || 0;
+        var col = parseInt(this.getAttribute('data-col'), 10) || 0;
+        activateSearchKeyboardKey(row, col);
+      };
     }
   }
 
-  function executeSearch() {
-    var queryInput = document.getElementById('search-query-input');
-    var query = queryInput ? queryInput.value.trim() : '';
-    var config = getCatalogConfig(state.searchMode);
-    var container = document.getElementById('search-results-grid');
+  function getSearchResultsCount() {
+    var total = 0;
+    for (var i = 0; i < state.searchRails.length; i++) {
+      total += state.searchRails[i].items.length;
+    }
+    return total;
+  }
 
-    state.searchQuery = query;
+  function findSearchRailInDirection(startIndex, direction) {
+    var index = startIndex;
+    while (index >= 0 && index < state.searchRails.length) {
+      if (state.searchRails[index] && state.searchRails[index].items && state.searchRails[index].items.length) {
+        return index;
+      }
+      index += direction;
+    }
+    return -1;
+  }
+
+  function focusSearchHeader(index) {
+    state.focusedPanel = 'search-header';
+    state.focusedIndex = Math.max(0, Math.min(index, 1));
+    updateFocusUI();
+  }
+
+  function focusSearchKeyboard(row, col) {
+    state.focusedPanel = 'search-keyboard';
+    state.focusedIndex = getSearchKeyboardFlatIndex(row, col);
+    updateFocusUI();
+  }
+
+  function getSearchRailFlatIndex(sectionIndex, cardIndex) {
+    var flat = 0;
+    for (var i = 0; i < state.searchRails.length; i++) {
+      if (i === sectionIndex) {
+        return flat + Math.max(0, Math.min(cardIndex, state.searchRails[i].items.length - 1));
+      }
+      flat += state.searchRails[i].items.length;
+    }
+    return 0;
+  }
+
+  function focusSearchResult(sectionIndex, cardIndex) {
+    if (!state.searchRails[sectionIndex] || !state.searchRails[sectionIndex].items.length) {
+      return;
+    }
+    state.focusedPanel = 'search-results';
+    state.focusedIndex = getSearchRailFlatIndex(sectionIndex, cardIndex);
+    updateFocusUI();
+  }
+
+  function setSearchSummary(message) {
+    var node = document.getElementById('search-summary');
+    if (node) {
+      node.textContent = message || '';
+    }
+  }
+
+  function renderSearchResults() {
+    var container = document.getElementById('search-results-rails');
+    var query = String(state.searchQuery || '').trim();
+    var html = '';
+
+    if (state.searchLoading && query) {
+      setSearchSummary('Scanning movies, series, and live channels for "' + query + '"...');
+    } else if (!query) {
+      setSearchSummary(state.searchRails.length ? 'Suggested rails from your current Smartifly session.' : 'Start typing to search across your portal catalog.');
+    } else {
+      var totalResults = getSearchResultsCount();
+      if (!totalResults) {
+        setSearchSummary('No results matched "' + query + '".');
+      } else {
+        setSearchSummary(totalResults + ' result' + (totalResults === 1 ? '' : 's') + ' found for "' + query + '".');
+      }
+    }
+
+    if (state.searchLoading && query && !state.searchRails.length) {
+      container.innerHTML = '<div class="legacy-search-empty">Loading the searchable catalog. Results will populate automatically.</div>';
+      return;
+    }
+
+    if (!state.searchRails.length) {
+      container.innerHTML = '<div class="legacy-search-empty">' + (query ? 'No results found. Try a different title, year, or genre keyword.' : 'Search suggestions will appear here once home content is available.') + '</div>';
+      return;
+    }
+
+    for (var i = 0; i < state.searchRails.length; i++) {
+      var rail = state.searchRails[i];
+      html += '<section class="legacy-search-rail" data-section-index="' + i + '">';
+      html += '<div class="legacy-search-rail-label">' + escapeHtml(rail.label) + '</div>';
+
+      if (!rail.items.length) {
+        html += '<div class="legacy-search-empty">No ' + escapeHtml(rail.label.toLowerCase()) + ' match.</div>';
+      } else {
+        html += '<div class="legacy-search-rail-track">';
+        for (var j = 0; j < rail.items.length; j++) {
+          var entry = rail.items[j];
+          var mode = entry.mode;
+          var item = entry.item;
+          var isLive = mode === 'live';
+          var cardClass = 'focusable legacy-search-card ' + (isLive ? 'legacy-search-card--live' : 'legacy-search-card--poster');
+          var art = getSearchCardArtwork(item, mode);
+          html += '<button type="button" tabindex="-1" class="' + cardClass + '" data-section-index="' + i + '" data-card-index="' + j + '" data-mode="' + mode + '" data-id="' + escapeHtml(String(getCatalogItemId(item, mode))) + '">';
+          html += '<div class="legacy-search-card-shell">';
+          html += '<div class="legacy-search-card-badge">' + escapeHtml(getContentTypeLabel(mode).toUpperCase()) + '</div>';
+          if (art) {
+            html += '<div class="legacy-search-card-art" style="background-image:url(\'' + String(art).replace(/'/g, '\\\'') + '\');"></div>';
+          } else {
+            html += '<div class="legacy-search-card-fallback">' + escapeHtml(getCatalogItemName(item)) + '</div>';
+          }
+          html += '</div>';
+          html += '<div class="legacy-search-card-copy">';
+          html += '<div class="legacy-search-card-title">' + escapeHtml(getCatalogItemName(item)) + '</div>';
+          html += '</div>';
+          html += '</button>';
+        }
+        html += '</div>';
+      }
+      html += '</section>';
+    }
+
+    container.innerHTML = html;
+
+    var cards = container.querySelectorAll('.legacy-search-card');
+    for (var c = 0; c < cards.length; c++) {
+      cards[c].onclick = function () {
+        var sectionIndex = parseInt(this.getAttribute('data-section-index'), 10) || 0;
+        var cardIndex = parseInt(this.getAttribute('data-card-index'), 10) || 0;
+        activateSearchResult(sectionIndex, cardIndex);
+      };
+    }
+  }
+
+  function rebuildSearchRails() {
+    state.searchRails = buildSearchResultRails(state.searchQuery);
     state.searchResults = [];
-    state.focusedPanel = 'search-controls';
-    state.focusedIndex = 0;
-    applySearchModeButtonState();
+    for (var i = 0; i < state.searchRails.length; i++) {
+      for (var j = 0; j < state.searchRails[i].items.length; j++) {
+        state.searchResults.push(state.searchRails[i].items[j]);
+      }
+    }
+    renderSearchResults();
+  }
+
+  function syncSearchFocusAfterRender() {
+    if (state.focusedPanel === 'search-results' && !getSearchResultsCount()) {
+      focusSearchHeader(0);
+      return;
+    }
+
+    updateFocusUI();
+  }
+
+  function executeSearch() {
+    var query = String(state.searchQuery || '').trim();
+    rebuildSearchRails();
 
     if (!query) {
+      state.searchLoading = false;
       renderSearchResults();
-      updateFocusUI();
+      syncSearchFocusAfterRender();
       return;
     }
 
-    container.innerHTML = '<div class="utility-empty">Searching ' + config.sectionLabel.toLowerCase() + '...</div>';
-    document.getElementById('search-summary').textContent = 'Scanning the full ' + config.sectionLabel.toLowerCase() + ' catalog for "' + query + '".';
-
-    function applyResults(items) {
-      state.searchCache[state.searchMode] = items;
-      state.searchResults = filterSearchItems(items, query, state.searchMode);
-      renderSearchResults();
-      updateFocusUI();
+    var missingModes = [];
+    var modes = ['movies', 'series', 'live'];
+    for (var i = 0; i < modes.length; i++) {
+      if (!state.searchCache[modes[i]]) {
+        missingModes.push(modes[i]);
+      }
     }
 
-    if (state.searchCache[state.searchMode]) {
-      applyResults(state.searchCache[state.searchMode]);
+    if (!missingModes.length) {
+      state.searchLoading = false;
+      rebuildSearchRails();
+      syncSearchFocusAfterRender();
       return;
     }
 
-    config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, '', function (items) {
-      applyResults(items || []);
-    }, function (err) {
-      container.innerHTML = '<div class="utility-empty">' + escapeHtml(err || 'Search failed') + '</div>';
-      document.getElementById('search-summary').textContent = 'Search failed for ' + config.sectionLabel.toLowerCase() + '.';
-      updateFocusUI();
-    });
+    state.searchLoading = true;
+    renderSearchResults();
+
+    var pending = missingModes.length;
+    var failedModes = [];
+
+    function finalizeSearchLoad() {
+      pending--;
+      if (pending > 0) return;
+      state.searchLoading = false;
+      rebuildSearchRails();
+      if (failedModes.length) {
+        setSearchSummary('Search loaded with partial results. Failed: ' + failedModes.join(', ') + '.');
+      }
+      syncSearchFocusAfterRender();
+    }
+
+    for (var j = 0; j < missingModes.length; j++) {
+      (function (mode) {
+        var config = getCatalogConfig(mode);
+        config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, '', function (items) {
+          state.searchCache[mode] = items || [];
+          finalizeSearchLoad();
+        }, function () {
+          state.searchCache[mode] = [];
+          failedModes.push(getContentTypeLabel(mode));
+          finalizeSearchLoad();
+        });
+      })(missingModes[j]);
+    }
+  }
+
+  function scheduleSearchExecution() {
+    if (state.searchQueryDebounce) {
+      clearTimeout(state.searchQueryDebounce);
+    }
+    state.searchQueryDebounce = setTimeout(function () {
+      executeSearch();
+    }, 220);
+  }
+
+  function setSearchQueryValue(nextValue) {
+    state.searchQuery = String(nextValue || '');
+    updateSearchQueryDisplay();
+    var scrollNode = document.getElementById('search-results-scroll');
+    if (scrollNode) {
+      scrollNode.scrollTop = 0;
+    }
+    scheduleSearchExecution();
+  }
+
+  function activateSearchKeyboardKey(row, col) {
+    var rows = state.searchKeyboardRows.length ? state.searchKeyboardRows : getSearchKeyboardRows();
+    var key = rows[row] && rows[row][col] ? rows[row][col] : null;
+    if (!key) return;
+
+    if (key.action === 'char') {
+      setSearchQueryValue(state.searchQuery + (key.value || key.label));
+      return;
+    }
+    if (key.action === 'space') {
+      setSearchQueryValue(state.searchQuery + ' ');
+      return;
+    }
+    if (key.action === 'backspace') {
+      setSearchQueryValue(state.searchQuery.slice(0, -1));
+      return;
+    }
+    if (key.action === 'clear') {
+      setSearchQueryValue('');
+      return;
+    }
+    if (key.action === 'shift') {
+      state.searchKeyboardShifted = !state.searchKeyboardShifted;
+      renderSearchKeyboard();
+      focusSearchKeyboard(row, col);
+      return;
+    }
+
+    if (getSearchResultsCount() > 0) {
+      var firstSection = findSearchRailInDirection(0, 1);
+      if (firstSection >= 0) {
+        focusSearchResult(firstSection, 0);
+      }
+    }
+  }
+
+  function activateSearchResult(sectionIndex, cardIndex) {
+    var rail = state.searchRails[sectionIndex];
+    if (!rail || !rail.items[cardIndex]) return;
+    var entry = rail.items[cardIndex];
+    if (entry.mode === 'live') {
+      var liveQueue = rail.items.map(function (it) { return it.item; });
+      playChannel(entry.item, liveQueue);
+    } else {
+      showContentDetail(entry.item, entry.mode);
+    }
   }
 
   function openSearchView() {
     setSidebarActiveById('sidebar-search');
     showView('view-search');
-    state.focusedPanel = 'search-controls';
+    state.searchKeyboardShifted = false;
+    renderSearchKeyboard();
+    updateSearchQueryDisplay();
+    state.focusedPanel = 'search-header';
     state.focusedIndex = 0;
-    document.getElementById('search-query-input').value = state.searchQuery || '';
-    applySearchModeButtonState();
-    renderSearchResults();
+    executeSearch();
     updateFocusUI();
-  }
-
-  function setSearchMode(mode) {
-    state.searchMode = mode;
-    applySearchModeButtonState();
-    if (state.searchQuery) {
-      executeSearch();
-    } else {
-      renderSearchResults();
-      updateFocusUI();
-    }
   }
 
   function getCurrentProfileFavoritesPrefix() {
@@ -1445,6 +2268,7 @@
 
       (function (p) {
         card.onclick = function () {
+          state.profileModalCaller = 'settings';
           openProfileFormModal(p);
         };
       })(profile);
@@ -1456,6 +2280,7 @@
     addCard.className = 'focusable settings-profile-card card-add';
     addCard.textContent = '+ Add Profile';
     addCard.onclick = function () {
+      state.profileModalCaller = 'settings';
       openProfileFormModal(null);
     };
     container.appendChild(addCard);
@@ -1538,10 +2363,16 @@
   function closeProfileFormModal() {
     var modal = document.getElementById('settings-profile-modal');
     if (modal) modal.style.display = 'none';
-    // Return focus to profiles list
-    state.focusedPanel  = 'settings-profiles';
-    state.focusedIndex  = 0;
-    updateFocusUI();
+    if (state.profileModalCaller === 'profiles') {
+      // Re-render the who's watching screen and return focus there
+      setupProfilesView();
+    } else {
+      // Return focus to settings profiles list
+      renderSettingsProfilesList();
+      state.focusedPanel = 'settings-profiles';
+      state.focusedIndex = 0;
+      updateFocusUI();
+    }
   }
 
   function saveProfileFromModal() {
@@ -1570,7 +2401,9 @@
     }
 
     saveProfilesToStorage();
-    renderSettingsProfilesList();
+    if (state.profileModalCaller === 'settings') {
+        renderSettingsProfilesList();
+    }
     closeProfileFormModal();
   }
 
@@ -1580,7 +2413,9 @@
       return p.id !== state.profileModal.targetId;
     });
     saveProfilesToStorage();
-    renderSettingsProfilesList();
+    if (state.profileModalCaller === 'settings') {
+        renderSettingsProfilesList();
+    }
     closeProfileFormModal();
   }
 
@@ -1744,9 +2579,679 @@
   }
 
   function returnToCatalogSidebar(sidebarKey) {
+    setCatalogScreen(sidebarKey === 'home' ? 'home' : 'browse');
+    if (sidebarKey === 'home') {
+      refreshHomeView();
+    }
     showView('view-catalog');
     state.focusedPanel = 'catalog-sidebar';
     state.focusedIndex = getSidebarFocusIndex(sidebarKey || state.catalogMode);
+    updateFocusUI();
+  }
+
+  function setCatalogScreen(screen) {
+    state.catalogScreen = screen;
+    document.getElementById('home-panel').style.display = screen === 'home' ? 'block' : 'none';
+    document.getElementById('browse-panels').style.display = screen === 'browse' ? 'flex' : 'none';
+  }
+
+  function buildHomeEntry(mode, item, categoryName, meta) {
+    return {
+      mode: mode,
+      item: item,
+      categoryName: categoryName || '',
+      meta: meta || ''
+    };
+  }
+
+  function getHomeEntryMeta(entry) {
+    if (!entry) return '';
+    var bits = [getContentTypeLabel(entry.mode)];
+    if (entry.categoryName) bits.push(entry.categoryName);
+    if (entry.meta) bits.push(entry.meta);
+    return bits.join(' • ');
+  }
+
+  function pickHeroEntry(sections) {
+    var candidates = [];
+    var i, j;
+
+    for (i = 0; i < sections.length; i++) {
+      if (sections[i].id !== 'trending') continue;
+      for (j = 0; j < sections[i].entries.length; j++) {
+        candidates.push(sections[i].entries[j]);
+      }
+    }
+
+    if (!candidates.length) return null;
+
+    var bestEntry = null;
+    var bestScore = -1;
+
+    for (var k = 0; k < candidates.length; k++) {
+      var entry = candidates[k];
+      var item = entry.item;
+      if (!item) continue;
+
+      var score = 0;
+
+      // Prefer Movie/Series over Live TV for the hero banner
+      if (entry.mode !== 'live') {
+        score += 10;
+      }
+
+      // Check for valid backdrop artwork
+      var backdrop = item.backdrop_path || item.backdrop;
+      if (backdrop && String(backdrop).toLowerCase() !== 'null' && String(backdrop).toLowerCase() !== 'undefined' && String(backdrop).trim() !== '') {
+        score += 20;
+      }
+
+      // Check for valid plot description
+      var plot = item.plot;
+      if (plot && String(plot).toLowerCase() !== 'null' && String(plot).toLowerCase() !== 'undefined' && String(plot).trim() !== '') {
+        score += 10;
+      }
+
+      // Check for rating
+      var rating = item.rating || item.rating_5star;
+      if (rating && String(rating).toLowerCase() !== 'null' && String(rating).trim() !== '') {
+        score += 2;
+      }
+
+      // Check for release date or year
+      var year = item.releaseDate || item.year;
+      if (year && String(year).toLowerCase() !== 'null' && String(year).trim() !== '') {
+        score += 2;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestEntry = entry;
+      }
+    }
+
+    return bestEntry || candidates[0];
+  }
+
+  function dedupeHomeEntries(entries) {
+    var seen = {};
+    var result = [];
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      if (!entry || !entry.item) continue;
+      var key = entry.mode + '::' + getCatalogItemId(entry.item, entry.mode);
+      if (seen[key]) continue;
+      seen[key] = true;
+      result.push(entry);
+      if (result.length >= MAX_HOME_RAIL_ITEMS) break;
+    }
+    return result;
+  }
+
+  function buildTrendingEntries() {
+    var entries = [];
+    var movieCache = state.homeCatalogCache.movies;
+    var seriesCache = state.homeCatalogCache.series;
+    var history = getCurrentProfileHistoryEntries();
+    var i;
+
+    for (i = 0; i < history.length; i++) {
+      var historyEntry = history[i];
+      if (!historyEntry || historyEntry.mode === 'live') continue;
+      var source = historyEntry.mode === 'series' ? seriesCache : movieCache;
+      if (source && source.items) {
+        for (var j = 0; j < source.items.length && j < 4; j++) {
+          entries.push(buildHomeEntry(historyEntry.mode, source.items[j], source.categoryName, 'Because you watched ' + historyEntry.name));
+        }
+      }
+    }
+
+    if (movieCache && movieCache.items) {
+      for (i = 0; i < movieCache.items.length && i < 8; i++) {
+        entries.push(buildHomeEntry('movies', movieCache.items[i], movieCache.categoryName, 'Trending movie pick'));
+      }
+    }
+    if (seriesCache && seriesCache.items) {
+      for (i = 0; i < seriesCache.items.length && i < 8; i++) {
+        entries.push(buildHomeEntry('series', seriesCache.items[i], seriesCache.categoryName, 'Trending series pick'));
+      }
+    }
+
+    return dedupeHomeEntries(entries);
+  }
+
+  function buildHomeSections() {
+    var sections = [];
+    var continueEntries = [];
+    var history = getCurrentProfileHistoryEntries();
+    var i;
+
+    for (i = 0; i < history.length && i < MAX_HOME_RAIL_ITEMS; i++) {
+      var historyEntry = history[i];
+      continueEntries.push(buildHomeEntry(historyEntry.mode, historyEntry.item || buildFavoriteFallbackItem(historyEntry), '', 'Recently played'));
+    }
+
+    sections.push({
+      id: 'continue',
+      title: 'Continue Watching',
+      subtitle: continueEntries.length ? 'Pick up where you left off.' : 'Start something to build this rail.',
+      entries: continueEntries
+    });
+
+    sections.push({
+      id: 'trending',
+      title: 'Trending For You',
+      subtitle: 'A lightweight mix based on your recent viewing.',
+      entries: buildTrendingEntries()
+    });
+
+    sections.push({
+      id: 'live',
+      title: 'Live TV Channels',
+      subtitle: state.homeCatalogCache.live && state.homeCatalogCache.live.categoryName ? state.homeCatalogCache.live.categoryName : 'Top live channels',
+      entries: state.homeCatalogCache.live && state.homeCatalogCache.live.items ? state.homeCatalogCache.live.items.slice(0, MAX_HOME_RAIL_ITEMS).map(function (item) {
+        return buildHomeEntry('live', item, state.homeCatalogCache.live.categoryName, 'Live now');
+      }) : []
+    });
+
+    sections.push({
+      id: 'movies',
+      title: 'Movies',
+      subtitle: state.homeCatalogCache.movies && state.homeCatalogCache.movies.categoryName ? state.homeCatalogCache.movies.categoryName : 'Featured movies',
+      entries: state.homeCatalogCache.movies && state.homeCatalogCache.movies.items ? state.homeCatalogCache.movies.items.slice(0, MAX_HOME_RAIL_ITEMS).map(function (item) {
+        return buildHomeEntry('movies', item, state.homeCatalogCache.movies.categoryName, 'Featured movie');
+      }) : []
+    });
+
+    sections.push({
+      id: 'series',
+      title: 'Series',
+      subtitle: state.homeCatalogCache.series && state.homeCatalogCache.series.categoryName ? state.homeCatalogCache.series.categoryName : 'Featured series',
+      entries: state.homeCatalogCache.series && state.homeCatalogCache.series.items ? state.homeCatalogCache.series.items.slice(0, MAX_HOME_RAIL_ITEMS).map(function (item) {
+        return buildHomeEntry('series', item, state.homeCatalogCache.series.categoryName, 'Featured series');
+      }) : []
+    });
+
+    state.homeSections = sections;
+    state.homeHeroEntry = pickHeroEntry(sections);
+  }
+
+  var homeHeroTimer = null;
+  var homeHeroCache = {};
+
+  function getHomeEntryMetaWithDetail(entry, detailInfo) {
+    if (!entry) return '';
+    var activeMode = entry.mode;
+    var item = entry.item;
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var movieData = detailInfo && detailInfo.movie_data ? detailInfo.movie_data : {};
+    var bits = [getContentTypeLabel(activeMode)];
+
+    if (info.genre || item.genre) bits.push(info.genre || item.genre);
+    if (info.rating || item.rating) bits.push('Rating ' + (info.rating || item.rating));
+    if (info.releaseDate || info.releasedate || info.release_date || movieData.releasedate || item.releaseDate) {
+      bits.push(info.releaseDate || info.releasedate || info.release_date || movieData.releasedate || item.releaseDate);
+    }
+    if (info.duration || movieData.duration) bits.push(info.duration || movieData.duration);
+
+    return bits.join(' • ');
+  }
+
+  function getCatalogItemSummaryWithDetail(item, detailInfo, mode) {
+    var activeMode = mode || state.catalogMode;
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var summary = stripHtml(info.plot || item.plot || item.description || '');
+
+    if (!summary) {
+      summary = activeMode === 'series'
+        ? 'Browse seasons and episodes inside this series.'
+        : 'Select this title to explore or start playback.';
+    }
+
+    return summary;
+  }
+
+  function getPrimaryGenreText(item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var raw = safeTrim(info.genre || (item && item.genre) || '');
+    if (!raw) return '';
+    return raw.split(',')[0].trim();
+  }
+
+  function getHeroReleaseText(item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    var movieData = detailInfo && detailInfo.movie_data ? detailInfo.movie_data : {};
+    return safeTrim(
+      info.releaseDate ||
+      info.releasedate ||
+      info.release_date ||
+      movieData.releasedate ||
+      (item && (item.releaseDate || item.releasedate || item.release_date)) ||
+      ''
+    );
+  }
+
+  function getHeroRatingText(item, detailInfo) {
+    var info = detailInfo && detailInfo.info ? detailInfo.info : {};
+    return safeTrim((info.rating || (item && item.rating) || ''));
+  }
+
+  function setHomeHeroText(el, value) {
+    if (!el) return;
+    var text = safeTrim(value);
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
+
+  function updateHomeHero(entry, detailInfo) {
+    var heroImage = document.getElementById('home-hero-image');
+    var overline = document.getElementById('home-hero-overline');
+    var typeBadge = document.getElementById('home-hero-type-badge');
+    var title = document.getElementById('home-hero-title');
+    var summary = document.getElementById('home-hero-summary');
+    var kicker = document.getElementById('home-hero-kicker');
+    var ratingPill = document.getElementById('home-hero-rating-pill');
+    var datePill = document.getElementById('home-hero-date-pill');
+    var genrePill = document.getElementById('home-hero-genre-pill');
+    var metaRow = document.getElementById('home-hero-meta-row');
+    var playBtn = document.getElementById('home-hero-btn-play');
+    var detailsBtn = document.getElementById('home-hero-btn-details');
+
+    if (!entry) {
+      entry = state.homeHeroEntry;
+    }
+
+    if (!entry) {
+      setHomeHeroText(overline, '');
+      setHomeHeroText(typeBadge, '');
+      setHomeHeroText(kicker, '');
+      if (title) title.textContent = 'No Featured Content';
+      if (summary) summary.textContent = 'Add some viewing history or load portal content to populate the home banner.';
+      if (metaRow) metaRow.style.display = 'none';
+      if (heroImage) {
+        heroImage.style.backgroundImage = '';
+        heroImage.style.opacity = '0';
+      }
+      return;
+    }
+
+    var typeLabel = getContentTypeLabel(entry.mode).toUpperCase();
+    var categoryLabel = safeTrim(entry.categoryName);
+    var genreLabel = getPrimaryGenreText(entry.item, detailInfo);
+    var overlineText = categoryLabel || genreLabel || typeLabel;
+    var kickerText = '';
+
+    if (genreLabel && categoryLabel && genreLabel.toLowerCase() !== categoryLabel.toLowerCase()) {
+      kickerText = genreLabel.toUpperCase();
+    } else if (!categoryLabel && genreLabel && genreLabel.toUpperCase() !== typeLabel) {
+      kickerText = genreLabel.toUpperCase();
+    }
+
+    setHomeHeroText(overline, overlineText);
+    setHomeHeroText(typeBadge, typeLabel);
+    setHomeHeroText(kicker, kickerText);
+    if (title) title.textContent = getCatalogItemName(entry.item);
+    
+    if (detailInfo) {
+      if (summary) summary.textContent = getCatalogItemSummaryWithDetail(entry.item, detailInfo, entry.mode);
+    } else {
+      if (summary) summary.textContent = getCatalogItemSummary(entry.item, entry.mode);
+    }
+
+    // Pills metadata
+    if (metaRow) {
+      var ratingVal = getHeroRatingText(entry.item, detailInfo);
+      var dateVal = getHeroReleaseText(entry.item, detailInfo);
+      var genrePillVal = genreLabel || categoryLabel;
+      var hasMeta = !!(ratingVal || dateVal || genrePillVal);
+
+      if (!hasMeta) {
+        metaRow.style.display = 'none';
+      } else {
+        metaRow.style.display = 'flex';
+        setHomeHeroText(ratingPill, ratingVal);
+        setHomeHeroText(datePill, dateVal);
+        setHomeHeroText(genrePill, genrePillVal);
+      }
+    }
+
+    // Bind actions
+    if (playBtn) {
+      playBtn.onclick = function (e) {
+        if (e) e.stopPropagation();
+        if (entry.mode === 'live') {
+          playChannel(entry.item, [entry.item]);
+        } else if (entry.mode === 'movies') {
+          playMovie(entry.item, detailInfo);
+        } else if (entry.mode === 'series') {
+          var detail = detailInfo || homeHeroCache[entry.mode + '_' + getCatalogItemId(entry.item, entry.mode)];
+          if (detail) {
+            var seasons = normalizeSeriesSeasons(detail);
+            if (seasons.length) {
+              var episodes = getEpisodesForSeason(detail, seasons[0].key);
+              if (episodes.length) {
+                playSeriesEpisode(episodes[0], getCatalogItemName(entry.item));
+                return;
+              }
+            }
+          }
+          showContentDetail(entry.item, entry.mode);
+        }
+      };
+    }
+
+    if (detailsBtn) {
+      detailsBtn.onclick = function (e) {
+        if (e) e.stopPropagation();
+        showContentDetail(entry.item, entry.mode);
+      };
+    }
+
+    var artwork = getBackdropArtwork(entry.item, detailInfo, entry.mode);
+    if (heroImage) {
+      if (artwork) {
+        heroImage.style.backgroundImage = 'url("' + String(artwork).replace(/"/g, '%22') + '")';
+        heroImage.style.opacity = '1';
+      } else {
+        heroImage.style.backgroundImage = '';
+        heroImage.style.opacity = '0';
+      }
+    }
+  }
+
+  function triggerHomeHeroUpdate(entry) {
+    if (homeHeroTimer) {
+      clearTimeout(homeHeroTimer);
+      homeHeroTimer = null;
+    }
+
+    if (!entry) {
+      updateHomeHero(null, null);
+      return;
+    }
+
+    updateHomeHero(entry, null);
+
+    if (entry.mode === 'live') {
+      return;
+    }
+
+    var streamId = getCatalogItemId(entry.item, entry.mode);
+    var cacheKey = entry.mode + '_' + streamId;
+
+    if (homeHeroCache[cacheKey]) {
+      updateHomeHero(entry, homeHeroCache[cacheKey]);
+      return;
+    }
+
+    homeHeroTimer = setTimeout(function () {
+      if (entry.mode === 'movies') {
+        apiGetVodInfo(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, streamId, function (detail) {
+          homeHeroCache[cacheKey] = detail;
+          var current = getCurrentlyFocusedHomeEntry();
+          if (current && getCatalogItemId(current.item, current.mode) === streamId) {
+            updateHomeHero(current, detail);
+          } else if (!current && state.homeHeroEntry && getCatalogItemId(state.homeHeroEntry.item, state.homeHeroEntry.mode) === streamId) {
+            updateHomeHero(state.homeHeroEntry, detail);
+          }
+        }, function () {});
+      } else if (entry.mode === 'series') {
+        apiGetSeriesInfo(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, streamId, function (detail) {
+          homeHeroCache[cacheKey] = detail;
+          var current = getCurrentlyFocusedHomeEntry();
+          if (current && getCatalogItemId(current.item, current.mode) === streamId) {
+            updateHomeHero(current, detail);
+          } else if (!current && state.homeHeroEntry && getCatalogItemId(state.homeHeroEntry.item, state.homeHeroEntry.mode) === streamId) {
+            updateHomeHero(state.homeHeroEntry, detail);
+          }
+        }, function () {});
+      }
+    }, 350);
+  }
+
+  function getCurrentlyFocusedHomeEntry() {
+    if (state.focusedPanel !== 'home-rails') return null;
+    var currentFocusables = getFocusableElements();
+    var focusedEl = currentFocusables[state.focusedIndex];
+    if (focusedEl && focusedEl.classList.contains('home-card')) {
+      var idx = parseInt(focusedEl.getAttribute('data-index'), 10);
+      return getHomeEntryByFlatIndex(idx);
+    }
+    return null;
+  }
+
+  function focusHomeHero(buttonIndex) {
+    var homeScroll = document.getElementById('home-scroll');
+    if (homeScroll) {
+      homeScroll.scrollTop = 0;
+      setTimeout(function () {
+        homeScroll.scrollTop = 0;
+      }, 0);
+      setTimeout(function () {
+        homeScroll.scrollTop = 0;
+      }, 50);
+    }
+    state.focusedPanel = 'home-hero';
+    state.focusedIndex = buttonIndex != null ? buttonIndex : 0;
+    updateFocusUI();
+  }
+
+  function renderHomeHero() {
+    triggerHomeHeroUpdate(state.homeHeroEntry);
+    var heroEl = document.getElementById('home-hero');
+    if (heroEl) {
+      heroEl.onclick = function () {
+        if (state.homeHeroEntry) {
+          if (state.homeHeroEntry.mode === 'live') {
+            playChannel(state.homeHeroEntry.item, [state.homeHeroEntry.item]);
+          } else {
+            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+          }
+        }
+      };
+    }
+  }
+
+  function renderHomeRails() {
+    var container = document.getElementById('home-rails');
+    var flatIndex = 0;
+    container.innerHTML = '';
+
+    if (state.homeLoading && !state.homeSections.length) {
+      container.innerHTML = '<div class="home-empty">Loading your home rails...</div>';
+      return;
+    }
+
+    for (var i = 0; i < state.homeSections.length; i++) {
+      var section = state.homeSections[i];
+      var rail = document.createElement('div');
+      rail.className = 'home-rail';
+      rail.setAttribute('data-rail-index', i);
+
+      var header = document.createElement('div');
+      header.className = 'home-rail-header';
+      header.innerHTML = '<div class="home-rail-title">' + escapeHtml(section.title) + '</div><div class="home-rail-subtitle">' + escapeHtml(section.subtitle) + '</div>';
+      rail.appendChild(header);
+
+      if (!section.entries.length) {
+        var empty = document.createElement('div');
+        empty.className = 'home-empty';
+        empty.textContent = section.id === 'continue' ? 'Nothing to resume yet.' : 'No content available right now.';
+        rail.appendChild(empty);
+        container.appendChild(rail);
+        continue;
+      }
+
+      var track = document.createElement('div');
+      track.className = 'home-rail-track';
+      track.setAttribute('data-rail-track-index', i);
+
+      for (var j = 0; j < section.entries.length; j++) {
+        var entry = section.entries[j];
+        var button = document.createElement('button');
+        
+        var artwork, cardClass, imageClass;
+        if (section.id === 'continue') {
+          artwork = getBackdropArtwork(entry.item, null, entry.mode);
+          cardClass = 'home-card home-card--landscape';
+          imageClass = 'home-card__image';
+        } else if (entry.mode === 'live') {
+          artwork = getCatalogItemArtwork(entry.item, entry.mode);
+          cardClass = 'home-card home-card--live';
+          imageClass = 'home-card__image home-card__image--contain';
+        } else {
+          artwork = getCatalogItemArtwork(entry.item, entry.mode);
+          cardClass = 'home-card home-card--poster';
+          imageClass = 'home-card__image';
+        }
+
+        button.className = 'focusable ' + cardClass;
+        button.setAttribute('tabindex', '-1');
+        button.setAttribute('data-index', flatIndex);
+        button.setAttribute('data-rail-index', i);
+        button.setAttribute('data-card-index', j);
+        button.setAttribute('data-mode', entry.mode);
+
+        var html = '';
+        html += '<div class="home-card__image-container">';
+        html += '  <div class="home-card__badge home-card__badge--' + entry.mode + '">' + escapeHtml(getContentTypeLabel(entry.mode).toUpperCase()) + '</div>';
+        if (artwork) {
+          html += '  <div class="' + imageClass + '" style="background-image:url(\'' + String(artwork).replace(/'/g, '%27') + '\')"></div>';
+        } else {
+          html += '  <div class="' + imageClass + '"><div class="home-card__fallback">' + escapeHtml(getCatalogItemName(entry.item)) + '</div></div>';
+        }
+        html += '</div>';
+        html += '<div class="home-card__info">';
+        html += '  <div class="home-card__title">' + escapeHtml(getCatalogItemName(entry.item)) + '</div>';
+        html += '  <div class="home-card__meta">' + escapeHtml(getHomeEntryMeta(entry)) + '</div>';
+        html += '</div>';
+        button.innerHTML = html;
+        button.onclick = function () {
+          var idx = parseInt(this.getAttribute('data-index'), 10);
+          var selected = getHomeEntryByFlatIndex(idx);
+          if (!selected) return;
+          if (selected.mode === 'live') {
+            playChannel(selected.item, state.homeSections[parseInt(this.getAttribute('data-rail-index'), 10)].entries.map(function (it) { return it.item; }));
+          } else {
+            showContentDetail(selected.item, selected.mode);
+          }
+        };
+        track.appendChild(button);
+        flatIndex++;
+      }
+
+      rail.appendChild(track);
+      container.appendChild(rail);
+    }
+  }
+
+  function getHomeEntryByFlatIndex(flatIndex) {
+    var count = 0;
+    for (var i = 0; i < state.homeSections.length; i++) {
+      var section = state.homeSections[i];
+      for (var j = 0; j < section.entries.length; j++) {
+        if (count === flatIndex) return section.entries[j];
+        count++;
+      }
+    }
+    return null;
+  }
+
+  function getHomeFlatIndex(railIndex, cardIndex) {
+    var count = 0;
+    for (var i = 0; i < state.homeSections.length; i++) {
+      var section = state.homeSections[i];
+      for (var j = 0; j < section.entries.length; j++) {
+        if (i === railIndex && j === cardIndex) return count;
+        count++;
+      }
+    }
+    return 0;
+  }
+
+  function refreshHomeView() {
+    buildHomeSections();
+    renderHomeHero();
+    renderHomeRails();
+  }
+
+  function fetchHomeCatalogMode(mode, done) {
+    if (state.homeCatalogCache[mode]) {
+      done();
+      return;
+    }
+
+    var config = getCatalogConfig(mode);
+    config.loadCategories(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, function (cats) {
+      var category = cats && cats.length ? cats[0] : null;
+      if (!category) {
+        state.homeCatalogCache[mode] = { categoryName: '', items: [] };
+        done();
+        return;
+      }
+
+      config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, category.category_id, function (items) {
+        state.homeCatalogCache[mode] = {
+          categoryName: category.category_name || '',
+          items: (items || []).slice(0, MAX_HOME_RAIL_ITEMS)
+        };
+        done();
+      }, function () {
+        state.homeCatalogCache[mode] = { categoryName: category.category_name || '', items: [] };
+        done();
+      });
+    }, function () {
+      state.homeCatalogCache[mode] = { categoryName: '', items: [] };
+      done();
+    });
+  }
+
+  function loadHomeData(onComplete) {
+    var remaining = 3;
+    state.homeLoading = true;
+    refreshHomeView();
+
+    function finishOne() {
+      remaining--;
+      if (remaining <= 0) {
+        state.homeLoading = false;
+        refreshHomeView();
+        if (onComplete) onComplete();
+      }
+    }
+
+    fetchHomeCatalogMode('live', finishOne);
+    fetchHomeCatalogMode('movies', finishOne);
+    fetchHomeCatalogMode('series', finishOne);
+  }
+
+  function openHomeView(forceReload) {
+    if (!state.homeCatalogCache) {
+      state.homeCatalogCache = { live: null, movies: null, series: null };
+    }
+
+    if (forceReload) {
+      state.homeCatalogCache.live = null;
+      state.homeCatalogCache.movies = null;
+      state.homeCatalogCache.series = null;
+    }
+
+    setCatalogScreen('home');
+    showView('view-catalog');
+    setSidebarActiveById('sidebar-home');
+
+    if (forceReload || !state.homeCatalogCache.live || !state.homeCatalogCache.movies || !state.homeCatalogCache.series) {
+      loadHomeData(function () {
+        state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
+        state.focusedIndex = 0;
+        updateFocusUI();
+      });
+    } else {
+      refreshHomeView();
+    }
+
+    state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
+    state.focusedIndex = 0;
     updateFocusUI();
   }
 
@@ -1878,10 +3383,23 @@
     }
 
     if (isCatalogSubView) {
-      document.getElementById('catalog-content-panel').style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
-      document.getElementById('search-content-panel').style.display = (viewId === 'view-search') ? 'flex' : 'none';
-      document.getElementById('watchlist-content-panel').style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
-      document.getElementById('settings-content-panel').style.display = (viewId === 'view-settings') ? 'flex' : 'none';
+      var catalogPanel = document.getElementById('catalog-content-panel');
+      var searchPanel = document.getElementById('search-content-panel');
+      var watchlistPanel = document.getElementById('watchlist-content-panel');
+      var settingsPanel = document.getElementById('settings-content-panel');
+
+      if (catalogPanel) {
+        catalogPanel.style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
+      }
+      if (searchPanel) {
+        searchPanel.style.display = (viewId === 'view-search') ? 'flex' : 'none';
+      }
+      if (watchlistPanel) {
+        watchlistPanel.style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
+      }
+      if (settingsPanel) {
+        settingsPanel.style.display = (viewId === 'view-settings') ? 'flex' : 'none';
+      }
     }
   }
 
@@ -2150,6 +3668,7 @@
     }
 
     loadFavoritesState();
+    loadWatchHistoryState();
   }
 
   function saveSessionState(session, profiles) {
@@ -2174,8 +3693,23 @@
   function init() {
     loadLocalState();
     
+    // Scroll lock to prevent cut-off of Hero when focused
+    var homeScroll = document.getElementById('home-scroll');
+    if (homeScroll) {
+      homeScroll.addEventListener('scroll', function () {
+        if (state.focusedPanel === 'home-hero' && homeScroll.scrollTop !== 0) {
+          homeScroll.scrollTop = 0;
+        }
+      });
+    }
+    
     // Check if session exists
     if (state.session) {
+      if (!Array.isArray(state.profiles) || state.profiles.length === 0) {
+        state.profiles = createDefaultProfiles(state.session.username);
+        saveSessionState(state.session, state.profiles);
+      }
+
       // Load saved profile if any
       var savedProfileId = localStorage.getItem(SELECTED_PROFILE_KEY);
       if (savedProfileId && state.profiles) {
@@ -2188,7 +3722,7 @@
       }
       
       if (state.selectedProfile) {
-        loadCatalog();
+        openHomeView();
       } else {
         setupProfilesView();
       }
@@ -2238,20 +3772,101 @@
     var pass = state.wizardValues.password;
     var statusNode = document.getElementById('login-wizard-status');
 
-    statusNode.textContent = 'Validating server code...';
-    statusNode.style.color = '#fff';
+    nameNode.textContent = portal.name || portal.portalCode || 'Resolved portal';
+    urlNode.textContent = normalizeBaseUrl(portal.baseUrl || '');
+  }
 
-    apiValidatePortalCode(code, function (portal) {
-      statusNode.textContent = 'Connecting to ' + portal.name + '...';
-      apiAuthenticate(portal.baseUrl, user, pass, function (authRes) {
-        statusNode.textContent = 'Authenticated. Setting up...';
-        statusNode.style.color = '#ffaa00';
-        
+  function setLoginPending(isPending) {
+    state.loginPending = !!isPending;
+
+    var submitBtn = document.getElementById('login-btn-submit');
+    var backBtn = document.getElementById('login-btn-back');
+    var inputIds = ['login-code', 'login-user', 'login-pass'];
+
+    if (submitBtn) {
+      submitBtn.disabled = !!isPending;
+      submitBtn.textContent = isPending ? 'Connecting...' : 'Connect Portal';
+    }
+    if (backBtn) {
+      backBtn.disabled = !!isPending;
+    }
+
+    for (var i = 0; i < inputIds.length; i++) {
+      var inputNode = document.getElementById(inputIds[i]);
+      if (inputNode) {
+        inputNode.disabled = !!isPending;
+      }
+    }
+  }
+
+  function getLoginFormValues() {
+    return {
+      code: String(document.getElementById('login-code').value || '').trim().toUpperCase(),
+      user: String(document.getElementById('login-user').value || '').trim(),
+      pass: String(document.getElementById('login-pass').value || '').trim()
+    };
+  }
+
+  function validateLoginForm(values) {
+    var hasError = false;
+
+    if (!values.code) {
+      setLoginFieldError('code', 'Server identity code is required.');
+      hasError = true;
+    }
+    if (!values.user) {
+      setLoginFieldError('user', 'Username is required.');
+      hasError = true;
+    }
+    if (!values.pass) {
+      setLoginFieldError('pass', 'Password is required.');
+      hasError = true;
+    }
+
+    if (hasError) {
+      setLoginStatus('Complete the required fields before continuing.', 'error');
+    }
+
+    return !hasError;
+  }
+
+  function executeLogin() {
+    if (state.loginPending) {
+      return;
+    }
+
+    var values = getLoginFormValues();
+    clearLoginErrors();
+    setLoginResolvedPortal(null);
+
+    if (!validateLoginForm(values)) {
+      return;
+    }
+
+    state.loginRequestId += 1;
+    var requestId = state.loginRequestId;
+
+    setLoginPending(true);
+    setLoginStatus('Validating server identity...', 'info');
+
+    apiValidatePortalCode(values.code, function (portal) {
+      if (requestId !== state.loginRequestId) {
+        return;
+      }
+
+      setLoginResolvedPortal(portal);
+      setLoginStatus('Connecting to ' + (portal.name || portal.portalCode || 'portal') + '...', 'info');
+
+      apiAuthenticate(portal.baseUrl, values.user, values.pass, function (authRes) {
+        if (requestId !== state.loginRequestId) {
+          return;
+        }
+
         var session = {
           portalCode: portal.portalCode,
           portalBaseUrl: portal.baseUrl,
           serverName: portal.name,
-          username: user,
+          username: values.user,
           userInfo: authRes.user_info,
           serverInfo: authRes.server_info,
           authenticatedAt: new Date().toISOString()
@@ -2477,49 +4092,222 @@
   }
 
   // --- PROFILES CONTROLLER ---
-  function setupProfilesView() {
+  function setProfilesStatus(message) {
+    var statusNode = document.getElementById('profiles-screen-status');
+    if (statusNode) {
+      statusNode.textContent = message || '';
+    }
+  }
+
+  function setupProfilesView(focusIndex) {
     state.focusedPanel = 'profiles';
     state.focusedIndex = 0;
-    
+
     var container = document.getElementById('profiles-list-container');
     container.innerHTML = '';
 
+    // Render one slot per profile (card + edit button)
     for (var i = 0; i < state.profiles.length; i++) {
       var profile = state.profiles[i];
-      
+
+      var slot = document.createElement('div');
+      slot.className = 'profile-slot';
+
+      // --- Select card ---
       var card = document.createElement('div');
       card.className = 'profile-card focusable';
       card.setAttribute('tabindex', '-1');
       card.setAttribute('data-id', profile.id);
       card.setAttribute('data-index', i);
-      
+
       var avatar = document.createElement('div');
       avatar.className = 'profile-avatar' + (profile.isKids ? ' kids' : '');
       avatar.textContent = profile.avatarSeed;
-      
+
       var name = document.createElement('div');
       name.className = 'profile-name';
       name.textContent = profile.name;
-      
+
       card.appendChild(avatar);
       card.appendChild(name);
-      
-      card.onclick = function (e) {
-        var idx = parseInt(this.getAttribute('data-index'), 10);
-        selectProfile(state.profiles[idx]);
-      };
-      
-      container.appendChild(card);
+
+      (function (p) {
+        card.onclick = function () { selectProfile(p); };
+      })(profile);
+
+      slot.appendChild(card);
+
+      // --- Edit button ---
+      var editBtn = document.createElement('div');
+      editBtn.className = 'profile-edit-btn focusable';
+      editBtn.setAttribute('tabindex', '-1');
+      editBtn.setAttribute('data-index', i);
+      editBtn.textContent = '\u270E Edit';
+
+      (function (p) {
+        editBtn.onclick = function () {
+          state.profileModalCaller = 'profiles';
+          openProfileFormModal(p);
+        };
+      })(profile);
+
+      slot.appendChild(editBtn);
+      container.appendChild(slot);
     }
+
+    // --- + Add Profile card ---
+    var addSlot = document.createElement('div');
+    addSlot.className = 'profile-slot';
+
+    var addCard = document.createElement('div');
+    addCard.className = 'profile-card focusable card-add';
+    addCard.setAttribute('tabindex', '-1');
+    addCard.setAttribute('data-index', state.profiles.length);
+    addCard.textContent = '+ Add Profile';
+    addCard.onclick = function () {
+      state.profileModalCaller = 'profiles';
+      openProfileFormModal(null);
+    };
+
+    addSlot.appendChild(addCard);
+    container.appendChild(addSlot);
 
     showView('view-profiles');
     updateFocusUI();
   }
 
+  function clearProfileFormErrors() {
+    var nameNode = document.getElementById('profile-form-name');
+    var avatarNode = document.getElementById('profile-form-avatar');
+    var nameErrorNode = document.getElementById('profile-form-name-error');
+    var avatarErrorNode = document.getElementById('profile-form-avatar-error');
+
+    if (nameNode) nameNode.classList.remove('input-error');
+    if (avatarNode) avatarNode.classList.remove('input-error');
+    if (nameErrorNode) nameErrorNode.textContent = '';
+    if (avatarErrorNode) avatarErrorNode.textContent = '';
+  }
+
+  function setProfileFormFieldError(fieldId, message) {
+    var inputNode = document.getElementById('profile-form-' + fieldId);
+    var errorNode = document.getElementById('profile-form-' + fieldId + '-error');
+    if (inputNode) {
+      inputNode.classList.add('input-error');
+    }
+    if (errorNode) {
+      errorNode.textContent = message || '';
+    }
+  }
+
+  function setProfileFormStatus(message, tone) {
+    var statusNode = document.getElementById('profile-form-status');
+    if (!statusNode) return;
+    statusNode.textContent = message || '';
+    statusNode.className = 'status-text status-text--' + (tone || 'idle');
+  }
+
+  function syncProfileFormToggle() {
+    var toggleNode = document.getElementById('profile-form-kids');
+    if (!toggleNode) return;
+
+    toggleNode.textContent = 'Kids Mode: ' + (state.profileFormDraft.isKids ? 'On' : 'Off');
+    if (state.profileFormDraft.isKids) {
+      toggleNode.classList.add('profile-form-toggle--active');
+    } else {
+      toggleNode.classList.remove('profile-form-toggle--active');
+    }
+  }
+
+  function openProfileFormModal() {
+    state.profileFormDraft = {
+      name: '',
+      avatarSeed: '',
+      isKids: false
+    };
+
+    document.getElementById('profile-form-name').value = '';
+    document.getElementById('profile-form-avatar').value = '';
+    clearProfileFormErrors();
+    syncProfileFormToggle();
+    setProfileFormStatus('Create up to 6 local profiles for this account.', 'idle');
+
+    document.getElementById('profile-form-modal').classList.remove('hidden');
+    state.focusedPanel = 'profile-form';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function closeProfileFormModal(keepProfilePanel) {
+    document.getElementById('profile-form-modal').classList.add('hidden');
+    clearProfileFormErrors();
+    setProfileFormStatus('Create up to 6 local profiles for this account.', 'idle');
+
+    if (!keepProfilePanel) {
+      state.focusedPanel = 'profiles';
+      state.focusedIndex = state.profiles.length;
+      updateFocusUI();
+    }
+  }
+
+  function saveNewProfile() {
+    var draftName = String(document.getElementById('profile-form-name').value || '').trim();
+    var draftAvatar = sanitizeProfileInitials(document.getElementById('profile-form-avatar').value || '');
+
+    clearProfileFormErrors();
+
+    if (!draftName) {
+      setProfileFormFieldError('name', 'Profile name is required.');
+      setProfileFormStatus('Add a profile name before saving.', 'error');
+      return;
+    }
+
+    if (draftName.length < 2) {
+      setProfileFormFieldError('name', 'Profile name must be at least 2 characters.');
+      setProfileFormStatus('Profile name is too short.', 'error');
+      return;
+    }
+
+    if (state.profiles.length >= 6) {
+      setProfileFormStatus('A maximum of 6 local profiles is supported on this device.', 'error');
+      return;
+    }
+
+    for (var i = 0; i < state.profiles.length; i++) {
+      if (state.profiles[i].name.toLowerCase() === draftName.toLowerCase()) {
+        setProfileFormFieldError('name', 'A profile with this name already exists.');
+        setProfileFormStatus('Use a different profile name.', 'error');
+        return;
+      }
+    }
+
+    if (!draftAvatar) {
+      draftAvatar = deriveProfileInitials(draftName);
+    }
+
+    if (!draftAvatar) {
+      setProfileFormFieldError('avatar', 'Enter initials or use a clearer profile name.');
+      setProfileFormStatus('Initials could not be derived from the profile name.', 'error');
+      return;
+    }
+
+    var newProfile = {
+      id: buildProfileId(),
+      name: draftName,
+      avatarSeed: draftAvatar,
+      isKids: !!state.profileFormDraft.isKids
+    };
+
+    state.profiles.push(newProfile);
+    saveSessionState(state.session, state.profiles);
+    closeProfileFormModal(true);
+    setupProfilesView(state.profiles.length - 1);
+    setProfilesStatus('Profile "' + newProfile.name + '" added successfully.');
+  }
+
   function selectProfile(profile) {
     state.selectedProfile = profile;
     saveSelectedProfile(profile);
-    loadCatalog(state.catalogMode);
+    openHomeView(true);
   }
 
   // --- CATALOG CONTROLLER ---
@@ -2528,6 +4316,7 @@
       state.catalogMode = mode;
     }
 
+    setCatalogScreen('browse');
     var config = getCatalogConfig();
     showView('view-catalog');
     state.focusedPanel = 'catalog-sidebar';
@@ -2781,8 +4570,59 @@
     state.playerReturnIndex = state.focusedIndex || 0;
   }
 
+  function resetPlayerSurface() {
+    var video = document.getElementById('player-video');
+    var trailerEmbed = document.getElementById('player-trailer-embed');
+
+    if (trailerEmbed) {
+      trailerEmbed.style.display = 'none';
+      trailerEmbed.removeAttribute('src');
+    }
+
+    if (video) {
+      video.style.display = 'block';
+    }
+  }
+
+  function showPlayerEmbed(embedUrl, title) {
+    cleanupHls();
+    rememberPlayerReturnState();
+    state.activeChannel = null;
+    state.activeChannelQueue = [];
+    state.activeChannelIndex = 0;
+    state.focusedPanel = 'player';
+    showView('view-player');
+
+    var video = document.getElementById('player-video');
+    var trailerEmbed = document.getElementById('player-trailer-embed');
+    var status = document.getElementById('player-status-container');
+    var playerTitle = document.getElementById('player-channel-name');
+
+    if (video) {
+      try {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      } catch (e) {}
+      video.style.display = 'none';
+    }
+
+    if (playerTitle) {
+      playerTitle.textContent = title || 'Trailer';
+    }
+    if (status) {
+      status.style.display = 'none';
+    }
+
+    if (trailerEmbed) {
+      trailerEmbed.style.display = 'block';
+      trailerEmbed.src = embedUrl;
+    }
+  }
+
   function playStream(streamId) {
     cleanupHls();
+    resetPlayerSurface();
 
     var video = document.getElementById('player-video');
 
@@ -2995,6 +4835,7 @@
   function playChannel(channel, queue) {
     var activeQueue = queue || state.channels;
     rememberPlayerReturnState();
+    updateWatchHistory('live', channel, 'Live channel');
     state.activeChannel = channel;
     state.activeChannelQueue = activeQueue;
     
@@ -3017,7 +4858,9 @@
 
   function playMovie(movie, detailInfo) {
     cleanupHls();
+    resetPlayerSurface();
     rememberPlayerReturnState();
+    updateWatchHistory('movies', movie, 'Movie');
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -3063,7 +4906,13 @@
     if (!episode) return;
 
     cleanupHls();
+    resetPlayerSurface();
     rememberPlayerReturnState();
+    updateWatchHistory('series', state.detailItem || {
+      series_id: getEpisodeId(episode),
+      name: seriesTitle || getEpisodeTitle(episode, 0),
+      cover: ''
+    }, getEpisodeTitle(episode, 0));
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -3105,6 +4954,51 @@
     video.play();
   }
 
+  function playDetailTrailer(episode, seriesTitle) {
+    var trailerUrl = safeTrim((episode && episode.__trailerUrl) || getDetailTrailerUrl(state.detailItem, state.detailInfo));
+    if (!trailerUrl) return;
+
+    var youtubeEmbedUrl = getYouTubeEmbedUrl(trailerUrl);
+    if (youtubeEmbedUrl) {
+      showPlayerEmbed(youtubeEmbedUrl, (seriesTitle || 'Series') + ' - Trailer');
+      return;
+    }
+
+    cleanupHls();
+    resetPlayerSurface();
+    rememberPlayerReturnState();
+    state.activeChannel = null;
+    state.activeChannelQueue = [];
+    state.activeChannelIndex = 0;
+    state.focusedPanel = 'player';
+    showView('view-player');
+
+    document.getElementById('player-channel-name').textContent = (seriesTitle || 'Series') + ' - Trailer';
+    document.getElementById('player-status-container').style.display = 'flex';
+
+    var video = document.getElementById('player-video');
+    while (video.firstChild) {
+      video.removeChild(video.firstChild);
+    }
+    video.removeAttribute('src');
+    try { video.load(); } catch (loadErr) {}
+
+    video.onwaiting = function() {
+      document.getElementById('player-status-container').style.display = 'flex';
+    };
+    video.onplaying = function() {
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+    video.onerror = function() {
+      document.getElementById('player-channel-name').textContent = 'Playback Error: Trailer unavailable';
+      document.getElementById('player-status-container').style.display = 'none';
+    };
+
+    video.src = trailerUrl;
+    video.load();
+    video.play();
+  }
+
   function playDetailPrimary() {
     if (!state.detailItem) return;
 
@@ -3113,7 +5007,11 @@
         state.detailEpisodes = getEpisodesForSeason(state.detailInfo, state.detailSeasons[state.detailSelectedSeasonIndex].key);
       }
       if (state.detailEpisodes.length) {
-        playSeriesEpisode(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
+        if (state.detailEpisodes[0].__isTrailer) {
+          playDetailTrailer(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
+        } else {
+          playSeriesEpisode(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
+        }
       }
       return;
     }
@@ -3123,6 +5021,7 @@
 
   function closePlayer() {
     cleanupHls();
+    resetPlayerSurface();
     var video = document.getElementById('player-video');
     try {
       video.pause();
@@ -3133,6 +5032,9 @@
     state.focusedIndex = state.playerReturnIndex || 0;
 
     if ((state.playerReturnViewId || 'view-catalog') === 'view-catalog') {
+      if (state.playerReturnPanel === 'home-rails') {
+        refreshHomeView();
+      }
       var cards = document.querySelectorAll('.channel-card');
       for (var i = 0; i < cards.length; i++) {
         var id = cards[i].getAttribute('data-id');
@@ -3172,10 +5074,24 @@
       return document.getElementById('view-login').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'profiles') {
-      return document.getElementById('profiles-list-container').querySelectorAll('.focusable');
+      return document.getElementById('profiles-list-container').querySelectorAll('.profile-card.focusable');
+    }
+    if (state.focusedPanel === 'profiles-edit') {
+      return document.getElementById('profiles-list-container').querySelectorAll('.profile-edit-btn.focusable');
     }
     if (state.focusedPanel === 'catalog-sidebar') {
       return document.querySelector('.sidebar-menu').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'home-rails') {
+      return document.getElementById('home-rails').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'home-hero') {
+      var playBtn = document.getElementById('home-hero-btn-play');
+      var detailsBtn = document.getElementById('home-hero-btn-details');
+      var list = [];
+      if (playBtn) list.push(playBtn);
+      if (detailsBtn) list.push(detailsBtn);
+      return list;
     }
     if (state.focusedPanel === 'catalog-categories') {
       return document.getElementById('categories-panel-list').querySelectorAll('.focusable');
@@ -3198,11 +5114,17 @@
     if (state.focusedPanel === 'detail-episodes') {
       return document.getElementById('detail-episodes').querySelectorAll('.focusable');
     }
-    if (state.focusedPanel === 'search-controls') {
-      return document.getElementById('search-controls').querySelectorAll('.focusable');
+    if (state.focusedPanel === 'search-header') {
+      return document.getElementById('search-header-controls').querySelectorAll('.focusable');
+    }
+    if (state.focusedPanel === 'search-back') {
+      return [document.getElementById('search-btn-back')];
+    }
+    if (state.focusedPanel === 'search-keyboard') {
+      return document.getElementById('search-keyboard').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'search-results') {
-      return document.getElementById('search-results-grid').querySelectorAll('.focusable');
+      return document.getElementById('search-results-rails').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'watchlist-controls') {
       return document.getElementById('watchlist-controls').querySelectorAll('.focusable');
@@ -3261,11 +5183,55 @@
       focusedEl.classList.add('focused');
       if (focusedEl.tagName !== 'INPUT') {
         focusedEl.focus();
+        if (!isHomePanel(state.focusedPanel)) {
+          var resetWindowScroll = function () {
+            window.scrollTo(0, 0);
+            if (document.body) document.body.scrollTop = 0;
+            if (document.documentElement) document.documentElement.scrollTop = 0;
+            
+            // Reset scroll on non-scrollable parent views to fix TV browser focus shift bugs
+            var viewCatalog = document.getElementById('view-catalog');
+            if (viewCatalog) { viewCatalog.scrollTop = 0; viewCatalog.scrollLeft = 0; }
+            var catalogContainer = document.querySelector('.catalog-container');
+            if (catalogContainer) { catalogContainer.scrollTop = 0; catalogContainer.scrollLeft = 0; }
+            var homePanel = document.getElementById('home-panel');
+            if (homePanel) { homePanel.scrollTop = 0; homePanel.scrollLeft = 0; }
+          };
+          resetWindowScroll();
+          setTimeout(resetWindowScroll, 0);
+          setTimeout(resetWindowScroll, 50);
+          setTimeout(resetWindowScroll, 150);
+        }
       }
       
       // Auto-scroll views for catalog scroll containers
       if (state.focusedPanel === 'catalog-categories') {
         scrollIntoViewIfNeeded(document.getElementById('categories-panel-list'), focusedEl);
+      } else if (state.focusedPanel === 'home-hero') {
+        var homeScroll = document.getElementById('home-scroll');
+        if (homeScroll) {
+          var resetHeroScroll = function () {
+            homeScroll.scrollTop = 0;
+          };
+          resetHeroScroll();
+          setTimeout(resetHeroScroll, 0);
+          setTimeout(resetHeroScroll, 50);
+          setTimeout(resetHeroScroll, 100);
+          setTimeout(resetHeroScroll, 200);
+          setTimeout(resetHeroScroll, 400);
+        }
+      } else if (state.focusedPanel === 'home-rails') {
+        var homeScrollNode = document.getElementById('home-scroll');
+        var homeRailNode = focusedEl.parentNode && focusedEl.parentNode.parentNode ? focusedEl.parentNode.parentNode : focusedEl;
+        if (homeScrollNode) {
+          var syncHomeRailScroll = function () {
+            scrollIntoViewIfNeeded(homeScrollNode, homeRailNode);
+            scrollHorizontalIntoViewIfNeeded(focusedEl.parentNode, focusedEl);
+          };
+          syncHomeRailScroll();
+          setTimeout(syncHomeRailScroll, 0);
+          setTimeout(syncHomeRailScroll, 40);
+        }
       } else if (state.focusedPanel === 'catalog-channels') {
         scrollIntoViewIfNeeded(document.querySelector('.channels-scroll'), focusedEl);
         
@@ -3291,7 +5257,12 @@
       } else if (state.focusedPanel === 'detail-episodes') {
         scrollIntoViewIfNeeded(document.getElementById('detail-episodes-scroll'), focusedEl);
       } else if (state.focusedPanel === 'search-results') {
-        scrollIntoViewIfNeeded(document.getElementById('search-results-scroll'), focusedEl);
+        var resultsScroll = document.getElementById('search-results-scroll');
+        var railSection = focusedEl.parentNode && focusedEl.parentNode.parentNode && focusedEl.parentNode.parentNode.classList && focusedEl.parentNode.parentNode.classList.contains('legacy-search-rail')
+          ? focusedEl.parentNode.parentNode
+          : focusedEl;
+        scrollIntoViewIfNeeded(resultsScroll, railSection);
+        scrollHorizontalIntoViewIfNeeded(focusedEl.parentNode, focusedEl);
       } else if (state.focusedPanel === 'watchlist-results') {
         scrollIntoViewIfNeeded(document.getElementById('watchlist-results-scroll'), focusedEl);
       }
@@ -3299,6 +5270,7 @@
   }
 
   function scrollIntoViewIfNeeded(container, element) {
+    // Vertical scroll logic
     var containerTop = container.scrollTop;
     var containerBottom = containerTop + container.clientHeight;
     var elemTop = element.offsetTop;
@@ -3308,6 +5280,32 @@
       container.scrollTop = elemTop;
     } else if (elemBottom > containerBottom) {
       container.scrollTop = elemBottom - container.clientHeight;
+    }
+
+    // Horizontal scroll logic
+    var containerLeft = container.scrollLeft;
+    var containerRight = containerLeft + container.clientWidth;
+    var elemLeft = element.offsetLeft;
+    var elemRight = elemLeft + element.clientWidth;
+
+    if (elemLeft < containerLeft) {
+      container.scrollLeft = elemLeft;
+    } else if (elemRight > containerRight) {
+      container.scrollLeft = elemRight - container.clientWidth;
+    }
+  }
+
+  function scrollHorizontalIntoViewIfNeeded(container, element) {
+    if (!container || !element) return;
+    var containerLeft = container.scrollLeft;
+    var containerRight = containerLeft + container.clientWidth;
+    var elemLeft = element.offsetLeft;
+    var elemRight = elemLeft + element.offsetWidth;
+
+    if (elemLeft < containerLeft) {
+      container.scrollLeft = elemLeft;
+    } else if (elemRight > containerRight) {
+      container.scrollLeft = elemRight - container.clientWidth;
     }
   }
 
@@ -3324,11 +5322,112 @@
   }
 
   function isSearchPanel(panel) {
-    return panel === 'search-controls' || panel === 'search-results';
+    return panel === 'search-header' || panel === 'search-keyboard' || panel === 'search-results' || panel === 'search-back';
   }
 
   function isWatchlistPanel(panel) {
     return panel === 'watchlist-controls' || panel === 'watchlist-results';
+  }
+
+  function isHomePanel(panel) {
+    return panel === 'home-rails' || panel === 'home-hero';
+  }
+
+  function handleHomeNavigation(code, items) {
+    if (state.focusedPanel === 'home-hero') {
+      if (code === 37) { // ArrowLeft
+        if (state.focusedIndex > 0) {
+          state.focusedIndex--;
+          updateFocusUI();
+        } else {
+          state.focusedPanel = 'catalog-sidebar';
+          state.focusedIndex = getSidebarFocusIndex('home');
+          updateFocusUI();
+        }
+        return true;
+      }
+      if (code === 39) { // ArrowRight
+        if (state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          updateFocusUI();
+        }
+        return true;
+      }
+      if (code === 40) { // ArrowDown
+        state.focusedPanel = 'home-rails';
+        state.focusedIndex = 0;
+        updateFocusUI();
+        return true;
+      }
+      if (code === 38) { // ArrowUp
+        return true; // Consume at top
+      }
+      if (code === 13) { // Enter / OK
+        var activeBtn = items[state.focusedIndex];
+        if (activeBtn) {
+          activeBtn.click();
+        }
+        return true;
+      }
+      return false;
+    }
+
+    if (!items.length) return false;
+
+    var activeEl = items[state.focusedIndex];
+    if (!activeEl) return false;
+
+    var railIndex = parseInt(activeEl.getAttribute('data-rail-index'), 10) || 0;
+    var cardIndex = parseInt(activeEl.getAttribute('data-card-index'), 10) || 0;
+
+    if (code === 37) {
+      if (cardIndex > 0) {
+        state.focusedIndex = getHomeFlatIndex(railIndex, cardIndex - 1);
+      } else {
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = getSidebarFocusIndex('home');
+      }
+      return true;
+    }
+
+    if (code === 39) {
+      if (cardIndex < state.homeSections[railIndex].entries.length - 1) {
+        state.focusedIndex = getHomeFlatIndex(railIndex, cardIndex + 1);
+      }
+      return true;
+    }
+
+    if (code === 38) {
+      if (railIndex > 0) {
+        var prevRail = railIndex - 1;
+        while (prevRail >= 0 && !state.homeSections[prevRail].entries.length) {
+          prevRail--;
+        }
+        if (prevRail >= 0) {
+          state.focusedIndex = getHomeFlatIndex(prevRail, Math.min(cardIndex, state.homeSections[prevRail].entries.length - 1));
+        } else {
+          focusHomeHero(0);
+        }
+      } else {
+        focusHomeHero(0);
+      }
+      return true;
+    }
+
+    if (code === 40) {
+      if (railIndex < state.homeSections.length - 1) {
+        var nextRail = railIndex + 1;
+        while (nextRail < state.homeSections.length && !state.homeSections[nextRail].entries.length) {
+          nextRail++;
+        }
+        if (nextRail < state.homeSections.length) {
+          state.focusedIndex = getHomeFlatIndex(nextRail, Math.min(cardIndex, state.homeSections[nextRail].entries.length - 1));
+        }
+      }
+      return true;
+    }
+
+    return false;
   }
 
   function isSettingsPanel(panel) {
@@ -3387,7 +5486,7 @@
     }
 
     if (state.focusedPanel === 'detail-episodes') {
-      if (code === 38) {
+      if (code === 37) { // ArrowLeft
         if (state.focusedIndex > 0) {
           state.focusedIndex--;
         } else if (hasDetailSeasons()) {
@@ -3398,10 +5497,12 @@
           state.focusedIndex = 0;
         }
         handled = true;
-      } else if (code === 40 && state.focusedIndex < items.length - 1) {
-        state.focusedIndex++;
+      } else if (code === 39) { // ArrowRight
+        if (state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+        }
         handled = true;
-      } else if (code === 37) {
+      } else if (code === 38) { // ArrowUp
         if (hasDetailSeasons()) {
           state.focusedPanel = 'detail-seasons';
           state.focusedIndex = state.detailSelectedSeasonIndex;
@@ -3410,6 +5511,8 @@
           state.focusedIndex = 0;
         }
         handled = true;
+      } else if (code === 40) { // ArrowDown
+        handled = true; // Consume ArrowDown
       }
       return handled;
     }
@@ -3494,7 +5597,7 @@
 
   function handleSearchNavigation(code, items) {
     var handled = false;
-    var gridColumns = getModeGridColumnCount(state.searchMode);
+    var totalResults = getSearchResultsCount();
 
     if (state.focusedPanel === 'search-controls') {
       if (code === 37) {
@@ -3517,31 +5620,119 @@
       return handled;
     }
 
-    if (state.focusedPanel === 'search-results') {
-      if (code === 38) {
-        if (state.focusedIndex >= gridColumns) {
-          state.focusedIndex -= gridColumns;
-        } else {
-          state.focusedPanel = 'search-controls';
-          state.focusedIndex = 0;
-        }
-        handled = true;
-      } else if (code === 40) {
-        if (state.focusedIndex + gridColumns < items.length) {
-          state.focusedIndex += gridColumns;
-          handled = true;
-        }
-      } else if (code === 37) {
-        if (state.focusedIndex % gridColumns > 0) {
-          state.focusedIndex--;
-        } else {
+    if (state.focusedPanel === 'search-keyboard') {
+      var position = getSearchKeyboardPosition(state.focusedIndex);
+      var rows = state.searchKeyboardRows.length ? state.searchKeyboardRows : getSearchKeyboardRows();
+      var row = position.row;
+      var col = position.col;
+      var currentRow = rows[row] || [];
+
+      if (code === 37) {
+        if (col === 0) {
           state.focusedPanel = 'catalog-sidebar';
-          state.focusedIndex = 3;
+          state.focusedIndex = getSidebarFocusIndex('search');
+          updateFocusUI();
+        } else {
+          focusSearchKeyboard(row, col - 1);
         }
         handled = true;
       } else if (code === 39) {
-        if (state.focusedIndex % gridColumns < gridColumns - 1 && state.focusedIndex < items.length - 1) {
-          state.focusedIndex++;
+        if (col >= currentRow.length - 1) {
+          var firstRail = findSearchRailInDirection(0, 1);
+          if (firstRail >= 0) {
+            focusSearchResult(firstRail, 0);
+          }
+        } else {
+          focusSearchKeyboard(row, col + 1);
+        }
+        handled = true;
+      } else if (code === 38) {
+        if (row === 0) {
+          focusSearchHeader(0);
+        } else {
+          var upCol = Math.min(col, rows[row - 1].length - 1);
+          focusSearchKeyboard(row - 1, upCol);
+        }
+        handled = true;
+      } else if (code === 40) {
+        if (row >= rows.length - 1) {
+          state.focusedPanel = 'search-back';
+          state.focusedIndex = 0;
+          updateFocusUI();
+        } else {
+          var downCol = Math.min(col, rows[row + 1].length - 1);
+          focusSearchKeyboard(row + 1, downCol);
+        }
+        handled = true;
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'search-back') {
+      if (code === 37) {
+        state.focusedPanel = 'catalog-sidebar';
+        state.focusedIndex = getSidebarFocusIndex('search');
+        updateFocusUI();
+        handled = true;
+      } else if (code === 39) {
+        if (totalResults > 0) {
+          var firstRail = findSearchRailInDirection(0, 1);
+          if (firstRail >= 0) {
+            focusSearchResult(firstRail, 0);
+            handled = true;
+          }
+        }
+      } else if (code === 38) {
+        focusSearchKeyboard(8, 1);
+        handled = true;
+      } else if (code === 40) {
+        handled = true;
+      }
+      return handled;
+    }
+
+    if (state.focusedPanel === 'search-results') {
+      var activeEl = items[state.focusedIndex];
+      if (!activeEl) return false;
+
+      var sectionIndex = parseInt(activeEl.getAttribute('data-section-index'), 10) || 0;
+      var cardIndex = parseInt(activeEl.getAttribute('data-card-index'), 10) || 0;
+      var rail = state.searchRails[sectionIndex];
+      if (!rail) return false;
+
+      if (code === 37) {
+        if (cardIndex === 0) {
+          var targetKeyboardRows = state.searchKeyboardRows.length ? state.searchKeyboardRows.length : getSearchKeyboardRows().length;
+          if (sectionIndex >= targetKeyboardRows) {
+            state.focusedPanel = 'search-back';
+            state.focusedIndex = 0;
+            updateFocusUI();
+          } else {
+            var targetRow = Math.min(sectionIndex, targetKeyboardRows - 1);
+            var targetCols = state.searchKeyboardRows[targetRow].length;
+            focusSearchKeyboard(targetRow, targetCols - 1);
+          }
+        } else {
+          focusSearchResult(sectionIndex, cardIndex - 1);
+        }
+        handled = true;
+      } else if (code === 39) {
+        if (cardIndex < rail.items.length - 1) {
+          focusSearchResult(sectionIndex, cardIndex + 1);
+          handled = true;
+        }
+      } else if (code === 38) {
+        var prevSection = findSearchRailInDirection(sectionIndex - 1, -1);
+        if (prevSection >= 0) {
+          focusSearchResult(prevSection, Math.min(cardIndex, state.searchRails[prevSection].items.length - 1));
+        } else {
+          focusSearchHeader(0);
+        }
+        handled = true;
+      } else if (code === 40) {
+        var followingSection = findSearchRailInDirection(sectionIndex + 1, 1);
+        if (followingSection >= 0) {
+          focusSearchResult(followingSection, Math.min(cardIndex, state.searchRails[followingSection].items.length - 1));
         }
         handled = true;
       }
@@ -3627,6 +5818,9 @@
       } else if (state.focusedPanel === 'player') {
         closePlayer();
         handled = true;
+      } else if (state.focusedPanel === 'profile-form') {
+        closeProfileFormModal(false);
+        handled = true;
       } else if (state.focusedPanel === 'login') {
         setupWelcomeView();
         handled = true;
@@ -3647,16 +5841,12 @@
       } else if (isWatchlistPanel(state.focusedPanel)) {
         returnToCatalogSidebar('watchlist');
         handled = true;
-      } else if (state.focusedPanel === 'settings-profile-modal') {
-        closeProfileFormModal();
+      } else if (state.focusedPanel === 'profiles-edit') {
+        // Back from edit buttons row — go up to profile cards row
+        state.focusedPanel = 'profiles';
+        updateFocusUI();
         handled = true;
-      } else if (state.focusedPanel === 'profile-name-keyboard') {
-        closeProfileNameKeyboard(false);
-        handled = true;
-      } else if (isSettingsPanel(state.focusedPanel)) {
-        returnToCatalogSidebar('settings');
-        handled = true;
-      } else if (state.focusedPanel === 'catalog-categories' || state.focusedPanel === 'catalog-channels' || state.focusedPanel === 'catalog-sidebar') {
+      } else if (state.focusedPanel === 'catalog-categories' || state.focusedPanel === 'catalog-channels' || state.focusedPanel === 'catalog-sidebar' || state.focusedPanel === 'home-rails') {
         // Go back to profile selection
         setupProfilesView();
         handled = true;
@@ -3684,9 +5874,8 @@
       return;
     }
 
-    // Physical Backspace on profile name keyboard = delete char
-    if (code === 8 && state.focusedPanel === 'profile-name-keyboard') {
-      handleProfileNameKeyPress('Backspace');
+    if (isSearchPanel(state.focusedPanel) && event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      setSearchQueryValue(state.searchQuery + event.key);
       event.preventDefault();
       return;
     }
@@ -3696,58 +5885,12 @@
 
     if (isDetailPanel(state.focusedPanel)) {
       handled = handleDetailNavigation(code, items);
+    } else if (isHomePanel(state.focusedPanel)) {
+      handled = handleHomeNavigation(code, items);
     } else if (isSearchPanel(state.focusedPanel)) {
       handled = handleSearchNavigation(code, items);
     } else if (isWatchlistPanel(state.focusedPanel)) {
       handled = handleWatchlistNavigation(code, items);
-    } else if (state.focusedPanel === 'settings-profile-modal') {
-      // Modal keyboard navigation — uses only visible focusable items
-      var pm = state.profileModal;
-      var modalItems = getVisibleModalItems();
-      var maxModalIdx = modalItems.length - 1;
-
-      if (code === 38) { // ArrowUp
-        if (pm.focusIndex > 0) {
-          pm.focusIndex--;
-          updateProfileModalFocus();
-          handled = true;
-        }
-      } else if (code === 40) { // ArrowDown
-        if (pm.focusIndex < maxModalIdx) {
-          pm.focusIndex++;
-          updateProfileModalFocus();
-          handled = true;
-        }
-      } else if (code === 13) { // Enter
-        var focusedItem = modalItems[pm.focusIndex];
-        if (focusedItem) {
-          var itemId = focusedItem.id;
-          if (focusedItem.tagName === 'INPUT') {
-            openProfileNameKeyboard();
-            handled = true;
-          } else if (itemId === 'spm-kids-btn') {
-            pm.isKids = !pm.isKids;
-            focusedItem.textContent = pm.isKids ? 'ON' : 'OFF';
-            if (pm.isKids) {
-              focusedItem.classList.add('kids-on');
-            } else {
-              focusedItem.classList.remove('kids-on');
-            }
-            handled = true;
-          } else if (itemId === 'spm-save-btn') {
-            saveProfileFromModal();
-            handled = true;
-          } else if (itemId === 'spm-cancel-btn') {
-            closeProfileFormModal();
-            handled = true;
-          } else if (itemId === 'spm-delete-btn') {
-            deleteProfileFromModal();
-            handled = true;
-          }
-        }
-      }
-    } else if (isSettingsPanel(state.focusedPanel)) {
-      handled = handleSettingsNavigation(code, items);
     }
 
     if (!handled && code === 38) { // ArrowUp
@@ -3761,15 +5904,6 @@
             var targetRowLength = rows[targetRow].length;
             var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
-            handled = true;
-          }
-        } else if (state.focusedPanel === 'profile-name-keyboard') {
-          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
-          if (pPos.row > 0) {
-            var pTargetRow = pPos.row - 1;
-            var pTargetLen = profileKeyboardRows[pTargetRow].length;
-            var pTargetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (pTargetLen - 1));
-            state.focusedIndex = getProfileKeyboardIndexFromRowCol(pTargetRow, pTargetCol);
             handled = true;
           }
         } else if (state.focusedPanel === 'catalog-channels') {
@@ -3797,15 +5931,6 @@
             var targetRowLength = rows[targetRow].length;
             var targetCol = Math.round((pos.col / (pos.rowLength - 1 || 1)) * (targetRowLength - 1));
             state.focusedIndex = getWizardIndexFromRowCol(targetRow, targetCol);
-            handled = true;
-          }
-        } else if (state.focusedPanel === 'profile-name-keyboard') {
-          var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
-          if (pPos.row < profileKeyboardRows.length - 1) {
-            var pTargetRow = pPos.row + 1;
-            var pTargetLen = profileKeyboardRows[pTargetRow].length;
-            var pTargetCol = Math.round((pPos.col / (pPos.rowLength - 1 || 1)) * (pTargetLen - 1));
-            state.focusedIndex = getProfileKeyboardIndexFromRowCol(pTargetRow, pTargetCol);
             handled = true;
           }
         } else if (state.focusedPanel === 'catalog-channels') {
@@ -3869,6 +5994,11 @@
           state.focusedIndex--;
           handled = true;
         }
+      } else if (state.focusedPanel === 'profile-form') {
+        if (items.length > 0 && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        }
       }
     } else if (code === 39) { // ArrowRight
       if (state.focusedPanel === 'login-wizard') {
@@ -3884,18 +6014,21 @@
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-sidebar') {
-        if (state.focusedIndex === 3) {
-          openSearchView();
+        if (state.focusedIndex === 0) {
+          openHomeView();
           handled = true;
         } else if (state.focusedIndex === 4) {
-          openWatchlistView();
+          openSearchView();
           handled = true;
         } else if (state.focusedIndex === 5) {
+          openWatchlistView();
+          handled = true;
+        } else if (state.focusedIndex === 6) {
           openSettingsView();
           handled = true;
-        } else if (state.focusedIndex <= 2) {
+        } else if (state.focusedIndex >= 1 && state.focusedIndex <= 3) {
           var modes = ['live', 'movies', 'series'];
-          var targetMode = modes[state.focusedIndex];
+          var targetMode = modes[state.focusedIndex - 1];
           if (state.catalogMode !== targetMode) {
             loadCatalog(targetMode);
           } else {
@@ -3922,6 +6055,11 @@
         }
       } else if (state.focusedPanel === 'profiles') {
         // Right profile selection
+        if (items.length > 0 && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'profile-form') {
         if (items.length > 0 && state.focusedIndex < items.length - 1) {
           state.focusedIndex++;
           handled = true;
@@ -3970,6 +6108,10 @@
     setupWelcomeView();
   };
 
+  document.getElementById('sidebar-home').onclick = function () {
+    openHomeView();
+  };
+
   document.getElementById('sidebar-live').onclick = function () {
     loadCatalog('live');
   };
@@ -3994,20 +6136,8 @@
     openSettingsView();
   };
 
-  document.getElementById('search-btn-submit').onclick = function () {
-    executeSearch();
-  };
-
-  document.getElementById('search-mode-live').onclick = function () {
-    setSearchMode('live');
-  };
-
-  document.getElementById('search-mode-movies').onclick = function () {
-    setSearchMode('movies');
-  };
-
-  document.getElementById('search-mode-series').onclick = function () {
-    setSearchMode('series');
+  document.getElementById('search-query-display').onclick = function () {
+    focusSearchKeyboard(0, 0);
   };
 
   document.getElementById('search-btn-back').onclick = function () {
@@ -4096,11 +6226,22 @@
     state.session = null;
     state.profiles = [];
     state.selectedProfile = null;
-    state.searchMode = 'movies';
     state.searchQuery = '';
     state.searchResults = [];
+    state.searchRails = [];
+    state.searchLoading = false;
+    state.searchKeyboardShifted = false;
+    state.searchKeyboardRows = [];
+    if (state.searchQueryDebounce) {
+      clearTimeout(state.searchQueryDebounce);
+      state.searchQueryDebounce = null;
+    }
     state.searchCache = {};
     state.watchlistItems = [];
+    state.homeCatalogCache = { live: null, movies: null, series: null };
+    state.homeSections = [];
+    state.homeHeroEntry = null;
+    state.catalogScreen = 'home';
     setupWelcomeView();
   }
 

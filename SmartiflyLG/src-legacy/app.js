@@ -25,32 +25,6 @@
     focusedPanel: 'welcome', // 'welcome', 'login-wizard', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
     focusedIndex: 0, // Index of focused item inside current panel
     activeChannel: null,
-(function () {
-  // --- LOCAL STORAGE KEYS ---
-  var SESSION_KEY = 'smartifly-lg-session';
-  var PROFILES_KEY = 'smartifly-lg-profiles';
-  var SELECTED_PROFILE_KEY = 'smartifly-lg-selected-profile';
-  var PORTAL_KEY = 'smartifly-lg-last-portal';
-  var FAVORITES_KEY = 'smartifly-lg-favorites';
-
-  // --- EPG STATE & TIMER ---
-  var epgTimer = null;
-  var hlsInstance = null;
-  var profileKeyboardRows = []; // Cached rows for profile name keyboard navigation
-
-  // --- STATE DEFINITION ---
-  var state = {
-    session: null,
-    profiles: [],
-    selectedProfile: null,
-    catalogMode: 'live',
-    categories: [],
-    channels: [],
-    selectedCategoryId: '',
-    selectedCategoryName: '',
-    focusedPanel: 'welcome', // 'welcome', 'login-wizard', 'profiles', 'catalog-sidebar', 'catalog-categories', 'catalog-channels', 'player'
-    focusedIndex: 0, // Index of focused item inside current panel
-    activeChannel: null,
     activeChannelQueue: [],
     activeChannelIndex: 0,
     wizardStepIndex: 0,
@@ -1205,16 +1179,7 @@
       poster.removeAttribute('src');
     }
 
-    if (backdropArt) {
-      backdrop.style.backgroundImage =
-        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
-        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%), ' +
-        'url("' + String(getLegacyArtworkUrl(backdropArt)).replace(/"/g, '%22') + '")';
-    } else {
-      backdrop.style.backgroundImage =
-        'linear-gradient(90deg, rgba(7, 9, 15, 0.96) 0%, rgba(7, 9, 15, 0.9) 34%, rgba(7, 9, 15, 0.7) 55%, rgba(7, 9, 15, 0.92) 100%), ' +
-        'linear-gradient(180deg, rgba(7, 9, 15, 0.15) 0%, rgba(7, 9, 15, 0.82) 100%)';
-    }
+    applyDetailBackdrop(backdropArt, artwork);
 
     updateDetailFavoriteButton();
   }
@@ -3261,6 +3226,10 @@
   }
 
   function openHomeView(forceReload) {
+    if (!state.homeCatalogCache) {
+      state.homeCatalogCache = { live: null, movies: null, series: null };
+    }
+
     if (forceReload) {
       state.homeCatalogCache.live = null;
       state.homeCatalogCache.movies = null;
@@ -3414,10 +3383,23 @@
     }
 
     if (isCatalogSubView) {
-      document.getElementById('catalog-content-panel').style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
-      document.getElementById('search-content-panel').style.display = (viewId === 'view-search') ? 'flex' : 'none';
-      document.getElementById('watchlist-content-panel').style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
-      document.getElementById('settings-content-panel').style.display = (viewId === 'view-settings') ? 'flex' : 'none';
+      var catalogPanel = document.getElementById('catalog-content-panel');
+      var searchPanel = document.getElementById('search-content-panel');
+      var watchlistPanel = document.getElementById('watchlist-content-panel');
+      var settingsPanel = document.getElementById('settings-content-panel');
+
+      if (catalogPanel) {
+        catalogPanel.style.display = (viewId === 'view-catalog') ? 'flex' : 'none';
+      }
+      if (searchPanel) {
+        searchPanel.style.display = (viewId === 'view-search') ? 'flex' : 'none';
+      }
+      if (watchlistPanel) {
+        watchlistPanel.style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
+      }
+      if (settingsPanel) {
+        settingsPanel.style.display = (viewId === 'view-settings') ? 'flex' : 'none';
+      }
     }
   }
 
@@ -5732,16 +5714,6 @@
           }
         } else {
           focusSearchResult(sectionIndex, cardIndex - 1);
-        if (state.focusedIndex + gridColumns < items.length) {
-          state.focusedIndex += gridColumns;
-          handled = true;
-        }
-      } else if (code === 37) {
-        if (state.focusedIndex % gridColumns > 0) {
-          state.focusedIndex--;
-        } else {
-          state.focusedPanel = 'catalog-sidebar';
-          state.focusedIndex = 3;
         }
         handled = true;
       } else if (code === 39) {
@@ -6042,18 +6014,21 @@
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-sidebar') {
-        if (state.focusedIndex === 3) {
-          openSearchView();
+        if (state.focusedIndex === 0) {
+          openHomeView();
           handled = true;
         } else if (state.focusedIndex === 4) {
-          openWatchlistView();
+          openSearchView();
           handled = true;
         } else if (state.focusedIndex === 5) {
+          openWatchlistView();
+          handled = true;
+        } else if (state.focusedIndex === 6) {
           openSettingsView();
           handled = true;
-        } else if (state.focusedIndex <= 2) {
+        } else if (state.focusedIndex >= 1 && state.focusedIndex <= 3) {
           var modes = ['live', 'movies', 'series'];
-          var targetMode = modes[state.focusedIndex];
+          var targetMode = modes[state.focusedIndex - 1];
           if (state.catalogMode !== targetMode) {
             loadCatalog(targetMode);
           } else {
@@ -6131,6 +6106,10 @@
   document.getElementById('activation-btn-cancel').onclick = function () {
     cleanupActivation();
     setupWelcomeView();
+  };
+
+  document.getElementById('sidebar-home').onclick = function () {
+    openHomeView();
   };
 
   document.getElementById('sidebar-live').onclick = function () {
