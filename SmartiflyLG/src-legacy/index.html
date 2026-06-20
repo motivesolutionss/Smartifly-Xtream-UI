@@ -398,6 +398,7 @@
                 <div class="panel-actions horizontal">
                   <button id="settings-btn-reload" class="focusable settings-action btn-danger">Reload app</button>
                   <button id="settings-btn-clear-watchlist-new" class="focusable settings-action">Clear watchlist</button>
+                  <button id="settings-btn-clear-history" class="focusable settings-action">Clear continue watching</button>
                   <button id="settings-btn-reset" class="focusable settings-action">Reset settings</button>
                 </div>
               </div>
@@ -428,37 +429,37 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
 
-  <!-- 5. SEARCH VIEW -->
-  <div id="view-search" class="view">
-    <div class="legacy-search-screen">
-      <aside class="legacy-search-sidebar">
-        <div class="legacy-search-header">
-          <div class="legacy-search-kicker">SEARCH</div>
-          <h1 class="legacy-search-title">Find titles fast</h1>
-          <p class="legacy-search-copy">Search across your loaded movies and series catalog. Results update as you type.</p>
+        <!-- Search Content Panel -->
+        <div id="search-content-panel" class="utility-view" style="display: none; flex: 1; min-width: 0;">
+          <div class="legacy-search-screen">
+            <aside class="legacy-search-sidebar">
+              <div class="legacy-search-header">
+                <div class="legacy-search-kicker">SEARCH</div>
+                <h1 class="legacy-search-title">Find titles fast</h1>
+                <p class="legacy-search-copy">Search across your loaded movies and series catalog. Results update as you type.</p>
+              </div>
+              <div id="search-header-controls" class="legacy-search-header-controls">
+                <button id="search-query-display" class="focusable legacy-search-query" type="button">Type a title, genre, or year</button>
+              </div>
+              <div id="search-keyboard" class="legacy-search-keyboard"></div>
+              <div class="legacy-search-helper">
+                <span>[Menu] Sidebar</span>
+                <span>&bull;</span>
+                <span>[OK] Select</span>
+                <span>&bull;</span>
+                <span>[Arrows] Navigate</span>
+              </div>
+              <button id="search-btn-back" class="focusable legacy-search-back" type="button">Back to Browse</button>
+            </aside>
+            <div id="search-results-scroll" class="legacy-search-results-scroll">
+              <div class="legacy-search-results-head">
+                <div id="search-summary" class="legacy-search-summary">Search suggestions appear here.</div>
+              </div>
+              <div id="search-results-rails" class="legacy-search-results-rails"></div>
+            </div>
+          </div>
         </div>
-        <div id="search-header-controls" class="legacy-search-header-controls">
-          <button id="search-query-display" class="focusable legacy-search-query" type="button">Type a title, genre, or year</button>
-        </div>
-        <div id="search-keyboard" class="legacy-search-keyboard"></div>
-        <div class="legacy-search-helper">
-          <span>[Menu] Sidebar</span>
-          <span>&bull;</span>
-          <span>[OK] Select</span>
-          <span>&bull;</span>
-          <span>[Arrows] Navigate</span>
-        </div>
-        <button id="search-btn-back" class="focusable legacy-search-back" type="button">Back to Browse</button>
-      </aside>
-      <div id="search-results-scroll" class="legacy-search-results-scroll">
-        <div class="legacy-search-results-head">
-          <div id="search-summary" class="legacy-search-summary">Search suggestions appear here.</div>
-        </div>
-        <div id="search-results-rails" class="legacy-search-results-rails"></div>
       </div>
     </div>
   </div>

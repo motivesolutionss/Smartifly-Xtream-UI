@@ -17,6 +17,15 @@
     session: null,
     profiles: [],
     selectedProfile: null,
+    searchQuery: '',
+    searchResults: [],
+    searchRails: [],
+    searchCache: {},
+    searchLoading: false,
+    searchLoadingModes: {},
+    searchKeyboardShifted: false,
+    searchKeyboardRows: [],
+    searchQueryDebounce: null,
     catalogMode: 'live',
     categories: [],
     channels: [],
@@ -1532,12 +1541,106 @@
     return bits.join(' ').toLowerCase();
   }
 
+  function getSessionPassword() {
+    if (state.session && state.session.userInfo && state.session.userInfo.password) {
+      return String(state.session.userInfo.password);
+    }
+    if (state.session && state.session.password) {
+      return String(state.session.password);
+    }
+    if (state.wizardValues && state.wizardValues.password) {
+      return String(state.wizardValues.password);
+    }
+    return '';
+  }
+
+  function hasLoadedSearchCache(mode) {
+    return !!(state.searchCache && Object.prototype.hasOwnProperty.call(state.searchCache, mode));
+  }
+
+  function hasPendingSearchLoads() {
+    if (!state.searchLoadingModes) return false;
+    for (var mode in state.searchLoadingModes) {
+      if (Object.prototype.hasOwnProperty.call(state.searchLoadingModes, mode) && state.searchLoadingModes[mode]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function loadMissingSearchModes(onComplete) {
+    var callback = typeof onComplete === 'function' ? onComplete : function () {};
+    var modes = ['movies', 'series', 'live'];
+    var missingModes = [];
+
+    if (!state.searchCache) state.searchCache = {};
+    if (!state.searchLoadingModes) state.searchLoadingModes = {};
+
+    for (var i = 0; i < modes.length; i++) {
+      if (!hasLoadedSearchCache(modes[i]) && !state.searchLoadingModes[modes[i]]) {
+        missingModes.push(modes[i]);
+      }
+    }
+
+    if (!missingModes.length) {
+      callback([]);
+      return false;
+    }
+
+    var password = getSessionPassword();
+    if (!state.session || !state.session.portalBaseUrl || !state.session.username || !password) {
+      for (var j = 0; j < missingModes.length; j++) {
+        state.searchCache[missingModes[j]] = [];
+      }
+      callback(['credentials']);
+      return false;
+    }
+
+    var pending = missingModes.length;
+    var failedModes = [];
+
+    function finalizeMode(mode, didFail, items) {
+      state.searchLoadingModes[mode] = false;
+      state.searchCache[mode] = didFail ? [] : (items || []);
+      if (didFail) {
+        failedModes.push(getContentTypeLabel(mode));
+      }
+      pending--;
+      if (pending <= 0) {
+        callback(failedModes);
+      }
+    }
+
+    for (var k = 0; k < missingModes.length; k++) {
+      (function (mode) {
+        var config = getCatalogConfig(mode);
+        state.searchLoadingModes[mode] = true;
+        config.loadItems(state.session.portalBaseUrl, state.session.username, password, '', function (items) {
+          finalizeMode(mode, false, items);
+        }, function () {
+          finalizeMode(mode, true, []);
+        });
+      })(missingModes[k]);
+    }
+
+    return true;
+  }
+
   function filterSearchItems(items, query, mode) {
     var q = String(query || '').trim().toLowerCase();
     if (!q) return [];
+    var terms = q.split(/\s+/).filter(Boolean);
     var results = [];
     for (var i = 0; i < items.length; i++) {
-      if (getFilterableSearchText(items[i], mode).indexOf(q) !== -1) {
+      var haystack = getFilterableSearchText(items[i], mode);
+      var matches = true;
+      for (var j = 0; j < terms.length; j++) {
+        if (haystack.indexOf(terms[j]) === -1) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
         results.push(items[i]);
       }
     }
@@ -1925,58 +2028,35 @@
   function executeSearch() {
     var query = String(state.searchQuery || '').trim();
     rebuildSearchRails();
+    state.searchLoading = hasPendingSearchLoads();
+    renderSearchResults();
+
+    var startedLoading = loadMissingSearchModes(function (failedModes) {
+      state.searchLoading = hasPendingSearchLoads();
+      rebuildSearchRails();
+      if (failedModes.length) {
+        if (failedModes[0] === 'credentials') {
+          setSearchSummary('Search could not load full results because session credentials are incomplete.');
+        } else {
+          setSearchSummary('Search loaded with partial results. Failed: ' + failedModes.join(', ') + '.');
+        }
+      }
+      syncSearchFocusAfterRender();
+    });
+
+    state.searchLoading = startedLoading || hasPendingSearchLoads();
 
     if (!query) {
-      state.searchLoading = false;
       renderSearchResults();
       syncSearchFocusAfterRender();
       return;
     }
 
-    var missingModes = [];
-    var modes = ['movies', 'series', 'live'];
-    for (var i = 0; i < modes.length; i++) {
-      if (!state.searchCache[modes[i]]) {
-        missingModes.push(modes[i]);
-      }
-    }
-
-    if (!missingModes.length) {
-      state.searchLoading = false;
+    if (!state.searchLoading) {
       rebuildSearchRails();
       syncSearchFocusAfterRender();
-      return;
-    }
-
-    state.searchLoading = true;
-    renderSearchResults();
-
-    var pending = missingModes.length;
-    var failedModes = [];
-
-    function finalizeSearchLoad() {
-      pending--;
-      if (pending > 0) return;
-      state.searchLoading = false;
-      rebuildSearchRails();
-      if (failedModes.length) {
-        setSearchSummary('Search loaded with partial results. Failed: ' + failedModes.join(', ') + '.');
-      }
-      syncSearchFocusAfterRender();
-    }
-
-    for (var j = 0; j < missingModes.length; j++) {
-      (function (mode) {
-        var config = getCatalogConfig(mode);
-        config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, '', function (items) {
-          state.searchCache[mode] = items || [];
-          finalizeSearchLoad();
-        }, function () {
-          state.searchCache[mode] = [];
-          failedModes.push(getContentTypeLabel(mode));
-          finalizeSearchLoad();
-        });
-      })(missingModes[j]);
+    } else {
+      renderSearchResults();
     }
   }
 
@@ -2002,18 +2082,19 @@
   function activateSearchKeyboardKey(row, col) {
     var rows = state.searchKeyboardRows.length ? state.searchKeyboardRows : getSearchKeyboardRows();
     var key = rows[row] && rows[row][col] ? rows[row][col] : null;
+    var currentQuery = String(state.searchQuery || '');
     if (!key) return;
 
     if (key.action === 'char') {
-      setSearchQueryValue(state.searchQuery + (key.value || key.label));
+      setSearchQueryValue(currentQuery + (key.value || key.label));
       return;
     }
     if (key.action === 'space') {
-      setSearchQueryValue(state.searchQuery + ' ');
+      setSearchQueryValue(currentQuery + ' ');
       return;
     }
     if (key.action === 'backspace') {
-      setSearchQueryValue(state.searchQuery.slice(0, -1));
+      setSearchQueryValue(currentQuery.slice(0, -1));
       return;
     }
     if (key.action === 'clear') {
@@ -2023,6 +2104,18 @@
     if (key.action === 'shift') {
       state.searchKeyboardShifted = !state.searchKeyboardShifted;
       renderSearchKeyboard();
+      focusSearchKeyboard(row, col);
+      return;
+    }
+    if (key.action === 'search') {
+      executeSearch();
+      if (getSearchResultsCount() > 0) {
+        var firstSection = findSearchRailInDirection(0, 1);
+        if (firstSection >= 0) {
+          focusSearchResult(firstSection, 0);
+          return;
+        }
+      }
       focusSearchKeyboard(row, col);
       return;
     }
@@ -2049,7 +2142,9 @@
 
   function openSearchView() {
     setSidebarActiveById('sidebar-search');
+    setCatalogScreen('browse');
     showView('view-search');
+    state.searchQuery = String(state.searchQuery || '');
     state.searchKeyboardShifted = false;
     renderSearchKeyboard();
     updateSearchQueryDisplay();
@@ -2160,6 +2255,24 @@
       }
     }
     saveFavoritesState();
+  }
+
+  function clearCurrentProfileWatchHistory() {
+    var portalCode = state.session && state.session.portalCode ? state.session.portalCode : 'default';
+    var profileId = state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default';
+    var remaining = [];
+
+    for (var i = 0; i < state.watchHistory.length; i++) {
+      var entry = state.watchHistory[i];
+      if (!entry) continue;
+      if (entry.portalCode === portalCode && entry.profileId === profileId) {
+        continue;
+      }
+      remaining.push(entry);
+    }
+
+    state.watchHistory = remaining;
+    saveWatchHistoryState();
   }
 
   function updateSettingsView() {
@@ -2732,12 +2845,14 @@
       continueEntries.push(buildHomeEntry(historyEntry.mode, historyEntry.item || buildFavoriteFallbackItem(historyEntry), '', 'Recently played'));
     }
 
-    sections.push({
-      id: 'continue',
-      title: 'Continue Watching',
-      subtitle: continueEntries.length ? 'Pick up where you left off.' : 'Start something to build this rail.',
-      entries: continueEntries
-    });
+    if (continueEntries.length) {
+      sections.push({
+        id: 'continue',
+        title: 'Continue Watching',
+        subtitle: 'Pick up where you left off.',
+        entries: continueEntries
+      });
+    }
 
     sections.push({
       id: 'trending',
@@ -3371,7 +3486,8 @@
 
   // --- VIEWS ROUTING ---
   function showView(viewId) {
-    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-watchlist' || viewId === 'view-settings');
+    state.currentViewId = viewId;
+    var isCatalogSubView = (viewId === 'view-catalog' || viewId === 'view-search' || viewId === 'view-watchlist' || viewId === 'view-settings');
     var targetViewId = isCatalogSubView ? 'view-catalog' : viewId;
 
     var views = document.querySelectorAll('.view');
@@ -3384,16 +3500,28 @@
     }
 
     if (isCatalogSubView) {
+      var homePanel = document.getElementById('home-panel');
+      var browsePanels = document.getElementById('browse-panels');
       var categoriesPanel = document.getElementById('categories-panel-list');
       var channelsPanel = document.querySelector('.channels-panel');
+      var searchPanel = document.getElementById('search-content-panel');
       var watchlistPanel = document.getElementById('watchlist-content-panel');
       var settingsPanel = document.getElementById('settings-content-panel');
 
+      if (homePanel) {
+        homePanel.style.display = (viewId === 'view-catalog' && state.catalogScreen === 'home') ? 'block' : 'none';
+      }
+      if (browsePanels) {
+        browsePanels.style.display = (viewId === 'view-catalog' && state.catalogScreen === 'home') ? 'none' : 'flex';
+      }
       if (categoriesPanel) {
         categoriesPanel.style.display = (viewId === 'view-catalog') ? '' : 'none';
       }
       if (channelsPanel) {
         channelsPanel.style.display = (viewId === 'view-catalog') ? '' : 'none';
+      }
+      if (searchPanel) {
+        searchPanel.style.display = (viewId === 'view-search') ? 'flex' : 'none';
       }
       if (watchlistPanel) {
         watchlistPanel.style.display = (viewId === 'view-watchlist') ? 'flex' : 'none';
@@ -5588,7 +5716,7 @@
     var handled = false;
     var totalResults = getSearchResultsCount();
 
-    if (state.focusedPanel === 'search-controls') {
+    if (state.focusedPanel === 'search-header') {
       if (code === 37) {
         if (state.focusedIndex > 0) {
           state.focusedIndex--;
@@ -5598,12 +5726,18 @@
           state.focusedIndex = 4; // Search index is 4
           handled = true;
         }
-      } else if (code === 39 && state.focusedIndex < items.length - 1) {
-        state.focusedIndex++;
+      } else if (code === 39) {
+        if (totalResults > 0) {
+          var firstRailFromHeaderRight = findSearchRailInDirection(0, 1);
+          if (firstRailFromHeaderRight >= 0) {
+            focusSearchResult(firstRailFromHeaderRight, 0);
+          }
+        } else {
+          focusSearchKeyboard(0, 0);
+        }
         handled = true;
-      } else if (code === 40 && state.searchResults.length > 0) {
-        state.focusedPanel = 'search-results';
-        state.focusedIndex = 0;
+      } else if (code === 40) {
+        focusSearchKeyboard(0, 0);
         handled = true;
       }
       return handled;
@@ -5871,7 +6005,7 @@
     }
 
     if (isSearchPanel(state.focusedPanel) && event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      setSearchQueryValue(state.searchQuery + event.key);
+      setSearchQueryValue(String(state.searchQuery || '') + event.key);
       event.preventDefault();
       return;
     }
@@ -6219,6 +6353,13 @@
     alert('Watchlist cleared!');
   };
 
+  document.getElementById('settings-btn-clear-history').onclick = function () {
+    clearCurrentProfileWatchHistory();
+    refreshHomeView();
+    updateSettingsView();
+    updateFocusUI();
+  };
+
   document.getElementById('settings-btn-reset').onclick = function () {
     try {
       localStorage.removeItem(SESSION_KEY);
@@ -6261,6 +6402,7 @@
     state.searchLoading = false;
     state.searchKeyboardShifted = false;
     state.searchKeyboardRows = [];
+    state.searchLoadingModes = {};
     if (state.searchQueryDebounce) {
       clearTimeout(state.searchQueryDebounce);
       state.searchQueryDebounce = null;
