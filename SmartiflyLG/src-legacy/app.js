@@ -6,6 +6,7 @@
   var PORTAL_KEY = 'smartifly-lg-last-portal';
   var FAVORITES_KEY = 'smartifly-lg-favorites';
   var HISTORY_KEY = 'smartifly-lg-history';
+  var RESUME_KEY = 'smartifly-lg-resume';
 
   // --- EPG STATE & TIMER ---
   var epgTimer = null;
@@ -64,6 +65,7 @@
     watchlistFilter: 'all',
     watchlistItems: [],
     watchHistory: [],
+    resumeState: [],
     homeCatalogCache: {
       live: null,
       movies: null,
@@ -113,7 +115,8 @@
     channelsCache: {},       // keyed by mode+':'+categoryId
     channelsCacheCount: {},  // keyed by mode+':'+categoryId ? item count
     channelsBatchSize: 20,   // number of cards currently rendered in the DOM
-    pinEntry: null           // { profile, buffer } when PIN overlay is open
+    pinEntry: null,          // { profile, buffer } when PIN overlay is open
+    currentPlayback: null    // active movie/episode resume context
   };
 
   var MAX_HOME_RAIL_ITEMS = 12;
@@ -678,6 +681,62 @@
     }
   }
 
+  function loadResumeState() {
+    try {
+      var raw = localStorage.getItem(RESUME_KEY);
+      state.resumeState = raw ? JSON.parse(raw) : [];
+      sanitizeResumeState();
+    } catch (e) {
+      state.resumeState = [];
+    }
+  }
+
+  function saveResumeState() {
+    try {
+      localStorage.setItem(RESUME_KEY, JSON.stringify(state.resumeState || []));
+    } catch (e) {}
+  }
+
+  function sanitizeResumeState() {
+    if (!state.resumeState || !state.resumeState.length) return;
+    var deduped = [];
+    for (var i = 0; i < state.resumeState.length; i++) {
+      var entry = state.resumeState[i];
+      if (!entry || !entry.id || !entry.mode) continue;
+      if (entry.completed) continue;
+      var key = [
+        entry.portalCode || 'default',
+        entry.profileId || 'default',
+        entry.mode,
+        String(entry.id)
+      ].join('::');
+      var found = false;
+      for (var j = 0; j < deduped.length; j++) {
+        var existing = deduped[j];
+        var existingKey = [
+          existing.portalCode || 'default',
+          existing.profileId || 'default',
+          existing.mode,
+          String(existing.id)
+        ].join('::');
+        if (existingKey === key) {
+          found = true;
+          if (String(entry.playedAt || '') > String(existing.playedAt || '')) {
+            deduped[j] = entry;
+          }
+          break;
+        }
+      }
+      if (!found) {
+        deduped.push(entry);
+      }
+    }
+    deduped.sort(function (a, b) {
+      return String(b.playedAt || '').localeCompare(String(a.playedAt || ''));
+    });
+    state.resumeState = deduped.slice(0, MAX_HOME_RAIL_ITEMS + 8);
+  }
+
   function sanitizeWatchHistory() {
     if (!state.watchHistory || !state.watchHistory.length) return;
     var deduped = [];
@@ -724,6 +783,200 @@
     try {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(state.watchHistory || []));
     } catch (e) {}
+  }
+
+  function getCurrentProfileScope() {
+    return {
+      portalCode: state.session && state.session.portalCode ? state.session.portalCode : 'default',
+      profileId: state.selectedProfile && state.selectedProfile.id ? state.selectedProfile.id : 'default'
+    };
+  }
+
+  function isResumeComplete(currentTime, duration) {
+    var safeCurrent = Number(currentTime) || 0;
+    var safeDuration = Number(duration) || 0;
+    if (!isFinite(safeDuration) || safeDuration <= 0) return false;
+    if (safeCurrent >= safeDuration) return true;
+    var remaining = Math.max(0, safeDuration - safeCurrent);
+    var percent = (safeCurrent / safeDuration) * 100;
+    return percent >= 90 || remaining <= 60;
+  }
+
+  function getResumeProgressPercent(currentTime, duration) {
+    var safeCurrent = Number(currentTime) || 0;
+    var safeDuration = Number(duration) || 0;
+    if (!isFinite(safeDuration) || safeDuration <= 0) return 0;
+    return Math.round(Math.max(0, Math.min(100, (safeCurrent / safeDuration) * 100)));
+  }
+
+  function getResumeEntryMeta(entry) {
+    if (!entry) return '';
+    var parts = [];
+    if (entry.mode === 'series') {
+      if (entry.season != null && entry.episodeNum != null) {
+        parts.push('S' + entry.season + ' E' + entry.episodeNum);
+      } else if (entry.episodeTitle) {
+        parts.push(entry.episodeTitle);
+      }
+    }
+    var percent = Number(entry.progressPercent) || 0;
+    if (percent > 0) {
+      parts.push(percent + '% watched');
+    }
+    return parts.join(' • ');
+  }
+
+  function buildResumeFallbackItem(entry) {
+    if (!entry) return null;
+    if (entry.mode === 'series') {
+      return entry.item || {
+        series_id: entry.id,
+        name: entry.name,
+        cover: entry.artwork || ''
+      };
+    }
+    return entry.item || {
+      stream_id: entry.id,
+      name: entry.name,
+      stream_icon: entry.artwork || '',
+      container_extension: 'mp4'
+    };
+  }
+
+  function getCurrentProfileResumeEntries() {
+    var scope = getCurrentProfileScope();
+    var entries = [];
+    for (var i = 0; i < state.resumeState.length; i++) {
+      var entry = state.resumeState[i];
+      if (!entry || entry.completed) continue;
+      if (entry.portalCode === scope.portalCode && entry.profileId === scope.profileId) {
+        entries.push(entry);
+      }
+      if (entries.length >= MAX_HOME_RAIL_ITEMS) break;
+    }
+    return entries;
+  }
+
+  function removeResumeEntry(mode, resumeId) {
+    var scope = getCurrentProfileScope();
+    var changed = false;
+    var remaining = [];
+    for (var i = 0; i < state.resumeState.length; i++) {
+      var entry = state.resumeState[i];
+      if (!entry) continue;
+      if (entry.portalCode === scope.portalCode &&
+          entry.profileId === scope.profileId &&
+          entry.mode === mode &&
+          String(entry.id) === String(resumeId)) {
+        changed = true;
+        continue;
+      }
+      remaining.push(entry);
+    }
+    if (changed) {
+      state.resumeState = remaining;
+      saveResumeState();
+    }
+  }
+
+  function upsertResumeEntry(entry) {
+    if (!entry || !entry.id || !entry.mode) return;
+    var replaced = false;
+    var next = [entry];
+    for (var i = 0; i < state.resumeState.length; i++) {
+      var existing = state.resumeState[i];
+      if (!existing) continue;
+      if (existing.portalCode === entry.portalCode &&
+          existing.profileId === entry.profileId &&
+          existing.mode === entry.mode &&
+          String(existing.id) === String(entry.id)) {
+        replaced = true;
+        continue;
+      }
+      next.push(existing);
+    }
+    state.resumeState = next.slice(0, MAX_HOME_RAIL_ITEMS + 8);
+    saveResumeState();
+  }
+
+  function buildResumeEntryFromPlayback(currentTime, duration) {
+    var playback = state.currentPlayback;
+    if (!playback) return null;
+    var safeCurrent = Math.max(0, Number(currentTime) || 0);
+    var safeDuration = Math.max(0, Number(duration) || 0);
+    var scope = getCurrentProfileScope();
+    var entry = {
+      id: String(playback.resumeId),
+      mode: playback.mode,
+      portalCode: scope.portalCode,
+      profileId: scope.profileId,
+      name: playback.name,
+      artwork: playback.artwork || '',
+      item: playback.item || null,
+      currentTime: safeCurrent,
+      duration: safeDuration,
+      progressPercent: getResumeProgressPercent(safeCurrent, safeDuration),
+      playedAt: new Date().toISOString(),
+      completed: false
+    };
+
+    if (playback.mode === 'series') {
+      entry.episodeId = String(playback.episodeId || '');
+      entry.episodeItem = playback.episodeItem || null;
+      entry.episodeTitle = playback.episodeTitle || '';
+      entry.season = playback.season;
+      entry.episodeNum = playback.episodeNum;
+    }
+
+    return entry;
+  }
+
+  function persistCurrentPlaybackProgress(force, markComplete) {
+    if (!state.currentPlayback || state.playerMode !== 'vod') return;
+    var video = document.getElementById('player-video');
+    if (!video) return;
+
+    var duration = Number(video.duration);
+    var currentTime = Number(video.currentTime);
+    if ((!isFinite(duration) || duration <= 0 || !isFinite(currentTime) || currentTime < 0) && !markComplete) {
+      return;
+    }
+
+    if (!force) {
+      var rounded = Math.floor(currentTime || 0);
+      if (rounded <= 0 || rounded - (state.currentPlayback.lastSavedSecond || 0) < 5) {
+        return;
+      }
+      state.currentPlayback.lastSavedSecond = rounded;
+    }
+
+    if (markComplete || isResumeComplete(currentTime, duration)) {
+      removeResumeEntry(state.currentPlayback.mode, state.currentPlayback.resumeId);
+      return;
+    }
+
+    var entry = buildResumeEntryFromPlayback(currentTime, duration);
+    if (entry) {
+      upsertResumeEntry(entry);
+    }
+  }
+
+  function applyPendingResumeSeek(video) {
+    if (!video || !state.currentPlayback || state.currentPlayback.resumeApplied) return;
+    var resumeAt = Number(state.currentPlayback.resumeAt || 0);
+    var duration = Number(video.duration || 0);
+    if (!isFinite(resumeAt) || resumeAt <= 0) {
+      state.currentPlayback.resumeApplied = true;
+      return;
+    }
+    if (isFinite(duration) && duration > 0) {
+      resumeAt = Math.max(0, Math.min(resumeAt, Math.max(0, duration - 2)));
+    }
+    try {
+      video.currentTime = resumeAt;
+    } catch (e) {}
+    state.currentPlayback.resumeApplied = true;
+    updatePlayerProgressUi();
   }
 
   function isFavoriteItem(mode, itemId) {
@@ -2949,12 +3202,14 @@
     document.getElementById('browse-panels').style.display = screen === 'browse' ? 'flex' : 'none';
   }
 
-  function buildHomeEntry(mode, item, categoryName, meta) {
+  function buildHomeEntry(mode, item, categoryName, meta, extras) {
+    extras = extras || {};
     return {
       mode: mode,
       item: item,
       categoryName: categoryName || '',
-      meta: meta || ''
+      meta: meta || '',
+      resumeEntry: extras.resumeEntry || null
     };
   }
 
@@ -3077,12 +3332,18 @@
   function buildHomeSections() {
     var sections = [];
     var continueEntries = [];
-    var history = getCurrentProfileHistoryEntries();
+    var resumeEntries = getCurrentProfileResumeEntries();
     var i;
 
-    for (i = 0; i < history.length && i < MAX_HOME_RAIL_ITEMS; i++) {
-      var historyEntry = history[i];
-      continueEntries.push(buildHomeEntry(historyEntry.mode, historyEntry.item || buildFavoriteFallbackItem(historyEntry), '', 'Recently played'));
+    for (i = 0; i < resumeEntries.length && i < MAX_HOME_RAIL_ITEMS; i++) {
+      var resumeEntry = resumeEntries[i];
+      continueEntries.push(buildHomeEntry(
+        resumeEntry.mode,
+        buildResumeFallbackItem(resumeEntry),
+        '',
+        getResumeEntryMeta(resumeEntry),
+        { resumeEntry: resumeEntry }
+      ));
     }
 
     if (continueEntries.length) {
@@ -3130,6 +3391,32 @@
 
     state.homeSections = sections;
     state.homeHeroEntry = pickHeroEntry(sections);
+  }
+
+  function resumeHomeEntry(entry) {
+    if (!entry || !entry.resumeEntry) return false;
+    var resumeEntry = entry.resumeEntry;
+
+    if (resumeEntry.mode === 'movies') {
+      playMovie(entry.item || buildResumeFallbackItem(resumeEntry), null, resumeEntry);
+      return true;
+    }
+
+    if (resumeEntry.mode === 'series') {
+      if (resumeEntry.episodeItem) {
+        playSeriesEpisode(
+          resumeEntry.episodeItem,
+          resumeEntry.name || getCatalogItemName(entry.item),
+          entry.item || buildResumeFallbackItem(resumeEntry),
+          resumeEntry
+        );
+        return true;
+      }
+      showContentDetail(entry.item || buildResumeFallbackItem(resumeEntry), 'series');
+      return true;
+    }
+
+    return false;
   }
 
   var homeHeroTimer = null;
@@ -3521,6 +3808,9 @@
           var idx = parseInt(this.getAttribute('data-index'), 10);
           var selected = getHomeEntryByFlatIndex(idx);
           if (!selected) return;
+          if (selected.resumeEntry && resumeHomeEntry(selected)) {
+            return;
+          }
           if (selected.mode === 'live') {
             playChannel(selected.item, state.homeSections[parseInt(this.getAttribute('data-rail-index'), 10)].entries.map(function (it) { return it.item; }));
           } else {
@@ -4087,6 +4377,7 @@
 
     loadFavoritesState();
     loadWatchHistoryState();
+    loadResumeState();
   }
 
   function saveSessionState(session, profiles) {
@@ -4110,6 +4401,13 @@
   // --- INITIAL BOOT ---
   function init() {
     loadLocalState();
+
+    if (!window.__legacyResumeBeforeUnloadBound) {
+      window.__legacyResumeBeforeUnloadBound = true;
+      window.addEventListener('beforeunload', function () {
+        persistCurrentPlaybackProgress(true, false);
+      });
+    }
     
     // Bind profile modal events
     var spmNameInput = document.getElementById('spm-name-input');
@@ -5717,26 +6015,34 @@
 
     video.addEventListener('timeupdate', function () {
       updatePlayerProgressUi();
+      persistCurrentPlaybackProgress(false, false);
     });
     video.addEventListener('loadedmetadata', function () {
+      applyPendingResumeSeek(video);
       updatePlayerProgressUi();
       updatePlayerActionButtons();
+      persistCurrentPlaybackProgress(true, false);
     });
     video.addEventListener('durationchange', function () {
+      applyPendingResumeSeek(video);
       updatePlayerProgressUi();
     });
     video.addEventListener('seeked', function () {
       updatePlayerProgressUi();
+      persistCurrentPlaybackProgress(true, false);
     });
     video.addEventListener('ended', function () {
       updatePlayerProgressUi();
       updatePlayerActionButtons();
+      persistCurrentPlaybackProgress(true, true);
     });
     video.addEventListener('play', function () {
       updatePlayerActionButtons();
+      persistCurrentPlaybackProgress(true, false);
     });
     video.addEventListener('pause', function () {
       updatePlayerActionButtons();
+      persistCurrentPlaybackProgress(true, false);
     });
   }
 
@@ -5806,6 +6112,7 @@
   function showPlayerEmbed(embedUrl, title) {
     cleanupHls();
     rememberPlayerReturnState();
+    state.currentPlayback = null;
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -5845,6 +6152,7 @@
   function playStream(streamId) {
     cleanupHls();
     resetPlayerSurface();
+    state.currentPlayback = null;
 
     var video = document.getElementById('player-video');
     bindPlayerUiEvents(video);
@@ -6090,11 +6398,21 @@
     playStream(channel.stream_id);
   }
 
-  function playMovie(movie, detailInfo) {
+  function playMovie(movie, detailInfo, resumeEntry) {
     cleanupHls();
     resetPlayerSurface();
     rememberPlayerReturnState();
     updateWatchHistory('movies', movie, 'Movie');
+    state.currentPlayback = {
+      mode: 'movies',
+      resumeId: String(getCatalogItemId(movie, 'movies')),
+      name: getCatalogItemName(movie),
+      artwork: getCatalogItemArtwork(movie, 'movies'),
+      item: movie,
+      resumeAt: resumeEntry ? Number(resumeEntry.currentTime || 0) : 0,
+      resumeApplied: false,
+      lastSavedSecond: 0
+    };
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -6148,7 +6466,7 @@
     video.play();
   }
 
-  function playSeriesEpisode(episode, seriesTitle, seriesItem) {
+  function playSeriesEpisode(episode, seriesTitle, seriesItem, resumeEntry) {
     if (!episode) return;
 
     cleanupHls();
@@ -6163,6 +6481,21 @@
       };
     }
     updateWatchHistory('series', sItem, getEpisodeTitle(episode, 0));
+    state.currentPlayback = {
+      mode: 'series',
+      resumeId: String(getCatalogItemId(sItem, 'series')),
+      name: getCatalogItemName(sItem),
+      artwork: getCatalogItemArtwork(sItem, 'series'),
+      item: sItem,
+      episodeId: String(getEpisodeId(episode)),
+      episodeItem: episode,
+      episodeTitle: getEpisodeTitle(episode, 0),
+      season: episode.season || (episode.info && episode.info.season) || null,
+      episodeNum: episode.episode_num || (episode.info && episode.info.episode_num) || null,
+      resumeAt: resumeEntry ? Number(resumeEntry.currentTime || 0) : 0,
+      resumeApplied: false,
+      lastSavedSecond: 0
+    };
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -6229,6 +6562,7 @@
     cleanupHls();
     resetPlayerSurface();
     rememberPlayerReturnState();
+    state.currentPlayback = null;
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -6294,6 +6628,7 @@
   }
 
   function closePlayer() {
+    persistCurrentPlaybackProgress(true, false);
     if (playerOverlayTimer) {
       clearTimeout(playerOverlayTimer);
       playerOverlayTimer = null;
@@ -6311,6 +6646,7 @@
       video.pause();
       video.src = '';
     } catch (e) {}
+    state.currentPlayback = null;
 
     state.focusedPanel = state.playerReturnPanel || 'catalog-channels';
     state.focusedIndex = state.playerReturnIndex || 0;
