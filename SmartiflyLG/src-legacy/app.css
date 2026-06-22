@@ -864,6 +864,7 @@ html, body {
 .profile-grid {
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   width: 100%;
 }
 
@@ -881,7 +882,6 @@ html, body {
   justify-content: center;
   outline: none;
   cursor: pointer;
-  margin-right: 26px;
   box-sizing: border-box;
 }
 
@@ -1314,22 +1314,23 @@ html, body {
 }
 
 /* Profile slot: wraps each card + its edit button vertically */
-.profile-grid {
-  align-items: flex-start;
-  gap: 26px;
-}
 .profile-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  margin-right: 28px;
 }
-/* cancel the card's own margin-right inside a slot — gap handles spacing */
+.profile-slot:last-child {
+  margin-right: 0;
+}
+/* cancel the card's own margin-right inside a slot — slot margin handles spacing */
 .profile-slot .profile-card {
   margin-right: 0;
 }
 /* Edit button under each profile card */
 .profile-edit-btn {
+  min-width: 98px;
   height: 36px;
   padding: 0 22px;
   background: rgba(255,255,255,0.06);
@@ -1338,6 +1339,8 @@ html, body {
   color: rgba(255,255,255,0.55);
   font-size: 13px;
   font-weight: 600;
+  line-height: 36px;
+  text-align: center;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1492,6 +1495,27 @@ html, body {
   color: #fff !important;
   background-color: #1c2333 !important;
   border-left: 4px solid #e50914 !important;
+}
+
+.category-item {
+  justify-content: space-between;
+}
+
+.category-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.category-item.active .category-count,
+.category-item.focused .category-count {
+  color: rgba(229, 9, 20, 0.8);
+  background: rgba(229, 9, 20, 0.12);
 }
 
 /* Main Content (Channel Grid) */
@@ -2589,11 +2613,13 @@ html, body {
 }
 
 .utility-shell {
+  width: 100%;
   height: 100%;
   padding: 38px 48px 34px;
   display: flex;
   flex-direction: column;
   gap: 22px;
+  box-sizing: border-box;
 }
 
 .utility-header {
@@ -2630,7 +2656,7 @@ html, body {
 
 .utility-controls {
   display: flex;
-  gap: 12px;
+  gap: 24px;
   align-items: center;
 }
 
@@ -2674,15 +2700,17 @@ html, body {
 }
 
 .utility-chip.focused {
-  border-color: #ffffff !important;
-  box-shadow: 0 0 0 4px rgba(229, 9, 20, 0.34);
+  border-color: #e50914 !important;
+  box-shadow: none;
 }
 
 .utility-results-scroll {
+  width: 100%;
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 
 .utility-results-scroll::-webkit-scrollbar {
@@ -2871,15 +2899,16 @@ html, body {
 
 .settings-profile-card {
   width: 100%;
-  height: 72px;
+  height: 76px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 12px;
-  padding: 0 20px;
+  margin-bottom: 16px;
+  padding: 0 24px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  gap: 16px;
   outline: none;
   cursor: pointer;
 }
@@ -2888,34 +2917,38 @@ html, body {
   margin-bottom: 0;
 }
 
+.settings-profile-card.active {
+  border-color: rgba(229, 9, 20, 0.5);
+  background: rgba(229, 9, 20, 0.06);
+}
+
 .settings-profile-card.focused {
   border-color: #e50914 !important;
 }
 
 .settings-profile-card .profile-card-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   color: #ffffff;
-  margin-right: 16px;
+  flex-shrink: 0;
 }
 
-.settings-profile-card .profile-card-avatar.color-red {
-  background: #e50914;
-}
-
-.settings-profile-card .profile-card-avatar.color-blue {
-  background: #0070f3;
-}
+.settings-profile-card .profile-card-avatar.color-red    { background: #e50914; }
+.settings-profile-card .profile-card-avatar.color-blue   { background: #0070f3; }
+.settings-profile-card .profile-card-avatar.color-green  { background: #00a550; }
+.settings-profile-card .profile-card-avatar.color-purple { background: #7c3aed; }
 
 .settings-profile-card .profile-card-details {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }
 
 .settings-profile-card .profile-card-name {
@@ -2927,7 +2960,39 @@ html, body {
 .settings-profile-card .profile-card-role {
   color: rgba(255, 255, 255, 0.45);
   font-size: 12px;
-  margin-top: 2px;
+  margin-top: 3px;
+}
+
+.settings-profile-edit-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.80);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.settings-profile-edit-btn.focused,
+.settings-profile-edit-btn:focus {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .settings-profile-card.card-add {
@@ -2936,11 +3001,6 @@ html, body {
   color: rgba(255, 255, 255, 0.45);
   font-weight: 700;
   font-size: 15px;
-}
-
-.settings-profile-card.card-add.focused {
-  border-color: #ffffff !important;
-  color: #ffffff;
 }
 
 .settings-info-grid {
@@ -3164,41 +3224,41 @@ html, body {
    Minimal — no blur, no animation, no heavy effects
    ============================================================ */
 .spm-card {
-  width: 460px;
-  padding: 36px;
+  width: 540px;
+  padding: 44px 48px;
   background: #111520;
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
+  border-radius: 20px;
   box-sizing: border-box;
 }
 
 .spm-title {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   color: #fff;
-  margin: 0 0 28px;
+  margin: 0 0 36px;
 }
 
 .spm-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 28px;
 }
 
 .spm-row label {
-  font-size: 15px;
+  font-size: 16px;
   color: rgba(255,255,255,0.55);
 }
 
 .spm-row input {
-  width: 220px;
+  width: 280px;
   background: #1c2233;
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #fff;
-  font-size: 16px;
-  padding: 8px 12px;
+  font-size: 17px;
+  padding: 10px 14px;
   outline: none;
   box-sizing: border-box;
 }
@@ -3209,14 +3269,15 @@ html, body {
 
 .spm-kids-btn {
   background: #1c2233;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
+  border: 2px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
   color: rgba(255,255,255,0.55);
   font-size: 15px;
   font-weight: 700;
-  padding: 7px 20px;
+  padding: 8px 24px;
   cursor: pointer;
   outline: none;
+  min-width: 80px;
 }
 
 .spm-kids-btn.kids-on {
@@ -3224,31 +3285,135 @@ html, body {
   border-color: #e50914;
 }
 
+/* Bug 4 fix: focused state for Kids button */
+.spm-kids-btn.is-focused {
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.spm-kids-btn.kids-on.is-focused {
+  box-shadow: 0 0 0 2px #e50914;
+}
+
 .spm-actions {
   display: flex;
   gap: 16px;
-  margin-top: 28px;
+  margin-top: 36px;
 }
 
 .spm-actions button {
   flex: 1;
-  height: 48px;
+  height: 52px;
   border: none;
-  border-radius: 10px;
-  font-size: 16px;
+  border-radius: 12px;
+  font-size: 17px;
   font-weight: 700;
   cursor: pointer;
   outline: none;
   color: #fff;
+  margin-left: 16px;
+}
+
+.spm-actions button:first-child {
+  margin-left: 0;
 }
 
 #spm-save-btn   { background: #e50914; }
 #spm-cancel-btn { background: #1f2636; border: 1px solid rgba(255,255,255,0.08); }
 #spm-delete-btn { background: #5a1622; }
 
-/* Focus ring for modal buttons - box-shadow stays inside bounds, doesn't bleed over neighbors */
+/* Focus ring for modal buttons */
 #settings-profile-modal .focusable.is-focused {
   box-shadow: 0 0 0 2px #fff;
+}
+
+/* ============================================================
+   PIN ENTRY & PIN NUMPAD
+   ============================================================ */
+
+.pin-dots-row {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.pin-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.35);
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pin-dot.filled {
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+.pin-keyboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.pin-key-row {
+  display: flex;
+  gap: 12px;
+}
+
+.pin-key {
+  width: 96px;
+  height: 72px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06);
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+}
+
+.pin-key.focused {
+  background: rgba(255,255,255,0.18);
+  border-color: #ffffff;
+}
+
+.pin-key--back {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.04);
+}
+
+.pin-key--back.focused {
+  color: #ffffff;
+  background: rgba(255,255,255,0.14);
+  border-color: #ffffff;
+}
+
+.pin-key--done {
+  font-size: 15px;
+  font-weight: 700;
+  background: #e50914;
+  border-color: #e50914;
+  color: #ffffff;
+}
+
+.pin-key--done.focused {
+  background: #ff2535;
+  border-color: #ff2535;
+}
+
+/* Lock icon on PIN-protected profile cards */
+.profile-lock-icon {
+  font-size: 18px;
+  margin-top: 8px;
+  opacity: 0.7;
 }
 
 
