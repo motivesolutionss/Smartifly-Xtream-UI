@@ -43,11 +43,29 @@
     activationTimer: null,
     activationDeviceId: '',
     profileModalCaller: 'settings',
-    profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters' }
+    profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters', pinBuffer: '' },
+    homeSections: [],
+    homeLoading: false,
+    homeHeroEntry: null,
+    homeCatalogCache: { live: null, movies: null, series: null },
+    watchlistItems: [],
+    watchlistFilter: 'all',
+    settingsActiveTab: 'account',
+    catalogScreen: 'home',
+    detailItem: null,
+    detailMode: null,
+    favorites: {},
+    watchHistory: [],
+    channelsCache: {},       // keyed by mode+':'+categoryId
+    channelsCacheCount: {},  // keyed by mode+':'+categoryId → item count
+    channelsBatchSize: 20,   // number of cards currently rendered in the DOM
+    pinEntry: null           // { profile, buffer } when PIN overlay is open
   };
 
   var MAX_HOME_RAIL_ITEMS = 12;
   var MAX_SEARCH_RAIL_ITEMS = 12;
+  var CATALOG_BATCH_SIZE = 20;      // cards rendered per batch
+  var CATALOG_BATCH_PREFETCH = 5;   // expand when focus is within this many items of the rendered end
   var SEARCH_KEYBOARD_LAYOUT = [
     ['1', '2', '3', '4', '5'],
     ['6', '7', '8', '9', '0'],
@@ -2348,44 +2366,72 @@
       return;
     }
 
-    var avatarColors = ['color-red', 'color-blue'];
+    var avatarColors = ['color-red', 'color-blue', 'color-green', 'color-purple'];
 
     for (var i = 0; i < state.profiles.length; i++) {
       var profile = state.profiles[i];
       var isPrimary = (i === 0);
+      var isActive  = state.selectedProfile && state.selectedProfile.id === profile.id;
 
       var card = document.createElement('div');
-      card.className = 'focusable settings-profile-card';
+      card.className = 'focusable settings-profile-card' + (isActive ? ' active' : '');
       card.setAttribute('data-profile-id', profile.id);
-      
+      card.setAttribute('data-index', i);
+
       var avatar = document.createElement('div');
       var colorClass = avatarColors[i % avatarColors.length];
       avatar.className = 'profile-card-avatar ' + colorClass;
-      var initials = (profile.name || '').substring(0, 2).toUpperCase();
-      avatar.textContent = initials;
+      var safeName = (profile.name && profile.name !== 'null') ? profile.name : (isPrimary ? 'Primary' : 'Profile');
+      avatar.textContent = safeName.substring(0, 2).toUpperCase();
       card.appendChild(avatar);
 
       var details = document.createElement('div');
       details.className = 'profile-card-details';
-      
-      var name = document.createElement('div');
-      name.className = 'profile-card-name';
-      name.textContent = profile.name;
-      details.appendChild(name);
+
+      var nameEl = document.createElement('div');
+      nameEl.className = 'profile-card-name';
+      nameEl.textContent = safeName;
+      details.appendChild(nameEl);
 
       var role = document.createElement('div');
       role.className = 'profile-card-role';
-      role.textContent = isPrimary ? 'Primary profile' : 'Kids profile';
+      role.textContent = isActive ? 'Active profile' : (isPrimary ? 'Primary profile' : (profile.isKids ? 'Kids profile' : 'Profile'));
       details.appendChild(role);
 
       card.appendChild(details);
 
-      (function (p) {
-        card.onclick = function () {
+      // Edit button on the right
+      var editBtn = document.createElement('button');
+      editBtn.className = 'focusable settings-profile-edit-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.setAttribute('tabindex', '-1');
+      card.appendChild(editBtn);
+
+      // Clicking the card selects the profile
+      (function (p, roleEl) {
+        card.onclick = function (e) {
+          if (e.target && e.target.classList.contains('settings-profile-edit-btn')) return;
+          selectProfile(p);
+          // Update active indicators
+          var cards = container.querySelectorAll('.settings-profile-card');
+          for (var ci = 0; ci < cards.length; ci++) {
+            cards[ci].classList.remove('active');
+            var r = cards[ci].querySelector('.profile-card-role');
+            if (r && !r.textContent.includes('Active')) {
+              var pid = cards[ci].getAttribute('data-profile-id');
+              var idx = parseInt(cards[ci].getAttribute('data-index'), 10);
+              r.textContent = idx === 0 ? 'Primary profile' : (state.profiles[idx] && state.profiles[idx].isKids ? 'Kids profile' : 'Profile');
+            }
+          }
+          card.classList.add('active');
+          roleEl.textContent = 'Active profile';
+        };
+        editBtn.onclick = function (e) {
+          e.stopPropagation();
           state.profileModalCaller = 'settings';
           openProfileFormModal(p);
         };
-      })(profile);
+      })(profile, role);
 
       container.appendChild(card);
     }
@@ -2452,36 +2498,59 @@
     var kidsBtn    = document.getElementById('spm-kids-btn');
     var deleteBtn  = document.getElementById('spm-delete-btn');
 
-    state.profileModal.mode     = profile ? 'edit' : 'add';
-    state.profileModal.targetId = profile ? profile.id : null;
-    state.profileModal.isKids   = profile ? !!profile.isKids : false;
+    state.profileModal.mode       = profile ? 'edit' : 'add';
+    state.profileModal.targetId   = profile ? profile.id : null;
+    state.profileModal.isKids     = profile ? !!profile.isKids : false;
     state.profileModal.focusIndex = 0;
+    state.profileModal.pinBuffer  = (profile && profile.pin) ? profile.pin : '';
 
-    titleEl.textContent  = profile ? 'Edit Profile' : 'Add Profile';
-    nameInput.value      = profile ? profile.name : '';
-    kidsBtn.textContent  = state.profileModal.isKids ? 'ON' : 'OFF';
+    // Sanitize name — guard against null, undefined, or the literal string "null"
+    var rawName = profile ? String(profile.name || '') : '';
+    rawName = rawName.replace(/null$/i, '').replace(/undefined$/i, '').trim();
+    if (rawName === 'null' || rawName === 'undefined') rawName = '';
+    state.profileModal.nameBuffer = rawName;
+
+    titleEl.textContent = profile ? 'Edit Profile' : 'Add Profile';
+    nameInput.value     = state.profileModal.nameBuffer;
+
+    kidsBtn.textContent = state.profileModal.isKids ? 'ON' : 'OFF';
     if (state.profileModal.isKids) {
       kidsBtn.classList.add('kids-on');
     } else {
       kidsBtn.classList.remove('kids-on');
     }
 
+    var pinBtn = document.getElementById('spm-pin-btn');
+    if (pinBtn) {
+      pinBtn.textContent = state.profileModal.pinBuffer ? 'Change PIN' : 'Set PIN';
+    }
+
     var canDelete = profile && profile.id !== 'primary';
     deleteBtn.style.display = canDelete ? '' : 'none';
 
-    modal.style.display  = 'flex';
-    state.focusedPanel   = 'settings-profile-modal';
+    // Ensure keyboard overlay is always hidden when opening the form modal
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    modal.style.display           = 'flex';
+    state.focusedPanel             = 'settings-profile-modal';
+    state.focusedIndex             = 0;
+    state.profileModal.focusIndex  = 0;
     updateProfileModalFocus();
   }
 
   function closeProfileFormModal() {
+    // Bug 2 fix: always close keyboard overlay before closing the modal
+    // so the name input losing visibility can't re-trigger keyboard open
+    var overlay = document.getElementById('profile-name-keyboard-overlay');
+    if (overlay) overlay.style.display = 'none';
+
     var modal = document.getElementById('settings-profile-modal');
     if (modal) modal.style.display = 'none';
+
     if (state.profileModalCaller === 'profiles') {
-      // Re-render the who's watching screen and return focus there
       setupProfilesView();
     } else {
-      // Return focus to settings profiles list
       renderSettingsProfilesList();
       state.focusedPanel = 'settings-profiles';
       state.focusedIndex = 0;
@@ -2491,9 +2560,12 @@
 
   function saveProfileFromModal() {
     var nameInput = document.getElementById('spm-name-input');
-    var name = nameInput ? nameInput.value.trim() : '';
-    if (!name) return;
-    var isKids    = state.profileModal.isKids;
+    // Use nameBuffer as the authoritative source (set by keyboard), fall back to input
+    var name = state.profileModal.nameBuffer.trim() || (nameInput ? nameInput.value.trim() : '');
+    // Strip the literal string "null"/"undefined" and trailing occurrences if they somehow got in
+    name = name.replace(/null$/i, '').replace(/undefined$/i, '').trim();
+    if (!name || name === 'null' || name === 'undefined') return;
+    var isKids     = state.profileModal.isKids;
     var avatarSeed = name.slice(0, 2).toUpperCase();
 
     if (state.profileModal.mode === 'add') {
@@ -2501,7 +2573,8 @@
         id: 'p_' + Date.now(),
         name: name,
         avatarSeed: avatarSeed,
-        isKids: isKids
+        isKids: isKids,
+        pin: state.profileModal.pinBuffer || ''
       });
     } else {
       for (var j = 0; j < state.profiles.length; j++) {
@@ -2509,6 +2582,7 @@
           state.profiles[j].name      = name;
           state.profiles[j].avatarSeed = avatarSeed;
           state.profiles[j].isKids    = isKids;
+          state.profiles[j].pin       = state.profileModal.pinBuffer || '';
           break;
         }
       }
@@ -2621,11 +2695,8 @@
   }
 
   function openProfileNameKeyboard() {
-    state.profileModal.nameBuffer = '';
-    var nameInput = document.getElementById('spm-name-input');
-    if (nameInput && typeof nameInput.value === 'string' && nameInput.value !== 'null') {
-      state.profileModal.nameBuffer = nameInput.value;
-    }
+    // Use nameBuffer already set in state — never re-read from the input
+    // which could contain stale browser-autocompleted or previously broken values
     state.profileModal.keyboardIsShifted = false;
     state.profileModal.keyboardMode = 'letters';
 
@@ -2647,9 +2718,12 @@
       if (nameInput) nameInput.value = state.profileModal.nameBuffer;
     }
 
-    // Return focus to profile form modal
+    // Return focus to profile form modal.
+    // Sync global focusedIndex so the keydown handler uses the same index
+    // as the modal's own focus system — this is what was causing focus to die.
     state.focusedPanel = 'settings-profile-modal';
-    state.profileModal.focusIndex = 0; // back to Name row
+    state.profileModal.focusIndex = 0;
+    state.focusedIndex = 0;
     updateProfileModalFocus();
   }
 
@@ -2681,6 +2755,8 @@
       renderProfileNameKeyboard();
       updateFocusUI();
     } else {
+      // Guard: key must be a non-null string to avoid 'buf + null' → "...null"
+      if (key == null || typeof key !== 'string') return;
       var charToAdd = key;
       if (state.profileModal.keyboardIsShifted && key.length === 1 && key >= 'a' && key <= 'z') {
         charToAdd = key.toUpperCase();
@@ -3790,7 +3866,21 @@
       }
       var savedProfiles = localStorage.getItem(PROFILES_KEY);
       if (savedProfiles) {
-        state.profiles = JSON.parse(savedProfiles);
+        var parsed = JSON.parse(savedProfiles);
+        // Sanitize profile names — strip "null"/"undefined" that got stored previously
+        if (Array.isArray(parsed)) {
+          for (var pi = 0; pi < parsed.length; pi++) {
+            var pName = String(parsed[pi].name || '').trim();
+            // Fix exact bad values AND names that end with the word "null"/"undefined"
+            if (!pName || pName === 'null' || pName === 'undefined' || /null$|undefined$/i.test(pName)) {
+              parsed[pi].name = parsed[pi].id === 'kids' ? 'Kids' : 'Primary';
+            }
+            if (!parsed[pi].avatarSeed || parsed[pi].avatarSeed === 'nu' || parsed[pi].avatarSeed === 'nu' || /null|undefined/i.test(parsed[pi].avatarSeed)) {
+              parsed[pi].avatarSeed = parsed[pi].name.slice(0, 2).toUpperCase();
+            }
+          }
+        }
+        state.profiles = parsed;
       }
     } catch (e) {
       console.error('Failed to load local storage state:', e);
@@ -3826,7 +3916,10 @@
     var spmNameInput = document.getElementById('spm-name-input');
     if (spmNameInput) {
       spmNameInput.onclick = function () {
-        openProfileNameKeyboard();
+        // Only open keyboard if the modal is actually visible and we are focused on it
+        if (state.focusedPanel === 'settings-profile-modal') {
+          openProfileNameKeyboard();
+        }
       };
     }
     var spmKidsBtn = document.getElementById('spm-kids-btn');
@@ -3839,12 +3932,22 @@
         } else {
           spmKidsBtn.classList.remove('kids-on');
         }
+        // Keep indexes in sync but do NOT call updateProfileModalFocus / .focus() here —
+        // re-focusing the button while the Enter event is still propagating on TV browsers
+        // triggers a second click, immediately toggling the value back.
+        state.focusedIndex = state.profileModal.focusIndex;
       };
     }
     var spmSaveBtn = document.getElementById('spm-save-btn');
     if (spmSaveBtn) {
       spmSaveBtn.onclick = function () {
         saveProfileFromModal();
+      };
+    }
+    var spmPinBtn = document.getElementById('spm-pin-btn');
+    if (spmPinBtn) {
+      spmPinBtn.onclick = function () {
+        openProfilePinKeyboard();
       };
     }
     var spmCancelBtn = document.getElementById('spm-cancel-btn');
@@ -3870,6 +3973,78 @@
       });
     }
     
+    // --- BUTTON CLICK BINDINGS (safe, DOM is guaranteed ready here) ---
+    (function bindButtons() {
+      function bind(id, fn) {
+        var el = document.getElementById(id);
+        if (el) el.onclick = fn;
+      }
+      bind('welcome-btn-signin',            function () { setupLoginView(); });
+      bind('welcome-btn-create',            function () { setupActivationView(); });
+      bind('activation-btn-cancel',         function () { cleanupActivation(); setupWelcomeView(); });
+      bind('sidebar-home',                  function () { openHomeView(); });
+      bind('sidebar-live',                  function () { loadCatalog('live'); });
+      bind('sidebar-movies',                function () { loadCatalog('movies'); });
+      bind('sidebar-series',                function () { loadCatalog('series'); });
+      bind('sidebar-search',                function () { openSearchView(); });
+      bind('sidebar-watchlist',             function () { openWatchlistView(); });
+      bind('sidebar-settings',              function () { openSettingsView(); });
+      bind('search-query-display',          function () { focusSearchKeyboard(0, 0); });
+      bind('search-btn-back',               function () { returnToCatalogSidebar('search'); });
+      bind('watchlist-filter-all',          function () { setWatchlistFilter('all'); });
+      bind('watchlist-filter-movies',       function () { setWatchlistFilter('movies'); });
+      bind('watchlist-filter-series',       function () { setWatchlistFilter('series'); });
+      bind('detail-btn-play',               function () { playDetailPrimary(); });
+      bind('detail-btn-favorite',           function () {
+        if (!state.detailItem) return;
+        toggleFavoriteItem(state.detailMode, state.detailItem);
+        updateDetailFavoriteButton();
+      });
+      bind('detail-btn-back',               function () { closeContentDetail(); });
+      bind('settings-btn-logout-new',       function () { logoutUser(); });
+      bind('settings-btn-reload',           function () { window.location.reload(); });
+      bind('settings-btn-clear-watchlist-new', function () {
+        clearCurrentProfileFavorites();
+        renderWatchlist();
+        updateSettingsView();
+        updateFocusUI();
+        alert('Watchlist cleared!');
+      });
+      bind('settings-btn-clear-history',    function () {
+        clearCurrentProfileWatchHistory();
+        refreshHomeView();
+        updateSettingsView();
+        updateFocusUI();
+      });
+      bind('settings-btn-reset', function () {
+        try {
+          localStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(PROFILES_KEY);
+          localStorage.removeItem(SELECTED_PROFILE_KEY);
+        } catch (e) {}
+        window.location.reload();
+      });
+      bind('settings-btn-buildinfo', function () {
+        alert('LG BUILD: Smartifly TV Legacy\nVERSION: v0.1.0\nSTATUS: Connected\nENGINE: LG webOS shell (Chrome 38 Compatibility Mode)');
+      });
+
+      var settingsTabs = ['account', 'profiles', 'app', 'about'];
+      for (var ti = 0; ti < settingsTabs.length; ti++) {
+        (function (tabName, index) {
+          var btn = document.getElementById('settings-tab-' + tabName);
+          if (btn) {
+            btn.onclick = function () {
+              state.focusedPanel = 'settings-tabs';
+              state.focusedIndex = index;
+              state.settingsActiveTab = tabName;
+              renderSettingsTabs();
+              updateFocusUI();
+            };
+          }
+        })(settingsTabs[ti], ti);
+      }
+    })();
+
     // Check if session exists
     if (state.session) {
       if (!Array.isArray(state.profiles) || state.profiles.length === 0) {
@@ -4115,9 +4290,10 @@
           authenticatedAt: new Date().toISOString()
         };
 
-        // Create default profiles if missing
+        // Create default profiles — use values.user (not bare 'user' which is out of scope)
+        var primaryName = (values.user && String(values.user).trim()) ? String(values.user).trim() : 'Primary';
         var profiles = [
-          { id: 'primary', name: user, avatarSeed: user.slice(0, 2).toUpperCase() },
+          { id: 'primary', name: primaryName, avatarSeed: primaryName.slice(0, 2).toUpperCase() },
           { id: 'kids', name: 'Kids', avatarSeed: 'KD', isKids: true }
         ];
 
@@ -4127,12 +4303,10 @@
         
         setupProfilesView();
       }, function (err) {
-        statusNode.textContent = err;
-        statusNode.style.color = '#ff3344';
+        setLoginStatus(err || 'Xtream login failed.', 'error');
       });
     }, function (err) {
-      statusNode.textContent = err;
-      statusNode.style.color = '#ff3344';
+      setLoginStatus(err || 'Server validation failed.', 'error');
     });
   }
 
@@ -4365,14 +4539,26 @@
 
       var avatar = document.createElement('div');
       avatar.className = 'profile-avatar' + (profile.isKids ? ' kids' : '');
-      avatar.textContent = profile.avatarSeed;
+      var safeAvatarSeed = (profile.avatarSeed && profile.avatarSeed !== 'null')
+        ? profile.avatarSeed
+        : (profile.name && profile.name !== 'null' ? profile.name.slice(0, 2).toUpperCase() : 'P?');
+      avatar.textContent = safeAvatarSeed;
 
       var name = document.createElement('div');
       name.className = 'profile-name';
-      name.textContent = profile.name;
+      var safeProfileName = (profile.name && profile.name !== 'null') ? profile.name : (profile.isKids ? 'Kids' : 'Primary');
+      name.textContent = safeProfileName;
 
       card.appendChild(avatar);
       card.appendChild(name);
+
+      // Lock icon for PIN-protected profiles
+      if (profile.pin) {
+        var lockIcon = document.createElement('div');
+        lockIcon.className = 'profile-lock-icon';
+        lockIcon.textContent = '\uD83D\uDD12'; // 🔒
+        card.appendChild(lockIcon);
+      }
 
       (function (p) {
         card.onclick = function () { selectProfile(p); };
@@ -4422,9 +4608,256 @@
 
 
   function selectProfile(profile) {
-    state.selectedProfile = profile;
-    saveSelectedProfile(profile);
-    openHomeView(true);
+    if (profile && profile.pin) {
+      openPinEntry(profile);
+    } else {
+      state.selectedProfile = profile;
+      saveSelectedProfile(profile);
+      openHomeView(true);
+    }
+  }
+
+  // --- PIN ENTRY SYSTEM ---
+  var pinEntryRows = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['Back', '0', 'Done']
+  ];
+
+  function openPinEntry(profile) {
+    state.pinEntry = { profile: profile, buffer: '' };
+    var overlay = document.getElementById('pin-entry-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    var errorEl = document.getElementById('pin-entry-error');
+    if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
+    renderPinKeyboard();
+    state.focusedPanel = 'pin-entry-keyboard';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function closePinEntry() {
+    state.pinEntry = null;
+    var overlay = document.getElementById('pin-entry-overlay');
+    if (overlay) overlay.style.display = 'none';
+    // Return to profile selection
+    state.focusedPanel = 'profiles';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function renderPinKeyboard() {
+    updatePinDots();
+    var container = document.getElementById('pin-keyboard');
+    if (!container) return;
+    container.innerHTML = '';
+    var flatIndex = 0;
+    for (var r = 0; r < pinEntryRows.length; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'pin-key-row';
+      var rowData = pinEntryRows[r];
+      for (var c = 0; c < rowData.length; c++) {
+        var keyVal = rowData[c];
+        var btn = document.createElement('div');
+        btn.className = 'pin-key focusable';
+        if (keyVal === 'Back') btn.className += ' pin-key--back';
+        if (keyVal === 'Done') btn.className += ' pin-key--done';
+        btn.setAttribute('tabindex', '-1');
+        btn.setAttribute('data-key', keyVal);
+        btn.setAttribute('data-index', flatIndex);
+        btn.textContent = keyVal;
+        (function (k) {
+          btn.onclick = function () { handlePinKeyPress(k); };
+        })(keyVal);
+        rowEl.appendChild(btn);
+        flatIndex++;
+      }
+      container.appendChild(rowEl);
+    }
+  }
+
+  function updatePinDots() {
+    var buf = (state.pinEntry && state.pinEntry.buffer) ? state.pinEntry.buffer : '';
+    for (var i = 1; i <= 4; i++) {
+      var dot = document.getElementById('pin-dot-' + i);
+      if (dot) {
+        dot.classList.toggle('filled', i <= buf.length);
+      }
+    }
+  }
+
+  function handlePinKeyPress(key) {
+    if (!state.pinEntry) return;
+    if (key === 'Back') {
+      closePinEntry();
+      return;
+    }
+    if (key === 'Done') {
+      var entered = state.pinEntry.buffer;
+      var expected = state.pinEntry.profile.pin;
+      if (entered === expected) {
+        var profile = state.pinEntry.profile;
+        state.pinEntry = null;
+        var overlay = document.getElementById('pin-entry-overlay');
+        if (overlay) overlay.style.display = 'none';
+        state.selectedProfile = profile;
+        saveSelectedProfile(profile);
+        openHomeView(true);
+      } else {
+        var errorEl = document.getElementById('pin-entry-error');
+        if (errorEl) { errorEl.textContent = 'Incorrect PIN. Try again.'; errorEl.style.display = 'block'; }
+        state.pinEntry.buffer = '';
+        updatePinDots();
+        state.focusedIndex = 0;
+        updateFocusUI();
+      }
+      return;
+    }
+    if (key === 'Backspace') {
+      if (state.pinEntry.buffer.length > 0) {
+        state.pinEntry.buffer = state.pinEntry.buffer.slice(0, -1);
+        updatePinDots();
+      }
+      return;
+    }
+    // digit key
+    if (state.pinEntry.buffer.length < 4) {
+      state.pinEntry.buffer += key;
+      updatePinDots();
+      // Auto-submit when 4 digits entered
+      if (state.pinEntry.buffer.length === 4) {
+        handlePinKeyPress('Done');
+      }
+    }
+  }
+
+  // PIN numpad row/col helpers (3-column grid)
+  function getPinKeyRowColFromIndex(index) {
+    var r = Math.floor(index / 3);
+    var c = index % 3;
+    return { row: r, col: c };
+  }
+
+  function getPinKeyIndexFromRowCol(row, col) {
+    return row * 3 + col;
+  }
+
+  // --- PIN NUMPAD in profile modal (Set/Change PIN) ---
+  function openProfilePinKeyboard() {
+    // Save the current PIN so we can restore it if the user cancels,
+    // then clear the buffer so they always start entering a fresh PIN.
+    state.profileModal._pinBeforeEdit = state.profileModal.pinBuffer || '';
+    state.profileModal.pinBuffer = '';
+
+    // Update overlay title: "Change PIN" if profile already has one, "Set PIN" otherwise
+    var titleEl = document.getElementById('ppk-title');
+    if (titleEl) {
+      titleEl.textContent = state.profileModal._pinBeforeEdit ? 'Change Profile PIN' : 'Set Profile PIN';
+    }
+    var subEl = document.getElementById('ppk-subtitle');
+    if (subEl) {
+      subEl.textContent = state.profileModal._pinBeforeEdit
+        ? 'Enter a new 4-digit PIN'
+        : 'Enter a 4-digit PIN for this profile';
+    }
+
+    var overlay = document.getElementById('profile-pin-keyboard-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    renderProfilePinKeyboard();
+    state.focusedPanel = 'profile-pin-keyboard';
+    state.focusedIndex = 0;
+    updateFocusUI();
+  }
+
+  function closeProfilePinKeyboard(save) {
+    var overlay = document.getElementById('profile-pin-keyboard-overlay');
+    if (overlay) overlay.style.display = 'none';
+    if (!save) {
+      // User cancelled — restore the PIN that was set before opening
+      state.profileModal.pinBuffer = state.profileModal._pinBeforeEdit || '';
+    }
+    state.profileModal._pinBeforeEdit = '';
+    // Update the button label to reflect the current pinBuffer
+    var pinBtn = document.getElementById('spm-pin-btn');
+    if (pinBtn) {
+      pinBtn.textContent = state.profileModal.pinBuffer ? 'Change PIN' : 'Set PIN';
+    }
+    state.focusedPanel = 'settings-profile-modal';
+    state.profileModal.focusIndex = 0;
+    state.focusedIndex = 0;
+    updateProfileModalFocus();
+  }
+
+  function renderProfilePinKeyboard() {
+    updateProfilePinDots();
+    var container = document.getElementById('ppk-keyboard');
+    if (!container) return;
+    container.innerHTML = '';
+    var rows = [
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      ['Back', '0', 'Done']
+    ];
+    var flatIndex = 0;
+    for (var r = 0; r < rows.length; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'pin-key-row';
+      for (var c = 0; c < rows[r].length; c++) {
+        var keyVal = rows[r][c];
+        var btn = document.createElement('div');
+        btn.className = 'pin-key focusable';
+        if (keyVal === 'Back') btn.className += ' pin-key--back';
+        if (keyVal === 'Done') btn.className += ' pin-key--done';
+        btn.setAttribute('tabindex', '-1');
+        btn.setAttribute('data-key', keyVal);
+        btn.setAttribute('data-index', flatIndex);
+        btn.textContent = keyVal;
+        (function (k) {
+          btn.onclick = function () { handleProfilePinKeyPress(k); };
+        })(keyVal);
+        rowEl.appendChild(btn);
+        flatIndex++;
+      }
+      container.appendChild(rowEl);
+    }
+  }
+
+  function updateProfilePinDots() {
+    var buf = state.profileModal.pinBuffer || '';
+    for (var i = 1; i <= 4; i++) {
+      var dot = document.getElementById('ppk-dot-' + i);
+      if (dot) dot.classList.toggle('filled', i <= buf.length);
+    }
+    // Update the PIN button label in the modal
+    var pinBtn = document.getElementById('spm-pin-btn');
+    if (pinBtn) {
+      pinBtn.textContent = buf ? 'Change PIN' : 'Set PIN';
+    }
+  }
+
+  function handleProfilePinKeyPress(key) {
+    if (key === 'Back') {
+      closeProfilePinKeyboard(false);
+      return;
+    }
+    if (key === 'Done') {
+      closeProfilePinKeyboard(true);
+      return;
+    }
+    if (key === 'Backspace') {
+      if (state.profileModal.pinBuffer.length > 0) {
+        state.profileModal.pinBuffer = state.profileModal.pinBuffer.slice(0, -1);
+        renderProfilePinKeyboard();
+      }
+      return;
+    }
+    // digit
+    if (state.profileModal.pinBuffer.length < 4) {
+      state.profileModal.pinBuffer += key;
+      renderProfilePinKeyboard();
+    }
   }
 
   // --- CATALOG CONTROLLER ---
@@ -4442,6 +4875,10 @@
     state.channels = [];
     state.selectedCategoryId = '';
     state.selectedCategoryName = '';
+    state.channelsBatchSize = CATALOG_BATCH_SIZE;
+    // Clear cache for this mode when switching to it fresh
+    state.channelsCache = {};
+    state.channelsCacheCount = {};
     setSidebarActiveItem();
     
     var catNode = document.getElementById('categories-panel-list');
@@ -4486,12 +4923,21 @@
       item.setAttribute('tabindex', '-1');
       item.setAttribute('data-id', cat.category_id);
       item.setAttribute('data-index', i);
-      item.textContent = cat.category_name;
-      
+
+      // Show count badge if we have a cached count for this category
+      var cacheKey = state.catalogMode + ':' + cat.category_id;
+      var cachedCount = state.channelsCacheCount[cacheKey];
+      if (cachedCount != null) {
+        item.innerHTML = escapeHtml(cat.category_name) +
+          ' <span class="category-count">' + cachedCount + '</span>';
+      } else {
+        item.textContent = cat.category_name;
+      }
+
       if (cat.category_id === state.selectedCategoryId) {
         item.classList.add('active');
       }
-      
+
       item.onclick = function () {
         var id = this.getAttribute('data-id');
         var idx = parseInt(this.getAttribute('data-index'), 10);
@@ -4500,7 +4946,7 @@
         selectCategory(id);
         updateFocusUI();
       };
-      
+
       container.appendChild(item);
     }
   }
@@ -4508,7 +4954,8 @@
   function selectCategory(categoryId) {
     var config = getCatalogConfig();
     state.selectedCategoryId = categoryId;
-    
+    state.channelsBatchSize = CATALOG_BATCH_SIZE; // reset batch on category change
+
     // Find category name
     for (var i = 0; i < state.categories.length; i++) {
       if (state.categories[i].category_id === categoryId) {
@@ -4516,11 +4963,11 @@
         break;
       }
     }
-    
+
     document.getElementById('details-category-name').textContent = state.selectedCategoryName.toUpperCase();
     document.getElementById('details-channel-name').textContent = config.loadingTitleText;
     document.getElementById('details-epg-info').textContent = config.loadingDetailText;
-    
+
     // Toggle active classes on DOM
     var items = document.querySelectorAll('.category-item');
     for (var j = 0; j < items.length; j++) {
@@ -4531,20 +4978,35 @@
       }
     }
 
+    var cacheKey = state.catalogMode + ':' + categoryId;
     var grid = document.getElementById('channels-grid-list');
+
+    // Serve from cache if available
+    if (state.channelsCache[cacheKey]) {
+      state.channels = state.channelsCache[cacheKey];
+      renderChannels();
+      updateFocusUI();
+      return;
+    }
+
     grid.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">' + config.loadingItemsText + '</div>';
 
     config.loadItems(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, categoryId, function (streams) {
       state.channels = streams;
+      // Store in cache and record count
+      state.channelsCache[cacheKey] = streams;
+      state.channelsCacheCount[cacheKey] = streams.length;
+      // Update category label in sidebar to show count
+      updateCategoryCountLabel(categoryId, streams.length);
       renderChannels();
       updateFocusUI();
     }, function (err) {
       state.channels = [];
       grid.innerHTML = '<div style="color:#ff3344; padding: 20px;">' + err + '</div>';
-      
+
       document.getElementById('details-channel-name').textContent = config.errorTitleText;
       document.getElementById('details-epg-info').textContent = err;
-      
+
       // Fallback focus to category panel or category item if channel loading fails
       if (state.focusedPanel === 'catalog-channels') {
         state.focusedPanel = 'catalog-categories';
@@ -4554,6 +5016,20 @@
     });
   }
 
+  // Update the count badge on a single category item in the sidebar without re-rendering all categories
+  function updateCategoryCountLabel(categoryId, count) {
+    var item = document.querySelector('.category-item[data-id="' + categoryId + '"]');
+    if (!item) return;
+    var name = '';
+    for (var i = 0; i < state.categories.length; i++) {
+      if (state.categories[i].category_id === categoryId) {
+        name = state.categories[i].category_name;
+        break;
+      }
+    }
+    item.innerHTML = escapeHtml(name) + ' <span class="category-count">' + count + '</span>';
+  }
+
   function renderChannels() {
     var config = getCatalogConfig();
     var container = document.getElementById('channels-grid-list');
@@ -4561,7 +5037,6 @@
 
     if (state.channels.length === 0) {
       container.innerHTML = '<div style="color:rgba(255,255,255,0.4); padding: 20px;">' + config.emptyItemsText + '</div>';
-      
       document.getElementById('details-channel-name').textContent = 'No ' + config.sectionLabel;
       document.getElementById('details-epg-info').textContent = config.emptyDetailText;
       return;
@@ -4574,64 +5049,78 @@
 
     if (state.catalogMode === 'live') {
       document.getElementById('details-epg-info').innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size:14px;">Loading guide...</div>';
-      
-      if (epgTimer) {
-        clearTimeout(epgTimer);
-      }
+      if (epgTimer) { clearTimeout(epgTimer); }
       fetchEPGForChannel(firstCh);
     } else {
       renderCatalogDetails(firstCh);
     }
 
-    for (var i = 0; i < state.channels.length; i++) {
-      var ch = state.channels[i];
-      var card = document.createElement('div');
-      card.className = 'channel-card focusable';
-      card.setAttribute('tabindex', '-1');
-      if (state.catalogMode !== 'live') {
-        card.className += ' channel-card--poster';
-      }
-      if (state.catalogMode === 'live' && state.activeChannel && String(state.activeChannel.stream_id) === String(ch.stream_id)) {
-        card.className += ' active';
-      }
-      card.setAttribute('data-id', getCatalogItemId(ch));
-      card.setAttribute('data-index', i);
-      card.setAttribute('data-name', getCatalogItemName(ch));
-      
-      // Content type badge in top-left
-      var liveBadge = document.createElement('div');
-      liveBadge.className = 'channel-live-badge';
-      liveBadge.textContent = config.badgeLabel;
-      card.appendChild(liveBadge);
-      
-      var logoWrap = document.createElement('div');
-      logoWrap.className = 'channel-logo-container';
-      
-      if (getCatalogItemArtwork(ch)) {
-        var img = document.createElement('img');
-        img.src = getLegacyArtworkUrl(getCatalogItemArtwork(ch));
-        img.onerror = function() {
-          this.style.display = 'none';
-          this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
-        };
-        logoWrap.appendChild(img);
-      } else {
-        logoWrap.textContent = ch.name;
-      }
-      
-      card.appendChild(logoWrap);
-      
-      card.onclick = function() {
-        var idx = parseInt(this.getAttribute('data-index'), 10);
-        if (state.catalogMode === 'live') {
-          playChannel(state.channels[idx]);
-        } else {
-          showContentDetail(state.channels[idx], state.catalogMode);
-        }
-      };
-      
-      container.appendChild(card);
+    // Only render up to the current batch size — keeps DOM small on legacy hardware
+    var renderCount = Math.min(state.channelsBatchSize, state.channels.length);
+    for (var i = 0; i < renderCount; i++) {
+      container.appendChild(buildChannelCard(state.channels[i], i));
     }
+  }
+
+  // Append the next batch of cards to the existing grid without clearing it
+  function appendChannelBatch() {
+    var container = document.getElementById('channels-grid-list');
+    if (!container) return;
+    var prevCount = state.channelsBatchSize;
+    state.channelsBatchSize = Math.min(state.channelsBatchSize + CATALOG_BATCH_SIZE, state.channels.length);
+    for (var i = prevCount; i < state.channelsBatchSize; i++) {
+      container.appendChild(buildChannelCard(state.channels[i], i));
+    }
+  }
+
+  // Build a single channel/movie/series card DOM element
+  function buildChannelCard(ch, i) {
+    var config = getCatalogConfig();
+    var card = document.createElement('div');
+    card.className = 'channel-card focusable';
+    card.setAttribute('tabindex', '-1');
+    if (state.catalogMode !== 'live') {
+      card.className += ' channel-card--poster';
+    }
+    if (state.catalogMode === 'live' && state.activeChannel && String(state.activeChannel.stream_id) === String(ch.stream_id)) {
+      card.className += ' active';
+    }
+    card.setAttribute('data-id', getCatalogItemId(ch));
+    card.setAttribute('data-index', i);
+    card.setAttribute('data-name', getCatalogItemName(ch));
+
+    var liveBadge = document.createElement('div');
+    liveBadge.className = 'channel-live-badge';
+    liveBadge.textContent = config.badgeLabel;
+    card.appendChild(liveBadge);
+
+    var logoWrap = document.createElement('div');
+    logoWrap.className = 'channel-logo-container';
+
+    if (getCatalogItemArtwork(ch)) {
+      var img = document.createElement('img');
+      img.src = getLegacyArtworkUrl(getCatalogItemArtwork(ch));
+      img.onerror = function () {
+        this.style.display = 'none';
+        this.parentNode.textContent = this.parentNode.parentNode.getAttribute('data-name');
+      };
+      logoWrap.appendChild(img);
+    } else {
+      logoWrap.textContent = ch.name;
+    }
+
+    card.appendChild(logoWrap);
+
+    card.onclick = function () {
+      var idx = parseInt(this.getAttribute('data-index'), 10);
+      if (state.catalogMode === 'live') {
+        playChannel(state.channels[idx]);
+      } else {
+        showContentDetail(state.channels[idx], state.catalogMode);
+      }
+    };
+
+    return card;
   }
 
   // --- PLAYER CONTROLLER ---
@@ -5271,6 +5760,14 @@
     if (state.focusedPanel === 'profile-name-keyboard') {
       var pnkEl = document.getElementById('pnk-keyboard');
       return pnkEl ? pnkEl.querySelectorAll('.focusable') : [];
+    }
+    if (state.focusedPanel === 'pin-entry-keyboard') {
+      var pinEl = document.getElementById('pin-keyboard');
+      return pinEl ? pinEl.querySelectorAll('.focusable') : [];
+    }
+    if (state.focusedPanel === 'profile-pin-keyboard') {
+      var ppkEl = document.getElementById('ppk-keyboard');
+      return ppkEl ? ppkEl.querySelectorAll('.focusable') : [];
     }
     return [];
   }
@@ -5951,6 +6448,12 @@
       } else if (state.focusedPanel === 'profile-name-keyboard') {
         closeProfileNameKeyboard(false);
         handled = true;
+      } else if (state.focusedPanel === 'pin-entry-keyboard') {
+        closePinEntry();
+        handled = true;
+      } else if (state.focusedPanel === 'profile-pin-keyboard') {
+        closeProfilePinKeyboard(false);
+        handled = true;
       } else if (state.focusedPanel === 'login') {
         setupWelcomeView();
         handled = true;
@@ -6017,6 +6520,7 @@
       if (code === 38) { // ArrowUp
         if (state.profileModal.focusIndex > 0) {
           state.profileModal.focusIndex--;
+          state.focusedIndex = state.profileModal.focusIndex; // keep in sync
           updateProfileModalFocus();
         }
         handled = true;
@@ -6024,6 +6528,7 @@
         var visibleItems = getVisibleModalItems();
         if (state.profileModal.focusIndex < visibleItems.length - 1) {
           state.profileModal.focusIndex++;
+          state.focusedIndex = state.profileModal.focusIndex; // keep in sync
           updateProfileModalFocus();
         }
         handled = true;
@@ -6032,6 +6537,11 @@
         var activeEl = visibleItems[state.profileModal.focusIndex];
         if (activeEl) {
           activeEl.click();
+          // Do NOT call updateFocusUI after modal click — calling .focus() on the
+          // button while the Enter keydown is still propagating causes TV browsers
+          // to fire a second native click, toggling the button back immediately.
+          event.preventDefault();
+          return;
         }
         handled = true;
       }
@@ -6069,10 +6579,20 @@
             state.focusedIndex = getProfileKeyboardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
+        } else if (state.focusedPanel === 'pin-entry-keyboard' || state.focusedPanel === 'profile-pin-keyboard') {
+          var pPin = getPinKeyRowColFromIndex(state.focusedIndex);
+          if (pPin.row > 0) {
+            state.focusedIndex = getPinKeyIndexFromRowCol(pPin.row - 1, pPin.col);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'profiles-edit') {
+          // Up from edit buttons row → move focus back to profile cards row
+          state.focusedPanel = 'profiles';
+          handled = true;
         } else if (state.focusedPanel === 'catalog-channels') {
-          // 4-column grid: go up by 4 items
-          if (state.focusedIndex >= 4) {
-            state.focusedIndex -= 4;
+          // grid: go up by the correct number of columns for the current mode
+          if (state.focusedIndex >= gridColumns) {
+            state.focusedIndex -= gridColumns;
             handled = true;
           }
         } else {
@@ -6105,10 +6625,32 @@
             state.focusedIndex = getProfileKeyboardIndexFromRowCol(targetRow, targetCol);
             handled = true;
           }
+        } else if (state.focusedPanel === 'pin-entry-keyboard' || state.focusedPanel === 'profile-pin-keyboard') {
+          var pPin = getPinKeyRowColFromIndex(state.focusedIndex);
+          if (pPin.row < 3) {
+            state.focusedIndex = getPinKeyIndexFromRowCol(pPin.row + 1, pPin.col);
+            handled = true;
+          }
+        } else if (state.focusedPanel === 'profiles') {
+          // Down from profile cards row → move focus to edit buttons row
+          var editBtns = document.getElementById('profiles-list-container').querySelectorAll('.profile-edit-btn.focusable');
+          if (editBtns.length > 0) {
+            state.focusedPanel = 'profiles-edit';
+            // Clamp index to number of edit buttons (no edit btn for Add Profile slot)
+            if (state.focusedIndex >= editBtns.length) {
+              state.focusedIndex = editBtns.length - 1;
+            }
+            handled = true;
+          }
         } else if (state.focusedPanel === 'catalog-channels') {
-          // 4-column grid: go down by 4 items
-          if (state.focusedIndex + 4 < items.length) {
-            state.focusedIndex += 4;
+          // grid: go down by the correct number of columns for the current mode
+          if (state.focusedIndex + gridColumns < items.length) {
+            state.focusedIndex += gridColumns;
+            // Expand batch if focus is within CATALOG_BATCH_PREFETCH items of the rendered end
+            if (state.focusedIndex >= state.channelsBatchSize - CATALOG_BATCH_PREFETCH &&
+                state.channelsBatchSize < state.channels.length) {
+              appendChannelBatch();
+            }
             handled = true;
           } else {
             // If we are not on the last row, let's go to the last item
@@ -6144,6 +6686,12 @@
           state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col - 1);
           handled = true;
         }
+      } else if (state.focusedPanel === 'pin-entry-keyboard' || state.focusedPanel === 'profile-pin-keyboard') {
+        var pPin = getPinKeyRowColFromIndex(state.focusedIndex);
+        if (pPin.col > 0) {
+          state.focusedIndex = getPinKeyIndexFromRowCol(pPin.row, pPin.col - 1);
+          handled = true;
+        }
       } else if (state.focusedPanel === 'catalog-channels') {
         // Grid left navigation
         if (items.length > 0 && state.focusedIndex % gridColumns > 0) {
@@ -6166,6 +6714,12 @@
           state.focusedIndex--;
           handled = true;
         }
+      } else if (state.focusedPanel === 'profiles-edit') {
+        // Left horizontal edit button navigation
+        if (items.length > 0 && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        }
       }
     } else if (code === 39) { // ArrowRight
       if (state.focusedPanel === 'login-wizard') {
@@ -6178,6 +6732,12 @@
         var pPos = getProfileKeyboardRowColFromIndex(state.focusedIndex);
         if (pPos.col < pPos.rowLength - 1) {
           state.focusedIndex = getProfileKeyboardIndexFromRowCol(pPos.row, pPos.col + 1);
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'pin-entry-keyboard' || state.focusedPanel === 'profile-pin-keyboard') {
+        var pPin = getPinKeyRowColFromIndex(state.focusedIndex);
+        if (pPin.col < 2) {
+          state.focusedIndex = getPinKeyIndexFromRowCol(pPin.row, pPin.col + 1);
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-sidebar') {
@@ -6218,10 +6778,21 @@
         // Grid right navigation
         if (items.length > 0 && state.focusedIndex % gridColumns < gridColumns - 1 && state.focusedIndex < items.length - 1) {
           state.focusedIndex++;
+          // Expand batch if focus is within CATALOG_BATCH_PREFETCH items of the rendered end
+          if (state.focusedIndex >= state.channelsBatchSize - CATALOG_BATCH_PREFETCH &&
+              state.channelsBatchSize < state.channels.length) {
+            appendChannelBatch();
+          }
           handled = true;
         }
       } else if (state.focusedPanel === 'profiles') {
         // Right profile selection
+        if (items.length > 0 && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          handled = true;
+        }
+      } else if (state.focusedPanel === 'profiles-edit') {
+        // Right horizontal edit button navigation
         if (items.length > 0 && state.focusedIndex < items.length - 1) {
           state.focusedIndex++;
           handled = true;
@@ -6234,6 +6805,10 @@
         if (activeEl) {
           if (state.focusedPanel === 'profile-name-keyboard') {
             handleProfileNameKeyPress(activeEl.getAttribute('data-key'));
+          } else if (state.focusedPanel === 'pin-entry-keyboard') {
+            handlePinKeyPress(activeEl.getAttribute('data-key'));
+          } else if (state.focusedPanel === 'profile-pin-keyboard') {
+            handleProfilePinKeyPress(activeEl.getAttribute('data-key'));
           } else {
             activeEl.click();
           }
@@ -6257,135 +6832,7 @@
     return 0;
   }
 
-  // --- BUTTON CLICKS ACTIONS BINDINGS ---
-  document.getElementById('welcome-btn-signin').onclick = function () {
-    setupLoginView();
-  };
-
-  document.getElementById('welcome-btn-create').onclick = function () {
-    setupActivationView();
-  };
-
-  document.getElementById('activation-btn-cancel').onclick = function () {
-    cleanupActivation();
-    setupWelcomeView();
-  };
-
-  document.getElementById('sidebar-home').onclick = function () {
-    openHomeView();
-  };
-
-  document.getElementById('sidebar-live').onclick = function () {
-    loadCatalog('live');
-  };
-
-  document.getElementById('sidebar-movies').onclick = function () {
-    loadCatalog('movies');
-  };
-
-  document.getElementById('sidebar-series').onclick = function () {
-    loadCatalog('series');
-  };
-
-  document.getElementById('sidebar-search').onclick = function () {
-    openSearchView();
-  };
-
-  document.getElementById('sidebar-watchlist').onclick = function () {
-    openWatchlistView();
-  };
-
-  document.getElementById('sidebar-settings').onclick = function () {
-    openSettingsView();
-  };
-
-  document.getElementById('search-query-display').onclick = function () {
-    focusSearchKeyboard(0, 0);
-  };
-
-  document.getElementById('search-btn-back').onclick = function () {
-    returnToCatalogSidebar('search');
-  };
-
-  document.getElementById('watchlist-filter-all').onclick = function () {
-    setWatchlistFilter('all');
-  };
-
-  document.getElementById('watchlist-filter-movies').onclick = function () {
-    setWatchlistFilter('movies');
-  };
-
-  document.getElementById('watchlist-filter-series').onclick = function () {
-    setWatchlistFilter('series');
-  };
-
-  document.getElementById('watchlist-btn-back').onclick = function () {
-    returnToCatalogSidebar('watchlist');
-  };
-
-  document.getElementById('detail-btn-play').onclick = function () {
-    playDetailPrimary();
-  };
-
-  document.getElementById('detail-btn-favorite').onclick = function () {
-    if (!state.detailItem) return;
-    toggleFavoriteItem(state.detailMode, state.detailItem);
-    updateDetailFavoriteButton();
-  };
-
-  document.getElementById('detail-btn-back').onclick = function () {
-    closeContentDetail();
-  };
-
-  document.getElementById('settings-btn-logout-new').onclick = function () {
-    logoutUser();
-  };
-
-  document.getElementById('settings-btn-reload').onclick = function () {
-    window.location.reload();
-  };
-
-  document.getElementById('settings-btn-clear-watchlist-new').onclick = function () {
-    clearCurrentProfileFavorites();
-    renderWatchlist();
-    updateSettingsView();
-    updateFocusUI();
-    alert('Watchlist cleared!');
-  };
-
-  document.getElementById('settings-btn-clear-history').onclick = function () {
-    clearCurrentProfileWatchHistory();
-    refreshHomeView();
-    updateSettingsView();
-    updateFocusUI();
-  };
-
-  document.getElementById('settings-btn-reset').onclick = function () {
-    try {
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(PROFILES_KEY);
-      localStorage.removeItem(SELECTED_PROFILE_KEY);
-    } catch (e) {}
-    window.location.reload();
-  };
-
-  document.getElementById('settings-btn-buildinfo').onclick = function () {
-    alert('LG BUILD: Smartifly TV Legacy\nVERSION: v0.1.0\nSTATUS: Connected\nENGINE: LG webOS shell (Chrome 38 Compatibility Mode)');
-  };
-
-  var settingsTabs = ['account', 'profiles', 'app', 'about'];
-  settingsTabs.forEach(function (tabName, index) {
-    var btn = document.getElementById('settings-tab-' + tabName);
-    if (btn) {
-      btn.onclick = function () {
-        state.focusedPanel = 'settings-tabs';
-        state.focusedIndex = index;
-        state.settingsActiveTab = tabName;
-        renderSettingsTabs();
-        updateFocusUI();
-      };
-    }
-  });
+  // Button bindings are registered inside init() to guarantee the DOM is ready.
 
   function logoutUser() {
     try {
@@ -6412,6 +6859,9 @@
     state.homeCatalogCache = { live: null, movies: null, series: null };
     state.homeSections = [];
     state.homeHeroEntry = null;
+    state.channelsCache = {};
+    state.channelsCacheCount = {};
+    state.channelsBatchSize = CATALOG_BATCH_SIZE;
     state.catalogScreen = 'home';
     setupWelcomeView();
   }
