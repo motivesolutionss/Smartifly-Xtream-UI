@@ -513,14 +513,81 @@
       referrerpolicy="origin"
       title="Trailer"
     ></iframe>
-    <div id="player-overlay" class="player-overlay">
-      <div class="player-header">
-        <img src="./assets/smartifly_icon.png" style="width: 100px;" alt="Smartifly" />
-        <div id="player-channel-name" class="player-title">Loading Stream...</div>
+    <div id="player-overlay" class="player-overlay player-overlay--live">
+      <div class="player-topbar">
+        <div class="player-brand-chip">
+          <span id="player-kicker" class="player-kicker">Live TV</span>
+        </div>
+        <div class="player-topbar-right">
+          <div id="player-clock" class="player-clock">--:--</div>
+        </div>
+      </div>
+      <div class="player-bottombar">
+        <!-- Live HUD with EPG Info -->
+        <div class="player-live-hud">
+          <div class="player-live-title-row">
+            <div id="player-channel-name" class="player-title">Loading Stream...</div>
+            <div id="player-live-meta" class="player-live-meta"></div>
+          </div>
+          <div id="player-live-epg" class="player-live-epg">
+            <div class="player-epg-now">
+              <span class="player-epg-badge">NOW</span>
+              <span id="player-epg-now-title" class="player-epg-now-title">Live Broadcast</span>
+              <span id="player-epg-now-time" class="player-epg-now-time"></span>
+            </div>
+            <div class="player-epg-progress-row">
+              <div class="player-epg-progress-track">
+                <div id="player-epg-progress-fill" class="player-epg-progress-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+            <div class="player-epg-next">
+              <span class="player-epg-badge player-epg-badge--next">NEXT</span>
+              <span id="player-epg-next-title" class="player-epg-next-title">Schedule unavailable</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- VOD HUD -->
+        <div class="player-vod-hud">
+          <div id="player-vod-title" class="player-vod-title">Loading Title...</div>
+          <div id="player-vod-subtitle" class="player-vod-subtitle"></div>
+          <div id="player-vod-meta" class="player-vod-meta"></div>
+          <div class="player-vod-progress">
+            <span id="player-current-time" class="player-vod-time">00:00</span>
+            <div class="player-vod-track">
+              <div id="player-progress-fill" class="player-vod-fill"></div>
+            </div>
+            <span id="player-duration-time" class="player-vod-time">00:00</span>
+          </div>
+        </div>
+
+        <div class="player-overlay-bottom-row">
+          <button id="player-btn-back" class="player-control-btn player-control-btn--exit focusable" type="button">
+            Exit
+          </button>
+          
+          <div class="player-media-controls">
+            <button id="player-btn-seek-backward" class="player-control-btn player-control-btn--media focusable" type="button">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="margin-bottom: 2px;"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+              <span>-10s</span>
+            </button>
+            <button id="player-btn-toggle" class="player-control-btn player-control-btn--play focusable" type="button">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button id="player-btn-seek-forward" class="player-control-btn player-control-btn--media focusable" type="button">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="margin-bottom: 2px;"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+              <span>+10s</span>
+            </button>
+          </div>
+
+          <div id="player-legend" class="player-legend">
+            [OK] Play/Pause • [←/→] Seek • [Back] Exit
+          </div>
+        </div>
       </div>
       <div id="player-status-container" class="player-status">
         <div class="spinner"></div>
-        <p style="margin: 0; font-weight: bold; font-size: 16px; text-shadow: 0 2px 4px #000;">Buffering Stream...</p>
+        <p id="player-status-label" style="margin: 0; font-weight: bold; font-size: 16px; text-shadow: 0 2px 4px #000;">Buffering Stream...</p>
       </div>
     </div>
   </div>

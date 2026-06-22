@@ -11,6 +11,11 @@
   var epgTimer = null;
   var hlsInstance = null;
   var profileKeyboardRows = []; // Cached rows for profile name keyboard navigation
+  var playerOverlayTimer = null;
+  var playerClockTimer = null;
+  var isPlayerOverlayVisible = true;
+  var PLAY_SVG = '<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  var PAUSE_SVG = '<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
   // --- STATE DEFINITION ---
   var state = {
@@ -36,14 +41,63 @@
     activeChannel: null,
     activeChannelQueue: [],
     activeChannelIndex: 0,
+    currentViewId: 'view-welcome',
+    playerReturnViewId: 'view-catalog',
+    playerReturnPanel: 'catalog-channels',
+    playerReturnIndex: 0,
+    playerMode: 'live',
+    playerUiTitle: '',
+    playerUiSubtitle: '',
+    playerUiMeta: '',
+    playerUiTopMeta: '',
+    detailItem: null,
+    detailMode: '',
+    detailSourceIndex: 0,
+    detailReturnViewId: 'view-catalog',
+    detailReturnPanel: 'catalog-channels',
+    detailReturnIndex: 0,
+    detailInfo: null,
+    detailSeasons: [],
+    detailSelectedSeasonIndex: 0,
+    detailEpisodes: [],
+    favorites: {},
+    watchlistFilter: 'all',
+    watchlistItems: [],
+    watchHistory: [],
+    homeCatalogCache: {
+      live: null,
+      movies: null,
+      series: null
+    },
+    homeSections: [],
+    homeHeroEntry: null,
+    homeLoading: false,
+    catalogScreen: 'home',
     wizardStepIndex: 0,
     wizardValues: { portal: '', username: '', password: '' },
     keyboardIsShifted: false,
     keyboardMode: 'letters',
     activationTimer: null,
     activationDeviceId: '',
+    loginPending: false,
+    loginRequestId: 0,
+    loginResolvedPortal: null,
     profileModalCaller: 'settings',
-    profileModal: { mode: null, targetId: null, focusIndex: 0, isKids: false, nameBuffer: '', keyboardIsShifted: false, keyboardMode: 'letters', pinBuffer: '' },
+    profileModal: {
+      mode: null,
+      targetId: null,
+      focusIndex: 0,
+      isKids: false,
+      nameBuffer: '',
+      keyboardIsShifted: false,
+      keyboardMode: 'letters',
+      pinBuffer: '',
+      openerFocusIndex: 0,
+      openerProfileId: null,
+      openerFocusPanel: 'settings-profiles',
+      keyboardReturnFocusIndex: 0,
+      keyboardOpen: false
+    },
     homeSections: [],
     homeLoading: false,
     homeHeroEntry: null,
@@ -57,7 +111,7 @@
     favorites: {},
     watchHistory: [],
     channelsCache: {},       // keyed by mode+':'+categoryId
-    channelsCacheCount: {},  // keyed by mode+':'+categoryId → item count
+    channelsCacheCount: {},  // keyed by mode+':'+categoryId ? item count
     channelsBatchSize: 20,   // number of cards currently rendered in the DOM
     pinEntry: null           // { profile, buffer } when PIN overlay is open
   };
@@ -618,9 +672,46 @@
     try {
       var raw = localStorage.getItem(HISTORY_KEY);
       state.watchHistory = raw ? JSON.parse(raw) : [];
+      sanitizeWatchHistory();
     } catch (e) {
       state.watchHistory = [];
     }
+  }
+
+  function sanitizeWatchHistory() {
+    if (!state.watchHistory || !state.watchHistory.length) return;
+    var deduped = [];
+    for (var i = 0; i < state.watchHistory.length; i++) {
+      var item = state.watchHistory[i];
+      if (!item) continue;
+      var isDup = false;
+      for (var j = 0; j < deduped.length; j++) {
+        var existing = deduped[j];
+        if (existing.mode === item.mode &&
+            existing.portalCode === item.portalCode &&
+            existing.profileId === item.profileId) {
+          if (String(existing.id) === String(item.id)) {
+            isDup = true;
+            break;
+          }
+          if (item.mode === 'series' &&
+              existing.name && item.name &&
+              existing.name.toLowerCase().trim() === item.name.toLowerCase().trim()) {
+            if (!existing.artwork && item.artwork) {
+              existing.id = item.id;
+              existing.artwork = item.artwork;
+              existing.item = item.item;
+            }
+            isDup = true;
+            break;
+          }
+        }
+      }
+      if (!isDup) {
+        deduped.push(item);
+      }
+    }
+    state.watchHistory = deduped;
   }
 
   function saveFavoritesState() {
@@ -691,8 +782,13 @@
     for (i = 0; i < state.watchHistory.length; i++) {
       var existing = state.watchHistory[i];
       if (!existing) continue;
-      if (String(existing.id) === entry.id && existing.mode === entry.mode && existing.portalCode === entry.portalCode && existing.profileId === entry.profileId) {
-        continue;
+      if (existing.portalCode === entry.portalCode && existing.profileId === entry.profileId && existing.mode === entry.mode) {
+        if (String(existing.id) === entry.id) {
+          continue;
+        }
+        if (entry.mode === 'series' && existing.name && entry.name && existing.name.toLowerCase().trim() === entry.name.toLowerCase().trim()) {
+          continue;
+        }
       }
       deduped.push(existing);
       if (deduped.length >= MAX_HOME_RAIL_ITEMS + 3) break;
@@ -1066,6 +1162,17 @@
     // Remove year suffixes from the end of the title
     cleaned = cleaned.replace(/(?:\s*[\-\(_\[]|\s+)(19\d{2}|20\d{2})(?:\s*[\)\]]|\s*)$/gi, '');
 
+    // Strip Season/Episode patterns (e.g. S01E01, S1E1, Season 1 Episode 1, etc.)
+    cleaned = cleaned.replace(/\bS\d+\s*E\d+\b/gi, '');
+    cleaned = cleaned.replace(/\b(?:season|sezon)\s*\d+\s*(?:episode|bölüm)\s*\d+\b/gi, '');
+
+    // Strip dates in DD.MM.YYYY, DD-MM-YYYY, YYYY-MM-DD formats
+    cleaned = cleaned.replace(/\b\d{2}[\.\-\/]\d{2}[\.\-\/]\d{4}\b/g, '');
+    cleaned = cleaned.replace(/\b\d{4}[\.\-\/]\d{2}[\.\-\/]\d{2}\b/g, '');
+
+    // Strip regional/junk keywords (e.g. Yeni Dizi, Yeni, Dizi)
+    cleaned = cleaned.replace(/\b(?:Yeni\s+Dizi|Yeni|Dizi)\b/gi, '');
+
     // Common junk tags to strip
     var junkRegex = /\b(?:1080p?|720p?|2160p|4k|uhd|fhd|sd|3d|hevc|x265|x264|h264|h265|bluray|bdrip|webrip|web-?dl|dvdrip|hdtv|dd5\.1|5\.1|dual|multi|dublaj|dubbed|subbed|altyazılı|alt|hd|fhd)\b/gi;
     cleaned = cleaned.replace(junkRegex, '');
@@ -1080,9 +1187,10 @@
     cleaned = cleaned.replace(/^[\s\-\.\_\/\\|:]+|[\s\-\.\_\/\\|:]+$/g, '');
     cleaned = cleaned.replace(/\s+/g, ' ');
     cleaned = cleaned.replace(/\s*-\s*-\s*/g, ' - ');
+    cleaned = cleaned.replace(/\s*-\s*-\s*/g, ' - ');
     cleaned = cleaned.replace(/^[\s\-\.\_\/\\|:]+|[\s\-\.\_\/\\|:]+$/g, '');
 
-    return cleaned;
+    return cleaned.trim();
   }
 
   function getCatalogItemName(item) {
@@ -1343,7 +1451,7 @@
           playDetailTrailer(selectedEpisode, getCatalogItemName(state.detailItem));
           return;
         }
-        playSeriesEpisode(selectedEpisode, getCatalogItemName(state.detailItem));
+        playSeriesEpisode(selectedEpisode, getCatalogItemName(state.detailItem), state.detailItem);
       };
 
       container.appendChild(button);
@@ -2381,7 +2489,7 @@
       var avatar = document.createElement('div');
       var colorClass = avatarColors[i % avatarColors.length];
       avatar.className = 'profile-card-avatar ' + colorClass;
-      var safeName = (profile.name && profile.name !== 'null') ? profile.name : (isPrimary ? 'Primary' : 'Profile');
+      var safeName = getSafeProfileName(profile, isPrimary ? 'Primary' : 'Profile');
       avatar.textContent = safeName.substring(0, 2).toUpperCase();
       card.appendChild(avatar);
 
@@ -2408,7 +2516,7 @@
       card.appendChild(editBtn);
 
       // Clicking the card selects the profile
-      (function (p, roleEl) {
+      (function (p, roleEl, profileIndex) {
         card.onclick = function (e) {
           if (e.target && e.target.classList.contains('settings-profile-edit-btn')) return;
           selectProfile(p);
@@ -2429,9 +2537,12 @@
         editBtn.onclick = function (e) {
           e.stopPropagation();
           state.profileModalCaller = 'settings';
+          state.profileModal.openerFocusPanel = 'settings-profiles';
+          state.profileModal.openerFocusIndex = profileIndex;
+          state.profileModal.openerProfileId = p.id;
           openProfileFormModal(p);
         };
-      })(profile, role);
+      })(profile, role, i);
 
       container.appendChild(card);
     }
@@ -2441,6 +2552,9 @@
     addCard.textContent = '+ Add Profile';
     addCard.onclick = function () {
       state.profileModalCaller = 'settings';
+      state.profileModal.openerFocusPanel = 'settings-profiles';
+      state.profileModal.openerFocusIndex = state.profiles.length;
+      state.profileModal.openerProfileId = null;
       openProfileFormModal(null);
     };
     container.appendChild(addCard);
@@ -2452,6 +2566,36 @@
     try {
       localStorage.setItem(PROFILES_KEY, JSON.stringify(state.profiles));
     } catch (e) {}
+  }
+
+  function blurProfileModalInputs() {
+    var nameInput = document.getElementById('spm-name-input');
+    if (nameInput && typeof nameInput.blur === 'function') {
+      nameInput.blur();
+    }
+  }
+
+  function getSafeProfileName(profile, fallbackLabel) {
+    var rawName = profile ? String(profile.name || '') : '';
+    rawName = rawName.replace(/null$/i, '').replace(/undefined$/i, '').trim();
+    if (!rawName || rawName === 'null' || rawName === 'undefined') {
+      return fallbackLabel || '';
+    }
+    return rawName;
+  }
+
+  function getProfilesScreenFocusIndex(profileId, fallbackIndex) {
+    if (profileId) {
+      for (var i = 0; i < state.profiles.length; i++) {
+        if (state.profiles[i].id === profileId) {
+          return i;
+        }
+      }
+    }
+    if (typeof fallbackIndex === 'number' && fallbackIndex >= 0) {
+      return fallbackIndex;
+    }
+    return 0;
   }
 
   function getVisibleModalItems() {
@@ -2486,6 +2630,8 @@
       // Only auto-focus buttons; let user press Enter to activate the input
       if (target.tagName !== 'INPUT') {
         target.focus();
+      } else {
+        blurProfileModalInputs();
       }
     }
   }
@@ -2498,17 +2644,18 @@
     var kidsBtn    = document.getElementById('spm-kids-btn');
     var deleteBtn  = document.getElementById('spm-delete-btn');
 
+    blurProfileModalInputs();
+
     state.profileModal.mode       = profile ? 'edit' : 'add';
     state.profileModal.targetId   = profile ? profile.id : null;
     state.profileModal.isKids     = profile ? !!profile.isKids : false;
     state.profileModal.focusIndex = 0;
     state.profileModal.pinBuffer  = (profile && profile.pin) ? profile.pin : '';
+    state.profileModal.keyboardOpen = false;
+    state.profileModal.keyboardReturnFocusIndex = 0;
 
     // Sanitize name — guard against null, undefined, or the literal string "null"
-    var rawName = profile ? String(profile.name || '') : '';
-    rawName = rawName.replace(/null$/i, '').replace(/undefined$/i, '').trim();
-    if (rawName === 'null' || rawName === 'undefined') rawName = '';
-    state.profileModal.nameBuffer = rawName;
+    state.profileModal.nameBuffer = getSafeProfileName(profile, '');
 
     titleEl.textContent = profile ? 'Edit Profile' : 'Add Profile';
     nameInput.value     = state.profileModal.nameBuffer;
@@ -2540,42 +2687,47 @@
   }
 
   function closeProfileFormModal() {
-    // Bug 2 fix: always close keyboard overlay before closing the modal
-    // so the name input losing visibility can't re-trigger keyboard open
+    blurProfileModalInputs();
     var overlay = document.getElementById('profile-name-keyboard-overlay');
     if (overlay) overlay.style.display = 'none';
+    state.profileModal.keyboardOpen = false;
 
     var modal = document.getElementById('settings-profile-modal');
     if (modal) modal.style.display = 'none';
 
     if (state.profileModalCaller === 'profiles') {
-      setupProfilesView();
+      setupProfilesView(
+        getProfilesScreenFocusIndex(state.profileModal.openerProfileId, state.profileModal.openerFocusIndex),
+        state.profileModal.openerFocusPanel || 'profiles'
+      );
     } else {
       renderSettingsProfilesList();
       state.focusedPanel = 'settings-profiles';
-      state.focusedIndex = 0;
+      state.focusedIndex = getProfilesScreenFocusIndex(state.profileModal.openerProfileId, state.profileModal.openerFocusIndex);
       updateFocusUI();
     }
   }
 
   function saveProfileFromModal() {
+    blurProfileModalInputs();
     var nameInput = document.getElementById('spm-name-input');
-    // Use nameBuffer as the authoritative source (set by keyboard), fall back to input
     var name = state.profileModal.nameBuffer.trim() || (nameInput ? nameInput.value.trim() : '');
-    // Strip the literal string "null"/"undefined" and trailing occurrences if they somehow got in
     name = name.replace(/null$/i, '').replace(/undefined$/i, '').trim();
     if (!name || name === 'null' || name === 'undefined') return;
     var isKids     = state.profileModal.isKids;
     var avatarSeed = name.slice(0, 2).toUpperCase();
 
     if (state.profileModal.mode === 'add') {
+      var newProfileId = 'p_' + Date.now();
       state.profiles.push({
-        id: 'p_' + Date.now(),
+        id: newProfileId,
         name: name,
         avatarSeed: avatarSeed,
         isKids: isKids,
         pin: state.profileModal.pinBuffer || ''
       });
+      state.profileModal.openerProfileId = newProfileId;
+      state.profileModal.openerFocusIndex = state.profiles.length - 1;
     } else {
       for (var j = 0; j < state.profiles.length; j++) {
         if (state.profiles[j].id === state.profileModal.targetId) {
@@ -2583,6 +2735,8 @@
           state.profiles[j].avatarSeed = avatarSeed;
           state.profiles[j].isKids    = isKids;
           state.profiles[j].pin       = state.profileModal.pinBuffer || '';
+          state.profileModal.openerProfileId = state.profiles[j].id;
+          state.profileModal.openerFocusIndex = j;
           break;
         }
       }
@@ -2597,9 +2751,12 @@
 
   function deleteProfileFromModal() {
     if (!state.profileModal.targetId || state.profileModal.targetId === 'primary') return;
+    var deletedIndex = getProfilesScreenFocusIndex(state.profileModal.targetId, state.profileModal.openerFocusIndex);
     state.profiles = state.profiles.filter(function (p) {
       return p.id !== state.profileModal.targetId;
     });
+    state.profileModal.openerProfileId = null;
+    state.profileModal.openerFocusIndex = Math.max(0, deletedIndex - 1);
     saveProfilesToStorage();
     if (state.profileModalCaller === 'settings') {
         renderSettingsProfilesList();
@@ -2695,10 +2852,15 @@
   }
 
   function openProfileNameKeyboard() {
+    blurProfileModalInputs();
+    if (state.profileModal.keyboardOpen) return;
+
     // Use nameBuffer already set in state — never re-read from the input
     // which could contain stale browser-autocompleted or previously broken values
     state.profileModal.keyboardIsShifted = false;
     state.profileModal.keyboardMode = 'letters';
+    state.profileModal.keyboardOpen = true;
+    state.profileModal.keyboardReturnFocusIndex = state.profileModal.focusIndex;
 
     var overlay = document.getElementById('profile-name-keyboard-overlay');
     if (overlay) overlay.style.display = 'flex';
@@ -2710,20 +2872,22 @@
   }
 
   function closeProfileNameKeyboard(save) {
+    blurProfileModalInputs();
     var overlay = document.getElementById('profile-name-keyboard-overlay');
     if (overlay) overlay.style.display = 'none';
+    state.profileModal.keyboardOpen = false;
 
     if (save) {
       var nameInput = document.getElementById('spm-name-input');
-      if (nameInput) nameInput.value = state.profileModal.nameBuffer;
+      if (nameInput) nameInput.value = state.profileModal.nameBuffer.replace(/null$/i, '').replace(/undefined$/i, '').trim();
     }
 
     // Return focus to profile form modal.
     // Sync global focusedIndex so the keydown handler uses the same index
     // as the modal's own focus system — this is what was causing focus to die.
     state.focusedPanel = 'settings-profile-modal';
-    state.profileModal.focusIndex = 0;
-    state.focusedIndex = 0;
+    state.profileModal.focusIndex = state.profileModal.keyboardReturnFocusIndex || 0;
+    state.focusedIndex = state.profileModal.focusIndex;
     updateProfileModalFocus();
   }
 
@@ -3035,6 +3199,56 @@
     el.style.display = text ? '' : 'none';
   }
 
+  function isHomeHeroDetailsIntent() {
+    var detailsBtn = document.getElementById('home-hero-btn-details');
+    var activeEl = document.activeElement;
+
+    return state.focusedPanel === 'home-hero' && (
+      state.focusedIndex === 1 ||
+      (detailsBtn && detailsBtn.classList.contains('focused')) ||
+      activeEl === detailsBtn
+    );
+  }
+
+  function playHomeHeroSeriesDirect(item, detailInfo) {
+    if (!item || !state.session) return;
+
+    var cacheKey = 'series_' + getCatalogItemId(item, 'series');
+
+    function tryPlay(detail) {
+      if (!detail) return false;
+      var seasons = normalizeSeriesSeasons(detail);
+      if (!seasons.length) return false;
+
+      var episodes = getEpisodesForSeason(detail, seasons[0].key);
+      if (!episodes.length) return false;
+
+      playSeriesEpisode(episodes[0], getCatalogItemName(item), item);
+      return true;
+    }
+
+    var resolvedDetail = detailInfo || homeHeroCache[cacheKey];
+    if (tryPlay(resolvedDetail)) {
+      return;
+    }
+
+    apiGetSeriesInfo(
+      state.session.portalBaseUrl,
+      state.session.username,
+      state.session.userInfo.password,
+      item.series_id,
+      function (detail) {
+        homeHeroCache[cacheKey] = detail;
+        if (!tryPlay(detail)) {
+          showContentDetail(item, 'series');
+        }
+      },
+      function () {
+        showContentDetail(item, 'series');
+      }
+    );
+  }
+
   function updateHomeHero(entry, detailInfo) {
     var heroImage = document.getElementById('home-hero-image');
     var overline = document.getElementById('home-hero-overline');
@@ -3111,23 +3325,16 @@
     if (playBtn) {
       playBtn.onclick = function (e) {
         if (e) e.stopPropagation();
+        if (isHomeHeroDetailsIntent()) {
+          showContentDetail(entry.item, entry.mode);
+          return;
+        }
         if (entry.mode === 'live') {
           playChannel(entry.item, [entry.item]);
         } else if (entry.mode === 'movies') {
           playMovie(entry.item, detailInfo);
         } else if (entry.mode === 'series') {
-          var detail = detailInfo || homeHeroCache[entry.mode + '_' + getCatalogItemId(entry.item, entry.mode)];
-          if (detail) {
-            var seasons = normalizeSeriesSeasons(detail);
-            if (seasons.length) {
-              var episodes = getEpisodesForSeason(detail, seasons[0].key);
-              if (episodes.length) {
-                playSeriesEpisode(episodes[0], getCatalogItemName(entry.item));
-                return;
-              }
-            }
-          }
-          showContentDetail(entry.item, entry.mode);
+          playHomeHeroSeriesDirect(entry.item, detailInfo);
         }
       };
     }
@@ -3232,15 +3439,7 @@
     triggerHomeHeroUpdate(state.homeHeroEntry);
     var heroEl = document.getElementById('home-hero');
     if (heroEl) {
-      heroEl.onclick = function () {
-        if (state.homeHeroEntry) {
-          if (state.homeHeroEntry.mode === 'live') {
-            playChannel(state.homeHeroEntry.item, [state.homeHeroEntry.item]);
-          } else {
-            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
-          }
-        }
-      };
+      heroEl.onclick = null;
     }
   }
 
@@ -3915,11 +4114,20 @@
     // Bind profile modal events
     var spmNameInput = document.getElementById('spm-name-input');
     if (spmNameInput) {
-      spmNameInput.onclick = function () {
-        // Only open keyboard if the modal is actually visible and we are focused on it
-        if (state.focusedPanel === 'settings-profile-modal') {
+      spmNameInput.onfocus = function () {
+        if (state.focusedPanel !== 'profile-name-keyboard') {
+          blurProfileModalInputs();
+        }
+      };
+      spmNameInput.onclick = function (event) {
+        if (event && typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+        blurProfileModalInputs();
+        if (state.focusedPanel === 'settings-profile-modal' && !state.profileModal.keyboardOpen) {
           openProfileNameKeyboard();
         }
+        return false;
       };
     }
     var spmKidsBtn = document.getElementById('spm-kids-btn');
@@ -3982,6 +4190,10 @@
       bind('welcome-btn-signin',            function () { setupLoginView(); });
       bind('welcome-btn-create',            function () { setupActivationView(); });
       bind('activation-btn-cancel',         function () { cleanupActivation(); setupWelcomeView(); });
+      bind('player-btn-toggle',             function () { togglePlayerPlayback(); });
+      bind('player-btn-seek-backward',      function () { seekPlayerBy(-10); });
+      bind('player-btn-seek-forward',       function () { seekPlayerBy(10); });
+      bind('player-btn-back',               function () { closePlayer(); });
       bind('sidebar-home',                  function () { openHomeView(); });
       bind('sidebar-live',                  function () { loadCatalog('live'); });
       bind('sidebar-movies',                function () { loadCatalog('movies'); });
@@ -4029,6 +4241,14 @@
       });
 
       var settingsTabs = ['account', 'profiles', 'app', 'about'];
+      var viewPlayerNode = document.getElementById('view-player');
+      if (viewPlayerNode) {
+        viewPlayerNode.onmousemove = function () {
+          if (state.focusedPanel === 'player') {
+            showPlayerOverlay(true);
+          }
+        };
+      }
       for (var ti = 0; ti < settingsTabs.length; ti++) {
         (function (tabName, index) {
           var btn = document.getElementById('settings-tab-' + tabName);
@@ -4516,9 +4736,9 @@
     }
   }
 
-  function setupProfilesView(focusIndex) {
-    state.focusedPanel = 'profiles';
-    state.focusedIndex = 0;
+  function setupProfilesView(focusIndex, focusPanel) {
+    state.focusedPanel = focusPanel || 'profiles';
+    state.focusedIndex = typeof focusIndex === 'number' ? focusIndex : 0;
 
     var container = document.getElementById('profiles-list-container');
     container.innerHTML = '';
@@ -4546,7 +4766,7 @@
 
       var name = document.createElement('div');
       name.className = 'profile-name';
-      var safeProfileName = (profile.name && profile.name !== 'null') ? profile.name : (profile.isKids ? 'Kids' : 'Primary');
+      var safeProfileName = getSafeProfileName(profile, profile.isKids ? 'Kids' : 'Primary');
       name.textContent = safeProfileName;
 
       card.appendChild(avatar);
@@ -4573,12 +4793,15 @@
       editBtn.setAttribute('data-index', i);
       editBtn.textContent = '\u270E Edit';
 
-      (function (p) {
+      (function (p, profileIndex) {
         editBtn.onclick = function () {
           state.profileModalCaller = 'profiles';
+          state.profileModal.openerFocusPanel = 'profiles-edit';
+          state.profileModal.openerFocusIndex = profileIndex;
+          state.profileModal.openerProfileId = p.id;
           openProfileFormModal(p);
         };
-      })(profile);
+      })(profile, i);
 
       slot.appendChild(editBtn);
       container.appendChild(slot);
@@ -4595,11 +4818,22 @@
     addCard.textContent = '+ Add Profile';
     addCard.onclick = function () {
       state.profileModalCaller = 'profiles';
+      state.profileModal.openerFocusPanel = 'profiles';
+      state.profileModal.openerFocusIndex = state.profiles.length;
+      state.profileModal.openerProfileId = null;
       openProfileFormModal(null);
     };
 
     addSlot.appendChild(addCard);
     container.appendChild(addSlot);
+
+    var profileItems = container.querySelectorAll(state.focusedPanel === 'profiles-edit' ? '.profile-edit-btn.focusable' : '.profile-card.focusable');
+    if (profileItems.length === 0) {
+      state.focusedPanel = 'profiles';
+      state.focusedIndex = 0;
+    } else if (state.focusedIndex >= profileItems.length) {
+      state.focusedIndex = profileItems.length - 1;
+    }
 
     showView('view-profiles');
     updateFocusUI();
@@ -5144,7 +5378,8 @@
       console.error('[Legacy Player] Native TS playback failed, trying native m3u8...');
       video.onerror = function() {
         console.error('[Legacy Player] All native playback attempts failed.');
-        document.getElementById('player-channel-name').textContent = 'Playback Error: Stream format unsupported';
+        setPlayerHeadline('Playback Error');
+        setPlayerMeta('Stream format unsupported');
       };
       video.src = m3u8Url;
       video.load();
@@ -5162,7 +5397,8 @@
     
     video.onerror = function() {
       console.error('[Legacy Player] Native TS playback failed.');
-      document.getElementById('player-channel-name').textContent = 'Playback Error: Stream format unsupported';
+      setPlayerHeadline('Playback Error');
+      setPlayerMeta('Stream format unsupported');
     };
     
     video.src = tsUrl;
@@ -5176,6 +5412,378 @@
     state.playerReturnIndex = state.focusedIndex || 0;
   }
 
+  function formatPlayerTime(totalSeconds) {
+    var value = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+    var hours = Math.floor(value / 3600);
+    var minutes = Math.floor((value % 3600) / 60);
+    var seconds = value % 60;
+
+    if (hours > 0) {
+      return (hours < 10 ? '0' : '') + hours + ':' + (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+    }
+
+    return (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+  }
+
+  function setPlayerStatusLabel(message) {
+    var node = document.getElementById('player-status-label');
+    if (node) {
+      node.textContent = message || 'Buffering Stream...';
+    }
+  }
+
+  function setPlayerHeadline(title) {
+    var liveNode = document.getElementById('player-channel-name');
+    var vodNode = document.getElementById('player-vod-title');
+    if (liveNode) liveNode.textContent = title || 'Loading Stream...';
+    if (vodNode) vodNode.textContent = title || 'Loading Title...';
+    state.playerUiTitle = title || '';
+  }
+
+  function setPlayerSubtitle(text) {
+    var node = document.getElementById('player-vod-subtitle');
+    if (node) {
+      node.textContent = text || '';
+      node.style.display = text ? 'block' : 'none';
+    }
+    state.playerUiSubtitle = text || '';
+  }
+
+  function setPlayerMeta(text) {
+    var liveNode = document.getElementById('player-live-meta');
+    var vodNode = document.getElementById('player-vod-meta');
+    if (liveNode) liveNode.textContent = text || '';
+    if (vodNode) vodNode.textContent = text || '';
+    state.playerUiMeta = text || '';
+  }
+
+  function setPlayerTopMeta(text) {
+    var node = document.getElementById('player-top-meta');
+    if (node) {
+      node.textContent = text || '';
+      node.style.display = text ? 'block' : 'none';
+    }
+    state.playerUiTopMeta = text || '';
+  }
+
+  function resetPlayerProgressUi() {
+    var currentNode = document.getElementById('player-current-time');
+    var durationNode = document.getElementById('player-duration-time');
+    var fillNode = document.getElementById('player-progress-fill');
+    if (currentNode) currentNode.textContent = '00:00';
+    if (durationNode) durationNode.textContent = '00:00';
+    if (fillNode) fillNode.style.width = '0%';
+  }
+
+  function updatePlayerProgressUi() {
+    if (state.playerMode !== 'vod') {
+      resetPlayerProgressUi();
+      return;
+    }
+
+    var video = document.getElementById('player-video');
+    if (!video) return;
+
+    var duration = Number(video.duration);
+    var current = Number(video.currentTime);
+    var currentNode = document.getElementById('player-current-time');
+    var durationNode = document.getElementById('player-duration-time');
+    var fillNode = document.getElementById('player-progress-fill');
+
+    if (currentNode) currentNode.textContent = formatPlayerTime(current);
+    if (durationNode) durationNode.textContent = isFinite(duration) && duration > 0 ? formatPlayerTime(duration) : '00:00';
+    if (fillNode) {
+      var percent = isFinite(duration) && duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
+      fillNode.style.width = percent + '%';
+    }
+  }
+
+  function showPlayerOverlay(resetTimer) {
+    var overlayNode = document.getElementById('player-overlay');
+    if (overlayNode) {
+      overlayNode.classList.remove('player-overlay--hidden');
+    }
+    isPlayerOverlayVisible = true;
+
+    if (playerOverlayTimer) {
+      clearTimeout(playerOverlayTimer);
+      playerOverlayTimer = null;
+    }
+
+    if (resetTimer) {
+      playerOverlayTimer = setTimeout(function () {
+        hidePlayerOverlay();
+      }, 5000); // 5s auto-hide
+    }
+  }
+
+  function hidePlayerOverlay() {
+    var overlayNode = document.getElementById('player-overlay');
+    if (overlayNode) {
+      overlayNode.classList.add('player-overlay--hidden');
+    }
+    isPlayerOverlayVisible = false;
+
+    if (playerOverlayTimer) {
+      clearTimeout(playerOverlayTimer);
+      playerOverlayTimer = null;
+    }
+  }
+
+  function updatePlayerClock() {
+    var clockNode = document.getElementById('player-clock');
+    if (!clockNode) return;
+    var d = new Date();
+    var hours = d.getHours();
+    var minutes = d.getMinutes();
+    var ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    var minStr = minutes < 10 ? '0' + minutes : minutes;
+    var hourStr = hours < 10 ? '0' + hours : hours;
+    clockNode.textContent = hourStr + ':' + minStr + ' ' + ampm;
+  }
+
+  function fetchPlayerEpg(channel) {
+    var nowNode = document.getElementById('player-epg-now-title');
+    var timeNode = document.getElementById('player-epg-now-time');
+    var fillNode = document.getElementById('player-epg-progress-fill');
+    var nextNode = document.getElementById('player-epg-next-title');
+
+    if (!nowNode || !nextNode) return;
+
+    nowNode.textContent = 'Live Broadcast';
+    timeNode.textContent = '';
+    fillNode.style.width = '0%';
+    nextNode.textContent = 'Schedule unavailable';
+
+    if (!state.session || !channel) return;
+
+    apiGetShortEpg(state.session.portalBaseUrl, state.session.username, state.session.userInfo.password, channel.stream_id, function (listings) {
+      if (!listings || listings.length === 0) return;
+
+      var nowMs = Date.now();
+      var currentProgram = null;
+      var nextProgram = null;
+
+      for (var i = 0; i < listings.length; i++) {
+        var item = listings[i];
+        var startTimestamp = parseInt(item.start_timestamp || 0, 10) * 1000;
+        var stopTimestamp = parseInt(item.stop_timestamp || 0, 10) * 1000;
+
+        if (nowMs >= startTimestamp && nowMs <= stopTimestamp) {
+          currentProgram = item;
+        } else if (startTimestamp > nowMs && !nextProgram) {
+          nextProgram = item;
+        }
+      }
+
+      if (!currentProgram && listings.length > 0) {
+        currentProgram = listings[0];
+      }
+
+      if (currentProgram) {
+        var currentTitle = decodeXtreamBase64(currentProgram.title) || 'Live Broadcast';
+        var startVal = parseInt(currentProgram.start_timestamp || 0, 10) * 1000;
+        var stopVal = parseInt(currentProgram.stop_timestamp || 0, 10) * 1000;
+
+        nowNode.textContent = currentTitle;
+
+        if (startVal && stopVal) {
+          timeNode.textContent = formatTime(startVal) + ' - ' + formatTime(stopVal);
+          var duration = stopVal - startVal;
+          if (duration > 0) {
+            var progressPercent = Math.min(100, Math.max(0, ((nowMs - startVal) / duration) * 100));
+            fillNode.style.width = Math.round(progressPercent) + '%';
+          }
+        }
+      }
+
+      if (nextProgram) {
+        var nextTitle = decodeXtreamBase64(nextProgram.title) || 'Next Program';
+        var nextStart = parseInt(nextProgram.start_timestamp || 0, 10) * 1000;
+        if (nextStart) {
+          nextNode.textContent = nextTitle + ' (' + formatTime(nextStart) + ')';
+        } else {
+          nextNode.textContent = nextTitle;
+        }
+      }
+    }, function (err) {
+      console.log('[Legacy Player] EPG fetch failed:', err);
+    });
+  }
+
+  function setPlayerHint(text) {
+    return text;
+  }
+
+  function updatePlayerActionButtons() {
+    var toggleButton = document.getElementById('player-btn-toggle');
+    var seekBackButton = document.getElementById('player-btn-seek-backward');
+    var seekForwardButton = document.getElementById('player-btn-seek-forward');
+    var trailerEmbed = document.getElementById('player-trailer-embed');
+    var video = document.getElementById('player-video');
+    var isEmbedVisible = !!(trailerEmbed && trailerEmbed.style.display === 'block');
+    var isVodMode = state.playerMode === 'vod';
+
+    if (seekBackButton) {
+      seekBackButton.style.display = isVodMode ? 'inline-flex' : 'none';
+      seekBackButton.disabled = isEmbedVisible;
+    }
+
+    if (seekForwardButton) {
+      seekForwardButton.style.display = isVodMode ? 'inline-flex' : 'none';
+      seekForwardButton.disabled = isEmbedVisible;
+    }
+
+    if (isEmbedVisible) {
+      toggleButton.innerHTML = PLAY_SVG;
+      toggleButton.disabled = true;
+      return;
+    }
+
+    toggleButton.disabled = false;
+    toggleButton.innerHTML = video && !video.paused ? PAUSE_SVG : PLAY_SVG;
+  }
+
+  function setPlayerMode(mode, contentType) {
+    var viewNode = document.getElementById('view-player');
+    var overlayNode = document.getElementById('player-overlay');
+    var kickerNode = document.getElementById('player-kicker');
+
+    state.playerMode = mode === 'live' ? 'live' : 'vod';
+
+    if (viewNode) {
+      viewNode.classList.remove('player-view--live', 'player-view--vod');
+      viewNode.classList.add(state.playerMode === 'live' ? 'player-view--live' : 'player-view--vod');
+    }
+
+    if (overlayNode) {
+      overlayNode.classList.remove('player-overlay--live', 'player-overlay--vod');
+      overlayNode.classList.add(state.playerMode === 'live' ? 'player-overlay--live' : 'player-overlay--vod');
+    }
+
+    if (kickerNode) {
+      if (contentType) {
+        kickerNode.textContent = contentType;
+      } else {
+        kickerNode.textContent = state.playerMode === 'live' ? 'LIVE TV' : 'PLAYBACK';
+      }
+    }
+
+    setPlayerHint(state.playerMode === 'live'
+      ? 'Use ↑/↓ to switch channels • Back to exit'
+      : 'OK play/pause • ←/→ seek • Back to exit');
+
+    if (state.playerMode !== 'vod') {
+      resetPlayerProgressUi();
+    }
+
+    updatePlayerActionButtons();
+  }
+
+  function configurePlayerUi(mode, title, subtitle, meta, topMeta, contentType) {
+    setPlayerMode(mode, contentType);
+    setPlayerHeadline(title);
+    setPlayerSubtitle(subtitle || '');
+    setPlayerMeta(meta || '');
+    setPlayerTopMeta(topMeta || '');
+    updatePlayerProgressUi();
+
+    // Set default remote focus to Play/Pause button
+    state.focusedPanel = 'player';
+    state.focusedIndex = mode === 'live' ? 1 : 2;
+    updateFocusUI();
+
+    // Reset/start clock ticker
+    updatePlayerClock();
+    if (playerClockTimer) {
+      clearInterval(playerClockTimer);
+    }
+    playerClockTimer = setInterval(updatePlayerClock, 10000);
+
+    // Wake up the overlay
+    showPlayerOverlay(true);
+
+    // Fetch EPG for live TV
+    if (mode === 'live' && state.activeChannel) {
+      fetchPlayerEpg(state.activeChannel);
+    }
+  }
+
+  function bindPlayerUiEvents(video) {
+    if (!video || video.__legacyPlayerUiBound) return;
+    video.__legacyPlayerUiBound = true;
+
+    video.addEventListener('timeupdate', function () {
+      updatePlayerProgressUi();
+    });
+    video.addEventListener('loadedmetadata', function () {
+      updatePlayerProgressUi();
+      updatePlayerActionButtons();
+    });
+    video.addEventListener('durationchange', function () {
+      updatePlayerProgressUi();
+    });
+    video.addEventListener('seeked', function () {
+      updatePlayerProgressUi();
+    });
+    video.addEventListener('ended', function () {
+      updatePlayerProgressUi();
+      updatePlayerActionButtons();
+    });
+    video.addEventListener('play', function () {
+      updatePlayerActionButtons();
+    });
+    video.addEventListener('pause', function () {
+      updatePlayerActionButtons();
+    });
+  }
+
+  function togglePlayerPlayback() {
+    var trailerEmbed = document.getElementById('player-trailer-embed');
+    if (trailerEmbed && trailerEmbed.style.display === 'block') return;
+
+    var video = document.getElementById('player-video');
+    if (!video) return;
+
+    try {
+      if (video.paused) {
+        video.play();
+        setPlayerStatusLabel('Playing');
+      } else {
+        video.pause();
+        setPlayerStatusLabel('Paused');
+      }
+      updatePlayerActionButtons();
+    } catch (e) {}
+  }
+
+  function seekPlayerBy(deltaSeconds) {
+    if (state.playerMode === 'live') return;
+    var trailerEmbed = document.getElementById('player-trailer-embed');
+    if (trailerEmbed && trailerEmbed.style.display === 'block') return;
+
+    var video = document.getElementById('player-video');
+    if (!video) return;
+
+    var duration = Number(video.duration);
+    if (!isFinite(duration) || duration <= 0) return;
+
+    try {
+      var nextTime = Math.max(0, Math.min(duration, Number(video.currentTime || 0) + deltaSeconds));
+      video.currentTime = nextTime;
+      updatePlayerProgressUi();
+      setPlayerStatusLabel((deltaSeconds >= 0 ? 'Forward ' : 'Rewind ') + Math.abs(deltaSeconds) + 's');
+      document.getElementById('player-status-container').style.display = 'flex';
+      setTimeout(function () {
+        if (!video.paused) {
+          document.getElementById('player-status-container').style.display = 'none';
+        }
+      }, 800);
+    } catch (e) {}
+  }
+
   function resetPlayerSurface() {
     var video = document.getElementById('player-video');
     var trailerEmbed = document.getElementById('player-trailer-embed');
@@ -5187,7 +5795,12 @@
 
     if (video) {
       video.style.display = 'block';
+      bindPlayerUiEvents(video);
     }
+
+    resetPlayerProgressUi();
+    setPlayerTopMeta('');
+    updatePlayerActionButtons();
   }
 
   function showPlayerEmbed(embedUrl, title) {
@@ -5202,7 +5815,6 @@
     var video = document.getElementById('player-video');
     var trailerEmbed = document.getElementById('player-trailer-embed');
     var status = document.getElementById('player-status-container');
-    var playerTitle = document.getElementById('player-channel-name');
 
     if (video) {
       try {
@@ -5213,17 +5825,21 @@
       video.style.display = 'none';
     }
 
-    if (playerTitle) {
-      playerTitle.textContent = title || 'Trailer';
-    }
+    configurePlayerUi('vod', title || 'Trailer', 'Embedded trailer playback', 'Trailer', 'YouTube embed', 'TRAILER');
+    setPlayerStatusLabel('Loading trailer...');
     if (status) {
-      status.style.display = 'none';
+      status.style.display = 'flex';
     }
 
     if (trailerEmbed) {
       trailerEmbed.style.display = 'block';
+      trailerEmbed.onload = function () {
+        document.getElementById('player-status-container').style.display = 'none';
+      };
       trailerEmbed.src = embedUrl;
     }
+
+    updatePlayerActionButtons();
   }
 
   function playStream(streamId) {
@@ -5231,6 +5847,7 @@
     resetPlayerSurface();
 
     var video = document.getElementById('player-video');
+    bindPlayerUiEvents(video);
 
     // Clear any previous sources
     while (video.firstChild) {
@@ -5317,18 +5934,21 @@
           video.ontimeupdate = null;
           clearTimeout(nativeStartupTimeout);
           console.error('[Legacy Player] TS fallback also failed.');
-          document.getElementById('player-channel-name').textContent = 'Playback Error — stream not supported';
+          setPlayerHeadline('Playback Error');
+          setPlayerMeta('Live stream format not supported');
           document.getElementById('player-status-container').style.display = 'none';
         };
         // Start TS fallback timeout
         nativeStartupTimeout = setTimeout(function() {
           if (!nativeStarted) {
             console.error('[Legacy Player] TS fallback also timed out.');
-            document.getElementById('player-channel-name').textContent = 'Playback Error — stream unavailable';
+            setPlayerHeadline('Playback Error');
+            setPlayerMeta('Live stream unavailable');
             document.getElementById('player-status-container').style.display = 'none';
           }
         }, 20000);
 
+        setPlayerStatusLabel('Trying TS fallback...');
         document.getElementById('player-status-container').style.display = 'flex';
         video.volume = 1;
         video.muted = false;
@@ -5456,7 +6076,15 @@
     state.focusedPanel = 'player';
     showView('view-player');
     
-    document.getElementById('player-channel-name').textContent = channel.name;
+    configurePlayerUi(
+      'live',
+      channel.name || 'Live Channel',
+      '',
+      'Channel ' + (state.activeChannelIndex + 1) + ' of ' + activeQueue.length,
+      (state.session && state.session.serverName ? state.session.serverName : 'Smartifly Live') + ' • Live',
+      'LIVE TV'
+    );
+    setPlayerStatusLabel('Buffering live channel...');
     document.getElementById('player-status-container').style.display = 'flex';
     
     playStream(channel.stream_id);
@@ -5473,10 +6101,19 @@
     state.focusedPanel = 'player';
     showView('view-player');
 
-    document.getElementById('player-channel-name').textContent = movie.name || 'Loading Movie...';
+    configurePlayerUi(
+      'vod',
+      movie.name || 'Loading Movie...',
+      '',
+      buildDetailMetaLine('movies', movie, detailInfo) || 'Movie',
+      'Movie Playback',
+      'MOVIE'
+    );
+    setPlayerStatusLabel('Loading movie...');
     document.getElementById('player-status-container').style.display = 'flex';
 
     var video = document.getElementById('player-video');
+    bindPlayerUiEvents(video);
     while (video.firstChild) {
       video.removeChild(video.firstChild);
     }
@@ -5493,13 +6130,16 @@
       movie.stream_id + '.' + extension;
 
     video.onwaiting = function() {
+      setPlayerStatusLabel('Buffering movie...');
       document.getElementById('player-status-container').style.display = 'flex';
     };
     video.onplaying = function() {
       document.getElementById('player-status-container').style.display = 'none';
+      updatePlayerProgressUi();
     };
     video.onerror = function() {
-      document.getElementById('player-channel-name').textContent = 'Playback Error: Movie stream unavailable';
+      setPlayerHeadline('Playback Error');
+      setPlayerMeta('Movie stream unavailable');
       document.getElementById('player-status-container').style.display = 'none';
     };
 
@@ -5508,17 +6148,21 @@
     video.play();
   }
 
-  function playSeriesEpisode(episode, seriesTitle) {
+  function playSeriesEpisode(episode, seriesTitle, seriesItem) {
     if (!episode) return;
 
     cleanupHls();
     resetPlayerSurface();
     rememberPlayerReturnState();
-    updateWatchHistory('series', state.detailItem || {
-      series_id: getEpisodeId(episode),
-      name: seriesTitle || getEpisodeTitle(episode, 0),
-      cover: ''
-    }, getEpisodeTitle(episode, 0));
+    var sItem = seriesItem || state.detailItem;
+    if (!sItem) {
+      sItem = {
+        series_id: getEpisodeId(episode),
+        name: seriesTitle || getEpisodeTitle(episode, 0),
+        cover: ''
+      };
+    }
+    updateWatchHistory('series', sItem, getEpisodeTitle(episode, 0));
     state.activeChannel = null;
     state.activeChannelQueue = [];
     state.activeChannelIndex = 0;
@@ -5526,10 +6170,19 @@
     showView('view-player');
 
     var episodeTitle = getEpisodeTitle(episode, 0);
-    document.getElementById('player-channel-name').textContent = seriesTitle ? (seriesTitle + ' - ' + episodeTitle) : episodeTitle;
+    configurePlayerUi(
+      'vod',
+      seriesTitle || episodeTitle,
+      seriesTitle ? episodeTitle : '',
+      ((episode.season || (episode.info && episode.info.season)) ? 'Season ' + (episode.season || episode.info.season) + ' • ' : '') + ((episode.episode_num || (episode.info && episode.info.episode_num)) ? 'Episode ' + (episode.episode_num || episode.info.episode_num) : 'Series Episode'),
+      'Series Playback',
+      'SERIES'
+    );
+    setPlayerStatusLabel('Loading episode...');
     document.getElementById('player-status-container').style.display = 'flex';
 
     var video = document.getElementById('player-video');
+    bindPlayerUiEvents(video);
     while (video.firstChild) {
       video.removeChild(video.firstChild);
     }
@@ -5545,13 +6198,16 @@
       getEpisodeId(episode) + '.' + extension;
 
     video.onwaiting = function() {
+      setPlayerStatusLabel('Buffering episode...');
       document.getElementById('player-status-container').style.display = 'flex';
     };
     video.onplaying = function() {
       document.getElementById('player-status-container').style.display = 'none';
+      updatePlayerProgressUi();
     };
     video.onerror = function() {
-      document.getElementById('player-channel-name').textContent = 'Playback Error: Episode stream unavailable';
+      setPlayerHeadline('Playback Error');
+      setPlayerMeta('Episode stream unavailable');
       document.getElementById('player-status-container').style.display = 'none';
     };
 
@@ -5579,10 +6235,19 @@
     state.focusedPanel = 'player';
     showView('view-player');
 
-    document.getElementById('player-channel-name').textContent = (seriesTitle || 'Series') + ' - Trailer';
+    configurePlayerUi(
+      'vod',
+      seriesTitle || 'Series',
+      'Trailer',
+      'Trailer',
+      'Preview Playback',
+      'TRAILER'
+    );
+    setPlayerStatusLabel('Loading trailer...');
     document.getElementById('player-status-container').style.display = 'flex';
 
     var video = document.getElementById('player-video');
+    bindPlayerUiEvents(video);
     while (video.firstChild) {
       video.removeChild(video.firstChild);
     }
@@ -5590,13 +6255,16 @@
     try { video.load(); } catch (loadErr) {}
 
     video.onwaiting = function() {
+      setPlayerStatusLabel('Buffering trailer...');
       document.getElementById('player-status-container').style.display = 'flex';
     };
     video.onplaying = function() {
       document.getElementById('player-status-container').style.display = 'none';
+      updatePlayerProgressUi();
     };
     video.onerror = function() {
-      document.getElementById('player-channel-name').textContent = 'Playback Error: Trailer unavailable';
+      setPlayerHeadline('Playback Error');
+      setPlayerMeta('Trailer unavailable');
       document.getElementById('player-status-container').style.display = 'none';
     };
 
@@ -5616,7 +6284,7 @@
         if (state.detailEpisodes[0].__isTrailer) {
           playDetailTrailer(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
         } else {
-          playSeriesEpisode(state.detailEpisodes[0], getCatalogItemName(state.detailItem));
+          playSeriesEpisode(state.detailEpisodes[0], getCatalogItemName(state.detailItem), state.detailItem);
         }
       }
       return;
@@ -5626,6 +6294,16 @@
   }
 
   function closePlayer() {
+    if (playerOverlayTimer) {
+      clearTimeout(playerOverlayTimer);
+      playerOverlayTimer = null;
+    }
+    if (playerClockTimer) {
+      clearInterval(playerClockTimer);
+      playerClockTimer = null;
+    }
+    hidePlayerOverlay();
+
     cleanupHls();
     resetPlayerSurface();
     var video = document.getElementById('player-video');
@@ -5665,7 +6343,15 @@
     
     state.focusedIndex = nextIdx;
     
-    document.getElementById('player-channel-name').textContent = state.activeChannel.name;
+    configurePlayerUi(
+      'live',
+      state.activeChannel.name || 'Live Channel',
+      '',
+      'Channel ' + (state.activeChannelIndex + 1) + ' of ' + state.activeChannelQueue.length,
+      (state.session && state.session.serverName ? state.session.serverName : 'Smartifly Live') + ' • Live',
+      'LIVE TV'
+    );
+    setPlayerStatusLabel('Switching channel...');
     document.getElementById('player-status-container').style.display = 'flex';
     
     playStream(state.activeChannel.stream_id);
@@ -5768,6 +6454,18 @@
     if (state.focusedPanel === 'profile-pin-keyboard') {
       var ppkEl = document.getElementById('ppk-keyboard');
       return ppkEl ? ppkEl.querySelectorAll('.focusable') : [];
+    }
+    if (state.focusedPanel === 'player') {
+      var list = [];
+      var backBtn = document.getElementById('player-btn-back');
+      var prevBtn = document.getElementById('player-btn-seek-backward');
+      var toggleBtn = document.getElementById('player-btn-toggle');
+      var nextBtn = document.getElementById('player-btn-seek-forward');
+      if (backBtn) list.push(backBtn);
+      if (prevBtn && prevBtn.style.display !== 'none') list.push(prevBtn);
+      if (toggleBtn) list.push(toggleBtn);
+      if (nextBtn && nextBtn.style.display !== 'none') list.push(nextBtn);
+      return list;
     }
     return [];
   }
@@ -5977,9 +6675,41 @@
         return true; // Consume at top
       }
       if (code === 13) { // Enter / OK
-        var activeBtn = items[state.focusedIndex];
-        if (activeBtn) {
-          activeBtn.click();
+        if (state.homeHeroEntry) {
+          var playHeroButton = document.getElementById('home-hero-btn-play');
+          var detailsHeroButton = document.getElementById('home-hero-btn-details');
+          var activeHeroElement = document.activeElement;
+          var activeHeroId = activeHeroElement && activeHeroElement.id ? activeHeroElement.id : '';
+          var detailsIsFocused = !!(
+            (detailsHeroButton && detailsHeroButton.classList.contains('focused')) ||
+            activeHeroId === 'home-hero-btn-details' ||
+            items[state.focusedIndex] === detailsHeroButton
+          );
+          var playIsFocused = !!(
+            (playHeroButton && playHeroButton.classList.contains('focused')) ||
+            activeHeroId === 'home-hero-btn-play' ||
+            items[state.focusedIndex] === playHeroButton
+          );
+
+          if (detailsIsFocused) {
+            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+            return true;
+          }
+
+          if (playIsFocused || state.focusedIndex === 0) {
+            if (state.homeHeroEntry.mode === 'live') {
+              playChannel(state.homeHeroEntry.item, [state.homeHeroEntry.item]);
+            } else if (state.homeHeroEntry.mode === 'movies') {
+              var movieCacheKey = state.homeHeroEntry.mode + '_' + getCatalogItemId(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+              playMovie(state.homeHeroEntry.item, homeHeroCache[movieCacheKey]);
+            } else if (state.homeHeroEntry.mode === 'series') {
+              playHomeHeroSeriesDirect(state.homeHeroEntry.item, homeHeroCache['series_' + getCatalogItemId(state.homeHeroEntry.item, 'series')]);
+            } else {
+              showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+            }
+          } else {
+            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+          }
         }
         return true;
       }
@@ -6492,19 +7222,29 @@
     }
 
     if (state.focusedPanel === 'player') {
-      // Up/Down changes channels in full-screen player
-      if (code === 38) { // ArrowUp
-        switchPlaybackChannel(-1);
-        handled = true;
-      } else if (code === 40) { // ArrowDown
-        switchPlaybackChannel(1);
-        handled = true;
+      if (!isPlayerOverlayVisible) {
+        showPlayerOverlay(true);
+        event.preventDefault();
+        return;
+      }
+
+      showPlayerOverlay(true);
+
+      if (state.playerMode === 'live') {
+        // Up/Down changes channels in full-screen player
+        if (code === 38) { // ArrowUp
+          switchPlaybackChannel(-1);
+          handled = true;
+        } else if (code === 40) { // ArrowDown
+          switchPlaybackChannel(1);
+          handled = true;
+        }
       }
       
       if (handled) {
         event.preventDefault();
+        return;
       }
-      return;
     }
 
     if (isSearchPanel(state.focusedPanel) && event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -6536,6 +7276,11 @@
         var visibleItems = getVisibleModalItems();
         var activeEl = visibleItems[state.profileModal.focusIndex];
         if (activeEl) {
+          if (activeEl.id === 'spm-name-input') {
+            openProfileNameKeyboard();
+            event.preventDefault();
+            return;
+          }
           activeEl.click();
           // Do NOT call updateFocusUI after modal click — calling .focus() on the
           // button while the Enter keydown is still propagating causes TV browsers
@@ -6720,6 +7465,11 @@
           state.focusedIndex--;
           handled = true;
         }
+      } else if (state.focusedPanel === 'player') {
+        if (items.length > 0 && state.focusedIndex > 0) {
+          state.focusedIndex--;
+          handled = true;
+        }
       }
     } else if (code === 39) { // ArrowRight
       if (state.focusedPanel === 'login-wizard') {
@@ -6741,21 +7491,32 @@
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-sidebar') {
-        if (state.focusedIndex === 0) {
+        if (state.catalogScreen === 'home' && state.focusedIndex === getSidebarFocusIndex('home')) {
+          if (state.homeHeroEntry) {
+            focusHomeHero(0);
+          } else if (document.getElementById('home-rails').querySelectorAll('.focusable').length > 0) {
+            state.focusedPanel = 'home-rails';
+            state.focusedIndex = 0;
+            updateFocusUI();
+          } else {
+            openHomeView();
+          }
+          handled = true;
+        } else if (state.focusedIndex === getSidebarFocusIndex('home')) {
           openHomeView();
           handled = true;
-        } else if (state.focusedIndex === 4) {
+        } else if (state.focusedIndex === getSidebarFocusIndex('search')) {
           openSearchView();
           handled = true;
-        } else if (state.focusedIndex === 5) {
+        } else if (state.focusedIndex === getSidebarFocusIndex('watchlist')) {
           openWatchlistView();
           handled = true;
-        } else if (state.focusedIndex === 6) {
+        } else if (state.focusedIndex === getSidebarFocusIndex('settings')) {
           openSettingsView();
           handled = true;
-        } else if (state.focusedIndex >= 1 && state.focusedIndex <= 3) {
+        } else if (state.focusedIndex >= getSidebarFocusIndex('live') && state.focusedIndex <= getSidebarFocusIndex('series')) {
           var modes = ['live', 'movies', 'series'];
-          var targetMode = modes[state.focusedIndex - 1];
+          var targetMode = modes[state.focusedIndex - getSidebarFocusIndex('live')];
           if (state.catalogMode !== targetMode) {
             loadCatalog(targetMode);
           } else {
@@ -6764,6 +7525,7 @@
             showView('view-catalog');
             state.focusedPanel = 'catalog-categories';
             state.focusedIndex = getActiveCategoryIndex();
+            updateFocusUI();
           }
           handled = true;
         }
@@ -6797,9 +7559,14 @@
           state.focusedIndex++;
           handled = true;
         }
+      } else if (state.focusedPanel === 'player') {
+        if (items.length > 0 && state.focusedIndex < items.length - 1) {
+          state.focusedIndex++;
+          handled = true;
+        }
       }
 
-    } else if (code === 13) { // Enter Key
+    } else if (!handled && code === 13) { // Enter Key
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
         if (activeEl) {
