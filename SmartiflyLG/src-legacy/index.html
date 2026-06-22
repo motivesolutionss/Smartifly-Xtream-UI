@@ -305,7 +305,6 @@
               <button id="watchlist-filter-all" class="focusable utility-chip active">All</button>
               <button id="watchlist-filter-movies" class="focusable utility-chip">Movies</button>
               <button id="watchlist-filter-series" class="focusable utility-chip">Series</button>
-              <button id="watchlist-btn-back" class="focusable utility-chip">Back</button>
             </div>
             <div id="watchlist-results-scroll" class="utility-results-scroll">
               <div id="watchlist-results-grid" class="channels-grid utility-results-grid"></div>
@@ -450,7 +449,7 @@
                 <span>&bull;</span>
                 <span>[Arrows] Navigate</span>
               </div>
-              <button id="search-btn-back" class="focusable legacy-search-back" type="button">Back to Browse</button>
+
             </aside>
             <div id="search-results-scroll" class="legacy-search-results-scroll">
               <div class="legacy-search-results-head">
@@ -536,6 +535,35 @@
     </div>
   </div>
 
+  <!-- PIN Entry Overlay (profile selection) -->
+  <div id="pin-entry-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(5,7,12,0.97); z-index:400; flex-direction:column; align-items:center; justify-content:center;">
+    <p style="margin:0 0 6px; color:rgba(255,255,255,0.4); font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">Enter PIN</p>
+    <p style="margin:0 0 28px; color:rgba(255,255,255,0.7); font-size:18px; font-weight:600;">Enter your 4-digit PIN to continue</p>
+    <div class="pin-dots-row" style="margin-bottom:28px;">
+      <div id="pin-dot-1" class="pin-dot"></div>
+      <div id="pin-dot-2" class="pin-dot"></div>
+      <div id="pin-dot-3" class="pin-dot"></div>
+      <div id="pin-dot-4" class="pin-dot"></div>
+    </div>
+    <div id="pin-keyboard" class="pin-keyboard-grid"></div>
+    <p id="pin-entry-error" style="display:none; margin-top:16px; color:#ff3344; font-size:14px; font-weight:600;"></p>
+    <p style="margin-top:18px; color:rgba(255,255,255,0.25); font-size:13px;">D-Pad to navigate · Enter to confirm · Back to cancel</p>
+  </div>
+
+  <!-- Profile PIN Set/Change Keyboard Overlay (inside edit modal flow) -->
+  <div id="profile-pin-keyboard-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(5,7,12,0.96); z-index:350; flex-direction:column; align-items:center; justify-content:center;">
+    <p style="margin:0 0 6px; color:rgba(255,255,255,0.4); font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase;" id="ppk-title">Set Profile PIN</p>
+    <p style="margin:0 0 28px; color:rgba(255,255,255,0.7); font-size:18px; font-weight:600;" id="ppk-subtitle">Enter a 4-digit PIN for this profile</p>
+    <div class="pin-dots-row" style="margin-bottom:28px;">
+      <div id="ppk-dot-1" class="pin-dot"></div>
+      <div id="ppk-dot-2" class="pin-dot"></div>
+      <div id="ppk-dot-3" class="pin-dot"></div>
+      <div id="ppk-dot-4" class="pin-dot"></div>
+    </div>
+    <div id="ppk-keyboard" class="pin-keyboard-grid"></div>
+    <p style="margin-top:18px; color:rgba(255,255,255,0.25); font-size:13px;">Enter 4 digits · Done to save · Back to cancel</p>
+  </div>
+
   <!-- Profile Form Modal -->
   <div id="settings-profile-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(5,7,12,0.88); z-index:200; align-items:center; justify-content:center;">
     <div class="spm-card">
@@ -551,6 +579,12 @@
       <div class="spm-row">
         <label>Kids Profile</label>
         <button id="spm-kids-btn" class="focusable spm-kids-btn" tabindex="-1">OFF</button>
+      </div>
+
+      <!-- PIN row -->
+      <div class="spm-row">
+        <label>PIN Lock</label>
+        <button id="spm-pin-btn" class="focusable spm-kids-btn" tabindex="-1">Set PIN</button>
       </div>
 
       <!-- Actions -->
