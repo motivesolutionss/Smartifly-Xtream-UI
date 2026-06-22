@@ -3058,6 +3058,56 @@
     el.style.display = text ? '' : 'none';
   }
 
+  function isHomeHeroDetailsIntent() {
+    var detailsBtn = document.getElementById('home-hero-btn-details');
+    var activeEl = document.activeElement;
+
+    return state.focusedPanel === 'home-hero' && (
+      state.focusedIndex === 1 ||
+      (detailsBtn && detailsBtn.classList.contains('focused')) ||
+      activeEl === detailsBtn
+    );
+  }
+
+  function playHomeHeroSeriesDirect(item, detailInfo) {
+    if (!item || !state.session) return;
+
+    var cacheKey = 'series_' + getCatalogItemId(item, 'series');
+
+    function tryPlay(detail) {
+      if (!detail) return false;
+      var seasons = normalizeSeriesSeasons(detail);
+      if (!seasons.length) return false;
+
+      var episodes = getEpisodesForSeason(detail, seasons[0].key);
+      if (!episodes.length) return false;
+
+      playSeriesEpisode(episodes[0], getCatalogItemName(item), item);
+      return true;
+    }
+
+    var resolvedDetail = detailInfo || homeHeroCache[cacheKey];
+    if (tryPlay(resolvedDetail)) {
+      return;
+    }
+
+    apiGetSeriesInfo(
+      state.session.portalBaseUrl,
+      state.session.username,
+      state.session.userInfo.password,
+      item.series_id,
+      function (detail) {
+        homeHeroCache[cacheKey] = detail;
+        if (!tryPlay(detail)) {
+          showContentDetail(item, 'series');
+        }
+      },
+      function () {
+        showContentDetail(item, 'series');
+      }
+    );
+  }
+
   function updateHomeHero(entry, detailInfo) {
     var heroImage = document.getElementById('home-hero-image');
     var overline = document.getElementById('home-hero-overline');
@@ -3134,23 +3184,16 @@
     if (playBtn) {
       playBtn.onclick = function (e) {
         if (e) e.stopPropagation();
+        if (isHomeHeroDetailsIntent()) {
+          showContentDetail(entry.item, entry.mode);
+          return;
+        }
         if (entry.mode === 'live') {
           playChannel(entry.item, [entry.item]);
         } else if (entry.mode === 'movies') {
           playMovie(entry.item, detailInfo);
         } else if (entry.mode === 'series') {
-          var detail = detailInfo || homeHeroCache[entry.mode + '_' + getCatalogItemId(entry.item, entry.mode)];
-          if (detail) {
-            var seasons = normalizeSeriesSeasons(detail);
-            if (seasons.length) {
-              var episodes = getEpisodesForSeason(detail, seasons[0].key);
-              if (episodes.length) {
-                playSeriesEpisode(episodes[0], getCatalogItemName(entry.item), entry.item);
-                return;
-              }
-            }
-          }
-          showContentDetail(entry.item, entry.mode);
+          playHomeHeroSeriesDirect(entry.item, detailInfo);
         }
       };
     }
@@ -3255,15 +3298,7 @@
     triggerHomeHeroUpdate(state.homeHeroEntry);
     var heroEl = document.getElementById('home-hero');
     if (heroEl) {
-      heroEl.onclick = function () {
-        if (state.homeHeroEntry) {
-          if (state.homeHeroEntry.mode === 'live') {
-            playChannel(state.homeHeroEntry.item, [state.homeHeroEntry.item]);
-          } else {
-            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
-          }
-        }
-      };
+      heroEl.onclick = null;
     }
   }
 
@@ -6045,9 +6080,41 @@
         return true; // Consume at top
       }
       if (code === 13) { // Enter / OK
-        var activeBtn = items[state.focusedIndex];
-        if (activeBtn) {
-          activeBtn.click();
+        if (state.homeHeroEntry) {
+          var playHeroButton = document.getElementById('home-hero-btn-play');
+          var detailsHeroButton = document.getElementById('home-hero-btn-details');
+          var activeHeroElement = document.activeElement;
+          var activeHeroId = activeHeroElement && activeHeroElement.id ? activeHeroElement.id : '';
+          var detailsIsFocused = !!(
+            (detailsHeroButton && detailsHeroButton.classList.contains('focused')) ||
+            activeHeroId === 'home-hero-btn-details' ||
+            items[state.focusedIndex] === detailsHeroButton
+          );
+          var playIsFocused = !!(
+            (playHeroButton && playHeroButton.classList.contains('focused')) ||
+            activeHeroId === 'home-hero-btn-play' ||
+            items[state.focusedIndex] === playHeroButton
+          );
+
+          if (detailsIsFocused) {
+            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+            return true;
+          }
+
+          if (playIsFocused || state.focusedIndex === 0) {
+            if (state.homeHeroEntry.mode === 'live') {
+              playChannel(state.homeHeroEntry.item, [state.homeHeroEntry.item]);
+            } else if (state.homeHeroEntry.mode === 'movies') {
+              var movieCacheKey = state.homeHeroEntry.mode + '_' + getCatalogItemId(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+              playMovie(state.homeHeroEntry.item, homeHeroCache[movieCacheKey]);
+            } else if (state.homeHeroEntry.mode === 'series') {
+              playHomeHeroSeriesDirect(state.homeHeroEntry.item, homeHeroCache['series_' + getCatalogItemId(state.homeHeroEntry.item, 'series')]);
+            } else {
+              showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+            }
+          } else {
+            showContentDetail(state.homeHeroEntry.item, state.homeHeroEntry.mode);
+          }
         }
         return true;
       }
@@ -6830,7 +6897,7 @@
         }
       }
 
-    } else if (code === 13) { // Enter Key
+    } else if (!handled && code === 13) { // Enter Key
       if (items.length > 0) {
         var activeEl = items[state.focusedIndex];
         if (activeEl) {

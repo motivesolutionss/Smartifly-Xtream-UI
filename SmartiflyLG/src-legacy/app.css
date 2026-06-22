@@ -1186,7 +1186,9 @@ html, body {
   overflow-y: hidden;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  padding: 8px 2px 12px;
+  padding: 8px 44px 12px 44px;
+  margin-left: -44px;
+  margin-right: -44px;
 }
 
 .legacy-search-rail-track::-webkit-scrollbar {
@@ -1224,8 +1226,7 @@ html, body {
   overflow: hidden;
   background-color: #0c101b;
   box-sizing: border-box;
-  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
-  will-change: transform;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
 .legacy-search-card--poster .legacy-search-card-shell {
@@ -1240,7 +1241,10 @@ html, body {
 
 .legacy-search-card.focused .legacy-search-card-shell {
   border-color: #ffffff !important;
-  transform: scale(1.04);
+}
+
+.legacy-search-card--live.focused .legacy-search-card-shell {
+  border-color: #e50914 !important;
 }
 
 .legacy-search-card-art {
@@ -1379,7 +1383,7 @@ html, body {
 
 /* Sidebar Panel */
 .sidebar {
-  width: 220px;
+  width: 240px;
   background-color: #04060a;
   border-right: 1px solid #161c28;
   display: flex;
@@ -1404,12 +1408,12 @@ html, body {
 }
 
 .sidebar-item {
-  height: 56px;
+  height: 62px;
   margin-bottom: 10px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  font-size: 19px;
+  padding: 0 24px;
+  font-size: 22px;
   font-weight: 700;
   color: #909bb0;
   background-color: transparent;
@@ -1465,12 +1469,12 @@ html, body {
 }
 
 .category-item {
-  height: 52px;
+  height: 58px;
   margin-bottom: 8px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  font-size: 17px;
+  padding: 0 24px;
+  font-size: 22px;
   font-weight: bold;
   color: #909bb0;
   background-color: transparent;
@@ -1481,6 +1485,8 @@ html, body {
   text-overflow: ellipsis;
   border: none !important;
   border-left: 4px solid transparent !important;
+  border-radius: 0 8px 8px 0;
+  box-sizing: border-box;
 }
 
 .category-item.active {
@@ -1959,8 +1965,7 @@ html, body {
   overflow: hidden;
   background: #0d121f;
   box-sizing: border-box;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s, box-shadow 0.2s;
-  will-change: transform;
+  transition: border-color 0.15s;
 }
 
 .home-card--poster .home-card__image-container {
@@ -1978,8 +1983,6 @@ html, body {
 
 .home-card.focused .home-card__image-container {
   border-color: #ffffff !important;
-  transform: scale(1.06);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
 }
 
 .home-card--live.focused .home-card__image-container {
@@ -2013,16 +2016,10 @@ html, body {
   background-color: #059669;
 }
 
-.home-card.focused .home-card__image {
-  transform: scale(1.06);
-}
-
 .home-card__image {
   width: 100%;
   height: 100%;
   background: transparent center/cover no-repeat;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
 }
 
 .home-card__image--contain {
@@ -2348,8 +2345,7 @@ html, body {
   font-family: 'Outfit', sans-serif;
   font-size: 20px;
   font-weight: 700;
-  transition: transform 0.15s, border-color 0.15s, background-color 0.15s;
-  will-change: transform;
+  transition: border-color 0.15s, background-color 0.15s;
   cursor: pointer;
   outline: none;
   display: flex;
@@ -2372,8 +2368,6 @@ html, body {
   border-color: #ffffff !important;
   background-color: #ffffff !important;
   color: #000000 !important;
-  transform: scale(1.05);
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.25);
 }
 
 .content-detail-action--primary.focused {
@@ -2420,8 +2414,7 @@ html, body {
   font-weight: 700;
   cursor: pointer;
   outline: none;
-  transition: transform 0.15s, border-color 0.15s, background-color 0.15s;
-  will-change: transform;
+  transition: border-color 0.15s, background-color 0.15s;
   margin-right: 14px; /* Margin instead of gap */
 }
 
@@ -2439,7 +2432,6 @@ html, body {
   border-color: #ffffff !important;
   background: #ffffff !important;
   color: #000000 !important;
-  transform: scale(1.05);
 }
 
 .content-detail-episodes-scroll {
@@ -2478,8 +2470,7 @@ html, body {
   cursor: pointer;
   outline: none;
   box-sizing: border-box;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
-  will-change: transform;
+  transition: border-color 0.15s, background-color 0.15s;
   margin-right: 20px; /* Spacing between cards in horizontal row */
   overflow: hidden;
   position: relative;
@@ -2492,12 +2483,6 @@ html, body {
 .content-detail-episode-card.focused {
   border-color: #ffffff !important;
   background: rgba(255, 255, 255, 0.1) !important;
-  transform: scale(1.04);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-
-.content-detail-episode-card.focused .episode-card-image {
-  transform: scale(1.06);
 }
 
 .episode-card-image-wrap {
