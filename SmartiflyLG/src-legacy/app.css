@@ -1141,7 +1141,6 @@ html, body {
   overflow-x: hidden;
   padding: 44px 44px 36px;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   background-color: #000000;
 }
 
@@ -1185,7 +1184,6 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   padding: 8px 44px 12px 44px;
   margin-left: -44px;
   margin-right: -44px;
@@ -1464,7 +1462,6 @@ html, body {
   overflow-y: scroll;
   padding: 20px 12px;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 .categories-panel::-webkit-scrollbar {
@@ -1586,7 +1583,6 @@ html, body {
   flex: 1;
   overflow-y: scroll;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
 }
 .channels-scroll::-webkit-scrollbar {
   display: none;
@@ -1700,7 +1696,6 @@ html, body {
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   padding: 0 0 36px;
 }
 
@@ -1937,7 +1932,6 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   padding: 20px 4px 24px 20px;
 }
 
@@ -2465,7 +2459,6 @@ html, body {
   overflow-y: hidden;
   white-space: nowrap;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   width: 100%;
 }
 
@@ -2694,7 +2687,6 @@ html, body {
   flex: 1;
   overflow-y: auto;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
 }
 

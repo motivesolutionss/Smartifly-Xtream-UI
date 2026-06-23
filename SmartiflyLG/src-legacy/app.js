@@ -116,7 +116,8 @@
     channelsCacheCount: {},  // keyed by mode+':'+categoryId ? item count
     channelsBatchSize: 20,   // number of cards currently rendered in the DOM
     pinEntry: null,          // { profile, buffer } when PIN overlay is open
-    currentPlayback: null    // active movie/episode resume context
+    currentPlayback: null,    // active movie/episode resume context
+    activeFocusedEl: null     // currently focused DOM element for O(1) focus management
   };
 
   var MAX_HOME_RAIL_ITEMS = 12;
@@ -136,7 +137,7 @@
   ];
 
   // --- API CLIENT SETUP ---
-  var API_BASE_URL = 'https://api.smartifly.co/v1';
+  var API_BASE_URL = 'http://api.smartifly.co/v1';
 
   function createDefaultProfiles(username) {
     var cleanUsername = String(username || '').trim();
@@ -3633,7 +3634,7 @@
       };
     }
 
-    var artwork = getBackdropArtwork(entry.item, detailInfo, entry.mode);
+    var artwork = getLegacyArtworkUrl(getBackdropArtwork(entry.item, detailInfo, entry.mode));
     if (heroImage) {
       if (artwork) {
         heroImage.style.backgroundImage = 'url("' + String(artwork).replace(/"/g, '%22') + '")';
@@ -3770,15 +3771,15 @@
         
         var artwork, cardClass, imageClass;
         if (section.id === 'continue') {
-          artwork = getBackdropArtwork(entry.item, null, entry.mode);
+          artwork = getLegacyArtworkUrl(getBackdropArtwork(entry.item, null, entry.mode));
           cardClass = 'home-card home-card--landscape';
           imageClass = 'home-card__image';
         } else if (entry.mode === 'live') {
-          artwork = getCatalogItemArtwork(entry.item, entry.mode);
+          artwork = getLegacyArtworkUrl(getCatalogItemArtwork(entry.item, entry.mode));
           cardClass = 'home-card home-card--live';
           imageClass = 'home-card__image home-card__image--contain';
         } else {
-          artwork = getCatalogItemArtwork(entry.item, entry.mode);
+          artwork = getLegacyArtworkUrl(getCatalogItemArtwork(entry.item, entry.mode));
           cardClass = 'home-card home-card--poster';
           imageClass = 'home-card__image';
         }
@@ -4562,6 +4563,38 @@
         })(settingsTabs[ti], ti);
       }
     })();
+
+    // Guard static layout containers against unwanted browser-triggered auto-scrolls on focus
+    window.addEventListener('scroll', function () {
+      if (window.pageXOffset !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo(0, 0);
+      }
+    });
+
+    var preventElementScroll = function (idOrEl) {
+      var el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+      if (el) {
+        el.addEventListener('scroll', function () {
+          if (el.scrollTop !== 0 || el.scrollLeft !== 0) {
+            el.scrollTop = 0;
+            el.scrollLeft = 0;
+          }
+        });
+      }
+    };
+    preventElementScroll('view-catalog');
+    preventElementScroll(document.querySelector('.catalog-container'));
+    preventElementScroll('home-panel');
+
+    // Prevent home scroll from scrolling when home-hero is active
+    var homeScrollNode = document.getElementById('home-scroll');
+    if (homeScrollNode) {
+      homeScrollNode.addEventListener('scroll', function () {
+        if (state.focusedPanel === 'home-hero' && homeScrollNode.scrollTop !== 0) {
+          homeScrollNode.scrollTop = 0;
+        }
+      });
+    }
 
     // Check if session exists
     if (state.session) {
@@ -6807,12 +6840,11 @@
   }
 
   function updateFocusUI() {
-    // Clear all focused items
-    var list = document.querySelectorAll('.focusable');
-    for (var i = 0; i < list.length; i++) {
-      list[i].classList.remove('focused');
-      // For profiles view visual styles
-      list[i].classList.remove('focused');
+    // Clear previously focused element in O(1)
+    if (state.activeFocusedEl) {
+      try {
+        state.activeFocusedEl.classList.remove('focused');
+      } catch (e) {}
     }
 
     var currentFocusables = getFocusableElements();
@@ -6829,26 +6861,36 @@
     var focusedEl = currentFocusables[state.focusedIndex];
     if (focusedEl) {
       focusedEl.classList.add('focused');
+      state.activeFocusedEl = focusedEl;
       if (focusedEl.tagName !== 'INPUT') {
         focusedEl.focus();
         if (!isHomePanel(state.focusedPanel)) {
-          var resetWindowScroll = function () {
+          if (window.pageXOffset !== 0 || window.pageYOffset !== 0) {
             window.scrollTo(0, 0);
-            if (document.body) document.body.scrollTop = 0;
-            if (document.documentElement) document.documentElement.scrollTop = 0;
-            
-            // Reset scroll on non-scrollable parent views to fix TV browser focus shift bugs
-            var viewCatalog = document.getElementById('view-catalog');
-            if (viewCatalog) { viewCatalog.scrollTop = 0; viewCatalog.scrollLeft = 0; }
-            var catalogContainer = document.querySelector('.catalog-container');
-            if (catalogContainer) { catalogContainer.scrollTop = 0; catalogContainer.scrollLeft = 0; }
-            var homePanel = document.getElementById('home-panel');
-            if (homePanel) { homePanel.scrollTop = 0; homePanel.scrollLeft = 0; }
-          };
-          resetWindowScroll();
-          setTimeout(resetWindowScroll, 0);
-          setTimeout(resetWindowScroll, 50);
-          setTimeout(resetWindowScroll, 150);
+          }
+          if (document.body && document.body.scrollTop !== 0) {
+            document.body.scrollTop = 0;
+          }
+          if (document.documentElement && document.documentElement.scrollTop !== 0) {
+            document.documentElement.scrollTop = 0;
+          }
+          
+          // Reset scroll on non-scrollable parent views to fix TV browser focus shift bugs
+          var viewCatalog = document.getElementById('view-catalog');
+          if (viewCatalog && (viewCatalog.scrollTop !== 0 || viewCatalog.scrollLeft !== 0)) {
+            viewCatalog.scrollTop = 0;
+            viewCatalog.scrollLeft = 0;
+          }
+          var catalogContainer = document.querySelector('.catalog-container');
+          if (catalogContainer && (catalogContainer.scrollTop !== 0 || catalogContainer.scrollLeft !== 0)) {
+            catalogContainer.scrollTop = 0;
+            catalogContainer.scrollLeft = 0;
+          }
+          var homePanel = document.getElementById('home-panel');
+          if (homePanel && (homePanel.scrollTop !== 0 || homePanel.scrollLeft !== 0)) {
+            homePanel.scrollTop = 0;
+            homePanel.scrollLeft = 0;
+          }
         }
       }
       
@@ -6857,22 +6899,15 @@
         scrollIntoViewIfNeeded(document.getElementById('categories-panel-list'), focusedEl);
       } else if (state.focusedPanel === 'home-hero') {
         var homeScroll = document.getElementById('home-scroll');
-        if (homeScroll) {
-          var resetHeroScroll = function () {
-            homeScroll.scrollTop = 0;
-          };
-          resetHeroScroll();
-          setTimeout(resetHeroScroll, 0);
-          setTimeout(resetHeroScroll, 50);
-          setTimeout(resetHeroScroll, 100);
-          setTimeout(resetHeroScroll, 200);
-          setTimeout(resetHeroScroll, 400);
+        if (homeScroll && homeScroll.scrollTop !== 0) {
+          homeScroll.scrollTop = 0;
         }
       } else if (state.focusedPanel === 'home-rails') {
         var homeScrollNode = document.getElementById('home-scroll');
         var homeRailNode = focusedEl.parentNode && focusedEl.parentNode.parentNode ? focusedEl.parentNode.parentNode : focusedEl;
         if (homeScrollNode) {
           var syncHomeRailScroll = function () {
+            scrollVerticalIntoViewByRect(homeScrollNode, focusedEl, 120, 80);
             scrollIntoViewIfNeeded(homeScrollNode, homeRailNode);
             scrollHorizontalIntoViewIfNeeded(focusedEl.parentNode, focusedEl);
           };
@@ -6917,7 +6952,55 @@
     }
   }
 
+  function triggerRepaint(element) {
+    if (!element) return;
+    var originalTransform = element.style.webkitTransform || element.style.transform;
+    element.style.webkitTransform = 'translateZ(0px)';
+    element.style.transform = 'translateZ(0px)';
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(function() {
+        element.style.webkitTransform = originalTransform || '';
+        element.style.transform = originalTransform || '';
+      });
+    } else {
+      setTimeout(function() {
+        element.style.webkitTransform = originalTransform || '';
+        element.style.transform = originalTransform || '';
+      }, 10);
+    }
+  }
+
+  function scrollVerticalIntoViewByRect(container, element, topPadding, bottomPadding) {
+    if (!container || !element || !container.getBoundingClientRect || !element.getBoundingClientRect) return;
+
+    var initialTop = container.scrollTop;
+    var containerRect = container.getBoundingClientRect();
+    var elementRect = element.getBoundingClientRect();
+    var safeTopPadding = typeof topPadding === 'number' ? topPadding : 0;
+    var safeBottomPadding = typeof bottomPadding === 'number' ? bottomPadding : 0;
+    var nextTop = initialTop;
+
+    if (elementRect.top < containerRect.top + safeTopPadding) {
+      nextTop += elementRect.top - (containerRect.top + safeTopPadding);
+    } else if (elementRect.bottom > containerRect.bottom - safeBottomPadding) {
+      nextTop += elementRect.bottom - (containerRect.bottom - safeBottomPadding);
+    }
+
+    if (nextTop < 0) {
+      nextTop = 0;
+    }
+
+    if (nextTop !== initialTop) {
+      container.scrollTop = nextTop;
+      triggerRepaint(container);
+    }
+  }
+
   function scrollIntoViewIfNeeded(container, element) {
+    if (!container || !element) return;
+    var initialTop = container.scrollTop;
+    var initialLeft = container.scrollLeft;
+
     // Vertical scroll logic
     var containerTop = container.scrollTop;
     var containerBottom = containerTop + container.clientHeight;
@@ -6941,10 +7024,16 @@
     } else if (elemRight > containerRight) {
       container.scrollLeft = elemRight - container.clientWidth;
     }
+
+    if (container.scrollTop !== initialTop || container.scrollLeft !== initialLeft) {
+      triggerRepaint(container);
+    }
   }
 
   function scrollHorizontalIntoViewIfNeeded(container, element) {
     if (!container || !element) return;
+    var initialLeft = container.scrollLeft;
+
     var containerLeft = container.scrollLeft;
     var containerRight = containerLeft + container.clientWidth;
     var elemLeft = element.offsetLeft;
@@ -6954,6 +7043,10 @@
       container.scrollLeft = elemLeft;
     } else if (elemRight > containerRight) {
       container.scrollLeft = elemRight - container.clientWidth;
+    }
+
+    if (container.scrollLeft !== initialLeft) {
+      triggerRepaint(container);
     }
   }
 
