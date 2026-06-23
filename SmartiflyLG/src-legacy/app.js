@@ -124,6 +124,7 @@
   var MAX_SEARCH_RAIL_ITEMS = 12;
   var CATALOG_BATCH_SIZE = 20;      // cards rendered per batch
   var CATALOG_BATCH_PREFETCH = 5;   // expand when focus is within this many items of the rendered end
+  var HOME_DEBUG_LOGS = true;
   var SEARCH_KEYBOARD_LAYOUT = [
     ['1', '2', '3', '4', '5'],
     ['6', '7', '8', '9', '0'],
@@ -138,6 +139,34 @@
 
   // --- API CLIENT SETUP ---
   var API_BASE_URL = 'http://api.smartifly.co/v1';
+
+  function logHomeDebug(label, details) {
+    if (!HOME_DEBUG_LOGS || typeof console === 'undefined' || !console.log) return;
+    try {
+      console.log('[HOME_DEBUG] ' + label, details || {});
+    } catch (e) {
+      try {
+        console.log('[HOME_DEBUG] ' + label);
+      } catch (ignore) {}
+    }
+  }
+
+  function getHomeVerticalScrollNode() {
+    return document.getElementById('home-panel') || document.getElementById('home-scroll');
+  }
+
+  function ensureHomeHeroPlayFocus() {
+    var focusPlay = function () {
+      if (state.catalogScreen === 'home' && state.homeHeroEntry) {
+        focusHomeHero(0);
+      }
+    };
+
+    focusPlay();
+    setTimeout(focusPlay, 0);
+    setTimeout(focusPlay, 60);
+    setTimeout(focusPlay, 140);
+  }
 
   function createDefaultProfiles(username) {
     var cleanUsername = String(username || '').trim();
@@ -3199,7 +3228,7 @@
 
   function setCatalogScreen(screen) {
     state.catalogScreen = screen;
-    document.getElementById('home-panel').style.display = screen === 'home' ? 'block' : 'none';
+    document.getElementById('home-panel').style.display = screen === 'home' ? 'flex' : 'none';
     document.getElementById('browse-panels').style.display = screen === 'browse' ? 'flex' : 'none';
   }
 
@@ -3708,7 +3737,7 @@
   }
 
   function focusHomeHero(buttonIndex) {
-    var homeScroll = document.getElementById('home-scroll');
+    var homeScroll = getHomeVerticalScrollNode();
     if (homeScroll) {
       homeScroll.scrollTop = 0;
       setTimeout(function () {
@@ -3924,17 +3953,25 @@
 
     if (forceReload || !state.homeCatalogCache.live || !state.homeCatalogCache.movies || !state.homeCatalogCache.series) {
       loadHomeData(function () {
-        state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
-        state.focusedIndex = 0;
-        updateFocusUI();
+        if (state.homeHeroEntry) {
+          ensureHomeHeroPlayFocus();
+        } else {
+          state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
+          state.focusedIndex = 0;
+          updateFocusUI();
+        }
       });
     } else {
       refreshHomeView();
     }
 
-    state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
-    state.focusedIndex = 0;
-    updateFocusUI();
+    if (state.homeHeroEntry) {
+      ensureHomeHeroPlayFocus();
+    } else {
+      state.focusedPanel = document.getElementById('home-rails').querySelectorAll('.focusable').length ? 'home-rails' : 'catalog-sidebar';
+      state.focusedIndex = 0;
+      updateFocusUI();
+    }
   }
 
   function fetchEPGForChannel(channel) {
@@ -4471,10 +4508,19 @@
     }
     
     // Scroll lock to prevent cut-off of Hero when focused
-    var homeScroll = document.getElementById('home-scroll');
+    var homeScroll = getHomeVerticalScrollNode();
     if (homeScroll) {
       homeScroll.addEventListener('scroll', function () {
+        logHomeDebug('listener:home-scroll:legacy-lock', {
+          panel: state.focusedPanel,
+          scrollTop: homeScroll.scrollTop
+        });
         if (state.focusedPanel === 'home-hero' && homeScroll.scrollTop !== 0) {
+          logHomeDebug('listener:home-scroll:legacy-lock-reset', {
+            panel: state.focusedPanel,
+            from: homeScroll.scrollTop,
+            to: 0
+          });
           homeScroll.scrollTop = 0;
         }
       });
@@ -4584,13 +4630,21 @@
     };
     preventElementScroll('view-catalog');
     preventElementScroll(document.querySelector('.catalog-container'));
-    preventElementScroll('home-panel');
 
     // Prevent home scroll from scrolling when home-hero is active
-    var homeScrollNode = document.getElementById('home-scroll');
+    var homeScrollNode = getHomeVerticalScrollNode();
     if (homeScrollNode) {
       homeScrollNode.addEventListener('scroll', function () {
+        logHomeDebug('listener:home-scroll:init-lock', {
+          panel: state.focusedPanel,
+          scrollTop: homeScrollNode.scrollTop
+        });
         if (state.focusedPanel === 'home-hero' && homeScrollNode.scrollTop !== 0) {
+          logHomeDebug('listener:home-scroll:init-lock-reset', {
+            panel: state.focusedPanel,
+            from: homeScrollNode.scrollTop,
+            to: 0
+          });
           homeScrollNode.scrollTop = 0;
         }
       });
@@ -6898,22 +6952,70 @@
       if (state.focusedPanel === 'catalog-categories') {
         scrollIntoViewIfNeeded(document.getElementById('categories-panel-list'), focusedEl);
       } else if (state.focusedPanel === 'home-hero') {
-        var homeScroll = document.getElementById('home-scroll');
-        if (homeScroll && homeScroll.scrollTop !== 0) {
-          homeScroll.scrollTop = 0;
+        var homeScroll = getHomeVerticalScrollNode();
+        if (homeScroll) {
+          var resetHeroScroll = function () {
+            if (state.focusedPanel !== 'home-hero') {
+              logHomeDebug('home-hero:reset-skipped', {
+                panel: state.focusedPanel,
+                scrollTop: homeScroll.scrollTop
+              });
+              return;
+            }
+            logHomeDebug('home-hero:reset-run', {
+              panel: state.focusedPanel,
+              scrollTopBefore: homeScroll.scrollTop
+            });
+            if (homeScroll.scrollTop !== 0) {
+              homeScroll.scrollTop = 0;
+            }
+            logHomeDebug('home-hero:reset-after', {
+              panel: state.focusedPanel,
+              scrollTopAfter: homeScroll.scrollTop
+            });
+            triggerRepaint(homeScroll);
+            triggerRepaint(document.getElementById('home-rails'));
+          };
+          resetHeroScroll();
+          setTimeout(resetHeroScroll, 0);
+          setTimeout(resetHeroScroll, 50);
+          setTimeout(resetHeroScroll, 100);
+          setTimeout(resetHeroScroll, 200);
         }
       } else if (state.focusedPanel === 'home-rails') {
-        var homeScrollNode = document.getElementById('home-scroll');
+        var homeScrollNode = getHomeVerticalScrollNode();
         var homeRailNode = focusedEl.parentNode && focusedEl.parentNode.parentNode ? focusedEl.parentNode.parentNode : focusedEl;
+        var homeRailTrackNode = focusedEl.parentNode;
         if (homeScrollNode) {
           var syncHomeRailScroll = function () {
+            logHomeDebug('home-rails:sync-start', {
+              focusedIndex: state.focusedIndex,
+              panel: state.focusedPanel,
+              homeScrollTop: homeScrollNode.scrollTop,
+              railOffsetTop: homeRailNode && typeof homeRailNode.offsetTop === 'number' ? homeRailNode.offsetTop : null,
+              cardOffsetTop: typeof focusedEl.offsetTop === 'number' ? focusedEl.offsetTop : null,
+              cardOffsetLeft: typeof focusedEl.offsetLeft === 'number' ? focusedEl.offsetLeft : null,
+              trackScrollLeft: homeRailTrackNode && typeof homeRailTrackNode.scrollLeft === 'number' ? homeRailTrackNode.scrollLeft : null
+            });
+            scrollHomeRailIntoView(homeScrollNode, focusedEl);
             scrollVerticalIntoViewByRect(homeScrollNode, focusedEl, 120, 80);
             scrollIntoViewIfNeeded(homeScrollNode, homeRailNode);
-            scrollHorizontalIntoViewIfNeeded(focusedEl.parentNode, focusedEl);
+            scrollHorizontalIntoViewIfNeeded(homeRailTrackNode, focusedEl);
+            logHomeDebug('home-rails:sync-end', {
+              focusedIndex: state.focusedIndex,
+              panel: state.focusedPanel,
+              homeScrollTop: homeScrollNode.scrollTop,
+              trackScrollLeft: homeRailTrackNode && typeof homeRailTrackNode.scrollLeft === 'number' ? homeRailTrackNode.scrollLeft : null
+            });
+            triggerRepaint(homeScrollNode);
+            triggerRepaint(homeRailTrackNode);
+            triggerRepaint(document.getElementById('home-rails'));
           };
           syncHomeRailScroll();
           setTimeout(syncHomeRailScroll, 0);
           setTimeout(syncHomeRailScroll, 40);
+          setTimeout(syncHomeRailScroll, 100);
+          setTimeout(syncHomeRailScroll, 200);
         }
       } else if (state.focusedPanel === 'catalog-channels') {
         scrollIntoViewIfNeeded(document.querySelector('.channels-scroll'), focusedEl);
@@ -6954,6 +7056,12 @@
 
   function triggerRepaint(element) {
     if (!element) return;
+    logHomeDebug('triggerRepaint', {
+      id: element.id || '',
+      className: element.className || '',
+      scrollTop: typeof element.scrollTop === 'number' ? element.scrollTop : null,
+      scrollLeft: typeof element.scrollLeft === 'number' ? element.scrollLeft : null
+    });
     var originalTransform = element.style.webkitTransform || element.style.transform;
     element.style.webkitTransform = 'translateZ(0px)';
     element.style.transform = 'translateZ(0px)';
@@ -6991,7 +7099,42 @@
     }
 
     if (nextTop !== initialTop) {
+      logHomeDebug('scrollVerticalIntoViewByRect', {
+        containerId: container.id || '',
+        from: initialTop,
+        to: nextTop,
+        elementTop: elementRect.top,
+        elementBottom: elementRect.bottom,
+        containerTop: containerRect.top,
+        containerBottom: containerRect.bottom,
+        topPadding: safeTopPadding,
+        bottomPadding: safeBottomPadding
+      });
       container.scrollTop = nextTop;
+      triggerRepaint(container);
+    }
+  }
+
+  function scrollHomeRailIntoView(container, focusedEl) {
+    if (!container || !focusedEl) return;
+
+    var railNode = focusedEl.parentNode && focusedEl.parentNode.parentNode ? focusedEl.parentNode.parentNode : null;
+    if (!railNode) return;
+
+    var targetTop = railNode.offsetTop - 24;
+    if (targetTop < 0) {
+      targetTop = 0;
+    }
+
+    if (container.scrollTop !== targetTop) {
+      logHomeDebug('scrollHomeRailIntoView', {
+        containerId: container.id || '',
+        from: container.scrollTop,
+        to: targetTop,
+        railOffsetTop: railNode.offsetTop,
+        focusedIndex: state.focusedIndex
+      });
+      container.scrollTop = targetTop;
       triggerRepaint(container);
     }
   }
@@ -7026,6 +7169,18 @@
     }
 
     if (container.scrollTop !== initialTop || container.scrollLeft !== initialLeft) {
+      logHomeDebug('scrollIntoViewIfNeeded', {
+        containerId: container.id || '',
+        className: container.className || '',
+        fromTop: initialTop,
+        toTop: container.scrollTop,
+        fromLeft: initialLeft,
+        toLeft: container.scrollLeft,
+        elemTop: elemTop,
+        elemBottom: elemBottom,
+        elemLeft: elemLeft,
+        elemRight: elemRight
+      });
       triggerRepaint(container);
     }
   }
@@ -7046,6 +7201,15 @@
     }
 
     if (container.scrollLeft !== initialLeft) {
+      logHomeDebug('scrollHorizontalIntoViewIfNeeded', {
+        className: container.className || '',
+        fromLeft: initialLeft,
+        toLeft: container.scrollLeft,
+        elemLeft: elemLeft,
+        elemRight: elemRight,
+        containerLeft: containerLeft,
+        containerRight: containerRight
+      });
       triggerRepaint(container);
     }
   }
@@ -7095,6 +7259,11 @@
         return true;
       }
       if (code === 40) { // ArrowDown
+        logHomeDebug('handleHomeNavigation:hero-down', {
+          fromPanel: state.focusedPanel,
+          nextPanel: 'home-rails',
+          nextIndex: 0
+        });
         state.focusedPanel = 'home-rails';
         state.focusedIndex = 0;
         updateFocusUI();
@@ -7210,8 +7379,6 @@
   function handleDetailNavigation(code, items) {
     var handled = false;
 
-    console.log('[D-Pad] handleDetailNavigation - code:', code, 'panel:', state.focusedPanel, 'index:', state.focusedIndex, 'items.length:', items ? items.length : 0);
-
     if (state.focusedPanel === 'detail-actions') {
       if (code === 37 && state.focusedIndex > 0) {
         state.focusedIndex--;
@@ -7248,7 +7415,6 @@
         handled = true;
       } else if (code === 40) {
         var hasEp = hasDetailEpisodes();
-        console.log('[D-Pad] Seasons down key pressed. hasDetailEpisodes:', hasEp, 'detailEpisodes:', state.detailEpisodes ? state.detailEpisodes.length : 0, 'detailMode:', state.detailMode);
         if (hasEp) {
           state.focusedPanel = 'detail-episodes';
           state.focusedIndex = 0;
