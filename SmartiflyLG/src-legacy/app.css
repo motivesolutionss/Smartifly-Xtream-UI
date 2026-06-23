@@ -3102,6 +3102,7 @@ html, body {
   object-fit: contain;
   background-color: #000 !important;
   z-index: 1;
+  transform: translateZ(0);
 }
 
 #player-trailer-embed {

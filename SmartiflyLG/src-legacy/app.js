@@ -5863,6 +5863,8 @@
       return;
     }
 
+    if (!isPlayerOverlayVisible) return;
+
     var video = document.getElementById('player-video');
     if (!video) return;
 
@@ -5886,6 +5888,7 @@
       overlayNode.classList.remove('player-overlay--hidden');
     }
     isPlayerOverlayVisible = true;
+    updatePlayerProgressUi();
 
     if (playerOverlayTimer) {
       clearTimeout(playerOverlayTimer);
