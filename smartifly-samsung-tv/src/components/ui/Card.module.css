@@ -79,6 +79,8 @@
 
 /* Branded fallback when image fails to load */
 .imagePlaceholder {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: flex;
@@ -183,10 +185,22 @@
 }
 
 .image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    opacity 0.18s ease;
+}
+
+.imageLoading {
+  opacity: 0;
+}
+
+.imageLoaded {
+  opacity: 1;
 }
 
 .card.continue .image {

@@ -1,5 +1,6 @@
-import React, { memo, useCallback, useRef } from "react";
+import React, { memo, useCallback, useEffect, useRef } from "react";
 import { Card } from "../../../components/ui/Card";
+import { perfMetrics } from "../../../utils/perfMetrics";
 import type { HomeRail, HomeRailItem } from "../homeTypes";
 import styles from "../Home.module.css";
 
@@ -13,22 +14,30 @@ const getRootFontSizePx = () => {
 };
 
 type HomeRailSectionProps = {
+  railIndex: number;
   rail: HomeRail;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  visibleItemCount: number;
   shouldLoadImages: boolean;
   onCardClick: (item: HomeRailItem, categoryName?: string) => void;
-  onCardFocus?: () => void;
+  onCardFocus?: (railIndex: number, itemIndex: number) => void;
 };
 
 export const HomeRailSection = memo(function HomeRailSection({
+  railIndex,
   rail,
   scrollContainerRef,
+  visibleItemCount,
   shouldLoadImages,
   onCardClick,
   onCardFocus,
 }: HomeRailSectionProps) {
   const railRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
+
+  useEffect(() => {
+    perfMetrics.increment("home_rail_section_render_count");
+  });
 
   const setCardRef = useCallback((itemId: string, node: HTMLDivElement | null) => {
     if (node) {
@@ -40,7 +49,8 @@ export const HomeRailSection = memo(function HomeRailSection({
 
   const handleCardFocus = useCallback(
     (itemId: string, itemIndex: number) => {
-      onCardFocus?.();
+      perfMetrics.increment("home_rail_card_focus_count");
+      onCardFocus?.(railIndex, itemIndex);
       const railElement = railRef.current;
       const cardElement = cardRefs.current.get(itemId);
       const scrollContainer = scrollContainerRef.current;
@@ -86,14 +96,14 @@ export const HomeRailSection = memo(function HomeRailSection({
         }
       }
     },
-    [onCardFocus, scrollContainerRef]
+    [onCardFocus, railIndex, scrollContainerRef]
   );
 
   return (
     <section className={styles.row}>
       <h2 className={styles.rowTitle}>{rail.title}</h2>
       <div ref={railRef} id={`rail-${rail.id}`} className={styles.rail}>
-        {rail.items.map((item, itemIndex) => {
+        {rail.items.slice(0, visibleItemCount).map((item, itemIndex) => {
           return (
             <Card
               key={`${rail.id}-${item.type}-${item.id}`}

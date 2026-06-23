@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { PERF_REDUCED_CLASS } from "../utils/performanceTier";
 
 /**
  * useAdaptiveProfile
@@ -23,8 +24,6 @@ const FAST_FRAME_THRESHOLD_MS = 28; // ~35 fps
 const SAMPLE_WINDOW = 10;
 const SLOW_FRAME_COUNT = 6;
 const FAST_FRAME_COUNT = 8;
-const PERF_REDUCED_CLASS = "perf-reduced";
-
 export const useAdaptiveProfile = (enabled: boolean = true) => {
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);

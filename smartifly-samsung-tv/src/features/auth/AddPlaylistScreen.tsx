@@ -99,8 +99,11 @@ export const AddPlaylistScreen = () => {
 
         {result && (
           <p className="status-message success">
-            Connected. Found {result.liveCategoryCount} live categories and{" "}
-            {result.liveStreamCount} live channels.
+            Connected. Detected {result.liveCategoryCount} live categories and confirmed
+            live content availability
+            {result.usedCatalogFallback
+              ? " with a full catalog fallback."
+              : " with a lightweight startup probe."}
           </p>
         )}
       </section>

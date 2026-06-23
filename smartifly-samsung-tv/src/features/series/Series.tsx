@@ -4,7 +4,7 @@ import { Focusable } from "../../components/tv/Focusable";
 import { VirtualGrid } from "../../components/tv/VirtualGrid";
 import { ErrorView } from "../../components/common/ErrorView";
 import { EmptyState } from "../../components/common/EmptyState";
-import { useFocus } from "../../providers/useFocus";
+import { useFocusActions } from "../../providers/useFocus";
 import { SeriesCard } from "./components/SeriesCard";
 import { SeriesDetails } from "./SeriesDetails";
 import type { AppSeries } from "../../types/appModels";
@@ -21,6 +21,8 @@ import {
   sliceImagePreloadUrls,
   useBudgetedImagePreload,
 } from "../../hooks/useBudgetedImagePreload";
+import { getGridFocusPrefetchUrls } from "../../hooks/gridFocusPreloadPolicy";
+import { resolvePerformanceTier } from "../../utils/performanceTier";
 import styles from "./Series.module.css";
 
 const CATEGORY_ROW_HEIGHT = 80;
@@ -126,13 +128,16 @@ export const Series: React.FC = () => {
     series,
     isLoading,
     isFetchingSeries,
+    isFetchingMoreSeries,
+    hasMoreSeries,
     isError,
     errorMessage,
+    loadMoreSeries,
     prefetchCategory,
     refetch,
   } = useSeriesContent(selectedCategoryId);
 
-  const { focusedId, setFocus } = useFocus();
+  const { setFocus } = useFocusActions();
 
   useTvBack(() => {
     if (isSearching) {
@@ -380,9 +385,8 @@ export const Series: React.FC = () => {
   // Scroll category list to keep active/focused category visible
   useEffect(() => {
     if (!categoryListRef.current || categoryOptions.length === 0) return;
-    const focusedCatId = focusedId?.startsWith("series-cat-")
-      ? focusedId.replace("series-cat-", "")
-      : (effectiveSelectedCategoryId || effectiveFocusedCategoryId || categoryOptions[0]?.id);
+    const focusedCatId =
+      effectiveFocusedCategoryId || effectiveSelectedCategoryId || categoryOptions[0]?.id;
     if (!focusedCatId) return;
     const idx = categoryOptions.findIndex((c) => c.id === focusedCatId);
     if (idx < 0) return;
@@ -396,7 +400,7 @@ export const Series: React.FC = () => {
     if (nextScrollTop !== null && categoryListRef.current.scrollTop !== nextScrollTop) {
       categoryListRef.current.scrollTop = nextScrollTop;
     }
-  }, [categoryOptions, effectiveFocusedCategoryId, effectiveSelectedCategoryId, focusedId, isSearching]);
+  }, [categoryOptions, effectiveFocusedCategoryId, effectiveSelectedCategoryId, isSearching]);
 
   // ── Initial Focus ───────────────────────────────────────────────────────────
   const hasInitializedFocusRef = useRef(false);
@@ -521,15 +525,48 @@ export const Series: React.FC = () => {
       imagePreloadRange.startIndex,
     ]
   );
+  const focusDrivenPosterPreloadUrls = useMemo(
+    () =>
+      getGridFocusPrefetchUrls(
+        filteredSeries,
+        focusedGridIndex,
+        (seriesItem) => seriesItem.posterUrl,
+        resolvePerformanceTier()
+      ),
+    [filteredSeries, focusedGridIndex]
+  );
+  const prioritizedPosterPreloadUrls = useMemo(
+    () => [...focusDrivenPosterPreloadUrls, ...visiblePosterPreloadUrls],
+    [focusDrivenPosterPreloadUrls, visiblePosterPreloadUrls]
+  );
 
   useBudgetedImagePreload(
-    visiblePosterPreloadUrls,
+    prioritizedPosterPreloadUrls,
     {
       enabled: networkStatus === "online" && !isSearching,
       maxConcurrent: 1,
       maxUrls: 6,
     }
   );
+
+  useEffect(() => {
+    if (isSearching || searchQuery) return;
+    if (!hasMoreSeries || isFetchingMoreSeries || focusedGridIndex < 0) return;
+
+    const remainingSeries = filteredSeries.length - (focusedGridIndex + 1);
+    if (remainingSeries > gridColumns * 2) return;
+
+    void loadMoreSeries();
+  }, [
+    filteredSeries.length,
+    focusedGridIndex,
+    gridColumns,
+    hasMoreSeries,
+    isFetchingMoreSeries,
+    isSearching,
+    loadMoreSeries,
+    searchQuery,
+  ]);
 
   if (selectedSeriesId) {
     return (
@@ -734,7 +771,12 @@ export const Series: React.FC = () => {
                             height: 78,
                             display: "flex",
                             alignItems: "center",
-                            zIndex: focusedId === `series-cat-${category.id}` ? 10 : (effectiveSelectedCategoryId === categoryId ? 2 : 1),
+                            zIndex:
+                              effectiveFocusedCategoryId === category.id
+                                ? 10
+                                : effectiveSelectedCategoryId === categoryId
+                                  ? 2
+                                  : 1,
                           }}
                         >
                           <Focusable
@@ -859,7 +901,11 @@ export const Series: React.FC = () => {
               onScrollTopChange={(nextTop) => {
                 gridScrollMemory.set(activeCategoryKey, nextTop);
               }}
-              focusedIndex={focusedId?.startsWith("card-series-") && focusedGridIndex >= 0 ? focusedGridIndex : undefined}
+              focusedIndex={
+                !sidebarFocusedRef.current && focusedGridIndex >= 0
+                  ? focusedGridIndex
+                  : undefined
+              }
               renderItem={(seriesItem, index) => {
                 return (
                   <SeriesCard

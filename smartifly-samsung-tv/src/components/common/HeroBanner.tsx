@@ -6,6 +6,10 @@ import { Badge } from "../ui/Badge";
 import { DotSeparator } from "../ui/DotSeparator";
 import styles from "./HeroBanner.module.css";
 import { detectVideoResolution } from "../../utils/resolutionDetector";
+import { perfMetrics } from "../../utils/perfMetrics";
+import { createPerfTrace } from "../../utils/perfTrace";
+import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import { resolveImageCandidates } from "../../utils/imagePolicy";
 
 export type HeroItem = {
   id: string;
@@ -27,24 +31,98 @@ interface HeroBannerProps {
   style?: React.CSSProperties;
   className?: string;
   onFocus?: () => void;
+  onVisualReady?: (item: HeroItem, status: "loaded" | "error" | "empty") => void;
 }
 
-export const HeroBanner: React.FC<HeroBannerProps> = ({ 
+export const HeroBanner: React.FC<HeroBannerProps> = React.memo(function HeroBanner({ 
   items = [], 
   onPlay, 
   onInfo, 
   style, 
   className = "", 
-  onFocus 
-}) => {
+  onFocus,
+  onVisualReady,
+}) {
   const currentIndex = 0;
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const heroTraceRef = React.useRef<ReturnType<typeof createPerfTrace> | null>(null);
+  const imageLoadStartedAtRef = React.useRef<number | null>(null);
+  const visualReadyKeyRef = React.useRef<string | null>(null);
+  const [failedBackdropUrls, setFailedBackdropUrls] = React.useState<string[]>([]);
 
   if (!items || items.length === 0) {
     return <div className={styles.heroPlaceholder} />;
   }
 
   const activeItem = items[currentIndex % items.length];
+
+  const heroImageCandidates = React.useMemo(() => {
+    const data = activeItem.data;
+    const extraCandidates =
+      activeItem.type === "live"
+        ? [("logoUrl" in data ? data.logoUrl : undefined)]
+        : [
+            "backdropUrl" in data ? data.backdropUrl : undefined,
+            "posterUrl" in data ? data.posterUrl : undefined,
+          ];
+
+    return resolveImageCandidates([activeItem.backdropUrl, ...extraCandidates]).filter(
+      (url) =>
+        !failedBackdropUrls.includes(url) && !imageFailureMemory.hasFailed(url)
+    );
+  }, [activeItem.backdropUrl, activeItem.data, activeItem.type, failedBackdropUrls]);
+
+  const resolvedBackdropUrl = heroImageCandidates[0];
+
+  React.useEffect(() => {
+    perfMetrics.increment("home_hero_visual_render_count");
+  });
+
+  React.useEffect(() => {
+    visualReadyKeyRef.current = null;
+    setFailedBackdropUrls([]);
+    if (heroTraceRef.current && !heroTraceRef.current.isClosed()) {
+      heroTraceRef.current.end({
+        status: "replaced",
+        metricName: "home_hero_banner_total_ms",
+        data: { nextHeroId: activeItem.id },
+      });
+    }
+
+    heroTraceRef.current = createPerfTrace("home_hero_banner", {
+      heroId: activeItem.id,
+      heroType: activeItem.type,
+    });
+    imageLoadStartedAtRef.current = resolvedBackdropUrl ? performance.now() : null;
+
+    return () => {
+      if (heroTraceRef.current && !heroTraceRef.current.isClosed()) {
+        heroTraceRef.current.end({
+          status: "cancelled",
+          metricName: "home_hero_banner_total_ms",
+        });
+      }
+    };
+  }, [activeItem.id, activeItem.type, resolvedBackdropUrl]);
+
+  const markVisualReady = React.useCallback(
+    (status: "loaded" | "error" | "empty") => {
+      const readinessKey = `${activeItem.id}:${resolvedBackdropUrl ?? "none"}:${status}`;
+      if (visualReadyKeyRef.current === readinessKey) {
+        return;
+      }
+
+      visualReadyKeyRef.current = readinessKey;
+      onVisualReady?.(activeItem, status);
+    },
+    [activeItem, onVisualReady, resolvedBackdropUrl]
+  );
+
+  React.useEffect(() => {
+    if (!resolvedBackdropUrl) {
+      markVisualReady("empty");
+    }
+  }, [markVisualReady, resolvedBackdropUrl]);
+
   const normalizeMeta = (value?: string) => {
     if (!value) return undefined;
     const trimmed = value.trim();
@@ -72,20 +150,80 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const handleFocus = () => {
     onFocus?.();
-    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
-    <div ref={containerRef} className={`${styles.container} ${className}`} style={style}>
+    <div className={`${styles.container} ${className}`} style={style}>
       <div className={styles.backdropContainer}>
-        <img 
-          key={activeItem.id}
-          src={activeItem.backdropUrl} 
-          alt="" 
-          loading="eager"
-          decoding="async"
-          className={styles.backdrop} 
-        />
+        {resolvedBackdropUrl ? (
+          <img 
+            key={`${activeItem.id}-${resolvedBackdropUrl}`}
+            src={resolvedBackdropUrl} 
+            alt="" 
+            loading="eager"
+            decoding="async"
+            className={styles.backdrop} 
+            onLoad={() => {
+              imageFailureMemory.markLoaded(resolvedBackdropUrl);
+              markVisualReady("loaded");
+              perfMetrics.increment("home_hero_backdrop_load_success_count");
+              if (imageLoadStartedAtRef.current !== null) {
+                perfMetrics.recordDuration(
+                  "home_hero_backdrop_load_ms",
+                  performance.now() - imageLoadStartedAtRef.current,
+                  {
+                    slowAboveMs: 350,
+                    data: {
+                      heroId: activeItem.id,
+                      heroType: activeItem.type,
+                    },
+                    logSlowEvent: false,
+                  }
+                );
+              }
+              imageLoadStartedAtRef.current = null;
+              if (heroTraceRef.current && !heroTraceRef.current.isClosed()) {
+                heroTraceRef.current.end({
+                  status: "image_ready",
+                  metricName: "home_hero_banner_total_ms",
+                  slowAboveMs: 450,
+                });
+              }
+            }}
+            onError={() => {
+              imageFailureMemory.markFailed(resolvedBackdropUrl);
+              markVisualReady("error");
+              setFailedBackdropUrls((currentUrls) =>
+                currentUrls.includes(resolvedBackdropUrl)
+                  ? currentUrls
+                  : [...currentUrls, resolvedBackdropUrl]
+              );
+              perfMetrics.increment("home_hero_backdrop_load_error_count");
+              if (imageLoadStartedAtRef.current !== null) {
+                perfMetrics.recordDuration(
+                  "home_hero_backdrop_error_ms",
+                  performance.now() - imageLoadStartedAtRef.current,
+                  {
+                    slowAboveMs: 350,
+                    data: {
+                      heroId: activeItem.id,
+                      heroType: activeItem.type,
+                    },
+                    logSlowEvent: false,
+                  }
+                );
+              }
+              imageLoadStartedAtRef.current = null;
+              if (heroTraceRef.current && !heroTraceRef.current.isClosed()) {
+                heroTraceRef.current.end({
+                  status: "image_error",
+                  metricName: "home_hero_banner_total_ms",
+                  slowAboveMs: 450,
+                });
+              }
+            }}
+          />
+        ) : null}
         <div className={styles.backdropTint} />
         <div className={styles.overlayHorizontal} />
         <div className={styles.overlayVertical} />
@@ -93,7 +231,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
       <div className={styles.content}>
         <div className={styles.brandLogoContainer}>
-          <img src="/smartifly_logo.png" alt="Smartifly" className={styles.brandLogo} />
+          <img src="/smartifly_icon.webp" alt="Smartifly" className={styles.brandLogo} />
         </div>
         {/* Reference Meta Row */}
         <div className={styles.metaRow}>
@@ -125,6 +263,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             id={`hero-play`}
             onEnter={() => onPlay(activeItem)} 
             onFocus={handleFocus}
+            disableAutoScroll
             className={styles.playBtn}
           >
             <Play size={24} fill="currentColor" />
@@ -136,6 +275,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
               id={`hero-info`} 
               onEnter={() => onInfo(activeItem)} 
               onFocus={handleFocus}
+              disableAutoScroll
               className={styles.infoBtn}
             >
               <Info size={24} />
@@ -146,4 +286,4 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
       </div>
     </div>
   );
-};
+});

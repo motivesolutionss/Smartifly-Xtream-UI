@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "../../../services";
 import type { AppCategory, AppSeries, AppSeriesDetails } from "../../../types/appModels";
 import { getUserFriendlyErrorMessage } from "../../../utils/errorMapper";
+import { shouldPrefetchCategory } from "../../../utils/categoryPrefetchPolicy";
 
 const EMPTY_CATEGORIES: AppCategory[] = [];
 const EMPTY_SERIES: AppSeries[] = [];
 const MAX_CONCURRENT_PREFETCHES = 2;
 const PREFETCH_DEBOUNCE_MS = 300;
+const SERIES_CONTENT_PAGE_SIZE = 60;
+const SERIES_CONTENT_STALE_TIME_MS = 60 * 60 * 1000;
+type PagedSeries = AppSeries[];
 
 const getSortableName = (name: string) => {
   return name.replace(/^[^a-zA-Z0-9]+/, "").trim().toLowerCase();
@@ -21,14 +25,25 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     staleTime: 6 * 60 * 60 * 1000, // 6 hours
   });
 
-  const seriesQuery = useQuery<AppSeries[]>({
-    queryKey: ["series-list", selectedCategoryId],
-    queryFn: () => services.content.getSeries(selectedCategoryId),
+  const seriesQuery = useInfiniteQuery({
+    queryKey: ["series-list", selectedCategoryId, SERIES_CONTENT_PAGE_SIZE],
+    queryFn: ({ pageParam }) =>
+      services.content.getSeries(selectedCategoryId, {
+        limit: SERIES_CONTENT_PAGE_SIZE,
+        page: pageParam,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (
+      lastPage: PagedSeries,
+      _allPages: PagedSeries[],
+      lastPageParam: number
+    ) =>
+      lastPage.length < SERIES_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
     retry: 2,
     enabled:
       categoriesQuery.status === "success" &&
       (!!selectedCategoryId || (categoriesQuery.data?.length ?? 0) === 0),
-    staleTime: 60 * 60 * 1000, // 1 hour
+    staleTime: SERIES_CONTENT_STALE_TIME_MS,
     gcTime: 2 * 60 * 60 * 1000, // 2 hours
   });
   const queryClient = useQueryClient();
@@ -39,23 +54,58 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
   const prefetchCategory = useCallback(
     (categoryId?: string) => {
       if (!categoryId) return;
+      const queryKey = ["series-list", categoryId, SERIES_CONTENT_PAGE_SIZE] as const;
 
-      const existing = prefetchTimersRef.current.get(categoryId);
-      if (existing !== undefined) {
-        window.clearTimeout(existing);
+      if (
+        !shouldPrefetchCategory({
+          categoryId,
+          activeCategoryId: selectedCategoryId,
+          queryState: queryClient.getQueryState(queryKey),
+          hasPendingTimer: prefetchTimersRef.current.has(categoryId),
+          activePrefetchCount: activePrefetchesRef.current,
+          maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+          staleTimeMs: SERIES_CONTENT_STALE_TIME_MS,
+          nowMs: Date.now(),
+        })
+      ) {
+        return;
       }
 
       const timerId = window.setTimeout(() => {
         prefetchTimersRef.current.delete(categoryId);
 
-        if (activePrefetchesRef.current >= MAX_CONCURRENT_PREFETCHES) return;
+        if (
+          !shouldPrefetchCategory({
+            categoryId,
+            activeCategoryId: selectedCategoryId,
+            queryState: queryClient.getQueryState(queryKey),
+            hasPendingTimer: false,
+            activePrefetchCount: activePrefetchesRef.current,
+            maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+            staleTimeMs: SERIES_CONTENT_STALE_TIME_MS,
+            nowMs: Date.now(),
+          })
+        ) {
+          return;
+        }
 
         activePrefetchesRef.current += 1;
         void queryClient
-          .prefetchQuery({
-            queryKey: ["series-list", categoryId],
-            queryFn: () => services.content.getSeries(categoryId),
-            staleTime: 60 * 60 * 1000,
+          .prefetchInfiniteQuery({
+            queryKey,
+            queryFn: ({ pageParam }) =>
+              services.content.getSeries(categoryId, {
+                limit: SERIES_CONTENT_PAGE_SIZE,
+                page: pageParam,
+              }),
+            initialPageParam: 1,
+            getNextPageParam: (
+              lastPage: PagedSeries,
+              _allPages: PagedSeries[],
+              lastPageParam: number
+            ) =>
+              lastPage.length < SERIES_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
+            staleTime: SERIES_CONTENT_STALE_TIME_MS,
           })
           .finally(() => {
             activePrefetchesRef.current = Math.max(0, activePrefetchesRef.current - 1);
@@ -64,7 +114,7 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
 
       prefetchTimersRef.current.set(categoryId, timerId);
     },
-    [queryClient]
+    [queryClient, selectedCategoryId]
   );
 
   useEffect(() => {
@@ -80,6 +130,14 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     void seriesQuery.refetch();
   }, [categoriesQuery, seriesQuery]);
 
+  const loadMoreSeries = useCallback(async () => {
+    if (!seriesQuery.hasNextPage || seriesQuery.isFetchingNextPage) {
+      return;
+    }
+
+    await seriesQuery.fetchNextPage();
+  }, [seriesQuery]);
+
   const sortedCategories = useMemo(() => {
     const raw = categoriesQuery.data;
     if (!raw || raw.length === 0) return EMPTY_CATEGORIES;
@@ -94,24 +152,35 @@ export const useSeriesContent = (selectedCategoryId?: string) => {
     });
   }, [categoriesQuery.data]);
 
+  const series = useMemo(
+    () => seriesQuery.data?.pages.flatMap((page) => page) ?? EMPTY_SERIES,
+    [seriesQuery.data]
+  );
+
   return useMemo(() => ({
     categories: sortedCategories,
-    series: seriesQuery.data ?? EMPTY_SERIES,
+    series,
     isLoading: categoriesQuery.isLoading || seriesQuery.isLoading,
-    isFetchingSeries: seriesQuery.isFetching,
+    isFetchingSeries: seriesQuery.isFetching && !seriesQuery.isFetchingNextPage,
+    isFetchingMoreSeries: seriesQuery.isFetchingNextPage,
+    hasMoreSeries: seriesQuery.hasNextPage ?? false,
     isError: categoriesQuery.isError || seriesQuery.isError,
     errorMessage: error ? getUserFriendlyErrorMessage(error) : null,
+    loadMoreSeries,
     prefetchCategory,
     refetch,
   }), [
     sortedCategories,
+    series,
     categoriesQuery.isLoading,
     categoriesQuery.isError,
-    seriesQuery.data,
     seriesQuery.isLoading,
     seriesQuery.isFetching,
+    seriesQuery.isFetchingNextPage,
+    seriesQuery.hasNextPage,
     seriesQuery.isError,
     error,
+    loadMoreSeries,
     prefetchCategory,
     refetch,
   ]);

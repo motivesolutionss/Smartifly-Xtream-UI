@@ -11,7 +11,7 @@ import { EpgGrid } from "./EpgGrid";
 import { VirtualGrid } from "../../components/tv/VirtualGrid";
 import type { AppChannel } from "../../types/appModels";
 import { useTvBack } from "../../hooks/useTvBack";
-import { useFocus } from "../../providers/useFocus";
+import { useFocusActions } from "../../providers/useFocus";
 import { useEpg } from "./hooks/useEpg";
 import { useLiveTvStore } from "../../store/liveTvStore";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
@@ -25,6 +25,8 @@ import {
   sliceImagePreloadUrls,
   useBudgetedImagePreload,
 } from "../../hooks/useBudgetedImagePreload";
+import { getGridFocusPrefetchUrls } from "../../hooks/gridFocusPreloadPolicy";
+import { resolvePerformanceTier } from "../../utils/performanceTier";
 import styles from "./LiveTv.module.css";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -40,9 +42,11 @@ const EPG_PREVIEW_DEBOUNCE_MS = 140;
  */
 const GRID_ITEM_HEIGHT = 296;
 const GRID_GAP = 16;
+const GRID_ROW_STRIDE = GRID_ITEM_HEIGHT + GRID_GAP;
 const CATEGORY_ROW_HEIGHT = 80;
 const CATEGORY_SCROLL_THRESHOLD = 10;
 const CATEGORY_SCROLL_INSET = 14;
+const GRID_SCROLL_PERSIST_THRESHOLD_PX = 24;
 
 const toSuggestionFocusId = (suggestion: string) =>
   `search-sug-${suggestion.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -65,6 +69,11 @@ const getCategoryScrollTarget = (
   }
 
   return null;
+};
+
+const readPersistedGridScrollTop = (categoryId?: string | null) => {
+  if (!categoryId) return 0;
+  return useLiveTvStore.getState().gridScrollTopByCategory[categoryId] ?? 0;
 };
 
 const parseChannelTitle = (title: string) => {
@@ -108,17 +117,20 @@ export const LiveTv: React.FC = () => {
     channels,
     isLoading,
     isFetchingChannels,
+    isFetchingMoreChannels,
+    hasMoreChannels,
     isError,
     errorCode,
     errorMessage,
     effectiveCategoryId,
+    loadMoreChannels,
     prefetchCategory,
     refetch,
   } = useLiveContent(selectedCategoryId);
 
   const activeCategoryId = effectiveCategoryId;
   const { setLiveChannels, setActivePlaybackItem } = usePlayerStore();
-  const { setFocus, focusedId } = useFocus();
+  const { setFocus } = useFocusActions();
   const { status: networkStatus } = useNetworkStatus();
 
   // ── Search & Suggestions state ──────────────────────────────────────────────
@@ -126,6 +138,9 @@ export const LiveTv: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(() =>
     searchStorage.getRecentSearches()
+  );
+  const [focusedCategoryId, setFocusedCategoryId] = useState<string | undefined>(
+    persistedSelectedCategoryId ?? undefined
   );
 
   const suggestions = useMemo(() => {
@@ -175,9 +190,7 @@ export const LiveTv: React.FC = () => {
   // Scroll category list to keep active/focused category visible
   useEffect(() => {
     if (!categoryListRef.current || categories.length === 0 || isSearching) return;
-    const focusedCatId = focusedId?.startsWith("live-cat-")
-      ? focusedId.replace("live-cat-", "")
-      : activeCategoryId;
+    const focusedCatId = focusedCategoryId || activeCategoryId || categories[0]?.id;
     if (!focusedCatId) return;
     const idx = categories.findIndex((c) => c.id === focusedCatId);
     if (idx < 0) return;
@@ -191,7 +204,7 @@ export const LiveTv: React.FC = () => {
     if (nextScrollTop !== null && categoryListRef.current.scrollTop !== nextScrollTop) {
       categoryListRef.current.scrollTop = nextScrollTop;
     }
-  }, [categories, focusedId, activeCategoryId, isSearching]);
+  }, [activeCategoryId, categories, focusedCategoryId, isSearching]);
 
   // Restore category list scroll position when keyboard/search closes
   useEffect(() => {
@@ -218,8 +231,14 @@ export const LiveTv: React.FC = () => {
   /** Debounce timer for expensive side effects during fast navigation. */
   const navDebounceTimerRef = useRef<number | null>(null);
   const epgPreviewTimerRef = useRef<number | null>(null);
+  const gridScrollCommitRafRef = useRef<number | null>(null);
+  const latestGridScrollTopRef = useRef(0);
+  const lastRenderedGridRowRef = useRef(0);
+  const lastPersistedGridScrollTopRef = useRef(0);
+  const persistedGridCategoryIdRef = useRef<string | null>(activeCategoryId ?? null);
   const [gridContainerWidth, setGridContainerWidth] = useState(0);
   const [gridHeight, setGridHeight] = useState(window.innerHeight - 240);
+  const [gridViewportAnchorScrollTop, setGridViewportAnchorScrollTop] = useState(0);
 
   // ── Back key: close EPG / Search ────────────────────────────────────────────
   useTvBack(() => {
@@ -320,6 +339,34 @@ export const LiveTv: React.FC = () => {
     return Math.floor((gridContainerWidth - (cols - 1) * GRID_GAP) / cols);
   }, [gridContainerWidth, cols]);
 
+  const flushPersistedGridScrollTop = useCallback(
+    (categoryId: string | null, scrollTop = latestGridScrollTopRef.current) => {
+      if (!categoryId) return;
+      if (Math.abs(lastPersistedGridScrollTopRef.current - scrollTop) < 1) return;
+
+      useLiveTvStore.getState().setGridScrollTopForCategory(categoryId, scrollTop);
+      lastPersistedGridScrollTopRef.current = scrollTop;
+    },
+    []
+  );
+
+  useEffect(() => {
+    const persistedScrollTop = readPersistedGridScrollTop(activeCategoryId);
+    persistedGridCategoryIdRef.current = activeCategoryId ?? null;
+    latestGridScrollTopRef.current = persistedScrollTop;
+    lastPersistedGridScrollTopRef.current = persistedScrollTop;
+    lastRenderedGridRowRef.current = Math.floor(persistedScrollTop / GRID_ROW_STRIDE);
+    setGridViewportAnchorScrollTop(persistedScrollTop);
+
+    return () => {
+      if (gridScrollCommitRafRef.current !== null) {
+        window.cancelAnimationFrame(gridScrollCommitRafRef.current);
+        gridScrollCommitRafRef.current = null;
+      }
+      flushPersistedGridScrollTop(persistedGridCategoryIdRef.current);
+    };
+  }, [activeCategoryId, flushPersistedGridScrollTop]);
+
   // ── Cleanup debounce timer on unmount ───────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -328,6 +375,9 @@ export const LiveTv: React.FC = () => {
       }
       if (epgPreviewTimerRef.current !== null) {
         window.clearTimeout(epgPreviewTimerRef.current);
+      }
+      if (gridScrollCommitRafRef.current !== null) {
+        window.cancelAnimationFrame(gridScrollCommitRafRef.current);
       }
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -358,9 +408,8 @@ export const LiveTv: React.FC = () => {
 
     pendingGridFocusCategoryRef.current = null;
 
-    const scrollTop = useLiveTvStore.getState().gridScrollTopByCategory[activeCategoryId] ?? 0;
-    const rowStride = GRID_ITEM_HEIGHT + GRID_GAP;
-    const firstVisibleRow = Math.floor(scrollTop / rowStride);
+    const scrollTop = readPersistedGridScrollTop(activeCategoryId);
+    const firstVisibleRow = Math.floor(scrollTop / GRID_ROW_STRIDE);
     const firstVisibleIndex = Math.min(
       filteredChannels.length - 1,
       Math.max(0, firstVisibleRow * cols)
@@ -369,6 +418,7 @@ export const LiveTv: React.FC = () => {
 
     if (!targetChannelId) return;
 
+    setFocusedCategoryId(activeCategoryId);
     sidebarFocusedRef.current = false;
     const frameId = window.requestAnimationFrame(() => {
       setFocus(`card-live-${targetChannelId}`);
@@ -381,11 +431,21 @@ export const LiveTv: React.FC = () => {
     () => categories.find((c) => c.id === activeCategoryId)?.name ?? "All Channels",
     [activeCategoryId, categories]
   );
+  const effectiveFocusedCategoryId = useMemo(() => {
+    if (categories.length === 0) {
+      return focusedCategoryId ?? activeCategoryId;
+    }
 
-  const activeGridScrollTop = useLiveTvStore((state) =>
-    activeCategoryId
-      ? (state.gridScrollTopByCategory[activeCategoryId] ?? 0)
-      : 0
+    if (focusedCategoryId && categories.some((category) => category.id === focusedCategoryId)) {
+      return focusedCategoryId;
+    }
+
+    return activeCategoryId ?? categories[0]?.id;
+  }, [activeCategoryId, categories, focusedCategoryId]);
+
+  const initialGridScrollTop = useMemo(
+    () => readPersistedGridScrollTop(activeCategoryId),
+    [activeCategoryId]
   );
 
   const visibleCategoryStartIndex = useMemo(
@@ -401,14 +461,12 @@ export const LiveTv: React.FC = () => {
       ),
     [categories.length, categoryScrollTop, sidebarHeight]
   );
-  const initialGridScrollTop = activeGridScrollTop;
-  const gridRowStride = GRID_ITEM_HEIGHT + GRID_GAP;
   const visibleGridRange = getGridPreloadRange({
     itemCount: filteredChannels.length,
     columns: cols,
-    rowStride: gridRowStride,
+    rowStride: GRID_ROW_STRIDE,
     viewportHeight: gridHeight,
-    anchorScrollTop: activeGridScrollTop,
+    anchorScrollTop: gridViewportAnchorScrollTop,
     overscanRows: GRID_IMAGE_PRELOAD_OVERSCAN_ROWS,
   });
 
@@ -416,6 +474,25 @@ export const LiveTv: React.FC = () => {
     () => filteredChannels.findIndex((c) => c.id === focusedChannelId),
     [filteredChannels, focusedChannelId]
   );
+
+  useEffect(() => {
+    if (isSearching || searchQuery) return;
+    if (!hasMoreChannels || isFetchingMoreChannels || focusedGridIndex < 0) return;
+
+    const remainingChannels = filteredChannels.length - (focusedGridIndex + 1);
+    if (remainingChannels > cols * 2) return;
+
+    void loadMoreChannels();
+  }, [
+    cols,
+    filteredChannels.length,
+    focusedGridIndex,
+    hasMoreChannels,
+    isFetchingMoreChannels,
+    isSearching,
+    loadMoreChannels,
+    searchQuery,
+  ]);
 
   const visibleLogoPreloadUrls = useMemo(
     () =>
@@ -427,9 +504,23 @@ export const LiveTv: React.FC = () => {
       ),
     [filteredChannels, visibleGridRange.endIndex, visibleGridRange.startIndex]
   );
+  const focusDrivenLogoPreloadUrls = useMemo(
+    () =>
+      getGridFocusPrefetchUrls(
+        filteredChannels,
+        focusedGridIndex,
+        (channel) => channel.logoUrl,
+        resolvePerformanceTier()
+      ),
+    [filteredChannels, focusedGridIndex]
+  );
+  const prioritizedLogoPreloadUrls = useMemo(
+    () => [...focusDrivenLogoPreloadUrls, ...visibleLogoPreloadUrls],
+    [focusDrivenLogoPreloadUrls, visibleLogoPreloadUrls]
+  );
 
   useBudgetedImagePreload(
-    visibleLogoPreloadUrls,
+    prioritizedLogoPreloadUrls,
     {
       enabled: networkStatus === "online" && !isSearching,
       maxConcurrent: 2,
@@ -447,16 +538,25 @@ export const LiveTv: React.FC = () => {
   }, [focusedChannel]);
 
   // ── EPG mini-guide: preview channel ────────────────────────────────────────
-  const firstChannelId = filteredChannels[0]?.id;
+  const epgPreviewEnabled = Boolean(focusedChannelId) && !isSearching && !showEpg;
   const previewChannelId = useMemo(() => {
-    if (focusedChannelId && filteredChannels.some((ch) => ch.id === focusedChannelId)) {
+    if (!focusedChannelId) return "";
+    if (filteredChannels.some((ch) => ch.id === focusedChannelId)) {
       return focusedChannelId;
     }
-    return firstChannelId ?? "";
-  }, [filteredChannels, firstChannelId, focusedChannelId]);
+    return "";
+  }, [filteredChannels, focusedChannelId]);
 
   useEffect(() => {
-    if (!previewChannelId) return;
+    if (!epgPreviewEnabled || !previewChannelId) {
+      if (epgPreviewTimerRef.current !== null) {
+        window.clearTimeout(epgPreviewTimerRef.current);
+        epgPreviewTimerRef.current = null;
+      }
+      setEpgPreviewChannelId("");
+      return;
+    }
+
     if (epgPreviewTimerRef.current !== null) {
       window.clearTimeout(epgPreviewTimerRef.current);
     }
@@ -464,10 +564,14 @@ export const LiveTv: React.FC = () => {
       epgPreviewTimerRef.current = null;
       setEpgPreviewChannelId(previewChannelId);
     }, EPG_PREVIEW_DEBOUNCE_MS);
-  }, [previewChannelId]);
+  }, [epgPreviewEnabled, previewChannelId]);
 
   const epgStreamId = epgPreviewChannelId || previewChannelId;
-  const { currentProgram, nextPrograms, isLoading: isEpgLoading } = useEpg(epgStreamId);
+  const { currentProgram, nextPrograms, isLoading: isEpgLoading } = useEpg(epgStreamId, {
+    enabled: epgPreviewEnabled && Boolean(epgStreamId),
+    refetchInterval: false,
+    refreshClock: epgPreviewEnabled,
+  });
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleChannelFocus = useCallback(
@@ -522,6 +626,7 @@ export const LiveTv: React.FC = () => {
     (categoryId: string) => {
       pendingGridFocusCategoryRef.current = categoryId;
       categorySwitchStartRef.current = performance.now();
+      setFocusedCategoryId(categoryId);
 
       if (selectedCategoryId !== categoryId) {
         setSelectedCategoryId(categoryId);
@@ -530,9 +635,8 @@ export const LiveTv: React.FC = () => {
 
       if (activeCategoryId !== categoryId || filteredChannels.length === 0) return;
 
-      const scrollTop = useLiveTvStore.getState().gridScrollTopByCategory[categoryId] ?? 0;
-      const rowStride = GRID_ITEM_HEIGHT + GRID_GAP;
-      const firstVisibleRow = Math.floor(scrollTop / rowStride);
+      const scrollTop = readPersistedGridScrollTop(categoryId);
+      const firstVisibleRow = Math.floor(scrollTop / GRID_ROW_STRIDE);
       const firstVisibleIndex = Math.min(
         filteredChannels.length - 1,
         Math.max(0, firstVisibleRow * cols)
@@ -554,9 +658,34 @@ export const LiveTv: React.FC = () => {
   const handleScrollTopChange = useCallback(
     (nextScrollTop: number) => {
       if (!activeCategoryId) return;
-      useLiveTvStore.getState().setGridScrollTopForCategory(activeCategoryId, nextScrollTop);
+
+      latestGridScrollTopRef.current = nextScrollTop;
+
+      const nextVisibleRow = Math.floor(nextScrollTop / GRID_ROW_STRIDE);
+      if (nextVisibleRow !== lastRenderedGridRowRef.current) {
+        lastRenderedGridRowRef.current = nextVisibleRow;
+        setGridViewportAnchorScrollTop(nextScrollTop);
+      }
+
+      if (gridScrollCommitRafRef.current !== null) return;
+
+      gridScrollCommitRafRef.current = window.requestAnimationFrame(() => {
+        gridScrollCommitRafRef.current = null;
+        const categoryId = persistedGridCategoryIdRef.current;
+        if (!categoryId) return;
+
+        const latestScrollTop = latestGridScrollTopRef.current;
+        if (
+          Math.abs(lastPersistedGridScrollTopRef.current - latestScrollTop) <
+          GRID_SCROLL_PERSIST_THRESHOLD_PX
+        ) {
+          return;
+        }
+
+        flushPersistedGridScrollTop(categoryId, latestScrollTop);
+      });
     },
-    [activeCategoryId]
+    [activeCategoryId, flushPersistedGridScrollTop]
   );
 
   // When focus enters the sidebar from the grid, jump straight to the
@@ -564,6 +693,8 @@ export const LiveTv: React.FC = () => {
   const handleCategoryFocus = useCallback(
     (categoryId: string) => {
       prefetchCategory(categoryId);
+      setFocusedCategoryId(categoryId);
+      setFocusedChannelId(null);
 
       if (sidebarFocusedRef.current) return;
 
@@ -600,9 +731,8 @@ export const LiveTv: React.FC = () => {
       } else if (isRight && filteredChannels.length > 0) {
         e.preventDefault();
         const categoryId = categories[index].id;
-        const scrollTop = useLiveTvStore.getState().gridScrollTopByCategory[categoryId] ?? 0;
-        const rowStride = GRID_ITEM_HEIGHT + GRID_GAP;
-        const firstVisibleRow = Math.floor(scrollTop / rowStride);
+        const scrollTop = readPersistedGridScrollTop(categoryId);
+        const firstVisibleRow = Math.floor(scrollTop / GRID_ROW_STRIDE);
         const firstVisibleIndex = Math.min(
           filteredChannels.length - 1,
           Math.max(0, firstVisibleRow * cols)
@@ -826,7 +956,12 @@ export const LiveTv: React.FC = () => {
                             height: 78,
                             display: "flex",
                             alignItems: "center",
-                            zIndex: focusedId === `live-cat-${category.id}` ? 10 : (activeCategoryId === category.id ? 2 : 1),
+                            zIndex:
+                              effectiveFocusedCategoryId === category.id
+                                ? 10
+                                : activeCategoryId === category.id
+                                  ? 2
+                                  : 1,
                           }}
                         >
                           <Focusable
@@ -1030,7 +1165,11 @@ export const LiveTv: React.FC = () => {
                 gap={GRID_GAP}
                 containerHeight={gridHeight}
                 initialScrollTop={initialGridScrollTop}
-                focusedIndex={focusedId?.startsWith("card-live-") && focusedGridIndex >= 0 ? focusedGridIndex : undefined}
+                focusedIndex={
+                  !sidebarFocusedRef.current && focusedGridIndex >= 0
+                    ? focusedGridIndex
+                    : undefined
+                }
                 rowSnapMode="none"
                 scrollBehaviorMode="adaptive"
                 bottomSafeArea={60}

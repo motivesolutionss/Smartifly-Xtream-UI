@@ -14,8 +14,14 @@ import { SearchVoiceOverlay } from "./components/SearchVoiceOverlay";
 import { useSearchFocus } from "./hooks/useSearchFocus";
 import { useSearchNavigation } from "./hooks/useSearchNavigation";
 import { SUGGESTION_ITEMS } from "./searchConfig";
+import { createPerfTrace } from "../../utils/perfTrace";
 
 export const Search: React.FC = () => {
+  const screenTraceRef = useRef(
+    createPerfTrace("search_screen", {
+      screen: "search",
+    })
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
@@ -44,6 +50,26 @@ export const Search: React.FC = () => {
     },
     !selectedMovieId && !selectedSeriesId && !isListening
   );
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      screenTraceRef.current.end({
+        status: "visible",
+        metricName: "search_screen_total_ms",
+        slowAboveMs: 250,
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (!screenTraceRef.current.isClosed()) {
+        screenTraceRef.current.end({
+          status: "unmounted",
+          metricName: "search_screen_total_ms",
+        });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(searchTerm.trim()), 350);

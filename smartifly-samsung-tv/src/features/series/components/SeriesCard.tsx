@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../../components/tv/Focusable";
-import { useFocus } from "../../../providers/useFocus";
+import { useFocusActions, useIsFocused } from "../../../providers/useFocus";
 import { imageFailureMemory } from "../../../utils/imageFailureMemory";
 import { imageWarmMemory } from "../../../utils/imageWarmMemory";
 import { perfMetrics } from "../../../utils/perfMetrics";
@@ -37,6 +37,7 @@ type SeriesCardVisualProps = {
   placeholderInitials: string;
   posterUrl?: string;
   showPoster: boolean;
+  posterLoaded: boolean;
   onPosterError: () => void;
   onPosterLoad: () => void;
 };
@@ -48,26 +49,17 @@ const SeriesCardVisual = memo(
     placeholderInitials,
     posterUrl,
     showPoster,
+    posterLoaded,
     onPosterError,
     onPosterLoad,
   }: SeriesCardVisualProps) {
     useEffect(() => {
       perfMetrics.increment("series_card_visual_render_count");
-    });
+    }, []);
 
     return (
       <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
-        {showPoster ? (
-          <img
-            src={posterUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className={`${styles.poster} ${isFocused ? styles.posterFocused : ""}`}
-            onLoad={onPosterLoad}
-            onError={onPosterError}
-          />
-        ) : (
+        {(!showPoster || !posterLoaded) && (
           <div
             className={styles.placeholder}
             style={{ background: placeholderBackground }}
@@ -75,6 +67,19 @@ const SeriesCardVisual = memo(
             {placeholderInitials}
           </div>
         )}
+        {showPoster ? (
+          <img
+            src={posterUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className={`${styles.poster} ${
+              posterLoaded ? styles.posterLoaded : styles.posterLoading
+            } ${isFocused ? styles.posterFocused : ""}`}
+            onLoad={onPosterLoad}
+            onError={onPosterError}
+          />
+        ) : null}
       </div>
     );
   },
@@ -83,6 +88,7 @@ const SeriesCardVisual = memo(
     previousProps.placeholderBackground === nextProps.placeholderBackground &&
     previousProps.placeholderInitials === nextProps.placeholderInitials &&
     previousProps.posterUrl === nextProps.posterUrl &&
+    previousProps.posterLoaded === nextProps.posterLoaded &&
     previousProps.showPoster === nextProps.showPoster
 );
 
@@ -104,8 +110,8 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
   shouldLoadPoster,
 }) => {
   const focusId = `card-series-${seriesItem.id}`;
-  const { focusedId, setFocus } = useFocus();
-  const isFocused = focusedId === focusId;
+  const { setFocus } = useFocusActions();
+  const isFocused = useIsFocused(focusId);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -171,6 +177,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
   );
 
   const [failedPosterUrl, setFailedPosterUrl] = useState<string | null>(null);
+  const [posterLoaded, setPosterLoaded] = useState(false);
   const imageLoadStartedAtRef = useRef<number | null>(null);
 
   const showPoster = useMemo(() => {
@@ -201,6 +208,11 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
     () => onFocus?.(seriesItem.id),
     [onFocus, seriesItem.id]
   );
+
+  useEffect(() => {
+    setPosterLoaded(false);
+  }, [seriesItem.posterUrl]);
+
   useEffect(() => {
     if (showPoster && seriesItem.posterUrl) {
       imageLoadStartedAtRef.current = performance.now();
@@ -215,6 +227,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
       imageFailureMemory.markLoaded(seriesItem.posterUrl);
       imageWarmMemory.markWarm(seriesItem.posterUrl);
     }
+    setPosterLoaded(true);
     perfMetrics.increment("series_card_poster_load_success_count");
     if (imageLoadStartedAtRef.current !== null) {
       perfMetrics.recordDuration(
@@ -237,6 +250,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
     }
     imageLoadStartedAtRef.current = null;
     imageFailureMemory.markFailed(seriesItem.posterUrl);
+    setPosterLoaded(false);
     setFailedPosterUrl(seriesItem.posterUrl);
   }, [seriesItem.id, seriesItem.posterUrl]);
 
@@ -258,6 +272,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
           placeholderInitials={placeholderInitials}
           posterUrl={seriesItem.posterUrl}
           showPoster={showPoster}
+          posterLoaded={posterLoaded}
           onPosterLoad={handlePosterLoad}
           onPosterError={handlePosterError}
         />

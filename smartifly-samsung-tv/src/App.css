@@ -15,7 +15,7 @@
   transition: opacity 0.16s ease;
 }
 
-.smartifly-sidebar:focus-within ~ .main-content {
+.smartifly-sidebar.expanded ~ .main-content {
   opacity: 0.62;
 }
 
@@ -23,7 +23,7 @@
   transition: opacity 0.15s linear;
 }
 
-.perf-reduced .smartifly-sidebar:focus-within ~ .main-content {
+.perf-reduced .smartifly-sidebar.expanded ~ .main-content {
   opacity: 0.7;
 }
 

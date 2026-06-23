@@ -18,23 +18,26 @@ import type {
   XtreamSeriesInfoResponse,
   XtreamEpgListing,
 } from "./xtreamTypes";
+import { resolveFirstImageCandidate } from "../../utils/imagePolicy";
 
 // Helper to ensure values are strings
 const stringValue = (value: unknown) => {
   return value === undefined || value === null ? "" : String(value);
 };
 
-const firstBackdrop = (value: string[] | string | undefined) => {
-  if (Array.isArray(value)) return value[0];
+const backdropCandidates = (value: string[] | string | undefined) => {
+  if (Array.isArray(value)) return value;
   if (typeof value === "string" && value.trim().startsWith("[")) {
     try {
       const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed[0];
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => stringValue(item));
+      }
     } catch {
-      return value;
+      return [value];
     }
   }
-  return value;
+  return typeof value === "string" ? [value] : [];
 };
 
 const parseYear = (value: string | undefined) => {
@@ -42,6 +45,45 @@ const parseYear = (value: string | undefined) => {
   const match = value.match(/\b(19|20)\d{2}\b/);
   return match?.[0];
 };
+
+const resolveMovieBackdropUrl = (stream: Partial<XtreamVodStream> & { movie_image?: string }) =>
+  resolveFirstImageCandidate(
+    ...backdropCandidates(stream.backdrop_path),
+    stream.cover_big,
+    stream.cover,
+    stream.movie_image,
+    stream.stream_icon
+  ) || undefined;
+
+const resolveMoviePosterUrl = (stream: Partial<XtreamVodStream> & { movie_image?: string }) =>
+  resolveFirstImageCandidate(
+    stream.stream_icon,
+    stream.cover,
+    stream.cover_big,
+    stream.movie_image
+  ) || undefined;
+
+const resolveMovieDetailsPosterUrl = (
+  info: (Partial<XtreamVodStream> & { movie_image?: string }) | undefined,
+  movieData: (Partial<XtreamVodStream> & { stream_icon?: string }) | undefined
+) =>
+  resolveFirstImageCandidate(
+    info?.movie_image,
+    info?.stream_icon,
+    info?.cover,
+    info?.cover_big,
+    movieData?.stream_icon
+  ) || undefined;
+
+const resolveSeriesPosterUrl = (series: Partial<XtreamSeries>) =>
+  resolveFirstImageCandidate(series.cover, series.cover_big) || undefined;
+
+const resolveSeriesBackdropUrl = (series: Partial<XtreamSeries>) =>
+  resolveFirstImageCandidate(
+    ...backdropCandidates(series.backdrop_path),
+    series.cover_big,
+    series.cover
+  ) || undefined;
 
 export const xtreamMapper = {
   mapAccountInfo: (data: XtreamAccountInfo) => {
@@ -71,7 +113,7 @@ export const xtreamMapper = {
   toAppChannel: (stream: XtreamLiveStream): AppChannel => ({
     id: stringValue(stream.stream_id),
     title: stringValue(stream.name) || "Untitled channel",
-    logoUrl: stream.stream_icon || undefined,
+    logoUrl: resolveFirstImageCandidate(stream.stream_icon) || undefined,
     categoryId: stream.category_id || undefined,
     streamType: "live",
   }),
@@ -79,8 +121,8 @@ export const xtreamMapper = {
   toAppMovie: (stream: XtreamVodStream): AppMovie => ({
     id: stringValue(stream.stream_id),
     title: stringValue(stream.name) || "Untitled movie",
-    posterUrl: stream.stream_icon || undefined,
-    backdropUrl: firstBackdrop(stream.backdrop_path) || undefined,
+    posterUrl: resolveMoviePosterUrl(stream),
+    backdropUrl: resolveMovieBackdropUrl(stream),
     categoryId: stringValue(stream.category_id) || undefined,
     extension: stream.container_extension || undefined,
     description: stringValue(stream.plot) || undefined,
@@ -96,8 +138,8 @@ export const xtreamMapper = {
   toAppSeries: (series: XtreamSeries): AppSeries => ({
     id: stringValue(series.series_id),
     title: stringValue(series.name) || "Untitled series",
-    posterUrl: series.cover || undefined,
-    backdropUrl: firstBackdrop(series.backdrop_path) || undefined,
+    posterUrl: resolveSeriesPosterUrl(series),
+    backdropUrl: resolveSeriesBackdropUrl(series),
     categoryId: stringValue(series.category_id) || undefined,
     description: stringValue(series.plot) || undefined,
     rating: stringValue(series.rating) || undefined,
@@ -113,8 +155,7 @@ export const xtreamMapper = {
     const containerExtension =
       stringValue(info.container_extension || movieData.container_extension) || undefined;
     const title = stringValue(info.name || movieData.name) || "Untitled movie";
-    const posterUrl =
-      stringValue(info.stream_icon || info.movie_image || movieData.stream_icon) || undefined;
+    const posterUrl = resolveMovieDetailsPosterUrl(info, movieData);
 
     const baseMovie = xtreamMapper.toAppMovie({
       num: 0,
@@ -122,6 +163,8 @@ export const xtreamMapper = {
       stream_type: "movie",
       stream_id: Number(streamId),
       stream_icon: posterUrl || "",
+      cover: stringValue(info.cover),
+      cover_big: stringValue(info.cover_big),
       rating: stringValue(info.rating),
       rating_5based: Number(info.rating_5based || 0),
       added: stringValue(info.added),
@@ -141,7 +184,13 @@ export const xtreamMapper = {
       director: info.director,
       cast: info.cast,
       extension: containerExtension || baseMovie.extension,
-      backdropUrl: firstBackdrop(info.backdrop_path) || posterUrl,
+      posterUrl,
+      backdropUrl:
+        resolveMovieBackdropUrl({
+          ...movieData,
+          ...info,
+          stream_icon: info.stream_icon || movieData.stream_icon,
+        }) || posterUrl,
     };
   },
 
@@ -177,7 +226,7 @@ export const xtreamMapper = {
                 episode.info?.duration_secs === undefined
                   ? undefined
                   : stringValue(episode.info.duration_secs),
-              posterUrl: episode.info?.movie_image,
+              posterUrl: resolveFirstImageCandidate(episode.info?.movie_image) || undefined,
             };
           })
           .sort((left, right) => {
@@ -195,8 +244,8 @@ export const xtreamMapper = {
     return {
       id: stringValue(info.series_id || seriesId),
       title: stringValue(info.name) || "Untitled series",
-      posterUrl: info.cover,
-      backdropUrl: firstBackdrop(info.backdrop_path) || info.cover,
+      posterUrl: resolveSeriesPosterUrl(info),
+      backdropUrl: resolveSeriesBackdropUrl(info) || resolveSeriesPosterUrl(info),
       description: info.plot,
       rating: info.rating,
       genre: info.genre,

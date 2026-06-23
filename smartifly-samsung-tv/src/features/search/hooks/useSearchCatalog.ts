@@ -3,6 +3,8 @@ import { playlistStorage } from "../../../storage/playlistStorage";
 import { useProfileStore } from "../../../store/profileStore";
 import { usePlayerStore } from "../../../store/playerStore";
 import { logger } from "../../../utils/logger";
+import { createPerfTrace } from "../../../utils/perfTrace";
+import { markStartupMarker } from "../../../utils/startupMarkers";
 import {
   syncSearchCatalog,
   type SearchCatalogSyncMode,
@@ -16,6 +18,7 @@ import {
   hydrateSearchCatalog,
   isSearchCatalogFresh,
 } from "../searchCatalogUtils";
+import { searchCatalogStorage } from "../searchCatalogStorage";
 
 type SearchCatalogStatus = "idle" | "syncing" | "ready" | "error";
 
@@ -23,6 +26,57 @@ const SEARCH_SYNC_MODE_PRIORITY: Record<SearchCatalogSyncMode, number> = {
   warm: 1,
   background: 2,
   active: 3,
+};
+const SEARCH_WARM_IDLE_DELAY_MS = 2500;
+const SEARCH_BACKGROUND_IDLE_DELAY_MS = 6000;
+
+const scheduleWhenIdle = (callback: () => void, delayMs: number) => {
+  let cancelled = false;
+  let timeoutId = 0;
+  let idleId = 0;
+
+  const run = () => {
+    if (cancelled) return;
+
+    if (
+      typeof window !== "undefined" &&
+      "requestIdleCallback" in window &&
+      typeof window.requestIdleCallback === "function"
+    ) {
+      idleId = window.requestIdleCallback(
+        () => {
+          if (!cancelled) {
+            callback();
+          }
+        },
+        { timeout: 1500 }
+      );
+      return;
+    }
+
+    idleId = window.setTimeout(() => {
+      if (!cancelled) {
+        callback();
+      }
+    }, 0);
+  };
+
+  timeoutId = window.setTimeout(run, delayMs);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timeoutId);
+    if (
+      typeof window !== "undefined" &&
+      "cancelIdleCallback" in window &&
+      typeof window.cancelIdleCallback === "function"
+    ) {
+      window.cancelIdleCallback(idleId);
+      return;
+    }
+
+    window.clearTimeout(idleId);
+  };
 };
 
 export const useSearchCatalog = (shouldSearch: boolean) => {
@@ -35,6 +89,7 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
   );
   const [status, setStatus] = useState<SearchCatalogStatus>("idle");
   const [error, setError] = useState<unknown>(null);
+  const [isHydrating, setIsHydrating] = useState(() => Boolean(playlistId && profileId));
 
   const sessionCatalogRef = useRef<PersistedSearchCatalog | null>(sessionCatalog);
   const syncRunIdRef = useRef(0);
@@ -51,6 +106,40 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
     setSessionCatalog(nextCatalog);
     setError(null);
     setStatus(nextCatalog ? "ready" : "idle");
+    setIsHydrating(Boolean(playlistId && profileId && !nextCatalog));
+  }, [playlistId, profileId]);
+
+  useEffect(() => {
+    if (!playlistId || !profileId) {
+      setIsHydrating(false);
+      return;
+    }
+
+    if (sessionCatalogRef.current) {
+      setIsHydrating(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const persistedCatalog = await searchCatalogStorage.getCatalog(playlistId, profileId);
+      if (cancelled) return;
+
+      if (persistedCatalog) {
+        const nextCatalog = { ...persistedCatalog };
+        searchCatalogSession.saveCatalog(playlistId, profileId, nextCatalog);
+        sessionCatalogRef.current = nextCatalog;
+        setSessionCatalog(nextCatalog);
+        setStatus("ready");
+      }
+
+      setIsHydrating(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [playlistId, profileId]);
 
   const snapshot = useMemo<SearchCatalogSnapshot | null>(
@@ -83,8 +172,15 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
     currentSyncModeRef.current = mode;
     setStatus("syncing");
     setError(null);
+    const syncTrace = createPerfTrace("search_catalog_sync", {
+      mode,
+      runId,
+    });
 
     try {
+      markStartupMarker("search_warming_start", {
+        mode,
+      }, { once: false });
       const nextCatalog = await syncSearchCatalog({
         seedCatalog: sessionCatalogRef.current,
         mode,
@@ -103,6 +199,16 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
           sessionCatalogRef.current = nextSessionCatalog;
           setSessionCatalog(nextSessionCatalog);
           searchCatalogSession.saveCatalog(playlistId, profileId, nextSessionCatalog);
+          void searchCatalogStorage.saveCatalog(playlistId, profileId, nextSessionCatalog);
+          syncTrace.mark("progress", {
+            metricName: "search_catalog_sync_progress_ms",
+            slowAboveMs: 800,
+            data: {
+              liveCount: catalog.live.length,
+              vodCount: catalog.vod.length,
+              seriesCount: catalog.series.length,
+            },
+          });
         },
       });
 
@@ -123,11 +229,30 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
       sessionCatalogRef.current = nextSessionCatalog;
       setSessionCatalog(nextSessionCatalog);
       searchCatalogSession.saveCatalog(playlistId, profileId, nextSessionCatalog);
+      void searchCatalogStorage.saveCatalog(playlistId, profileId, nextSessionCatalog);
       setStatus("ready");
+      markStartupMarker("search_warming_end", {
+        completeness: nextCatalog.completeness,
+        mode,
+      }, { once: false });
+      syncTrace.end({
+        status: "completed",
+        metricName: "search_catalog_sync_total_ms",
+        slowAboveMs: 1400,
+        data: {
+          liveCount: nextCatalog.live.length,
+          vodCount: nextCatalog.vod.length,
+          seriesCount: nextCatalog.series.length,
+        },
+      });
     } catch (syncError) {
       if (runId !== syncRunIdRef.current) return;
 
       logger.error("Search catalog sync failed", syncError);
+      syncTrace.fail(syncError, {
+        metricName: "search_catalog_sync_total_ms",
+        slowAboveMs: 1400,
+      });
       setError(syncError);
       setStatus(sessionCatalogRef.current ? "ready" : "error");
     } finally {
@@ -139,47 +264,61 @@ export const useSearchCatalog = (shouldSearch: boolean) => {
   }, [playlistId, profileId]);
 
   useEffect(() => {
+    if (isHydrating) return;
     if (!playlistId || !profileId) return;
     if (activePlaybackItem) return;
 
     const catalog = sessionCatalogRef.current;
     if (!catalog) {
-      void startSync("warm");
-      return;
-    }
-
-    if (catalog.completeness === "partial") {
-      void startSync("background");
-      return;
+      const cancel = scheduleWhenIdle(() => {
+        void startSync("warm");
+      }, SEARCH_WARM_IDLE_DELAY_MS);
+      return cancel;
     }
 
     if (!isSearchCatalogFresh(catalog)) {
-      void startSync("background");
+      const cancel = scheduleWhenIdle(() => {
+        void startSync("warm");
+      }, SEARCH_WARM_IDLE_DELAY_MS);
+      return cancel;
     }
-  }, [activePlaybackItem, playlistId, profileId, startSync]);
+  }, [activePlaybackItem, isHydrating, playlistId, profileId, startSync]);
 
   useEffect(() => {
+    if (isHydrating) return;
     if (!shouldSearch) return;
     if (!playlistId || !profileId) return;
     if (activePlaybackItem) return;
 
     const catalog = sessionCatalogRef.current;
     if (!catalog) {
-      void startSync("warm");
-      return;
+      const cancel = scheduleWhenIdle(() => {
+        void startSync("warm");
+      }, SEARCH_WARM_IDLE_DELAY_MS);
+      return cancel;
     }
 
-    if (catalog.completeness !== "full" || !isSearchCatalogFresh(catalog)) {
-      void startSync("active");
+    if (!isSearchCatalogFresh(catalog)) {
+      const cancel = scheduleWhenIdle(() => {
+        void startSync("warm");
+      }, SEARCH_WARM_IDLE_DELAY_MS);
+      return cancel;
     }
-  }, [activePlaybackItem, playlistId, profileId, shouldSearch, startSync]);
+
+    if (catalog.completeness === "partial") {
+      const cancel = scheduleWhenIdle(() => {
+        void startSync("background");
+      }, SEARCH_BACKGROUND_IDLE_DELAY_MS);
+      return cancel;
+    }
+  }, [activePlaybackItem, isHydrating, playlistId, profileId, shouldSearch, startSync]);
 
   return {
     snapshot,
     status,
     error,
     isFresh,
-    refresh: () => startSync("active"),
+    refresh: () => startSync("warm"),
     isSyncing: status === "syncing",
   };
 };

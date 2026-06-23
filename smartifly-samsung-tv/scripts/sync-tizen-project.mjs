@@ -18,13 +18,13 @@ if (!existsSync(tizenProjectDir)) {
 }
 
 const copyFiles = [
-  "center_pillar.png",
+  "center_pillar.webp",
   "favicon.svg",
   "icons.svg",
-  "left_pillar.png",
-  "loginscreen_image.png",
-  "right_pillar.png",
-  "smartifly_icon.png",
+  "left_pillar.webp",
+  "loginscreen_image.webp",
+  "right_pillar.webp",
+  "smartifly_icon.webp",
   "smartifly_logo.png",
 ];
 

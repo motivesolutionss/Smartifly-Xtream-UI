@@ -1,13 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BackendClient } from "../../services/backend/backendClient";
 import { services } from "../../services";
 import { createPlaylistId } from "../../storage/playlistStorage";
 import { useAuthStore } from "../../store/authStore";
-import { AppError } from "../../types/errors";
 import { getUserFriendlyErrorMessage } from "../../utils/errorMapper";
 import { normalizeServerUrl } from "../../utils/normalizeServerUrl";
+import { createPerfTrace } from "../../utils/perfTrace";
+import { markStartupMarker } from "../../utils/startupMarkers";
 import { TvKeyboard } from "../../components/ui/TvKeyboard";
 import { HandshakeView } from "./HandshakeView";
+import { ensureLiveContentAvailable } from "./liveContentProbe";
 import styles from "./Login.module.css";
 
 interface LoginProps {
@@ -21,6 +23,11 @@ type LoginStep = "CREDENTIALS" | "CONNECTING";
 const MIN_CONNECTING_MS = 3500;
 
 export const Login: React.FC<LoginProps> = ({ onSuccess, onBack }) => {
+  const screenTraceRef = useRef(
+    createPerfTrace("login_screen", {
+      screen: "login",
+    })
+  );
   const [step, setStep] = useState<LoginStep>("CREDENTIALS");
   const [subStep, setSubStep] = useState<LoginSubStep>("SERVER_CODE");
   const [serverCode, setServerCode] = useState("");
@@ -29,6 +36,29 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onBack }) => {
   const [error, setError] = useState<string | null>(null);
 
   const setActivePlaylist = useAuthStore((store) => store.setActivePlaylist);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      screenTraceRef.current.end({
+        status: "visible",
+        metricName: "login_screen_total_ms",
+        slowAboveMs: 250,
+        data: {
+          step: "credentials",
+        },
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (!screenTraceRef.current.isClosed()) {
+        screenTraceRef.current.end({
+          status: "unmounted",
+          metricName: "login_screen_total_ms",
+        });
+      }
+    };
+  }, []);
 
   const stepInfo = useMemo(() => {
     switch (subStep) {
@@ -125,28 +155,48 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onBack }) => {
     setError(null);
 
     const startTime = Date.now();
+    const connectTrace = createPerfTrace("login_connect", {
+      serverCode: serverCode.trim().toUpperCase(),
+    });
 
     try {
       const resolvedPortal = await new BackendClient().resolvePortal(serverCode);
+      connectTrace.mark("portal_resolved", {
+        metricName: "login_portal_resolved_ms",
+        slowAboveMs: 250,
+        data: {
+          portalCode: resolvedPortal.portalCode,
+        },
+      });
       const normalizedUrl = normalizeServerUrl(resolvedPortal.baseUrl);
+      const minimumConnectingDelay = new Promise((resolve) =>
+        setTimeout(resolve, MIN_CONNECTING_MS)
+      );
+      const validateCredentialsPromise = services.account
+        .validateCredentials(normalizedUrl, username.trim(), password)
+        .then(() => {
+          connectTrace.mark("credentials_validated", {
+            metricName: "login_credentials_validated_ms",
+            slowAboveMs: 450,
+          });
+        });
 
-      await Promise.all([
-        services.account.validateCredentials(
-          normalizedUrl,
-          username.trim(),
-          password
-        ),
-        new Promise((resolve) => setTimeout(resolve, MIN_CONNECTING_MS)),
-      ]);
+      await Promise.all([validateCredentialsPromise, minimumConnectingDelay]);
+      connectTrace.mark("loading_gate_passed", {
+        metricName: "login_loading_gate_passed_ms",
+        slowAboveMs: MIN_CONNECTING_MS,
+      });
 
-      const [liveCategories, liveStreams] = await Promise.all([
-        services.content.getLiveCategories(),
-        services.content.getLiveStreams(),
-      ]);
-
-      if (liveCategories.length === 0 || liveStreams.length === 0) {
-        throw new AppError("EMPTY_CONTENT", "No content found on this server");
-      }
+      const liveProbe = await ensureLiveContentAvailable(services.content);
+      connectTrace.mark("live_content_validated", {
+        metricName: "login_live_content_validated_ms",
+        slowAboveMs: 650,
+        data: {
+          liveCategoryCount: liveProbe.liveCategoryCount,
+          validatedLiveStreamCount: liveProbe.validatedLiveStreamCount,
+          usedCatalogFallback: liveProbe.usedCatalogFallback,
+        },
+      });
 
       const trimmedUsername = username.trim();
       const playlistId = createPlaylistId(normalizedUrl, trimmedUsername);
@@ -164,8 +214,27 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onBack }) => {
       await services.userData.savePlaylist(playlist);
       await services.userData.setActivePlaylistId(playlistId);
       setActivePlaylist(playlist);
+      markStartupMarker("auth_complete", {
+        flow: "login",
+        playlistId,
+      });
+      connectTrace.end({
+        status: "completed",
+        metricName: "login_connect_total_ms",
+        slowAboveMs: 4200,
+        data: {
+          playlistId,
+        },
+      });
       onSuccess();
     } catch (err: unknown) {
+      connectTrace.fail(err, {
+        metricName: "login_connect_total_ms",
+        slowAboveMs: 4200,
+        data: {
+          subStep,
+        },
+      });
       const elapsed = Date.now() - startTime;
       if (elapsed < MIN_CONNECTING_MS) {
         await new Promise((resolve) =>
@@ -198,7 +267,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onBack }) => {
         <div className={styles.brandingSection}>
           <div className={styles.brandingContent}>
             <img
-              src="/smartifly_logo.png"
+              src="/smartifly_icon.webp"
               alt="Smartifly"
               className={styles.brandingLogo}
             />

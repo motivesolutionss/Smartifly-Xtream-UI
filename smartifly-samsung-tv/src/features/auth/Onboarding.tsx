@@ -16,7 +16,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({
       <div className={styles.onboardingGlow} />
 
       <div className={styles.leftPanel}>
-        <img src="/smartifly_logo.png" alt="Smartifly" className={styles.logo} />
+        <img src="/smartifly_icon.webp" alt="Smartifly" className={styles.logo} />
 
         <h1 className={styles.title}>
           The Future{"\n"}of Television.
@@ -67,15 +67,15 @@ export const Onboarding: React.FC<OnboardingProps> = ({
       <div className={styles.rightPanel}>
         <div className={styles.cardStack}>
           <div className={`${styles.posterCard} ${styles.posterLeft}`}>
-            <img src="/left_pillar.png" className={styles.posterImage} alt="" />
+            <img src="/left_pillar.webp" className={styles.posterImage} alt="" />
             <div className={styles.cardReflection} />
           </div>
           <div className={`${styles.posterCard} ${styles.posterCenter}`}>
-            <img src="/center_pillar.png" className={styles.posterImage} alt="" />
+            <img src="/center_pillar.webp" className={styles.posterImage} alt="" />
             <div className={styles.cardReflection} />
           </div>
           <div className={`${styles.posterCard} ${styles.posterRight}`}>
-            <img src="/right_pillar.png" className={styles.posterImage} alt="" />
+            <img src="/right_pillar.webp" className={styles.posterImage} alt="" />
             <div className={styles.cardReflection} />
           </div>
         </div>

@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ErrorView } from "../../../components/common/ErrorView";
 import { EmptyState } from "../../../components/common/EmptyState";
 import { getUserFriendlyErrorMessage } from "../../../utils/errorMapper";
+import { perfMetrics } from "../../../utils/perfMetrics";
 import { LibraryCard } from "../../library/LibraryCard";
 import type { AppChannel, AppMovie, AppSeries } from "../../../types/appModels";
 import type { SearchResults } from "../hooks/useSearch";
@@ -47,6 +48,10 @@ export const SearchResultsSection: React.FC<SearchResultsSectionProps> = ({
   onSeriesSelect,
   onCardKeyDown,
 }) => {
+  useEffect(() => {
+    perfMetrics.increment("search_results_section_render_count");
+  });
+
   return (
     <section className={styles.resultsSection}>
       <header className={styles.resultsTop}>

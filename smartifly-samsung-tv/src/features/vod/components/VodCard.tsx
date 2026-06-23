@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../../components/tv/Focusable";
-import { useFocus } from "../../../providers/useFocus";
+import { useFocusActions, useIsFocused } from "../../../providers/useFocus";
 import { imageFailureMemory } from "../../../utils/imageFailureMemory";
 import { imageWarmMemory } from "../../../utils/imageWarmMemory";
 import { perfMetrics } from "../../../utils/perfMetrics";
@@ -37,6 +37,7 @@ type VodCardVisualProps = {
   placeholderInitials: string;
   posterUrl?: string;
   showPoster: boolean;
+  posterLoaded: boolean;
   onPosterError: () => void;
   onPosterLoad: () => void;
 };
@@ -48,26 +49,17 @@ const VodCardVisual = memo(
     placeholderInitials,
     posterUrl,
     showPoster,
+    posterLoaded,
     onPosterError,
     onPosterLoad,
   }: VodCardVisualProps) {
     useEffect(() => {
       perfMetrics.increment("vod_card_visual_render_count");
-    });
+    }, []);
 
     return (
       <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
-        {showPoster ? (
-          <img
-            src={posterUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className={`${styles.poster} ${isFocused ? styles.posterFocused : ""}`}
-            onLoad={onPosterLoad}
-            onError={onPosterError}
-          />
-        ) : (
+        {(!showPoster || !posterLoaded) && (
           <div
             className={styles.placeholder}
             style={{ background: placeholderBackground }}
@@ -75,6 +67,19 @@ const VodCardVisual = memo(
             {placeholderInitials}
           </div>
         )}
+        {showPoster ? (
+          <img
+            src={posterUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className={`${styles.poster} ${
+              posterLoaded ? styles.posterLoaded : styles.posterLoading
+            } ${isFocused ? styles.posterFocused : ""}`}
+            onLoad={onPosterLoad}
+            onError={onPosterError}
+          />
+        ) : null}
       </div>
     );
   },
@@ -83,6 +88,7 @@ const VodCardVisual = memo(
     previousProps.placeholderBackground === nextProps.placeholderBackground &&
     previousProps.placeholderInitials === nextProps.placeholderInitials &&
     previousProps.posterUrl === nextProps.posterUrl &&
+    previousProps.posterLoaded === nextProps.posterLoaded &&
     previousProps.showPoster === nextProps.showPoster
 );
 
@@ -104,8 +110,8 @@ export const VodCard: React.FC<VodCardProps> = ({
   shouldLoadPoster,
 }) => {
   const focusId = `card-vod-${movie.id}`;
-  const { focusedId, setFocus } = useFocus();
-  const isFocused = focusedId === focusId;
+  const { setFocus } = useFocusActions();
+  const isFocused = useIsFocused(focusId);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -171,6 +177,7 @@ export const VodCard: React.FC<VodCardProps> = ({
   );
 
   const [failedPosterUrl, setFailedPosterUrl] = useState<string | null>(null);
+  const [posterLoaded, setPosterLoaded] = useState(false);
   const imageLoadStartedAtRef = useRef<number | null>(null);
 
   const showPoster = useMemo(() => {
@@ -195,6 +202,11 @@ export const VodCard: React.FC<VodCardProps> = ({
 
   const handleEnter = useCallback(() => onClick(movie), [movie, onClick]);
   const handleFocus = useCallback(() => onFocus?.(movie.id), [movie.id, onFocus]);
+
+  useEffect(() => {
+    setPosterLoaded(false);
+  }, [movie.posterUrl]);
+
   useEffect(() => {
     if (showPoster && movie.posterUrl) {
       imageLoadStartedAtRef.current = performance.now();
@@ -209,6 +221,7 @@ export const VodCard: React.FC<VodCardProps> = ({
       imageFailureMemory.markLoaded(movie.posterUrl);
       imageWarmMemory.markWarm(movie.posterUrl);
     }
+    setPosterLoaded(true);
     perfMetrics.increment("vod_card_poster_load_success_count");
     if (imageLoadStartedAtRef.current !== null) {
       perfMetrics.recordDuration(
@@ -231,6 +244,7 @@ export const VodCard: React.FC<VodCardProps> = ({
     }
     imageLoadStartedAtRef.current = null;
     imageFailureMemory.markFailed(movie.posterUrl);
+    setPosterLoaded(false);
     setFailedPosterUrl(movie.posterUrl);
   }, [movie.id, movie.posterUrl]);
 
@@ -252,6 +266,7 @@ export const VodCard: React.FC<VodCardProps> = ({
           placeholderInitials={placeholderInitials}
           posterUrl={movie.posterUrl}
           showPoster={showPoster}
+          posterLoaded={posterLoaded}
           onPosterLoad={handlePosterLoad}
           onPosterError={handlePosterError}
         />

@@ -17,6 +17,9 @@ import type {
   DeviceIdentityPayload,
   DeviceQrSession,
 } from "../../services/backend/backendTypes";
+import { createPerfTrace } from "../../utils/perfTrace";
+import { markStartupMarker } from "../../utils/startupMarkers";
+import { ensureLiveContentAvailable } from "./liveContentProbe";
 import styles from "./Activation.module.css";
 
 interface ActivationProps {
@@ -105,6 +108,11 @@ const buildActivatedPlaylist = (status: DeviceCheckStatus): PlaylistCredentials 
 export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => {
   const backendClient = useMemo(() => new BackendClient(), []);
   const setActivePlaylist = useAuthStore((store) => store.setActivePlaylist);
+  const screenTraceRef = useRef(
+    createPerfTrace("activation_screen", {
+      screen: "activation",
+    })
+  );
   const [session, setSession] = useState<DeviceQrSession | null>(null);
   const [deviceIdentity, setDeviceIdentity] = useState<DeviceIdentityPayload | null>(
     null
@@ -118,10 +126,33 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
   const isPollingRef = useRef(false);
   const isCompletingRef = useRef(false);
 
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      screenTraceRef.current.end({
+        status: "visible",
+        metricName: "activation_screen_total_ms",
+        slowAboveMs: 250,
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (!screenTraceRef.current.isClosed()) {
+        screenTraceRef.current.end({
+          status: "unmounted",
+          metricName: "activation_screen_total_ms",
+        });
+      }
+    };
+  }, []);
+
   const completeActivation = useCallback(
     async (status: DeviceCheckStatus) => {
       if (isCompletingRef.current) return;
 
+      const completionTrace = createPerfTrace("activation_complete", {
+        state: status.state,
+      });
       isCompletingRef.current = true;
       setIsCompleting(true);
       setError(null);
@@ -135,21 +166,46 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
           playlist.username,
           playlist.password
         );
+        completionTrace.mark("services_initialized", {
+          metricName: "activation_services_initialized_ms",
+          slowAboveMs: 250,
+          data: {
+            playlistId: playlist.id,
+          },
+        });
 
-        const [liveCategories, liveStreams] = await Promise.all([
-          services.content.getLiveCategories(),
-          services.content.getLiveStreams(),
-        ]);
-
-        if (liveCategories.length === 0 || liveStreams.length === 0) {
-          throw new AppError("EMPTY_CONTENT", "No content found on this server");
-        }
+        const liveProbe = await ensureLiveContentAvailable(services.content);
+        completionTrace.mark("live_content_validated", {
+          metricName: "activation_live_content_validated_ms",
+          slowAboveMs: 650,
+          data: {
+            liveCategoryCount: liveProbe.liveCategoryCount,
+            validatedLiveStreamCount: liveProbe.validatedLiveStreamCount,
+            usedCatalogFallback: liveProbe.usedCatalogFallback,
+          },
+        });
 
         await services.userData.savePlaylist(playlist);
         await services.userData.setActivePlaylistId(playlist.id);
         setActivePlaylist(playlist);
+        markStartupMarker("auth_complete", {
+          flow: "activation",
+          playlistId: playlist.id,
+        });
+        completionTrace.end({
+          status: "completed",
+          metricName: "activation_complete_total_ms",
+          slowAboveMs: 2000,
+          data: {
+            playlistId: playlist.id,
+          },
+        });
         onSuccess();
       } catch (nextError) {
+        completionTrace.fail(nextError, {
+          metricName: "activation_complete_total_ms",
+          slowAboveMs: 2000,
+        });
         isCompletingRef.current = false;
         setIsCompleting(false);
         setError(getUserFriendlyErrorMessage(nextError));
@@ -162,6 +218,9 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
     async (identity: DeviceIdentityPayload) => {
       if (isPollingRef.current || isCompletingRef.current) return;
 
+      const pollTrace = createPerfTrace("activation_poll", {
+        deviceId: identity.deviceId,
+      });
       isPollingRef.current = true;
 
       try {
@@ -169,8 +228,20 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
           deviceId: identity.deviceId,
           mac: identity.mac,
         });
+        pollTrace.mark("response_received", {
+          metricName: "activation_poll_response_ms",
+          slowAboveMs: 1000,
+          data: {
+            state: status.state,
+          },
+        });
 
         if (status.state === "ACTIVE") {
+          pollTrace.end({
+            status: "active",
+            metricName: "activation_poll_total_ms",
+            slowAboveMs: 1000,
+          });
           await completeActivation(status);
           return;
         }
@@ -178,6 +249,14 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
         if (status.state === "PENDING" || status.state === "NO_DEVICE") {
           setTerminalState(null);
           setError(null);
+          pollTrace.end({
+            status: "pending",
+            metricName: "activation_poll_total_ms",
+            slowAboveMs: 1000,
+            data: {
+              state: status.state,
+            },
+          });
           return;
         }
 
@@ -185,7 +264,19 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
         setError(
           status.reason || TERMINAL_STATE_MESSAGES[status.state] || "Activation failed"
         );
+        pollTrace.end({
+          status: "terminal_state",
+          metricName: "activation_poll_total_ms",
+          slowAboveMs: 1000,
+          data: {
+            state: status.state,
+          },
+        });
       } catch (nextError) {
+        pollTrace.fail(nextError, {
+          metricName: "activation_poll_total_ms",
+          slowAboveMs: 1000,
+        });
         setError(getUserFriendlyErrorMessage(nextError));
       } finally {
         isPollingRef.current = false;
@@ -195,6 +286,7 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
   );
 
   const refreshActivation = useCallback(async () => {
+    const refreshTrace = createPerfTrace("activation_refresh");
     setIsRefreshing(true);
     setError(null);
     setTerminalState(null);
@@ -205,12 +297,34 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
     try {
       const identity = getOrCreateDeviceIdentity();
       setDeviceIdentity(identity);
+      refreshTrace.mark("device_identity_ready", {
+        metricName: "activation_identity_ready_ms",
+        data: {
+          deviceId: identity.deviceId,
+        },
+      });
 
       const nextSession = await backendClient.generateDeviceQr(identity);
       setSession(nextSession);
+      refreshTrace.mark("qr_session_ready", {
+        metricName: "activation_qr_session_ready_ms",
+        slowAboveMs: 1000,
+        data: {
+          hasQrCode: Boolean(nextSession.qrCode),
+        },
+      });
 
       await pollDeviceStatus(identity);
+      refreshTrace.end({
+        status: "completed",
+        metricName: "activation_refresh_total_ms",
+        slowAboveMs: 1400,
+      });
     } catch (nextError) {
+      refreshTrace.fail(nextError, {
+        metricName: "activation_refresh_total_ms",
+        slowAboveMs: 1400,
+      });
       setError(getUserFriendlyErrorMessage(nextError));
     } finally {
       setIsRefreshing(false);
@@ -373,4 +487,3 @@ export const Activation: React.FC<ActivationProps> = ({ onBack, onSuccess }) => 
     </div>
   );
 };
-

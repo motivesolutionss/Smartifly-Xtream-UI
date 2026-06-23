@@ -6,6 +6,7 @@ type SearchCatalogEntryBase = {
   id: string;
   title: string;
   titleLower: string;
+  titleCompact?: string;
   categoryId?: string;
   imageUrl?: string;
 };
@@ -38,6 +39,10 @@ export type SearchCatalogCategorySets = {
 export type PersistedSearchCatalog = {
   completeness: "partial" | "full";
   generatedAt: string;
+  syncMeta?: {
+    lastCompletedAt?: string;
+    lastCompletedMode?: "warm" | "background" | "active";
+  };
   live: SearchCatalogLiveEntry[];
   vod: SearchCatalogVodEntry[];
   series: SearchCatalogSeriesEntry[];

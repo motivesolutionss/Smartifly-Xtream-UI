@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Home,
   Tv,
@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { Focusable } from "../tv/Focusable";
 import { useProfileStore } from "../../store/profileStore";
+import { useFocus } from "../../providers/useFocus";
+import { logger } from "../../utils/logger";
 import styles from "./Sidebar.module.css";
  
 interface SidebarProps {
@@ -51,7 +53,26 @@ const AVATAR_ICONS: Record<
 };
  
 export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
-  const { activeProfile, selectProfile } = useProfileStore();
+  const activeProfile = useProfileStore((state) => state.activeProfile);
+  const selectProfile = useProfileStore((state) => state.selectProfile);
+  const { focusedId } = useFocus();
+  const isExpanded = focusedId?.startsWith("nav-") ?? false;
+
+  useEffect(() => {
+    if (
+      focusedId === "nav-profile" ||
+      focusedId === "nav-HOME" ||
+      focusedId === "hero-play" ||
+      focusedId === "top-search" ||
+      focusedId === "top-settings"
+    ) {
+      logger.debug("sidebar_focus_state", {
+        focusedId,
+        isExpanded,
+        activeId,
+      });
+    }
+  }, [activeId, focusedId, isExpanded]);
  
   const navItems: {
     id: SidebarNavId;
@@ -68,13 +89,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
   ];
  
   return (
-    <aside className={`${styles.sidebar} smartifly-sidebar`}>
+    <aside
+      className={`${styles.sidebar} ${isExpanded ? styles.expanded : ""} smartifly-sidebar ${
+        isExpanded ? "expanded" : ""
+      }`}
+    >
       <div className={styles.logoSection}>
         {activeProfile ? (
           <Focusable
             id="nav-profile"
             className={styles.profileBtn}
             disableFocusEffects={true}
+            allowGlobalAutoFocus={false}
             onEnter={() => selectProfile(null)}
           >
             <div
@@ -89,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
             <span className={styles.profileLabel}>{activeProfile.name}</span>
           </Focusable>
         ) : (
-          <img src="/smartifly_logo.png" alt="Logo" className={styles.logo} />
+          <img src="/smartifly_icon.webp" alt="Logo" className={styles.logo} />
         )}
       </div>
 
@@ -103,6 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeId, onNavigate }) => {
               id={`nav-${item.id}`}
               className={`${styles.navItem} ${isActive ? styles.active : ""}`}
               disableFocusEffects={true}
+              allowGlobalAutoFocus={false}
               onEnter={() => onNavigate(item.id)}
             >
               <Icon className={styles.icon} size={26} />

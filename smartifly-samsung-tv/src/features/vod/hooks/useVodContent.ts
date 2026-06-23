@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "../../../services";
 import type { AppCategory, AppMovie, AppMovieDetails } from "../../../types/appModels";
 import { getUserFriendlyErrorMessage } from "../../../utils/errorMapper";
+import { shouldPrefetchCategory } from "../../../utils/categoryPrefetchPolicy";
 
 const EMPTY_CATEGORIES: AppCategory[] = [];
 const EMPTY_MOVIES: AppMovie[] = [];
 const MAX_CONCURRENT_PREFETCHES = 2;
 const PREFETCH_DEBOUNCE_MS = 300;
+const VOD_CONTENT_PAGE_SIZE = 60;
+const VOD_CONTENT_STALE_TIME_MS = 60 * 60 * 1000;
+type PagedMovies = AppMovie[];
 
 const getSortableName = (name: string) => {
   return name.replace(/^[^a-zA-Z0-9]+/, "").trim().toLowerCase();
@@ -21,14 +25,25 @@ export const useVodContent = (selectedCategoryId?: string) => {
     staleTime: 6 * 60 * 60 * 1000, // 6 hours
   });
 
-  const moviesQuery = useQuery<AppMovie[]>({
-    queryKey: ["vod-movies", selectedCategoryId],
-    queryFn: () => services.content.getVodStreams(selectedCategoryId),
+  const moviesQuery = useInfiniteQuery({
+    queryKey: ["vod-movies", selectedCategoryId, VOD_CONTENT_PAGE_SIZE],
+    queryFn: ({ pageParam }) =>
+      services.content.getVodStreams(selectedCategoryId, {
+        limit: VOD_CONTENT_PAGE_SIZE,
+        page: pageParam,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (
+      lastPage: PagedMovies,
+      _allPages: PagedMovies[],
+      lastPageParam: number
+    ) =>
+      lastPage.length < VOD_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
     retry: 2,
     enabled:
       categoriesQuery.status === "success" &&
       (!!selectedCategoryId || (categoriesQuery.data?.length ?? 0) === 0),
-    staleTime: 60 * 60 * 1000, // 1 hour
+    staleTime: VOD_CONTENT_STALE_TIME_MS,
     gcTime: 2 * 60 * 60 * 1000, // 2 hours
   });
   const queryClient = useQueryClient();
@@ -39,23 +54,58 @@ export const useVodContent = (selectedCategoryId?: string) => {
   const prefetchCategory = useCallback(
     (categoryId?: string) => {
       if (!categoryId) return;
+      const queryKey = ["vod-movies", categoryId, VOD_CONTENT_PAGE_SIZE] as const;
 
-      const existing = prefetchTimersRef.current.get(categoryId);
-      if (existing !== undefined) {
-        window.clearTimeout(existing);
+      if (
+        !shouldPrefetchCategory({
+          categoryId,
+          activeCategoryId: selectedCategoryId,
+          queryState: queryClient.getQueryState(queryKey),
+          hasPendingTimer: prefetchTimersRef.current.has(categoryId),
+          activePrefetchCount: activePrefetchesRef.current,
+          maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+          staleTimeMs: VOD_CONTENT_STALE_TIME_MS,
+          nowMs: Date.now(),
+        })
+      ) {
+        return;
       }
 
       const timerId = window.setTimeout(() => {
         prefetchTimersRef.current.delete(categoryId);
 
-        if (activePrefetchesRef.current >= MAX_CONCURRENT_PREFETCHES) return;
+        if (
+          !shouldPrefetchCategory({
+            categoryId,
+            activeCategoryId: selectedCategoryId,
+            queryState: queryClient.getQueryState(queryKey),
+            hasPendingTimer: false,
+            activePrefetchCount: activePrefetchesRef.current,
+            maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+            staleTimeMs: VOD_CONTENT_STALE_TIME_MS,
+            nowMs: Date.now(),
+          })
+        ) {
+          return;
+        }
 
         activePrefetchesRef.current += 1;
         void queryClient
-          .prefetchQuery({
-            queryKey: ["vod-movies", categoryId],
-            queryFn: () => services.content.getVodStreams(categoryId),
-            staleTime: 60 * 60 * 1000,
+          .prefetchInfiniteQuery({
+            queryKey,
+            queryFn: ({ pageParam }) =>
+              services.content.getVodStreams(categoryId, {
+                limit: VOD_CONTENT_PAGE_SIZE,
+                page: pageParam,
+              }),
+            initialPageParam: 1,
+            getNextPageParam: (
+              lastPage: PagedMovies,
+              _allPages: PagedMovies[],
+              lastPageParam: number
+            ) =>
+              lastPage.length < VOD_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
+            staleTime: VOD_CONTENT_STALE_TIME_MS,
           })
           .finally(() => {
             activePrefetchesRef.current = Math.max(0, activePrefetchesRef.current - 1);
@@ -64,7 +114,7 @@ export const useVodContent = (selectedCategoryId?: string) => {
 
       prefetchTimersRef.current.set(categoryId, timerId);
     },
-    [queryClient]
+    [queryClient, selectedCategoryId]
   );
 
   useEffect(() => {
@@ -80,6 +130,14 @@ export const useVodContent = (selectedCategoryId?: string) => {
     void moviesQuery.refetch();
   }, [categoriesQuery, moviesQuery]);
 
+  const loadMoreMovies = useCallback(async () => {
+    if (!moviesQuery.hasNextPage || moviesQuery.isFetchingNextPage) {
+      return;
+    }
+
+    await moviesQuery.fetchNextPage();
+  }, [moviesQuery]);
+
   const sortedCategories = useMemo(() => {
     const raw = categoriesQuery.data;
     if (!raw || raw.length === 0) return EMPTY_CATEGORIES;
@@ -94,24 +152,35 @@ export const useVodContent = (selectedCategoryId?: string) => {
     });
   }, [categoriesQuery.data]);
 
+  const movies = useMemo(
+    () => moviesQuery.data?.pages.flatMap((page) => page) ?? EMPTY_MOVIES,
+    [moviesQuery.data]
+  );
+
   return useMemo(() => ({
     categories: sortedCategories,
-    movies: moviesQuery.data ?? EMPTY_MOVIES,
+    movies,
     isLoading: categoriesQuery.isLoading || moviesQuery.isLoading,
-    isFetchingMovies: moviesQuery.isFetching,
+    isFetchingMovies: moviesQuery.isFetching && !moviesQuery.isFetchingNextPage,
+    isFetchingMoreMovies: moviesQuery.isFetchingNextPage,
+    hasMoreMovies: moviesQuery.hasNextPage ?? false,
     isError: categoriesQuery.isError || moviesQuery.isError,
     errorMessage: error ? getUserFriendlyErrorMessage(error) : null,
+    loadMoreMovies,
     prefetchCategory,
     refetch,
   }), [
     sortedCategories,
+    movies,
     categoriesQuery.isLoading,
     categoriesQuery.isError,
-    moviesQuery.data,
     moviesQuery.isLoading,
     moviesQuery.isFetching,
+    moviesQuery.isFetchingNextPage,
+    moviesQuery.hasNextPage,
     moviesQuery.isError,
     error,
+    loadMoreMovies,
     prefetchCategory,
     refetch,
   ]);

@@ -28,7 +28,7 @@
   transform: translateY(-50%) translateX(-120%);
 }
 
-.sidebar:focus-within {
+.sidebar.expanded {
   width: 18.5rem; /* Room for both icon + label with clean margins */
 }
 
@@ -50,7 +50,7 @@
   box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.2);
 }
  
-.sidebar:focus-within .logo {
+.sidebar.expanded .logo {
   transform: scale(1.01);
 }
 
@@ -85,13 +85,13 @@
   padding: 0 !important;
 }
 
-.sidebar:focus-within .navItem {
+.sidebar.expanded .navItem {
   width: 16.5rem; 
   height: 5.2rem;
   border-radius: 2.6rem;
 }
 
-.sidebar:focus-within .navItem > div:first-child {
+.sidebar.expanded .navItem > div:first-child {
   justify-content: flex-start !important;
   padding-left: 1.7rem !important;
 }
@@ -111,7 +111,7 @@
   opacity: 0;
 }
 
-.sidebar:focus-within .navItem.active::before {
+.sidebar.expanded .navItem.active::before {
   transform: translateY(-50%) scaleY(1);
   opacity: 1;
 }
@@ -126,7 +126,7 @@
   color: var(--color-primary);
 }
 
-.sidebar:focus-within .navItem.active {
+.sidebar.expanded .navItem.active {
   background: rgba(var(--color-primary-rgb), 0.08);
 }
 
@@ -142,7 +142,7 @@
   z-index: 10;
 }
 
-.sidebar:focus-within .navItem:global(.focused) {
+.sidebar.expanded .navItem:global(.focused) {
   transform: scale(1.02);
   box-shadow: 0 5px 11px rgba(var(--color-primary-rgb), 0.24);
 }
@@ -179,7 +179,7 @@
   color: inherit;
 }
 
-.sidebar:focus-within .label {
+.sidebar.expanded .label {
   opacity: 0.85;
   max-width: 11rem;
   margin-left: 1.6rem;
@@ -203,14 +203,14 @@
   transition: none !important;
 }
 
-:global(.perf-reduced) .sidebar:focus-within .logo,
+:global(.perf-reduced) .sidebar.expanded .logo,
 :global(.perf-reduced) .navItem:global(.focused),
-:global(.perf-reduced) .sidebar:focus-within .navItem:global(.focused) {
+:global(.perf-reduced) .sidebar.expanded .navItem:global(.focused) {
   transform: none;
 }
 
 :global(.perf-reduced) .navItem:global(.focused),
-:global(.perf-reduced) .sidebar:focus-within .navItem:global(.focused) {
+:global(.perf-reduced) .sidebar.expanded .navItem:global(.focused) {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
@@ -242,13 +242,13 @@
   padding: 0 !important;
 }
 
-.sidebar:focus-within .profileBtn {
+.sidebar.expanded .profileBtn {
   width: 16.5rem;
   height: 5.2rem;
   border-radius: 1.2rem;
 }
 
-.sidebar:focus-within .profileBtn > div:first-child {
+.sidebar.expanded .profileBtn > div:first-child {
   justify-content: flex-start !important;
   padding-left: 0.75rem !important; /* Visual inset to align with avatar container */
 }
@@ -288,7 +288,7 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
-.sidebar:focus-within .profileLabel {
+.sidebar.expanded .profileLabel {
   opacity: 1;
   max-width: 10rem;
   margin-left: 1.2rem;

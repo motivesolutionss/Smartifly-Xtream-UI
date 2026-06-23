@@ -1,6 +1,6 @@
 .container {
   width: 100%;
-  height: 620px;
+  height: 700px;
   position: relative;
   overflow: hidden;
   background: #000000;
@@ -33,11 +33,13 @@
 
 .backdrop {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 70%;
   height: 100%;
-  object-fit: cover;
-  object-position: center center;
+  object-fit: contain;
+  object-position: center right;
 }
 
 .backdropTint {
@@ -222,7 +224,7 @@
 
 .heroPlaceholder {
   width: 100%;
-  height: 620px;
+  height: 700px;
   background: #000000;
 }
 

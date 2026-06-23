@@ -32,10 +32,10 @@ export const useEpg = (streamId: string, options: UseEpgOptions = {}) => {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!refreshClock) return;
+    if (!refreshClock || !enabled) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 60 * 1000);
     return () => window.clearInterval(id);
-  }, [refreshClock]);
+  }, [enabled, refreshClock]);
 
   const normalisedPrograms = useMemo(() => epgList ?? [], [epgList]);
 

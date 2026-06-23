@@ -12,7 +12,31 @@ export const fetchWithTimeout = async (
   timeoutMs: number = 15000
 ): Promise<Response> => {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const upstreamSignal = options.signal;
+  let didTimeout = false;
+  let detachUpstreamAbort: (() => void) | null = null;
+
+  if (upstreamSignal) {
+    const handleUpstreamAbort = () => {
+      controller.abort(
+        upstreamSignal instanceof AbortSignal ? upstreamSignal.reason : undefined
+      );
+    };
+
+    if (upstreamSignal.aborted) {
+      handleUpstreamAbort();
+    } else {
+      upstreamSignal.addEventListener("abort", handleUpstreamAbort, { once: true });
+      detachUpstreamAbort = () => {
+        upstreamSignal.removeEventListener("abort", handleUpstreamAbort);
+      };
+    }
+  }
+
+  const id = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -20,11 +44,16 @@ export const fetchWithTimeout = async (
       signal: controller.signal,
     });
     clearTimeout(id);
+    detachUpstreamAbort?.();
     return response;
   } catch (error: unknown) {
     clearTimeout(id);
+    detachUpstreamAbort?.();
     if (getErrorName(error) === "AbortError") {
-      throw new AppError("TIMEOUT", "Request timed out");
+      if (didTimeout) {
+        throw new AppError("TIMEOUT", "Request timed out");
+      }
+      throw error;
     }
     throw error;
   }

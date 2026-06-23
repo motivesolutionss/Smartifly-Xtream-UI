@@ -11,7 +11,7 @@
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focusable } from "../../components/tv/Focusable";
-import { useFocus } from "../../providers/useFocus";
+import { useFocusActions, useIsFocused } from "../../providers/useFocus";
 import { imageFailureMemory } from "../../utils/imageFailureMemory";
 import { perfMetrics } from "../../utils/perfMetrics";
 import type { AppChannel } from "../../types/appModels";
@@ -64,7 +64,7 @@ const LiveTvCardVisual = memo(
   }: LiveTvCardVisualProps) {
     useEffect(() => {
       perfMetrics.increment("live_card_visual_render_count");
-    });
+    }, []);
 
     return (
       <div className={`${styles.card} ${isFocused ? styles.cardFocused : ""}`}>
@@ -120,8 +120,8 @@ export const LiveTvCard: React.FC<LiveTvCardProps> = ({
   shouldLoadLogo,
 }) => {
   const focusId = `card-live-${channel.id}`;
-  const { focusedId, setFocus } = useFocus();
-  const isFocused = focusedId === focusId;
+  const { setFocus } = useFocusActions();
+  const isFocused = useIsFocused(focusId);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -1,10 +1,12 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { FocusContext } from "./focusContext";
 import { perfMetrics } from "../utils/perfMetrics";
+import { logger } from "../utils/logger";
 
 export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const focusedIdRef = useRef<string | null>(null);
+  const focusSubscribersRef = useRef(new Set<() => void>());
   const elements = useRef<Map<string, HTMLElement>>(new Map());
   const focusScopePrefixesRef = useRef<string[] | null>(null);
   const pendingFocusIdRef = useRef<string | null>(null);
@@ -38,6 +40,79 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [invalidateRectCache]);
 
+  const notifyFocusedIdSubscribers = useCallback(() => {
+    focusSubscribersRef.current.forEach((listener) => listener());
+  }, []);
+
+  const subscribe = useCallback((listener: () => void) => {
+    focusSubscribersRef.current.add(listener);
+    return () => {
+      focusSubscribersRef.current.delete(listener);
+    };
+  }, []);
+
+  const getFocusedId = useCallback(() => focusedIdRef.current, []);
+
+  const getActiveElementId = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) {
+      return null;
+    }
+    return activeElement.id || activeElement.tagName || null;
+  }, []);
+
+  const getDebugCaller = useCallback(() => {
+    const stack = new Error().stack?.split("\n") ?? [];
+    return stack
+      .slice(2)
+      .map((line) => line.trim())
+      .find((line) => !line.includes("FocusProvider") && !line.includes("getDebugCaller"))
+      ?? null;
+  }, []);
+
+  const blurActiveElement = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  }, []);
+
+  const focusElementWithoutScroll = useCallback((element: HTMLElement) => {
+    if (document.activeElement === element) {
+      return;
+    }
+
+    const scrollPositions: Array<{ el: HTMLElement; top: number; left: number }> = [];
+    let parent = element.parentElement;
+    while (parent) {
+      const isVerticallyScrollable = parent.scrollHeight > parent.clientHeight;
+      const isHorizontallyScrollable = parent.scrollWidth > parent.clientWidth;
+      if (isVerticallyScrollable || isHorizontallyScrollable) {
+        scrollPositions.push({ el: parent, top: parent.scrollTop, left: parent.scrollLeft });
+      }
+      parent = parent.parentElement;
+    }
+    const bodyTop = document.body.scrollTop;
+    const bodyLeft = document.body.scrollLeft;
+    const docTop = document.documentElement.scrollTop;
+    const docLeft = document.documentElement.scrollLeft;
+
+    try {
+      element.focus({ preventScroll: true });
+    } catch {
+      element.focus();
+    }
+
+    scrollPositions.forEach(({ el, top, left }) => {
+      if (el.scrollTop !== top) el.scrollTop = top;
+      if (el.scrollLeft !== left) el.scrollLeft = left;
+    });
+    if (document.body.scrollTop !== bodyTop) document.body.scrollTop = bodyTop;
+    if (document.body.scrollLeft !== bodyLeft) document.body.scrollLeft = bodyLeft;
+    if (document.documentElement.scrollTop !== docTop) document.documentElement.scrollTop = docTop;
+    if (document.documentElement.scrollLeft !== docLeft) document.documentElement.scrollLeft = docLeft;
+  }, []);
+
   const isIdAllowed = useCallback((id: string | null) => {
     if (!id) return true;
     const scopePrefixes = focusScopePrefixesRef.current;
@@ -50,15 +125,50 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!isIdAllowed(id)) return;
 
       if (id && !elements.current.has(id)) {
+        logger.debug("focus_set_pending", {
+          targetId: id,
+          previousFocusedId: focusedIdRef.current,
+          activeElementId: getActiveElementId(),
+          caller: id.startsWith("nav-") || id === "hero-play" ? getDebugCaller() : null,
+        });
         pendingFocusIdRef.current = id;
+        blurActiveElement();
         return;
       }
 
       pendingFocusIdRef.current = null;
+      if (focusedIdRef.current === id) {
+        if (!id) {
+          blurActiveElement();
+          return;
+        }
+
+        const existingElement = elements.current.get(id);
+        if (existingElement) {
+          focusElementWithoutScroll(existingElement);
+        }
+        return;
+      }
+      logger.debug("focus_set_applied", {
+        previousFocusedId: focusedIdRef.current,
+        nextFocusedId: id,
+        activeElementId: getActiveElementId(),
+        caller:
+          id?.startsWith("nav-") ||
+          id === "hero-play" ||
+          focusedIdRef.current?.startsWith("nav-") ||
+          focusedIdRef.current === "hero-play"
+            ? getDebugCaller()
+            : null,
+      });
       focusedIdRef.current = id;
-      setFocusedId((currentId) => (currentId === id ? currentId : id));
+      setFocusedId(id);
+      notifyFocusedIdSubscribers();
+      if (!id) {
+        blurActiveElement();
+      }
     },
-    [isIdAllowed]
+    [blurActiveElement, focusElementWithoutScroll, isIdAllowed, notifyFocusedIdSubscribers]
   );
 
   const setFocusScope = useCallback(
@@ -83,17 +193,34 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 
   const registerElement = useCallback(
-    (id: string, ref: HTMLElement) => {
+    (
+      id: string,
+      ref: HTMLElement,
+      options?: { allowGlobalAutoFocus?: boolean }
+    ) => {
       elements.current.set(id, ref);
       invalidateRectCache();
 
       if (pendingFocusIdRef.current === id && isIdAllowed(id)) {
+        logger.debug("focus_register_resolved_pending", {
+          id,
+          activeElementId: getActiveElementId(),
+        });
         setFocus(id);
         return;
       }
 
       // Auto-focus first focusable element after initial registration.
-      if (!focusedIdRef.current && isIdAllowed(id)) {
+      if (
+        !pendingFocusIdRef.current &&
+        options?.allowGlobalAutoFocus !== false &&
+        !focusedIdRef.current &&
+        isIdAllowed(id)
+      ) {
+        logger.debug("focus_register_auto_focus", {
+          id,
+          activeElementId: getActiveElementId(),
+        });
         setFocus(id);
       }
     },
@@ -122,14 +249,35 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
+        if (pendingFocusIdRef.current && isIdAllowed(pendingFocusIdRef.current)) {
+          logger.debug("focus_unregister_preserving_pending", {
+            removedId: id,
+            pendingFocusId: pendingFocusIdRef.current,
+            activeElementId: getActiveElementId(),
+          });
+          blurActiveElement();
+          return;
+        }
+
         // Non-virtualized elements: fall back to first available.
-        const fallbackId = Array.from(elements.current.keys()).find((itemId) =>
+        const candidateIds = Array.from(elements.current.keys()).filter((itemId) =>
           isIdAllowed(itemId)
         );
+        const preferContentFallback = !id.startsWith("nav-");
+        const fallbackId =
+          (preferContentFallback
+            ? candidateIds.find((itemId) => !itemId.startsWith("nav-"))
+            : null) ??
+          candidateIds[0];
+        logger.debug("focus_unregister_fallback", {
+          removedId: id,
+          fallbackId,
+          activeElementId: getActiveElementId(),
+        });
         setFocus(fallbackId ?? null);
       }
     },
-    [isIdAllowed, setFocus]
+    [blurActiveElement, getActiveElementId, isIdAllowed, setFocus]
   );
 
   // Keep lastKnownRectRef updated whenever the focused element is in the DOM.
@@ -138,41 +286,9 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const element = elements.current.get(focusedId);
     if (element) {
       lastKnownRectRef.current = element.getBoundingClientRect();
-      if (document.activeElement !== element) {
-        // Save exact scroll positions of all parent layout nodes to bypass browser-native shifts
-        const scrollPositions: Array<{ el: HTMLElement; top: number; left: number }> = [];
-        let parent = element.parentElement;
-        while (parent) {
-          const isVerticallyScrollable = parent.scrollHeight > parent.clientHeight;
-          const isHorizontallyScrollable = parent.scrollWidth > parent.clientWidth;
-          if (isVerticallyScrollable || isHorizontallyScrollable) {
-            scrollPositions.push({ el: parent, top: parent.scrollTop, left: parent.scrollLeft });
-          }
-          parent = parent.parentElement;
-        }
-        const bodyTop = document.body.scrollTop;
-        const bodyLeft = document.body.scrollLeft;
-        const docTop = document.documentElement.scrollTop;
-        const docLeft = document.documentElement.scrollLeft;
-
-        try {
-          element.focus({ preventScroll: true });
-        } catch {
-          element.focus();
-        }
-
-        // Instantly restore parent scroll positions in the same tick
-        scrollPositions.forEach(({ el, top, left }) => {
-          if (el.scrollTop !== top) el.scrollTop = top;
-          if (el.scrollLeft !== left) el.scrollLeft = left;
-        });
-        if (document.body.scrollTop !== bodyTop) document.body.scrollTop = bodyTop;
-        if (document.body.scrollLeft !== bodyLeft) document.body.scrollLeft = bodyLeft;
-        if (document.documentElement.scrollTop !== docTop) document.documentElement.scrollTop = docTop;
-        if (document.documentElement.scrollLeft !== docLeft) document.documentElement.scrollLeft = docLeft;
-      }
+      focusElementWithoutScroll(element);
     }
-  }, [focusedId]);
+  }, [focusElementWithoutScroll, focusedId]);
 
   const moveFocus = useCallback((direction: "up" | "down" | "left" | "right") => {
     const perfEnabled = perfMetrics.enabled;
@@ -429,11 +545,17 @@ export const FocusProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [moveFocus]);
 
-  return (
-    <FocusContext.Provider
-      value={{ focusedId, setFocus, setFocusScope, registerElement, unregisterElement }}
-    >
-      {children}
-    </FocusContext.Provider>
+  const focusController = useMemo(
+    () => ({
+      getFocusedId,
+      subscribe,
+      setFocus,
+      setFocusScope,
+      registerElement,
+      unregisterElement,
+    }),
+    [getFocusedId, subscribe, setFocus, setFocusScope, registerElement, unregisterElement]
   );
+
+  return <FocusContext.Provider value={focusController}>{children}</FocusContext.Provider>;
 };

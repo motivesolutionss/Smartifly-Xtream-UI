@@ -24,4 +24,8 @@ export const searchCatalogSession = {
     if (!playlistId || !profileId) return;
     sessionCatalogs.delete(buildSessionKey(playlistId, profileId));
   },
+
+  clearAll: () => {
+    sessionCatalogs.clear();
+  },
 };

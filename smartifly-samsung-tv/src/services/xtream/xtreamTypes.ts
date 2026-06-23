@@ -25,6 +25,8 @@ export type XtreamVodStream = {
   stream_type: string;
   stream_id: number;
   stream_icon: string;
+  cover?: string;
+  cover_big?: string;
   rating: string;
   rating_5based: number;
   added: string;
@@ -67,6 +69,7 @@ export type XtreamSeries = {
   name: string;
   series_id: number;
   cover: string;
+  cover_big?: string;
   plot: string;
   cast: string;
   director: string;

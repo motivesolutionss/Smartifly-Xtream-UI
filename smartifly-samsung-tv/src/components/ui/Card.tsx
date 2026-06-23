@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { Focusable } from "../tv/Focusable";
 import { imageFailureMemory } from "../../utils/imageFailureMemory";
 import { imageWarmMemory } from "../../utils/imageWarmMemory";
+import { resolveImageCandidates } from "../../utils/imagePolicy";
+import { perfMetrics } from "../../utils/perfMetrics";
 import styles from "./Card.module.css";
 
 /** Simple deterministic hash → unique gradient per channel title. */
@@ -59,11 +61,17 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   const [failedPrimaryImage, setFailedPrimaryImage] = useState(false);
   const [failedFallbackImage, setFailedFallbackImage] = useState(false);
+  const [hasLoadedImage, setHasLoadedImage] = useState(false);
+  const imageLoadStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     setFailedPrimaryImage(false);
     setFailedFallbackImage(false);
   }, [fallbackImageUrl, imageUrl]);
+
+  useEffect(() => {
+    perfMetrics.increment("ui_card_visual_render_count");
+  });
 
   const canUseImageUrl = (url?: string) => {
     if (!url) return false;
@@ -73,21 +81,37 @@ export const Card: React.FC<CardProps> = ({
   };
 
   const resolvedImageUrl = useMemo(() => {
-    if (!failedPrimaryImage && canUseImageUrl(imageUrl)) {
-      return imageUrl;
-    }
+    const orderedCandidates = resolveImageCandidates([imageUrl, fallbackImageUrl]);
 
-    if (
-      fallbackImageUrl &&
-      fallbackImageUrl !== imageUrl &&
-      !failedFallbackImage &&
-      canUseImageUrl(fallbackImageUrl)
-    ) {
-      return fallbackImageUrl;
+    for (const candidateUrl of orderedCandidates) {
+      if (candidateUrl === imageUrl && failedPrimaryImage) continue;
+      if (candidateUrl === fallbackImageUrl && failedFallbackImage) continue;
+      if (canUseImageUrl(candidateUrl)) {
+        return candidateUrl;
+      }
     }
 
     return undefined;
-  }, [failedFallbackImage, failedPrimaryImage, fallbackImageUrl, imageUrl, shouldLoadImage]);
+  }, [
+    failedFallbackImage,
+    failedPrimaryImage,
+    fallbackImageUrl,
+    imageUrl,
+    shouldLoadImage,
+  ]);
+
+  useEffect(() => {
+    setHasLoadedImage(false);
+  }, [resolvedImageUrl]);
+
+  useEffect(() => {
+    if (resolvedImageUrl) {
+      imageLoadStartedAtRef.current = performance.now();
+      return;
+    }
+
+    imageLoadStartedAtRef.current = null;
+  }, [resolvedImageUrl]);
 
   return (
     <div ref={containerRef} className={`${styles.cardContainer} ${styles[variant]} ${className}`}>
@@ -102,31 +126,7 @@ export const Card: React.FC<CardProps> = ({
         className={`${styles.card} ${styles[variant]} ${styles[aspectRatio]}`}
       >
         <div className={styles.imageContainer}>
-          {resolvedImageUrl ? (
-            <img
-              src={resolvedImageUrl}
-              alt={title}
-              loading="lazy"
-              decoding="async"
-              className={styles.image}
-              onLoad={() => {
-                imageFailureMemory.markLoaded(resolvedImageUrl);
-                imageWarmMemory.markWarm(resolvedImageUrl);
-              }}
-              onError={() => {
-                imageFailureMemory.markFailed(resolvedImageUrl);
-
-                if (resolvedImageUrl === imageUrl) {
-                  setFailedPrimaryImage(true);
-                  return;
-                }
-
-                if (resolvedImageUrl === fallbackImageUrl) {
-                  setFailedFallbackImage(true);
-                }
-              }}
-            />
-          ) : (
+          {!hasLoadedImage && (
             <div
               className={styles.imagePlaceholder}
               style={
@@ -140,6 +140,72 @@ export const Card: React.FC<CardProps> = ({
               {title.substring(0, 2).toUpperCase()}
             </div>
           )}
+
+          {resolvedImageUrl ? (
+            <img
+              src={resolvedImageUrl}
+              alt={title}
+              loading="lazy"
+              decoding="async"
+              className={`${styles.image} ${
+                hasLoadedImage ? styles.imageLoaded : styles.imageLoading
+              }`}
+              onLoad={() => {
+                imageFailureMemory.markLoaded(resolvedImageUrl);
+                imageWarmMemory.markWarm(resolvedImageUrl);
+                setHasLoadedImage(true);
+                perfMetrics.increment("ui_card_image_load_success_count");
+                if (imageLoadStartedAtRef.current !== null) {
+                  perfMetrics.recordDuration(
+                    "ui_card_image_load_ms",
+                    performance.now() - imageLoadStartedAtRef.current,
+                    {
+                      slowAboveMs: 300,
+                      data: {
+                        cardId: id,
+                        variant,
+                        aspectRatio,
+                        contentType,
+                      },
+                      logSlowEvent: false,
+                    }
+                  );
+                }
+                imageLoadStartedAtRef.current = null;
+              }}
+              onError={() => {
+                imageFailureMemory.markFailed(resolvedImageUrl);
+                setHasLoadedImage(false);
+                perfMetrics.increment("ui_card_image_load_error_count");
+                if (imageLoadStartedAtRef.current !== null) {
+                  perfMetrics.recordDuration(
+                    "ui_card_image_error_ms",
+                    performance.now() - imageLoadStartedAtRef.current,
+                    {
+                      slowAboveMs: 300,
+                      data: {
+                        cardId: id,
+                        variant,
+                        aspectRatio,
+                        contentType,
+                      },
+                      logSlowEvent: false,
+                    }
+                  );
+                }
+                imageLoadStartedAtRef.current = null;
+
+                if (resolvedImageUrl === imageUrl) {
+                  setFailedPrimaryImage(true);
+                  return;
+                }
+
+                if (resolvedImageUrl === fallbackImageUrl) {
+                  setFailedFallbackImage(true);
+                }
+              }}
+            />
+          ) : null}
           
           {(badge || variant === "live") && (
             <div className={`${styles.badge} ${variant === "live" ? styles.liveBadge : ""}`}>

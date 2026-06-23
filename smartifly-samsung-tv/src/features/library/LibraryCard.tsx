@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Clock } from "lucide-react";
 import { Focusable } from "../../components/tv/Focusable";
 import { imageFailureMemory } from "../../utils/imageFailureMemory";
+import { perfMetrics } from "../../utils/perfMetrics";
 import styles from "./LibraryCard.module.css";
 
 /** Simple deterministic hash → unique gradient per channel title for fallback background. */
@@ -45,6 +46,7 @@ export const LibraryCard: React.FC<LibraryCardProps> = ({
   disableAutoScroll = false,
 }) => {
   const [hasFailed, setHasFailed] = useState(false);
+  const imageLoadStartedAtRef = useRef<number | null>(null);
 
   const shouldRenderImage = useMemo(() => {
     if (!imageUrl) return false;
@@ -52,9 +54,35 @@ export const LibraryCard: React.FC<LibraryCardProps> = ({
     return !hasFailed;
   }, [hasFailed, imageUrl]);
 
+  useEffect(() => {
+    perfMetrics.increment("library_card_visual_render_count");
+  });
+
+  useEffect(() => {
+    if (shouldRenderImage && imageUrl) {
+      imageLoadStartedAtRef.current = performance.now();
+      return;
+    }
+
+    imageLoadStartedAtRef.current = null;
+  }, [imageUrl, shouldRenderImage]);
+
   const handleImageError = () => {
     if (!imageUrl) return;
     imageFailureMemory.markFailed(imageUrl);
+    perfMetrics.increment("library_card_image_load_error_count");
+    if (imageLoadStartedAtRef.current !== null) {
+      perfMetrics.recordDuration(
+        "library_card_image_error_ms",
+        performance.now() - imageLoadStartedAtRef.current,
+        {
+          slowAboveMs: 300,
+          data: { cardId: id, type, variant, aspectRatio },
+          logSlowEvent: false,
+        }
+      );
+    }
+    imageLoadStartedAtRef.current = null;
     setHasFailed(true);
   };
 
@@ -86,6 +114,24 @@ export const LibraryCard: React.FC<LibraryCardProps> = ({
                 src={imageUrl}
                 alt={title}
                 className={styles.image}
+                onLoad={() => {
+                  if (imageUrl) {
+                    imageFailureMemory.markLoaded(imageUrl);
+                  }
+                  perfMetrics.increment("library_card_image_load_success_count");
+                  if (imageLoadStartedAtRef.current !== null) {
+                    perfMetrics.recordDuration(
+                      "library_card_image_load_ms",
+                      performance.now() - imageLoadStartedAtRef.current,
+                      {
+                        slowAboveMs: 300,
+                        data: { cardId: id, type, variant, aspectRatio },
+                        logSlowEvent: false,
+                      }
+                    );
+                  }
+                  imageLoadStartedAtRef.current = null;
+                }}
                 onError={handleImageError}
                 loading="lazy"
               />

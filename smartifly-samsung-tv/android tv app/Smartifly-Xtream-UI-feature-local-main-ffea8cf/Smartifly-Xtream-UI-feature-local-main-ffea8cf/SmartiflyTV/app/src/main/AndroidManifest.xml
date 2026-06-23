@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Package Visibility Queries for Android TV System Integrations -->
+    <queries>
+        <!-- Package visibility for Android TV Home / Launcher -->
+        <package android:name="com.google.android.tvlauncher" />
+        <!-- Package visibility for Android TV Recommendations / Watch Next -->
+        <package android:name="com.google.android.tvrecommendations" />
+        <!-- Package visibility for System TV app -->
+        <package android:name="com.android.tv" />
+        <!-- Package visibility for YouTube TV -->
+        <package android:name="com.google.android.youtube.tv" />
+        <!-- Package visibility for YouTube Music TV -->
+        <package android:name="com.google.android.youtube.tvmusic" />
+        <!-- Package visibility for Android TV Remote Service -->
+        <package android:name="com.google.android.tv.remote.service" />
+        <!-- Package visibility for Cast/MediaShell -->
+        <package android:name="com.google.android.apps.mediashell" />
+        <!-- Package visibility for Android System WebView -->
+        <package android:name="com.google.android.webview" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SmartiflyTV"
+        android:banner="@drawable/app_banner"
+        android:usesCleartextTraffic="true"> <!-- Allows HTTP for local backend -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:theme="@style/Theme.SmartiflyTV">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep Link for Launcher Channels & Watch Next -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smartifly" android:host="video" />
+            </intent-filter>
+        </activity>
+
+        <receiver android:name=".player.pip.PipActionHandler" android:exported="false" />
+        
+    </application>
+
+</manifest>
+

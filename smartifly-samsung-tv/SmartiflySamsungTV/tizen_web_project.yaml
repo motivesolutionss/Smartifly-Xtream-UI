@@ -9,7 +9,7 @@ api_version: "10.0"
 build_type: Debug
 
 # Output name for application
-output_name: SmartiflySamsungTV
+output_name: SmartiflySamsungTv
 
 # Output path for build
 output_path: ""
@@ -17,20 +17,29 @@ output_path: ""
 # Enable size optimization of wgt for web workspace
 opt: false
 
-# Signing profile to be used for Tizen package signing
-# If value is empty: "", active signing profile will be used
-# Else If value is ".", default signing profile will be used
-signing_profile: ""
+# Signing profile to be used for Tizen package signing.
+# This project must use the Samsung TV certificate profile instead of
+# whichever generic Tizen Studio profile happens to be active.
+signing_profile: "samsungtvappcertificate"
 
 # list of certs in web project (.trust-anchor)
 trust_anchor: []
 
 # list of files in web project (.html,.css etc) and resources
 files:
+  - assets/*
+  - center_pillar.png
   - css/style.css
+  - favicon.svg
   - icon.png
+  - icons.svg
   - index.html
+  - left_pillar.png
+  - loginscreen_image.png
   - main.js
+  - right_pillar.png
+  - smartifly_icon.png
+  - smartifly_logo.png
 
 # list of files to exclude based on the matched patterns
 excludes:
@@ -59,4 +68,3 @@ excludes:
 
 # project dependencies
 deps: []
-

@@ -27,6 +27,7 @@ import { useFocus } from "../../providers/useFocus";
 import { useTvBack } from "../../hooks/useTvBack";
 import { useProfileStore } from "../../store/profileStore";
 import styles from "./Settings.module.css";
+import { clearSessionCaches } from "../../utils/clearSessionCaches";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ export const Settings: React.FC = () => {
     if (!next) return;
     setBusyAction("switch-playlist");
     try {
+      await clearSessionCaches({ reason: "playlist-switch" });
       await services.userData.setActivePlaylistId(next.id);
       initializeServices(next.serverUrl, next.username, next.password);
       setActivePlaylist(next);
@@ -158,6 +160,7 @@ export const Settings: React.FC = () => {
       const updated = await services.userData.getPlaylists();
       if (activePlaylistId === playlistId) {
         const fallback = updated[0] ?? null;
+        await clearSessionCaches({ reason: "playlist-switch" });
         await services.userData.setActivePlaylistId(fallback?.id ?? null);
         setActivePlaylist(fallback);
         if (fallback) initializeServices(fallback.serverUrl, fallback.username, fallback.password);
@@ -174,6 +177,7 @@ export const Settings: React.FC = () => {
   const handleAddPlaylist = useCallback(async () => {
     setBusyAction("add-playlist");
     try {
+      await clearSessionCaches({ reason: "sign-out" });
       await services.userData.setActivePlaylistId(null);
       setActivePlaylist(null);
       window.location.reload();
@@ -185,6 +189,7 @@ export const Settings: React.FC = () => {
   const handleClearUserData = useCallback(async () => {
     setBusyAction("clear-local-data");
     try {
+      await clearSessionCaches({ reason: "full-local-data-clear" });
       await Promise.all([services.userData.clearFavorites(), services.userData.clearRecentlyWatched()]);
       resetSettings();
       setActionFeedback("Favorites, watch history, and preferences cleared.");
@@ -205,6 +210,7 @@ export const Settings: React.FC = () => {
   const handleLogout = useCallback(async () => {
     setBusyAction("sign-out");
     try {
+      await clearSessionCaches({ reason: "sign-out" });
       await services.userData.setActivePlaylistId(null);
       setActivePlaylist(null);
       window.location.reload();

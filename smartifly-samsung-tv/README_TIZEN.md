@@ -7,6 +7,15 @@ This guide explains how to package and deploy the Smartifly Tizen Web Applicatio
 - **Tizen Studio** (with Samsung TV Extensions)
 - **Samsung Certificate Extension**
 - **Vite Build**: You must build the React app first.
+- A valid Samsung TV signing profile named `samsungtvappcertificate`
+
+The project is configured to sign packages with the `samsungtvappcertificate`
+profile from `profiles.xml`. If packaging fails with a certificate-chain or
+`Invalid certificate chain with certificate in signature` error, confirm that:
+
+- The selected `profiles.xml` contains a profile named `samsungtvappcertificate`
+- That profile uses your Samsung TV author/distributor certificates
+- For real TV installs, the distributor certificate includes the target TV DUID
 
 ## 2. Prepare the Build
 

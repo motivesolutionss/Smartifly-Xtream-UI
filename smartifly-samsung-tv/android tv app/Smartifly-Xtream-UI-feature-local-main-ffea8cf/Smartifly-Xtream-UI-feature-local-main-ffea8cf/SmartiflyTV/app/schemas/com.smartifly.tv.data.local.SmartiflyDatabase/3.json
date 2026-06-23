@@ -1,0 +1,323 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "a03416d29264fe29aadb32dfbd8dcbde",
+    "entities": [
+      {
+        "tableName": "categories",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`providerKey` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `categoryName` TEXT NOT NULL, `parentId` TEXT NOT NULL, `type` TEXT NOT NULL, PRIMARY KEY(`providerKey`, `type`, `categoryId`))",
+        "fields": [
+          {
+            "fieldPath": "providerKey",
+            "columnName": "providerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "categoryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryName",
+            "columnName": "categoryName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentId",
+            "columnName": "parentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "providerKey",
+            "type",
+            "categoryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_categories_providerKey_type",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_categories_providerKey_type` ON `${TABLE_NAME}` (`providerKey`, `type`)"
+          },
+          {
+            "name": "index_categories_providerKey_type_categoryName",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "type",
+              "categoryName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_categories_providerKey_type_categoryName` ON `${TABLE_NAME}` (`providerKey`, `type`, `categoryName`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "streams",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`providerKey` TEXT NOT NULL, `streamId` INTEGER NOT NULL, `name` TEXT NOT NULL, `streamType` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `streamIcon` TEXT, `rating` TEXT, `added` TEXT, `isFavorite` INTEGER NOT NULL, `lastWatched` INTEGER NOT NULL, PRIMARY KEY(`providerKey`, `streamType`, `streamId`))",
+        "fields": [
+          {
+            "fieldPath": "providerKey",
+            "columnName": "providerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamId",
+            "columnName": "streamId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamType",
+            "columnName": "streamType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "categoryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamIcon",
+            "columnName": "streamIcon",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "added",
+            "columnName": "added",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "isFavorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastWatched",
+            "columnName": "lastWatched",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "providerKey",
+            "streamType",
+            "streamId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_streams_providerKey_streamType_categoryId",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "streamType",
+              "categoryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_streams_providerKey_streamType_categoryId` ON `${TABLE_NAME}` (`providerKey`, `streamType`, `categoryId`)"
+          },
+          {
+            "name": "index_streams_providerKey_isFavorite",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "isFavorite"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_streams_providerKey_isFavorite` ON `${TABLE_NAME}` (`providerKey`, `isFavorite`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "account_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`username` TEXT NOT NULL, `status` TEXT NOT NULL, `expiryDate` TEXT, `trial` TEXT, `activeConnections` TEXT, `maxConnections` TEXT, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`username`))",
+        "fields": [
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiryDate",
+            "columnName": "expiryDate",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "trial",
+            "columnName": "trial",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "activeConnections",
+            "columnName": "activeConnections",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "maxConnections",
+            "columnName": "maxConnections",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "username"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`providerKey` TEXT NOT NULL, `domain` TEXT NOT NULL, `type` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `lastAttemptAtMs` INTEGER NOT NULL, `lastSuccessAtMs` INTEGER NOT NULL, `itemCount` INTEGER NOT NULL, `lastError` TEXT, PRIMARY KEY(`providerKey`, `domain`, `type`, `categoryId`))",
+        "fields": [
+          {
+            "fieldPath": "providerKey",
+            "columnName": "providerKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "domain",
+            "columnName": "domain",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "categoryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAtMs",
+            "columnName": "lastAttemptAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSuccessAtMs",
+            "columnName": "lastSuccessAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemCount",
+            "columnName": "itemCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "providerKey",
+            "domain",
+            "type",
+            "categoryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_state_providerKey_domain_type",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "domain",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_state_providerKey_domain_type` ON `${TABLE_NAME}` (`providerKey`, `domain`, `type`)"
+          },
+          {
+            "name": "index_sync_state_providerKey_lastSuccessAtMs",
+            "unique": false,
+            "columnNames": [
+              "providerKey",
+              "lastSuccessAtMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_state_providerKey_lastSuccessAtMs` ON `${TABLE_NAME}` (`providerKey`, `lastSuccessAtMs`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a03416d29264fe29aadb32dfbd8dcbde')"
+    ]
+  }
+}

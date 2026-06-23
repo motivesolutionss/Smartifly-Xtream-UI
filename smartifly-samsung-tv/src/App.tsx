@@ -7,7 +7,7 @@ import { Activation } from "./features/auth/Activation";
 import { playlistStorage } from "./storage/playlistStorage";
 import { usePlayerStore } from "./store/playerStore";
 import { initializeServices } from "./services";
-import { useFocus } from "./providers/useFocus";
+import { useFocusActions } from "./providers/useFocus";
 import { useTvBack } from "./hooks/useTvBack";
 import { registerTizenRemoteKeys } from "./utils/tizenInput";
 import { useLiveTvStore } from "./store/liveTvStore";
@@ -15,16 +15,18 @@ import { useAdaptiveProfile } from "./hooks/useAdaptiveProfile";
 import { useProfileStore } from "./store/profileStore";
 import { useSettingsStore } from "./store/settingsStore";
 import { contentCategoryStorage } from "./storage/contentCategoryStorage";
-import { recentlyWatchedStorage } from "./storage/recentlyWatchedStorage";
-import { useBudgetedImagePreload } from "./hooks/useBudgetedImagePreload";
 import { Loader } from "./components/ui/Loader";
 import {
-  getHomePreparationImageUrls,
-  hasFreshHomeSnapshotInCache,
+  getHomeBootstrapSnapshotQueryKey,
+  hasHomeSnapshotSeedAvailable,
+  hasFreshHomeSnapshotAvailable,
   preloadHomeSnapshot,
 } from "./features/home/useHomeSnapshot";
 import type { PersistedHomeSnapshot } from "./storage/homeSnapshotStorage";
 import type { UserProfile } from "./storage/profileStorage";
+import { createPerfTrace } from "./utils/perfTrace";
+import { logger } from "./utils/logger";
+import { markStartupMarker } from "./utils/startupMarkers";
 import "./App.css";
 
 let homePreloadPromise: Promise<typeof import("./features/home/Home")> | null = null;
@@ -147,8 +149,8 @@ function App() {
   const [isLoginView, setIsLoginView] = useState(false);
   const [isActivationView, setIsActivationView] = useState(false);
   const [isPreparingHome, setIsPreparingHome] = useState(false);
-  const [homePreparationImageUrls, setHomePreparationImageUrls] = useState<string[]>([]);
   const [hasPlaylist, setHasPlaylist] = useState<boolean>(() => {
+    markStartupMarker("app_start");
     const activePlaylist = playlistStorage.getActivePlaylist();
     if (activePlaylist) {
       const { serverUrl, username, password } = activePlaylist;
@@ -158,22 +160,25 @@ function App() {
     return false;
   });
 
-  const { activeProfile, selectProfile, rehydrateForPlaylist } = useProfileStore();
+  const activeProfile = useProfileStore((state) => state.activeProfile);
+  const selectProfile = useProfileStore((state) => state.selectProfile);
+  const rehydrateForPlaylist = useProfileStore((state) => state.rehydrateForPlaylist);
   const rehydrateSettingsForScope = useSettingsStore((store) => store.rehydrateForScope);
   const queryClient = useQueryClient();
   const { activePlaybackItem, setActivePlaybackItem } = usePlayerStore();
-
-  useBudgetedImagePreload(homePreparationImageUrls, {
-    enabled: isPreparingHome,
-    maxConcurrent: 3,
-    maxUrls: 18,
-  });
+  const appBootTraceRef = useRef(
+    createPerfTrace("app_boot", {
+      initialHasPlaylist: hasPlaylist,
+    })
+  );
+  const hasClosedAppBootTraceRef = useRef(false);
 
   // Auto-adaptive visual profile is useful for content browsing, but during
   // playback it becomes an extra per-frame observer competing with the player.
   useAdaptiveProfile(!activePlaybackItem);
 
-  const { focusedId, setFocus } = useFocus();
+  const { getFocusedId, setFocus, subscribe } = useFocusActions();
+  const focusedIdRef = useRef<string | null>(getFocusedId());
   const liveReturnFocusId = useLiveTvStore((state) => state.returnFocusId);
   const setLiveReturnFocusId = useLiveTvStore((state) => state.setReturnFocusId);
   const focusByScreenRef = useRef<Record<ScreenId, string | null>>({
@@ -188,6 +193,31 @@ function App() {
   const pendingScreenFocusRef = useRef<string | null>(null);
   const playbackReturnFocusRef = useRef<string | null>(null);
   const homeTransitionRequestRef = useRef(0);
+  const lastRestoredScreenRef = useRef<ScreenId | null>(null);
+  const wasMainAppRouteReadyRef = useRef(false);
+  const isMainAppRouteReady =
+    hasPlaylist &&
+    activeProfile !== null &&
+    !isPreparingHome &&
+    !activePlaybackItem;
+
+  useEffect(() => {
+    focusedIdRef.current = getFocusedId();
+
+    return subscribe(() => {
+      const nextFocusedId = getFocusedId();
+      focusedIdRef.current = nextFocusedId;
+
+      if (activePlaybackItem) return;
+      if (!nextFocusedId) return;
+      if (nextFocusedId.startsWith("nav-") || nextFocusedId.startsWith("epg-")) return;
+
+      focusByScreenRef.current[activeScreen] = normalizeScreenMemoryFocusId(
+        activeScreen,
+        nextFocusedId
+      );
+    });
+  }, [activePlaybackItem, activeScreen, getFocusedId, subscribe]);
 
   const handleLoginSuccess = () => {
     setHasPlaylist(true);
@@ -199,14 +229,21 @@ function App() {
 
   const handleProfileSelected = useCallback((profile: UserProfile) => {
     const activePlaylistId = playlistStorage.getActivePlaylistId();
-    const shouldSkipPreparation = hasFreshHomeSnapshotInCache(
+    const shouldSkipPreparation = hasFreshHomeSnapshotAvailable(
+      queryClient,
+      activePlaylistId,
+      profile.id
+    );
+    const hasSeedSnapshot = hasHomeSnapshotSeedAvailable(
       queryClient,
       activePlaylistId,
       profile.id
     );
 
     setActiveScreen("HOME");
-    setIsPreparingHome(!shouldSkipPreparation);
+    setIsPreparingHome(!shouldSkipPreparation && !hasSeedSnapshot);
+    pendingScreenFocusRef.current = DEFAULT_FOCUS_BY_SCREEN.HOME;
+    setFocus(DEFAULT_FOCUS_BY_SCREEN.HOME);
   }, [queryClient]);
 
   useEffect(() => {
@@ -222,8 +259,62 @@ function App() {
 
     return () => {
       window.removeEventListener("scroll", handleScroll);
+      if (!appBootTraceRef.current.isClosed()) {
+        appBootTraceRef.current.end({
+          status: "unmounted",
+          metricName: "app_boot_total_ms",
+        });
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (hasClosedAppBootTraceRef.current || appBootTraceRef.current.isClosed()) {
+      return;
+    }
+
+    const initialRoute = !hasPlaylist
+      ? isActivationView
+        ? "activation"
+        : isLoginView
+          ? "login"
+          : "onboarding"
+      : activeProfile === null
+        ? "profiles"
+        : isPreparingHome
+          ? "home_preparing"
+          : activePlaybackItem
+            ? "player"
+            : activeScreen.toLowerCase();
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (hasClosedAppBootTraceRef.current || appBootTraceRef.current.isClosed()) {
+        return;
+      }
+
+      hasClosedAppBootTraceRef.current = true;
+      appBootTraceRef.current.end({
+        status: "initial_route_ready",
+        metricName: "app_boot_total_ms",
+        slowAboveMs: 350,
+        data: {
+          initialRoute,
+        },
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    activePlaybackItem,
+    activeProfile,
+    activeScreen,
+    hasPlaylist,
+    isActivationView,
+    isLoginView,
+    isPreparingHome,
+  ]);
 
   useEffect(() => {
     if (!hasPlaylist || !activeProfile) return;
@@ -232,10 +323,15 @@ function App() {
 
   const handleNavigate = useCallback(
     (nextScreen: ScreenId) => {
-      if (focusedId && !focusedId.startsWith("nav-") && !focusedId.startsWith("epg-")) {
+      const currentFocusedId = focusedIdRef.current;
+      if (
+        currentFocusedId &&
+        !currentFocusedId.startsWith("nav-") &&
+        !currentFocusedId.startsWith("epg-")
+      ) {
         focusByScreenRef.current[activeScreen] = normalizeScreenMemoryFocusId(
           activeScreen,
-          focusedId
+          currentFocusedId
         );
       }
 
@@ -250,47 +346,59 @@ function App() {
       pendingScreenFocusRef.current = nextFocusId;
       setActiveScreen(nextScreen);
     },
-    [activeScreen, focusedId, setFocus]
+    [activeScreen, setFocus]
   );
-
-  useEffect(() => {
-    if (!focusedId) return;
-    if (activePlaybackItem) return;
-    if (focusedId.startsWith("nav-") || focusedId.startsWith("epg-")) return;
-
-    focusByScreenRef.current[activeScreen] = normalizeScreenMemoryFocusId(
-      activeScreen,
-      focusedId
-    );
-  }, [activePlaybackItem, activeScreen, focusedId]);
 
   useEffect(() => {
     if (!activePlaybackItem) return;
     if (playbackReturnFocusRef.current) return;
 
+    const currentFocusedId = focusedIdRef.current;
     const fallbackFocusId =
       focusByScreenRef.current[activeScreen] ?? DEFAULT_FOCUS_BY_SCREEN[activeScreen];
     const candidateFocusId =
-      focusedId &&
-      !focusedId.startsWith("nav-") &&
-      !focusedId.startsWith("player-") &&
-      !focusedId.startsWith("top-")
-        ? focusedId
+      currentFocusedId &&
+      !currentFocusedId.startsWith("nav-") &&
+      !currentFocusedId.startsWith("player-") &&
+      !currentFocusedId.startsWith("top-")
+        ? currentFocusedId
         : fallbackFocusId;
 
     playbackReturnFocusRef.current = candidateFocusId;
-  }, [activePlaybackItem, activeScreen, focusedId]);
+  }, [activePlaybackItem, activeScreen]);
 
   useEffect(() => {
-    if (!hasPlaylist) return;
-    if (activePlaybackItem) return;
+    const becameReady = isMainAppRouteReady && !wasMainAppRouteReadyRef.current;
+    wasMainAppRouteReadyRef.current = isMainAppRouteReady;
+
+    if (!isMainAppRouteReady) {
+      return;
+    }
+
+    const hasPendingRestore = pendingScreenFocusRef.current !== null;
+    const screenChangedSinceLastRestore = lastRestoredScreenRef.current !== activeScreen;
+
+    if (!becameReady && !hasPendingRestore && !screenChangedSinceLastRestore) {
+      return;
+    }
 
     const restoreId =
       pendingScreenFocusRef.current ??
       focusByScreenRef.current[activeScreen] ??
       DEFAULT_FOCUS_BY_SCREEN[activeScreen];
+    const currentFocusedId = focusedIdRef.current;
 
-    if (focusedId?.startsWith("nav-") && !restoreId.startsWith("nav-")) {
+    logger.debug("app_focus_restore_requested", {
+      activeScreen,
+      focusedId: currentFocusedId,
+      pendingScreenFocusId: pendingScreenFocusRef.current,
+        rememberedScreenFocusId: focusByScreenRef.current[activeScreen],
+        restoreId,
+      });
+
+    lastRestoredScreenRef.current = activeScreen;
+
+    if (currentFocusedId?.startsWith("nav-") && !restoreId.startsWith("nav-")) {
       setFocus(null);
     }
 
@@ -300,7 +408,7 @@ function App() {
     });
 
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [activePlaybackItem, activeScreen, hasPlaylist, setFocus]);
+  }, [activeScreen, isMainAppRouteReady, setFocus]);
 
   useEffect(() => {
     if (activeProfile !== null) return;
@@ -315,6 +423,9 @@ function App() {
     const activePlaylistId = playlistStorage.getActivePlaylistId();
     let isCancelled = false;
     let timeoutId = 0;
+    markStartupMarker("home_bootstrap_start", {
+      profileId: activeProfile.id,
+    });
     const timeoutPromise = new Promise<"timeout">((resolve) => {
       timeoutId = window.setTimeout(() => resolve("timeout"), HOME_PREPARATION_TIMEOUT_MS);
     });
@@ -328,14 +439,8 @@ function App() {
         return;
       }
 
-      const preparedSnapshot = queryClient.getQueryData<PersistedHomeSnapshot>([
-        "home-snapshot",
-        activePlaylistId,
-        activeProfile.id,
-      ]);
-      const continueWatching = recentlyWatchedStorage.getContinueWatching();
-      setHomePreparationImageUrls(
-        getHomePreparationImageUrls(preparedSnapshot, continueWatching)
+      queryClient.getQueryData<PersistedHomeSnapshot>(
+        getHomeBootstrapSnapshotQueryKey(activePlaylistId, activeProfile.id)
       );
     });
 
@@ -345,13 +450,11 @@ function App() {
       }
       if (!isCancelled && homeTransitionRequestRef.current === transitionRequestId) {
         setIsPreparingHome(false);
-        setHomePreparationImageUrls([]);
       }
     });
 
     return () => {
       isCancelled = true;
-      setHomePreparationImageUrls([]);
       if (timeoutId) {
         window.clearTimeout(timeoutId);
       }

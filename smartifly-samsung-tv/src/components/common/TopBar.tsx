@@ -36,7 +36,7 @@ const ClockDisplay = React.memo(function ClockDisplay() {
   return <span className={styles.time}>{time}</span>;
 });
 
-export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
+export const TopBar: React.FC<TopBarProps> = React.memo(function TopBar({ onNavigate }) {
   return (
     <div className={styles.topBar}>
       <div className={styles.leftSection}>
@@ -50,14 +50,26 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
         </div>
         
         <div className={styles.actionGroup}>
-          <Focusable id="top-search" onEnter={() => onNavigate("SEARCH")} className={styles.actionBtn} variant="pill">
+          <Focusable
+            id="top-search"
+            onEnter={() => onNavigate("SEARCH")}
+            className={styles.actionBtn}
+            variant="pill"
+            allowGlobalAutoFocus={false}
+          >
             <Search size={22} />
           </Focusable>
-          <Focusable id="top-settings" onEnter={() => onNavigate("SETTINGS")} className={styles.actionBtn} variant="pill">
+          <Focusable
+            id="top-settings"
+            onEnter={() => onNavigate("SETTINGS")}
+            className={styles.actionBtn}
+            variant="pill"
+            allowGlobalAutoFocus={false}
+          >
             <Settings size={22} />
           </Focusable>
         </div>
       </div>
     </div>
   );
-};
+});

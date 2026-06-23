@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from "react";
-import { useFocus } from "../../providers/useFocus";
+import { useFocusActions, useIsFocused } from "../../providers/useFocus";
 import styles from "./Focusable.module.css";
 
 interface FocusableProps {
@@ -14,8 +14,10 @@ interface FocusableProps {
   disableFocusEffects?: boolean;
   scrollOptions?: ScrollIntoViewOptions;
   disableAutoScroll?: boolean;
+  allowGlobalAutoFocus?: boolean;
   variant?: "default" | "pill" | "none";
   enableVerticalScrollOnArrow?: boolean;
+  enablePointerFocus?: boolean;
   onKeyDown?: (e: React.KeyboardEvent) => void;
 }
 
@@ -32,11 +34,13 @@ export const Focusable: React.FC<FocusableProps> = ({
   disableFocusEffects = false,
   scrollOptions,
   disableAutoScroll = false,
+  allowGlobalAutoFocus = true,
   variant = "default",
   enableVerticalScrollOnArrow = false,
+  enablePointerFocus = false,
 }) => {
-  const { focusedId, setFocus, registerElement, unregisterElement } = useFocus();
-  const isFocused = focusedId === id;
+  const { setFocus, registerElement, unregisterElement } = useFocusActions();
+  const isFocused = useIsFocused(id);
   const ref = useRef<HTMLDivElement>(null);
   const onFocusRef = useRef(onFocus);
   const wasFocusedRef = useRef(false);
@@ -47,10 +51,10 @@ export const Focusable: React.FC<FocusableProps> = ({
 
   useEffect(() => {
     if (ref.current && !disabled) {
-      registerElement(id, ref.current);
+      registerElement(id, ref.current, { allowGlobalAutoFocus });
     }
     return () => unregisterElement(id);
-  }, [id, registerElement, unregisterElement, disabled]);
+  }, [allowGlobalAutoFocus, id, registerElement, unregisterElement, disabled]);
 
   useEffect(() => {
     if (autoFocus && !disabled) {
@@ -107,7 +111,7 @@ export const Focusable: React.FC<FocusableProps> = ({
         }
       }}
       onMouseEnter={() => {
-        if (!disabled) {
+        if (!disabled && enablePointerFocus) {
           setFocus(id);
         }
       }}

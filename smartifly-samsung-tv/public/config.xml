@@ -17,5 +17,5 @@
   <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hw-acceleration="enable" />
   <name>Smartifly</name>
   <description>Samsung Tizen IPTV player for Xtream-compatible playlists.</description>
-  <icon src="smartifly_icon.png" />
+  <icon src="smartifly_icon.webp" />
 </widget>

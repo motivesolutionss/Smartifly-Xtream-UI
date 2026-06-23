@@ -20,6 +20,12 @@ import {
   sliceShortEpgToWindow,
   type ParsedShortEpgItem,
 } from "./epgQuery";
+import {
+  buildEpgTimeSlots,
+  EPG_SLOT_DURATION_MS,
+  getCurrentEpgWindowAnchorMs,
+  getMsUntilNextEpgWindow,
+} from "./epgWindow";
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 /** Must match .channelItem height in CSS */
@@ -242,17 +248,25 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
   );
 
   // ── Time window ───────────────────────────────────────────────────────────
-  const timeSlots = useMemo(() => {
-    return Array.from({ length: NUM_SLOTS }).map((_, i) => {
-      const d = new Date();
-      d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0);
-      d.setMinutes(d.getMinutes() + i * 30);
-      return d;
-    });
-  }, []);
+  const [timeWindowAnchorMs, setTimeWindowAnchorMs] = useState(() =>
+    getCurrentEpgWindowAnchorMs()
+  );
 
-  const windowStartMs = timeSlots[0].getTime();
-  const windowEndMs = timeSlots[NUM_SLOTS - 1].getTime() + 30 * 60 * 1000;
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setTimeWindowAnchorMs(getCurrentEpgWindowAnchorMs());
+    }, getMsUntilNextEpgWindow());
+
+    return () => window.clearTimeout(timerId);
+  }, [timeWindowAnchorMs]);
+
+  const timeSlots = useMemo(
+    () => buildEpgTimeSlots(timeWindowAnchorMs, NUM_SLOTS),
+    [timeWindowAnchorMs]
+  );
+
+  const windowStartMs = timeWindowAnchorMs;
+  const windowEndMs = timeWindowAnchorMs + NUM_SLOTS * EPG_SLOT_DURATION_MS;
   const totalTimelineWidth = NUM_SLOTS * TIME_SLOT_WIDTH;
 
   // ── Batch EPG fetch for only the visible channel window ────────────────────
@@ -434,11 +448,11 @@ export const EpgGrid: React.FC<EpgGridProps> = ({
                         if (clampedEnd <= clampedStart) return null;
 
                         const leftPx =
-                          ((clampedStart - windowStartMs) / (30 * 60 * 1000)) *
+                          ((clampedStart - windowStartMs) / EPG_SLOT_DURATION_MS) *
                           TIME_SLOT_WIDTH;
                         const widthPx = Math.max(
                           80,
-                          ((clampedEnd - clampedStart) / (30 * 60 * 1000)) *
+                          ((clampedEnd - clampedStart) / EPG_SLOT_DURATION_MS) *
                             TIME_SLOT_WIDTH
                         );
                         const isNow = nowMs >= startMs && nowMs < endMs;

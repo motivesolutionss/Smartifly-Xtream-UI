@@ -1,0 +1,222 @@
+package com.smartifly.tv.ui.components.content
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.smartifly.tv.ui.components.base.BaseFocusableCard
+import com.smartifly.tv.ui.theme.Dimensions
+import com.smartifly.tv.ui.theme.PrimaryRed
+import com.smartifly.tv.ui.theme.TextPrimary
+import com.smartifly.tv.data.image.ImageFailureMemory
+import com.smartifly.tv.data.image.ImageErrorClassifier
+import com.smartifly.tv.data.image.ImagePolicyEngine
+import com.smartifly.tv.data.image.ImageQualityMonitor
+import com.smartifly.tv.data.image.ProviderHealthTelemetry
+import com.smartifly.tv.data.hero.HeroImageResolver
+import com.smartifly.tv.performance.PerformanceKpiMonitor
+import com.smartifly.tv.ui.theme.SmartiflyIcons
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun LiveChannelCard(
+    channelName: String,
+    profileId: String? = null,
+    onClick: () -> Unit,
+    onFocus: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    logoUrl: String? = null,
+    contentId: String? = null,
+    contentType: String = "live",
+    isFavorite: Boolean = false,
+    cardWidth: Dp = Dimensions.LiveChannelWidth,
+    cardHeight: Dp = Dimensions.LiveChannelHeight
+) {
+    var showFallback by remember(contentId, logoUrl) { mutableStateOf(false) }
+    var candidateIndex by remember(contentId, logoUrl) { mutableStateOf(0) }
+    val normalizedLogo = remember(logoUrl) { HeroImageResolver.normalizeImageUrl(logoUrl) }
+    val candidates = remember(logoUrl) { ImagePolicyEngine.resolveCandidates(logoUrl) }
+    val resolvedLogo = candidates.getOrNull(candidateIndex)
+    val imageLoadStartedAt = remember(resolvedLogo) { System.currentTimeMillis() }
+    val hasPolicyRejectedUrl = !logoUrl.isNullOrBlank() && normalizedLogo.isNullOrBlank()
+    val suppressedByBadMemory = !normalizedLogo.isNullOrBlank() && candidates.isEmpty()
+
+    LaunchedEffect(hasPolicyRejectedUrl, suppressedByBadMemory, logoUrl, profileId, contentType, contentId) {
+        if (hasPolicyRejectedUrl) {
+            ProviderHealthTelemetry.recordEvent(
+                eventType = "URL_REJECTED",
+                context = ImageQualityMonitor.Context.LIVE_CARD,
+                imageUrl = logoUrl,
+                hostOverride = "invalid-host",
+                profileId = profileId,
+                contentType = contentType,
+                contentId = contentId,
+                metadata = mapOf("reason" to "url_policy_rejected")
+            )
+        } else if (suppressedByBadMemory) {
+            ProviderHealthTelemetry.recordEvent(
+                eventType = "URL_SUPPRESSED",
+                context = ImageQualityMonitor.Context.LIVE_CARD,
+                imageUrl = logoUrl,
+                profileId = profileId,
+                contentType = contentType,
+                contentId = contentId,
+                metadata = mapOf("reason" to "temporary_failure_memory")
+            )
+        }
+    }
+    LaunchedEffect(candidateIndex, candidates.size) {
+        if (candidateIndex < candidates.size) showFallback = false
+    }
+
+    BaseFocusableCard(
+        onClick = onClick,
+        onLongClick = onLongPress,
+        onFocus = onFocus,
+        focusBorderColor = PrimaryRed,
+        focusBorderWidth = 3.dp,
+        modifier = modifier.then(
+            if (cardWidth == Dp.Unspecified) {
+                Modifier.fillMaxWidth().aspectRatio(200f / 112f)
+            } else {
+                Modifier.size(cardWidth, cardHeight)
+            }
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!resolvedLogo.isNullOrBlank() && !showFallback) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(4.dp)
+                        .background(Color.White, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = resolvedLogo,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentScale = ContentScale.Fit,
+                        onSuccess = {
+                            ImageFailureMemory.markHostSuccess(resolvedLogo)
+                            ImageQualityMonitor.recordSuccess(
+                                url = resolvedLogo,
+                                context = ImageQualityMonitor.Context.LIVE_CARD,
+                                profileId = profileId,
+                                contentType = contentType,
+                                contentId = contentId
+                            )
+                            PerformanceKpiMonitor.recordImageLoad(
+                                context = ImageQualityMonitor.Context.LIVE_CARD,
+                                durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                                success = true
+                            )
+                        },
+                        onError = {
+                            val classification = ImageErrorClassifier.classify(it.result.throwable)
+                            val temporaryTtl = classification.temporaryTtlMs
+                            if (temporaryTtl != null) {
+                                ImageFailureMemory.markTemporarilyBad(resolvedLogo, ttlMs = temporaryTtl)
+                            } else {
+                                ImageFailureMemory.markBad(resolvedLogo, ttlMs = 60_000L)
+                            }
+                            if (candidateIndex + 1 < candidates.size) {
+                                candidateIndex += 1
+                            } else {
+                                showFallback = true
+                            }
+                            ImageQualityMonitor.recordFailure(
+                                url = resolvedLogo,
+                                context = ImageQualityMonitor.Context.LIVE_CARD,
+                                profileId = profileId,
+                                contentType = contentType,
+                                contentId = contentId
+                            )
+                            PerformanceKpiMonitor.recordImageLoad(
+                                context = ImageQualityMonitor.Context.LIVE_CARD,
+                                durationMs = System.currentTimeMillis() - imageLoadStartedAt,
+                                success = false
+                            )
+                        }
+                    )
+                }
+            } else {
+                Text(
+                    text = channelName,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.Black,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(PrimaryRed, shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "LIVE",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            if (isFavorite) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = SmartiflyIcons.Star,
+                        contentDescription = "Favorite",
+                        tint = Color(0xFFFFD54F),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+    }
+}

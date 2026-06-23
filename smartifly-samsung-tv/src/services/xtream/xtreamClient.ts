@@ -1,7 +1,11 @@
 import { httpClient } from "../../api/httpClient";
 import { AppError } from "../../types/errors";
 import type { AccountService, UserInfo } from "../interfaces/accountService";
-import type { ContentService } from "../interfaces/contentService";
+import type {
+  ContentListRequestOptions,
+  ContentRequestOptions,
+  ContentService,
+} from "../interfaces/contentService";
 import type { PlaybackService, PlaybackUrlRequest } from "../interfaces/playbackService";
 import type {
   AppCategory,
@@ -23,8 +27,10 @@ import type {
   XtreamShortEpgResponse,
 } from "./xtreamTypes";
 import { xtreamMapper } from "./xtreamMapper";
+import { buildXtreamListRequestParams } from "./xtreamListRequestParams";
 import { xtreamUrlBuilder } from "./xtreamUrlBuilder";
 import { normalizeServerUrl } from "../../utils/normalizeServerUrl";
+import { setPortalImageBaseUrl } from "../../utils/imagePolicy";
 
 export class XtreamClient implements AccountService, ContentService, PlaybackService {
   private serverUrl: string = "";
@@ -32,13 +38,17 @@ export class XtreamClient implements AccountService, ContentService, PlaybackSer
   private password: string = "";
 
   constructor(serverUrl?: string, username?: string, password?: string) {
-    if (serverUrl) this.serverUrl = serverUrl;
+    if (serverUrl) {
+      this.serverUrl = serverUrl;
+      setPortalImageBaseUrl(serverUrl);
+    }
     if (username) this.username = username;
     if (password) this.password = password;
   }
 
   setCredentials(serverUrl: string, username: string, password: string) {
     this.serverUrl = normalizeServerUrl(serverUrl);
+    setPortalImageBaseUrl(this.serverUrl);
     this.username = username;
     this.password = password;
   }
@@ -107,147 +117,203 @@ export class XtreamClient implements AccountService, ContentService, PlaybackSer
     return xtreamMapper.mapAccountInfo(data);
   }
 
-  async getLiveCategories(): Promise<AppCategory[]> {
+  async getLiveCategories(options?: ContentRequestOptions): Promise<AppCategory[]> {
     const url = this.buildUrl("get_live_categories");
-    const data = await httpClient.get<XtreamCategory[]>(url);
+    const data = await httpClient.get<XtreamCategory[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected live categories array");
     }
     return data.map((cat) => xtreamMapper.toAppCategory(cat, "live"));
   }
 
-  async getLiveStreams(categoryId?: string): Promise<AppChannel[]> {
-    const params: Record<string, string> = categoryId
-      ? { category_id: categoryId }
-      : {};
+  async getLiveStreams(
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppChannel[]> {
+    const params = buildXtreamListRequestParams(categoryId, options, "live");
     const url = this.buildUrl("get_live_streams", params);
-    const data = await httpClient.get<XtreamLiveStream[]>(url);
+    const data = await httpClient.get<XtreamLiveStream[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected live streams array");
     }
     return data.map(xtreamMapper.toAppChannel);
   }
 
-  async searchLiveStreams(query: string, categoryId?: string): Promise<AppChannel[]> {
+  async searchLiveStreams(
+    query: string,
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppChannel[]> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return [];
 
     const params: Record<string, string> = {
       search: trimmedQuery,
+      ...buildXtreamListRequestParams(categoryId, options, "live"),
     };
-    if (categoryId) {
-      params.category_id = categoryId;
-    }
-
     const url = this.buildUrl("get_live_streams", params);
-    const data = await httpClient.get<XtreamLiveStream[]>(url, 1);
+    const data = await httpClient.get<XtreamLiveStream[]>(url, 1, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected live search array");
     }
     return data.map(xtreamMapper.toAppChannel);
   }
 
-  async getVodCategories(): Promise<AppCategory[]> {
+  async getVodCategories(options?: ContentRequestOptions): Promise<AppCategory[]> {
     const url = this.buildUrl("get_vod_categories");
-    const data = await httpClient.get<XtreamCategory[]>(url);
+    const data = await httpClient.get<XtreamCategory[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected VOD categories array");
     }
     return data.map((cat) => xtreamMapper.toAppCategory(cat, "vod"));
   }
 
-  async getVodStreams(categoryId?: string): Promise<AppMovie[]> {
-    const params: Record<string, string> = categoryId
-      ? { category_id: categoryId }
-      : {};
+  async getVodStreams(
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppMovie[]> {
+    const params = buildXtreamListRequestParams(categoryId, options, "vod");
     const url = this.buildUrl("get_vod_streams", params);
-    const data = await httpClient.get<XtreamVodStream[]>(url);
+    const data = await httpClient.get<XtreamVodStream[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected VOD streams array");
     }
     return data.map(xtreamMapper.toAppMovie);
   }
 
-  async searchVodStreams(query: string, categoryId?: string): Promise<AppMovie[]> {
+  async searchVodStreams(
+    query: string,
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppMovie[]> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return [];
 
     const params: Record<string, string> = {
       search: trimmedQuery,
+      ...buildXtreamListRequestParams(categoryId, options, "vod"),
     };
-    if (categoryId) {
-      params.category_id = categoryId;
-    }
 
     const url = this.buildUrl("get_vod_streams", params);
-    const data = await httpClient.get<XtreamVodStream[]>(url, 1);
+    const data = await httpClient.get<XtreamVodStream[]>(url, 1, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected VOD search array");
     }
     return data.map(xtreamMapper.toAppMovie);
   }
 
-  async getVodInfo(vodId: string): Promise<AppMovieDetails> {
+  async getVodInfo(vodId: string, options?: ContentRequestOptions): Promise<AppMovieDetails> {
     const url = this.buildUrl("get_vod_info", { vod_id: vodId });
-    const data = await httpClient.get<XtreamVodInfoResponse>(url);
+    const data = await httpClient.get<XtreamVodInfoResponse>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!data || (!data.info && !data.movie_data)) {
       throw new AppError("INVALID_RESPONSE", "Expected VOD details payload");
     }
     return xtreamMapper.toAppMovieDetails(data, vodId);
   }
 
-  async getSeriesCategories(): Promise<AppCategory[]> {
+  async getSeriesCategories(options?: ContentRequestOptions): Promise<AppCategory[]> {
     const url = this.buildUrl("get_series_categories");
-    const data = await httpClient.get<XtreamCategory[]>(url);
+    const data = await httpClient.get<XtreamCategory[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected series categories array");
     }
     return data.map((cat) => xtreamMapper.toAppCategory(cat, "series"));
   }
 
-  async getSeries(categoryId?: string): Promise<AppSeries[]> {
-    const params: Record<string, string> = categoryId
-      ? { category_id: categoryId }
-      : {};
+  async getSeries(
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppSeries[]> {
+    const params = buildXtreamListRequestParams(categoryId, options, "series");
     const url = this.buildUrl("get_series", params);
-    const data = await httpClient.get<XtreamSeries[]>(url);
+    const data = await httpClient.get<XtreamSeries[]>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected series array");
     }
     return data.map(xtreamMapper.toAppSeries);
   }
 
-  async searchSeries(query: string, categoryId?: string): Promise<AppSeries[]> {
+  async searchSeries(
+    query: string,
+    categoryId?: string,
+    options?: ContentListRequestOptions
+  ): Promise<AppSeries[]> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return [];
 
     const params: Record<string, string> = {
       search: trimmedQuery,
+      ...buildXtreamListRequestParams(categoryId, options, "series"),
     };
-    if (categoryId) {
-      params.category_id = categoryId;
-    }
 
     const url = this.buildUrl("get_series", params);
-    const data = await httpClient.get<XtreamSeries[]>(url, 1);
+    const data = await httpClient.get<XtreamSeries[]>(url, 1, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!Array.isArray(data)) {
       throw new AppError("INVALID_RESPONSE", "Expected series search array");
     }
     return data.map(xtreamMapper.toAppSeries);
   }
 
-  async getSeriesInfo(seriesId: string): Promise<AppSeriesDetails> {
+  async getSeriesInfo(seriesId: string, options?: ContentRequestOptions): Promise<AppSeriesDetails> {
     const url = this.buildUrl("get_series_info", { series_id: seriesId });
-    const data = await httpClient.get<XtreamSeriesInfoResponse>(url);
+    const data = await httpClient.get<XtreamSeriesInfoResponse>(url, 2, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     if (!data || (!data.info && !data.episodes)) {
       throw new AppError("INVALID_RESPONSE", "Expected series details payload");
     }
     return xtreamMapper.toAppSeriesDetails(data, seriesId);
   }
 
-  async getShortEpg(streamId: string): Promise<AppEpgItem[]> {
+  async getShortEpg(streamId: string, options?: ContentRequestOptions): Promise<AppEpgItem[]> {
     const url = this.buildUrl("get_short_epg", { stream_id: streamId });
-    const data = await httpClient.get<XtreamShortEpgResponse>(url, 1);
+    const data = await httpClient.get<XtreamShortEpgResponse>(url, 1, {
+      meta: { source: options?.requestSource ?? "other" },
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
     return xtreamMapper.toAppEpg(data.epg_listings || []);
   }
 

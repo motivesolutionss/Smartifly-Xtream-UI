@@ -1,11 +1,12 @@
 import { logger } from "../utils/logger";
 
 type PendingWrite =
-  | { mode: "set"; serialized: string }
+  | { mode: "set"; value: unknown; serialized?: string }
   | { mode: "remove" };
 
 const pendingWrites = new Map<string, PendingWrite>();
 const pendingTimers = new Map<string, number>();
+const pendingSerializationTimers = new Map<string, number>();
 let flushListenersRegistered = false;
 
 const clearPendingTimer = (key: string) => {
@@ -16,9 +17,50 @@ const clearPendingTimer = (key: string) => {
   }
 };
 
+const clearPendingSerializationTimer = (key: string) => {
+  const timerId = pendingSerializationTimers.get(key);
+  if (timerId !== undefined) {
+    window.clearTimeout(timerId);
+    pendingSerializationTimers.delete(key);
+  }
+};
+
+const ensureSerializedPendingWrite = (key: string) => {
+  const pending = pendingWrites.get(key);
+  if (!pending || pending.mode !== "set") {
+    return pending;
+  }
+
+  if (pending.serialized !== undefined) {
+    return pending;
+  }
+
+  try {
+    pending.serialized = JSON.stringify(pending.value);
+  } catch (error) {
+    pendingWrites.delete(key);
+    logger.error(`Error serializing deferred local storage key: ${key}`, error);
+    return null;
+  }
+
+  return pending;
+};
+
+const schedulePendingSerialization = (key: string) => {
+  clearPendingSerializationTimer(key);
+
+  const timerId = window.setTimeout(() => {
+    pendingSerializationTimers.delete(key);
+    ensureSerializedPendingWrite(key);
+  }, 32);
+
+  pendingSerializationTimers.set(key, timerId);
+};
+
 const flushPendingKey = (key: string) => {
   clearPendingTimer(key);
-  const pending = pendingWrites.get(key);
+  clearPendingSerializationTimer(key);
+  const pending = ensureSerializedPendingWrite(key);
   if (!pending) return;
 
   pendingWrites.delete(key);
@@ -29,7 +71,7 @@ const flushPendingKey = (key: string) => {
       return;
     }
 
-    localStorage.setItem(key, pending.serialized);
+    localStorage.setItem(key, pending.serialized ?? JSON.stringify(pending.value));
   } catch (error) {
     logger.error(`Error flushing local storage key: ${key}`, error);
   }
@@ -84,7 +126,10 @@ export const localStorageService = {
       }
 
       try {
-        return JSON.parse(pending.serialized) as T;
+        if (pending.serialized !== undefined) {
+          return JSON.parse(pending.serialized) as T;
+        }
+        return pending.value as T;
       } catch (error) {
         logger.error(`Error reading pending local storage key: ${key}`, error);
         return null;
@@ -102,6 +147,7 @@ export const localStorageService = {
 
   set: <T>(key: string, value: T): void => {
     clearPendingTimer(key);
+    clearPendingSerializationTimer(key);
     pendingWrites.delete(key);
 
     try {
@@ -115,8 +161,9 @@ export const localStorageService = {
     try {
       pendingWrites.set(key, {
         mode: "set",
-        serialized: JSON.stringify(value),
+        value,
       });
+      schedulePendingSerialization(key);
       schedulePendingFlush(key, delayMs);
     } catch (error) {
       logger.error(`Error queueing local storage key: ${key}`, error);
@@ -125,6 +172,7 @@ export const localStorageService = {
 
   remove: (key: string): void => {
     clearPendingTimer(key);
+    clearPendingSerializationTimer(key);
     pendingWrites.delete(key);
     localStorage.removeItem(key);
   },
@@ -134,11 +182,39 @@ export const localStorageService = {
     schedulePendingFlush(key, delayMs);
   },
 
+  removeByPrefix: (prefix: string): void => {
+    if (!prefix) return;
+
+    Array.from(pendingWrites.keys()).forEach((key) => {
+      if (key.startsWith(prefix)) {
+        clearPendingTimer(key);
+        clearPendingSerializationTimer(key);
+        pendingWrites.delete(key);
+      }
+    });
+
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith(prefix)) {
+        keysToRemove.push(key);
+      }
+    }
+
+    keysToRemove.forEach((key) => {
+      localStorage.removeItem(key);
+    });
+  },
+
   clear: (): void => {
     pendingTimers.forEach((timerId) => {
       window.clearTimeout(timerId);
     });
     pendingTimers.clear();
+    pendingSerializationTimers.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    pendingSerializationTimers.clear();
     pendingWrites.clear();
     localStorage.clear();
   },

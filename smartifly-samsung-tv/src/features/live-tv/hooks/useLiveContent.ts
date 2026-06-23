@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { services } from "../../../services";
 import type { AppCategory, AppChannel } from "../../../types/appModels";
 import { getAppErrorCode, getUserFriendlyErrorMessage } from "../../../utils/errorMapper";
+import { shouldPrefetchCategory } from "../../../utils/categoryPrefetchPolicy";
 
 const EMPTY_CATEGORIES: AppCategory[] = [];
 const EMPTY_CHANNELS: AppChannel[] = [];
@@ -11,6 +12,9 @@ const EMPTY_CHANNELS: AppChannel[] = [];
 const MAX_CONCURRENT_PREFETCHES = 3;
 /** Minimum ms between prefetch calls for the same category. */
 const PREFETCH_DEBOUNCE_MS = 350;
+const LIVE_CONTENT_PAGE_SIZE = 80;
+const LIVE_CONTENT_STALE_TIME_MS = 10 * 60 * 1000;
+type PagedChannels = AppChannel[];
 
 const getSortableName = (name: string) => {
   return name.replace(/^[^a-zA-Z0-9]+/, "").trim().toLowerCase();
@@ -27,9 +31,20 @@ export const useLiveContent = (selectedCategoryId?: string) => {
   const effectiveCategoryId =
     selectedCategoryId ?? categoriesQuery.data?.[0]?.id ?? undefined;
 
-  const channelsQuery = useQuery<AppChannel[]>({
-    queryKey: ["live-channels", effectiveCategoryId],
-    queryFn: () => services.content.getLiveStreams(effectiveCategoryId),
+  const channelsQuery = useInfiniteQuery({
+    queryKey: ["live-channels", effectiveCategoryId, LIVE_CONTENT_PAGE_SIZE],
+    queryFn: ({ pageParam }) =>
+      services.content.getLiveStreams(effectiveCategoryId, {
+        limit: LIVE_CONTENT_PAGE_SIZE,
+        page: pageParam,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (
+      lastPage: PagedChannels,
+      _allPages: PagedChannels[],
+      lastPageParam: number
+    ) =>
+      lastPage.length < LIVE_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
     retry: 2,
     enabled: categoriesQuery.status === "success",
     staleTime: 10 * 60 * 1000,
@@ -48,25 +63,58 @@ export const useLiveContent = (selectedCategoryId?: string) => {
   const prefetchCategory = useCallback(
     (categoryId?: string) => {
       if (!categoryId) return;
+      const queryKey = ["live-channels", categoryId, LIVE_CONTENT_PAGE_SIZE] as const;
 
-      // Cancel any pending debounce for this category.
-      const existing = prefetchTimersRef.current.get(categoryId);
-      if (existing !== undefined) {
-        window.clearTimeout(existing);
+      if (
+        !shouldPrefetchCategory({
+          categoryId,
+          activeCategoryId: effectiveCategoryId,
+          queryState: queryClient.getQueryState(queryKey),
+          hasPendingTimer: prefetchTimersRef.current.has(categoryId),
+          activePrefetchCount: activePrefetchesRef.current,
+          maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+          staleTimeMs: LIVE_CONTENT_STALE_TIME_MS,
+          nowMs: Date.now(),
+        })
+      ) {
+        return;
       }
 
       const timerId = window.setTimeout(() => {
         prefetchTimersRef.current.delete(categoryId);
 
-        // Respect the concurrency cap.
-        if (activePrefetchesRef.current >= MAX_CONCURRENT_PREFETCHES) return;
+        if (
+          !shouldPrefetchCategory({
+            categoryId,
+            activeCategoryId: effectiveCategoryId,
+            queryState: queryClient.getQueryState(queryKey),
+            hasPendingTimer: false,
+            activePrefetchCount: activePrefetchesRef.current,
+            maxConcurrentPrefetches: MAX_CONCURRENT_PREFETCHES,
+            staleTimeMs: LIVE_CONTENT_STALE_TIME_MS,
+            nowMs: Date.now(),
+          })
+        ) {
+          return;
+        }
 
         activePrefetchesRef.current += 1;
         void queryClient
-          .prefetchQuery({
-            queryKey: ["live-channels", categoryId],
-            queryFn: () => services.content.getLiveStreams(categoryId),
-            staleTime: 10 * 60 * 1000,
+          .prefetchInfiniteQuery({
+            queryKey,
+            queryFn: ({ pageParam }) =>
+              services.content.getLiveStreams(categoryId, {
+                limit: LIVE_CONTENT_PAGE_SIZE,
+                page: pageParam,
+              }),
+            initialPageParam: 1,
+            getNextPageParam: (
+              lastPage: PagedChannels,
+              _allPages: PagedChannels[],
+              lastPageParam: number
+            ) =>
+              lastPage.length < LIVE_CONTENT_PAGE_SIZE ? undefined : lastPageParam + 1,
+            staleTime: LIVE_CONTENT_STALE_TIME_MS,
           })
           .finally(() => {
             activePrefetchesRef.current = Math.max(0, activePrefetchesRef.current - 1);
@@ -75,7 +123,7 @@ export const useLiveContent = (selectedCategoryId?: string) => {
 
       prefetchTimersRef.current.set(categoryId, timerId);
     },
-    [queryClient]
+    [effectiveCategoryId, queryClient]
   );
 
   useEffect(() => {
@@ -91,6 +139,14 @@ export const useLiveContent = (selectedCategoryId?: string) => {
     void channelsQuery.refetch();
   }, [categoriesQuery, channelsQuery]);
 
+  const loadMoreChannels = useCallback(async () => {
+    if (!channelsQuery.hasNextPage || channelsQuery.isFetchingNextPage) {
+      return;
+    }
+
+    await channelsQuery.fetchNextPage();
+  }, [channelsQuery]);
+
   const sortedCategories = useMemo(() => {
     const raw = categoriesQuery.data;
     if (!raw || raw.length === 0) return EMPTY_CATEGORIES;
@@ -105,30 +161,41 @@ export const useLiveContent = (selectedCategoryId?: string) => {
     });
   }, [categoriesQuery.data]);
 
+  const channels = useMemo(
+    () => channelsQuery.data?.pages.flatMap((page) => page) ?? EMPTY_CHANNELS,
+    [channelsQuery.data]
+  );
+
   return useMemo(
     () => ({
       categories: sortedCategories,
-      channels: channelsQuery.data ?? EMPTY_CHANNELS,
+      channels,
       isLoading: categoriesQuery.isLoading || channelsQuery.isLoading,
-      isFetchingChannels: channelsQuery.isFetching,
+      isFetchingChannels: channelsQuery.isFetching && !channelsQuery.isFetchingNextPage,
+      isFetchingMoreChannels: channelsQuery.isFetchingNextPage,
+      hasMoreChannels: channelsQuery.hasNextPage ?? false,
       isError: categoriesQuery.isError || channelsQuery.isError,
       errorCode,
       errorMessage: error ? getUserFriendlyErrorMessage(error) : null,
       effectiveCategoryId,
+      loadMoreChannels,
       prefetchCategory,
       refetch,
     }),
     [
       sortedCategories,
+      channels,
       categoriesQuery.isLoading,
       categoriesQuery.isError,
-      channelsQuery.data,
       channelsQuery.isLoading,
       channelsQuery.isFetching,
+      channelsQuery.isFetchingNextPage,
+      channelsQuery.hasNextPage,
       channelsQuery.isError,
       errorCode,
       error,
       effectiveCategoryId,
+      loadMoreChannels,
       prefetchCategory,
       refetch,
     ]

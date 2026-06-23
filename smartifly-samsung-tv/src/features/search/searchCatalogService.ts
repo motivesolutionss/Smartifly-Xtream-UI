@@ -8,19 +8,40 @@ import type {
   SearchCatalogSeriesEntry,
   SearchCatalogVodEntry,
 } from "./searchCatalogTypes";
+import { toCompactSearchKey } from "./searchRanking";
 
 export type SearchCatalogSyncMode = "warm" | "background" | "active";
 
 const SEARCH_SYNC_CONCURRENCY_BY_MODE: Record<SearchCatalogSyncMode, number> = {
-  warm: 3,
+  warm: 2,
   background: 2,
   active: 4,
 };
 const SEARCH_WARM_CATEGORY_LIMITS = {
-  live: 10,
-  vod: 14,
-  series: 14,
+  live: 4,
+  vod: 6,
+  series: 6,
 } as const;
+const SEARCH_SYNC_ITEM_LIMITS_BY_MODE: Record<
+  SearchCatalogSyncMode,
+  { live: number; vod: number; series: number }
+> = {
+  warm: {
+    live: 12,
+    vod: 20,
+    series: 20,
+  },
+  background: {
+    live: 36,
+    vod: 60,
+    series: 60,
+  },
+  active: {
+    live: 48,
+    vod: 72,
+    series: 72,
+  },
+};
 
 const yieldToMainThread = () =>
   new Promise<void>((resolve) => {
@@ -40,6 +61,7 @@ const toLiveEntry = (item: AppChannel): SearchCatalogLiveEntry => ({
   id: item.id,
   title: item.title,
   titleLower: item.title.toLowerCase(),
+  titleCompact: toCompactSearchKey(item.title),
   categoryId: item.categoryId,
   imageUrl: item.logoUrl,
   type: "live",
@@ -49,6 +71,7 @@ const toVodEntry = (item: AppMovie): SearchCatalogVodEntry => ({
   id: item.id,
   title: item.title,
   titleLower: item.title.toLowerCase(),
+  titleCompact: toCompactSearchKey(item.title),
   categoryId: item.categoryId,
   imageUrl: item.posterUrl || item.backdropUrl,
   type: "vod",
@@ -58,6 +81,7 @@ const toSeriesEntry = (item: AppSeries): SearchCatalogSeriesEntry => ({
   id: item.id,
   title: item.title,
   titleLower: item.title.toLowerCase(),
+  titleCompact: toCompactSearchKey(item.title),
   categoryId: item.categoryId,
   imageUrl: item.posterUrl || item.backdropUrl,
   type: "series",
@@ -74,6 +98,7 @@ const createEmptyCatalog = (): Omit<PersistedSearchCatalog, "version"> => ({
     vod: [],
     series: [],
   },
+  syncMeta: {},
   fetchedCategoryIds: {
     live: [],
     vod: [],
@@ -142,11 +167,14 @@ const processCategories = async <TItem, TEntry extends { id: string }>(
   );
 };
 
-const fetchSearchCategories = async (): Promise<SearchCatalogCategorySets> => {
+const fetchSearchCategories = async (
+  mode: SearchCatalogSyncMode
+): Promise<SearchCatalogCategorySets> => {
+  const requestSource = `search_${mode}_categories`;
   const results = await Promise.allSettled([
-    services.content.getLiveCategories(),
-    services.content.getVodCategories(),
-    services.content.getSeriesCategories(),
+    services.content.getLiveCategories({ requestSource }),
+    services.content.getVodCategories({ requestSource }),
+    services.content.getSeriesCategories({ requestSource }),
   ]);
 
   const live = results[0].status === "fulfilled" ? results[0].value : [];
@@ -170,36 +198,40 @@ export const syncSearchCatalog = async ({
   mode = "active",
 }: SyncCatalogParams) => {
   const catalog =
-    seedCatalog?.completeness === "partial"
+    seedCatalog
       ? {
-        completeness: seedCatalog.completeness,
-        generatedAt: seedCatalog.generatedAt,
-        live: [...seedCatalog.live],
-        vod: [...seedCatalog.vod],
-        series: [...seedCatalog.series],
-        categories: {
-          live: [...seedCatalog.categories.live],
-          vod: [...seedCatalog.categories.vod],
-          series: [...seedCatalog.categories.series],
-        },
-        fetchedCategoryIds: {
-          live: [...seedCatalog.fetchedCategoryIds.live],
-          vod: [...seedCatalog.fetchedCategoryIds.vod],
-          series: [...seedCatalog.fetchedCategoryIds.series],
-        },
-      }
+          completeness: seedCatalog.completeness,
+          generatedAt: seedCatalog.generatedAt,
+         live: [...seedCatalog.live],
+         vod: [...seedCatalog.vod],
+         series: [...seedCatalog.series],
+         categories: {
+           live: [...seedCatalog.categories.live],
+           vod: [...seedCatalog.categories.vod],
+           series: [...seedCatalog.categories.series],
+         },
+         syncMeta: {
+           ...seedCatalog.syncMeta,
+         },
+          fetchedCategoryIds: {
+            live: [...seedCatalog.fetchedCategoryIds.live],
+            vod: [...seedCatalog.fetchedCategoryIds.vod],
+            series: [...seedCatalog.fetchedCategoryIds.series],
+          },
+       }
       : createEmptyCatalog();
 
   if (shouldPause()) {
     return catalog;
   }
 
-  const categories = await fetchSearchCategories();
+  const categories = await fetchSearchCategories(mode);
   catalog.categories = categories;
   catalog.completeness = "partial";
   catalog.generatedAt = new Date().toISOString();
   onProgress?.(catalog);
 
+  const requestSource = `search_${mode}`;
   const liveCategories =
     mode === "warm"
       ? categories.live.slice(0, SEARCH_WARM_CATEGORY_LIMITS.live)
@@ -213,10 +245,16 @@ export const syncSearchCatalog = async ({
       ? categories.series.slice(0, SEARCH_WARM_CATEGORY_LIMITS.series)
       : categories.series;
   const concurrency = SEARCH_SYNC_CONCURRENCY_BY_MODE[mode];
+  const itemLimits = SEARCH_SYNC_ITEM_LIMITS_BY_MODE[mode];
 
   await processCategories(
     liveCategories,
-    (categoryId) => services.content.getLiveStreams(categoryId),
+    (categoryId) =>
+      services.content.getLiveStreams(categoryId, {
+        limit: itemLimits.live,
+        page: 1,
+        requestSource,
+      }),
     toLiveEntry,
     () => catalog.live,
     (items) => {
@@ -228,14 +266,18 @@ export const syncSearchCatalog = async ({
     },
     () => onProgress?.({ ...catalog, categories: { ...catalog.categories } }),
     shouldPause,
-    "live"
-    ,
+    "live",
     concurrency
   );
 
   await processCategories(
     vodCategories,
-    (categoryId) => services.content.getVodStreams(categoryId),
+    (categoryId) =>
+      services.content.getVodStreams(categoryId, {
+        limit: itemLimits.vod,
+        page: 1,
+        requestSource,
+      }),
     toVodEntry,
     () => catalog.vod,
     (items) => {
@@ -247,14 +289,18 @@ export const syncSearchCatalog = async ({
     },
     () => onProgress?.({ ...catalog, categories: { ...catalog.categories } }),
     shouldPause,
-    "vod"
-    ,
+    "vod",
     concurrency
   );
 
   await processCategories(
     seriesCategories,
-    (categoryId) => services.content.getSeries(categoryId),
+    (categoryId) =>
+      services.content.getSeries(categoryId, {
+        limit: itemLimits.series,
+        page: 1,
+        requestSource,
+      }),
     toSeriesEntry,
     () => catalog.series,
     (items) => {
@@ -266,8 +312,7 @@ export const syncSearchCatalog = async ({
     },
     () => onProgress?.({ ...catalog, categories: { ...catalog.categories } }),
     shouldPause,
-    "series"
-    ,
+    "series",
     concurrency
   );
 
@@ -275,13 +320,18 @@ export const syncSearchCatalog = async ({
     return catalog;
   }
 
-  const isFullyFetched =
-    catalog.fetchedCategoryIds.live.length >= categories.live.length &&
-    catalog.fetchedCategoryIds.vod.length >= categories.vod.length &&
-    catalog.fetchedCategoryIds.series.length >= categories.series.length;
-
-  catalog.completeness = isFullyFetched ? "full" : "partial";
+  catalog.completeness =
+    mode === "warm" &&
+    (liveCategories.length < categories.live.length ||
+      vodCategories.length < categories.vod.length ||
+      seriesCategories.length < categories.series.length)
+      ? "partial"
+      : "full";
   catalog.generatedAt = new Date().toISOString();
+  catalog.syncMeta = {
+    lastCompletedAt: catalog.generatedAt,
+    lastCompletedMode: mode,
+  };
 
   logger.info(`search_catalog_${mode}_sync_complete`, {
     liveCount: catalog.live.length,

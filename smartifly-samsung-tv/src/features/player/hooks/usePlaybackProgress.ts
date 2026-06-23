@@ -160,8 +160,9 @@ export const usePlaybackProgress = ({
   );
 
   const saveSnapshotBeforeExit = useCallback(() => {
+    durationSecondsRef.current = readDurationSeconds();
     persistPlaybackPosition(readCurrentSeconds(), { force: true });
-  }, [persistPlaybackPosition, readCurrentSeconds]);
+  }, [persistPlaybackPosition, readCurrentSeconds, readDurationSeconds]);
 
   const handleBrowserLoadedMetadata = useCallback(
     (event: SyntheticEvent<HTMLVideoElement>) => {

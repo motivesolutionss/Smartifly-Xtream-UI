@@ -1,6 +1,10 @@
 import { AppError } from "../../types/errors";
 import type { AccountService, UserInfo } from "../interfaces/accountService";
-import type { ContentService } from "../interfaces/contentService";
+import type {
+  ContentListRequestOptions,
+  ContentRequestOptions,
+  ContentService,
+} from "../interfaces/contentService";
 import type { PlaybackService } from "../interfaces/playbackService";
 import type { UserDataService } from "../interfaces/userDataService";
 import type {
@@ -21,40 +25,76 @@ const backendNotImplemented = () => {
 };
 
 export class BackendContentService implements ContentService {
-  getLiveCategories(): Promise<AppCategory[]> {
+  getLiveCategories(_options?: ContentRequestOptions): Promise<AppCategory[]> {
+    void _options;
     return backendNotImplemented();
   }
-  getLiveStreams(): Promise<AppChannel[]> {
+  getLiveStreams(_categoryId?: string, _options?: ContentListRequestOptions): Promise<AppChannel[]> {
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  searchLiveStreams(): Promise<AppChannel[]> {
+  searchLiveStreams(
+    _query?: string,
+    _categoryId?: string,
+    _options?: ContentListRequestOptions
+  ): Promise<AppChannel[]> {
+    void _query;
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  getVodCategories(): Promise<AppCategory[]> {
+  getVodCategories(_options?: ContentRequestOptions): Promise<AppCategory[]> {
+    void _options;
     return backendNotImplemented();
   }
-  getVodStreams(): Promise<AppMovie[]> {
+  getVodStreams(_categoryId?: string, _options?: ContentListRequestOptions): Promise<AppMovie[]> {
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  searchVodStreams(): Promise<AppMovie[]> {
+  searchVodStreams(
+    _query?: string,
+    _categoryId?: string,
+    _options?: ContentListRequestOptions
+  ): Promise<AppMovie[]> {
+    void _query;
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  getVodInfo(): Promise<AppMovieDetails> {
+  getVodInfo(_vodId?: string, _options?: ContentRequestOptions): Promise<AppMovieDetails> {
+    void _vodId;
+    void _options;
     return backendNotImplemented();
   }
-  getSeriesCategories(): Promise<AppCategory[]> {
+  getSeriesCategories(_options?: ContentRequestOptions): Promise<AppCategory[]> {
+    void _options;
     return backendNotImplemented();
   }
-  getSeries(): Promise<AppSeries[]> {
+  getSeries(_categoryId?: string, _options?: ContentListRequestOptions): Promise<AppSeries[]> {
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  searchSeries(): Promise<AppSeries[]> {
+  searchSeries(
+    _query?: string,
+    _categoryId?: string,
+    _options?: ContentListRequestOptions
+  ): Promise<AppSeries[]> {
+    void _query;
+    void _categoryId;
+    void _options;
     return backendNotImplemented();
   }
-  getSeriesInfo(): Promise<AppSeriesDetails> {
+  getSeriesInfo(_seriesId?: string, _options?: ContentRequestOptions): Promise<AppSeriesDetails> {
+    void _seriesId;
+    void _options;
     return backendNotImplemented();
   }
-  getShortEpg(): Promise<AppEpgItem[]> {
+  getShortEpg(_streamId?: string, _options?: ContentRequestOptions): Promise<AppEpgItem[]> {
+    void _streamId;
+    void _options;
     return backendNotImplemented();
   }
 }

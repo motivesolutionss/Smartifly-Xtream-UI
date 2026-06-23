@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPerfTrace } from "../../utils/perfTrace";
 import styles from "./Login.module.css";
 
 const STATUS_MESSAGES = [
@@ -12,7 +13,27 @@ export const HandshakeView: React.FC = () => {
   const [statusIndex, setStatusIndex] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  // Realistic Progress Simulation
+  useEffect(() => {
+    const trace = createPerfTrace("login_handshake_view");
+    const frameId = window.requestAnimationFrame(() => {
+      trace.end({
+        status: "visible",
+        metricName: "login_handshake_view_total_ms",
+        slowAboveMs: 250,
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (!trace.isClosed()) {
+        trace.end({
+          status: "dismissed",
+          metricName: "login_handshake_view_total_ms",
+        });
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let currentProgress = 0;
     const interval = setInterval(() => {
@@ -55,7 +76,7 @@ export const HandshakeView: React.FC = () => {
               }}
             />
           </svg>
-          <img src="/smartifly_logo.png" alt="Smartifly" className={styles.handshakeLogoMinimal} />
+          <img src="/smartifly_icon.webp" alt="Smartifly" className={styles.handshakeLogoMinimal} />
         </div>
 
         <div className={styles.handshakeStatusArea}>

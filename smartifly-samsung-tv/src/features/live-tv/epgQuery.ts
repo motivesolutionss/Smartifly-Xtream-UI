@@ -10,12 +10,51 @@ export const EPG_WINDOW_ITEM_LIMIT = 14;
 export type ParsedShortEpgItem = AppEpgItem & {
   startMs: number;
   endMs: number;
+  synthetic?: true;
+};
+
+const buildGapItem = (
+  previousItem: ParsedShortEpgItem,
+  nextItem: ParsedShortEpgItem
+): ParsedShortEpgItem => ({
+  id: `gap-${previousItem.endMs}-${nextItem.startMs}`,
+  title: "No Program Info",
+  description: "",
+  start: new Date(previousItem.endMs).toISOString(),
+  end: new Date(nextItem.startMs).toISOString(),
+  startMs: previousItem.endMs,
+  endMs: nextItem.startMs,
+  synthetic: true,
+});
+
+export const fillShortEpgGaps = (
+  items: ParsedShortEpgItem[]
+): ParsedShortEpgItem[] => {
+  if (items.length <= 1) return items;
+
+  const filledItems: ParsedShortEpgItem[] = [];
+
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) continue;
+
+    filledItems.push(currentItem);
+
+    const nextItem = items[index + 1];
+    if (!nextItem) continue;
+
+    if (nextItem.startMs > currentItem.endMs) {
+      filledItems.push(buildGapItem(currentItem, nextItem));
+    }
+  }
+
+  return filledItems;
 };
 
 export const parseShortEpgItems = (
   items: AppEpgItem[]
 ): ParsedShortEpgItem[] => {
-  return items
+  const parsedItems = items
     .map((item) => {
       const startSeconds = parseTimestampToSeconds(item.start);
       const endSeconds = parseTimestampToSeconds(item.end);
@@ -33,6 +72,8 @@ export const parseShortEpgItems = (
     })
     .filter((item): item is ParsedShortEpgItem => item !== null)
     .sort((a, b) => a.startMs - b.startMs);
+
+  return fillShortEpgGaps(parsedItems);
 };
 
 export const getShortEpgQueryOptions = (streamId: string) => ({

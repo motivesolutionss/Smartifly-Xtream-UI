@@ -4,7 +4,7 @@ import { Focusable } from "../../components/tv/Focusable";
 import { VirtualGrid } from "../../components/tv/VirtualGrid";
 import { ErrorView } from "../../components/common/ErrorView";
 import { EmptyState } from "../../components/common/EmptyState";
-import { useFocus } from "../../providers/useFocus";
+import { useFocusActions } from "../../providers/useFocus";
 import { VodCard } from "./components/VodCard";
 import VodDetails from "./VodDetails";
 import type { AppMovie } from "../../types/appModels";
@@ -21,6 +21,8 @@ import {
   sliceImagePreloadUrls,
   useBudgetedImagePreload,
 } from "../../hooks/useBudgetedImagePreload";
+import { getGridFocusPrefetchUrls } from "../../hooks/gridFocusPreloadPolicy";
+import { resolvePerformanceTier } from "../../utils/performanceTier";
 import styles from "./Vod.module.css";
 
 const CATEGORY_ROW_HEIGHT = 80;
@@ -126,13 +128,16 @@ export const Vod: React.FC = () => {
     movies,
     isLoading,
     isFetchingMovies,
+    isFetchingMoreMovies,
+    hasMoreMovies,
     isError,
     errorMessage,
+    loadMoreMovies,
     prefetchCategory,
     refetch,
   } = useVodContent(selectedCategoryId);
 
-  const { focusedId, setFocus } = useFocus();
+  const { setFocus } = useFocusActions();
   
   useTvBack(() => {
     if (isSearching) {
@@ -380,9 +385,8 @@ export const Vod: React.FC = () => {
   // Scroll category list to keep active/focused category visible
   useEffect(() => {
     if (!categoryListRef.current || categoryOptions.length === 0) return;
-    const focusedCatId = focusedId?.startsWith("vod-cat-")
-      ? focusedId.replace("vod-cat-", "")
-      : (effectiveSelectedCategoryId || effectiveFocusedCategoryId || categoryOptions[0]?.id);
+    const focusedCatId =
+      effectiveFocusedCategoryId || effectiveSelectedCategoryId || categoryOptions[0]?.id;
     if (!focusedCatId) return;
     const idx = categoryOptions.findIndex((c) => c.id === focusedCatId);
     if (idx < 0) return;
@@ -396,7 +400,7 @@ export const Vod: React.FC = () => {
     if (nextScrollTop !== null && categoryListRef.current.scrollTop !== nextScrollTop) {
       categoryListRef.current.scrollTop = nextScrollTop;
     }
-  }, [categoryOptions, effectiveFocusedCategoryId, effectiveSelectedCategoryId, focusedId, isSearching]);
+  }, [categoryOptions, effectiveFocusedCategoryId, effectiveSelectedCategoryId, isSearching]);
 
   // ── Initial Focus ───────────────────────────────────────────────────────────
   const hasInitializedFocusRef = useRef(false);
@@ -523,15 +527,48 @@ export const Vod: React.FC = () => {
       imagePreloadRange.startIndex,
     ]
   );
+  const focusDrivenPosterPreloadUrls = useMemo(
+    () =>
+      getGridFocusPrefetchUrls(
+        filteredMovies,
+        focusedGridIndex,
+        (movie) => movie.posterUrl,
+        resolvePerformanceTier()
+      ),
+    [filteredMovies, focusedGridIndex]
+  );
+  const prioritizedPosterPreloadUrls = useMemo(
+    () => [...focusDrivenPosterPreloadUrls, ...visiblePosterPreloadUrls],
+    [focusDrivenPosterPreloadUrls, visiblePosterPreloadUrls]
+  );
 
   useBudgetedImagePreload(
-    visiblePosterPreloadUrls,
+    prioritizedPosterPreloadUrls,
     {
       enabled: networkStatus === "online" && !isSearching,
       maxConcurrent: 2,
       maxUrls: 8,
     }
   );
+
+  useEffect(() => {
+    if (isSearching || searchQuery) return;
+    if (!hasMoreMovies || isFetchingMoreMovies || focusedGridIndex < 0) return;
+
+    const remainingMovies = filteredMovies.length - (focusedGridIndex + 1);
+    if (remainingMovies > gridColumns * 2) return;
+
+    void loadMoreMovies();
+  }, [
+    filteredMovies.length,
+    focusedGridIndex,
+    gridColumns,
+    hasMoreMovies,
+    isFetchingMoreMovies,
+    isSearching,
+    loadMoreMovies,
+    searchQuery,
+  ]);
 
   if (selectedMovieId) {
     return <VodDetails movieId={selectedMovieId} onBack={() => setSelectedMovieId(null)} />;
@@ -730,7 +767,12 @@ export const Vod: React.FC = () => {
                             height: 78,
                             display: "flex",
                             alignItems: "center",
-                            zIndex: focusedId === `vod-cat-${category.id}` ? 10 : (effectiveSelectedCategoryId === categoryId ? 2 : 1),
+                            zIndex:
+                              effectiveFocusedCategoryId === category.id
+                                ? 10
+                                : effectiveSelectedCategoryId === categoryId
+                                  ? 2
+                                  : 1,
                           }}
                         >
                           <Focusable
@@ -855,7 +897,11 @@ export const Vod: React.FC = () => {
               onScrollTopChange={(nextTop) => {
                 gridScrollMemory.set(activeCategoryKey, nextTop);
               }}
-              focusedIndex={focusedId?.startsWith("card-vod-") && focusedGridIndex >= 0 ? focusedGridIndex : undefined}
+              focusedIndex={
+                !sidebarFocusedRef.current && focusedGridIndex >= 0
+                  ? focusedGridIndex
+                  : undefined
+              }
               renderItem={(movie, index) => {
                 return (
                   <VodCard

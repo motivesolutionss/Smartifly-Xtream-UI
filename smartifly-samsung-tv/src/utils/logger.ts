@@ -1,3 +1,5 @@
+import { getPerfSessionId } from "./perfSession";
+
 const IS_DEV = import.meta.env.DEV;
 const MAX_BUFFERED_LOGS = 400;
 const DEBUG_STORAGE_KEY = "smartifly_debug";
@@ -25,6 +27,7 @@ declare global {
         envEnabled: boolean;
         runtimeEnabled: boolean;
         effectiveEnabled: boolean;
+        perfSessionId: string;
       };
     };
   }
@@ -103,6 +106,7 @@ const ensureLoggerApi = () => {
         envEnabled: isDebugEnabledByEnv(),
         runtimeEnabled: isDebugForced(),
         effectiveEnabled: isDebugLoggingEnabled(),
+        perfSessionId: getPerfSessionId(),
       }),
     };
   }

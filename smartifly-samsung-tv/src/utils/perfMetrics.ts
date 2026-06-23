@@ -1,4 +1,5 @@
 import { isDebugLoggingEnabled, logger } from "./logger";
+import { getPerfSessionContext } from "./perfSession";
 
 const FLUSH_INTERVAL_MS = 15000;
 
@@ -56,6 +57,7 @@ const flush = () => {
   );
 
   logger.debug("perf_metrics_flush", {
+    ...getPerfSessionContext(),
     counters: counterSnapshot,
     durations: durationSnapshot,
     suppressedSlowLogs:
@@ -104,6 +106,7 @@ export const perfMetrics = {
         if (slowLogCount < MAX_SLOW_LOGS_PER_METRIC_PER_FLUSH) {
           slowLogsByMetric.set(name, slowLogCount + 1);
           logger.debug("perf_slow_duration", {
+            ...getPerfSessionContext(),
             metric: name,
             durationMs: Math.round(durationMs),
             ...options.data,
