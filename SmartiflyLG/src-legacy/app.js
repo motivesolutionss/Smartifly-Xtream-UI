@@ -74,6 +74,7 @@
     homeSections: [],
     homeHeroEntry: null,
     homeLoading: false,
+    homeLoadError: '',
     catalogScreen: 'home',
     wizardStepIndex: 0,
     wizardValues: { portal: '', username: '', password: '' },
@@ -103,6 +104,7 @@
     homeSections: [],
     homeLoading: false,
     homeHeroEntry: null,
+    homeLoadError: '',
     homeCatalogCache: { live: null, movies: null, series: null },
     watchlistItems: [],
     watchlistFilter: 'all',
@@ -138,7 +140,7 @@
   ];
 
   // --- API CLIENT SETUP ---
-  var API_BASE_URL = 'http://api.smartifly.co/v1';
+  var API_BASE_URL = 'https://api.smartifly.co/v1';
 
   function logHomeDebug(label, details) {
     if (!HOME_DEBUG_LOGS || typeof console === 'undefined' || !console.log) return;
@@ -3513,6 +3515,16 @@
     el.style.display = text ? '' : 'none';
   }
 
+  function homeHasEntries() {
+    if (!state.homeSections || !state.homeSections.length) return false;
+    for (var i = 0; i < state.homeSections.length; i++) {
+      if (state.homeSections[i] && state.homeSections[i].entries && state.homeSections[i].entries.length) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function isHomeHeroDetailsIntent() {
     var detailsBtn = document.getElementById('home-hero-btn-details');
     var activeEl = document.activeElement;
@@ -3582,12 +3594,44 @@
     }
 
     if (!entry) {
+      if (state.homeLoading) {
+        setHomeHeroText(overline, '');
+        setHomeHeroText(typeBadge, '');
+        setHomeHeroText(kicker, '');
+        if (title) title.textContent = 'Loading content...';
+        if (summary) summary.textContent = 'Please wait while your home content loads.';
+        if (metaRow) metaRow.style.display = 'none';
+        if (playBtn) playBtn.style.display = 'none';
+        if (detailsBtn) detailsBtn.style.display = 'none';
+        if (heroImage) {
+          heroImage.style.backgroundImage = '';
+          heroImage.style.opacity = '0';
+        }
+        return;
+      }
+      if (state.homeLoadError) {
+        setHomeHeroText(overline, '');
+        setHomeHeroText(typeBadge, '');
+        setHomeHeroText(kicker, '');
+        if (title) title.textContent = 'Unable to load content';
+        if (summary) summary.textContent = state.homeLoadError;
+        if (metaRow) metaRow.style.display = 'none';
+        if (playBtn) playBtn.style.display = 'none';
+        if (detailsBtn) detailsBtn.style.display = 'none';
+        if (heroImage) {
+          heroImage.style.backgroundImage = '';
+          heroImage.style.opacity = '0';
+        }
+        return;
+      }
       setHomeHeroText(overline, '');
       setHomeHeroText(typeBadge, '');
       setHomeHeroText(kicker, '');
       if (title) title.textContent = 'No Featured Content';
       if (summary) summary.textContent = 'Add some viewing history or load portal content to populate the home banner.';
       if (metaRow) metaRow.style.display = 'none';
+      if (playBtn) playBtn.style.display = '';
+      if (detailsBtn) detailsBtn.style.display = '';
       if (heroImage) {
         heroImage.style.backgroundImage = '';
         heroImage.style.opacity = '0';
@@ -3596,6 +3640,8 @@
     }
 
     var typeLabel = getContentTypeLabel(entry.mode).toUpperCase();
+    if (playBtn) playBtn.style.display = '';
+    if (detailsBtn) detailsBtn.style.display = '';
     var categoryLabel = safeTrim(entry.categoryName);
     var genreLabel = getPrimaryGenreText(entry.item, detailInfo);
     var overlineText = categoryLabel || genreLabel || typeLabel;
@@ -3762,8 +3808,13 @@
     var flatIndex = 0;
     container.innerHTML = '';
 
-    if (state.homeLoading && !state.homeSections.length) {
-      container.innerHTML = '<div class="home-empty">Loading your home rails...</div>';
+    if (state.homeLoading) {
+      container.innerHTML = '<div class="home-empty">Loading content...</div>';
+      return;
+    }
+
+    if (state.homeLoadError && !homeHasEntries()) {
+      container.innerHTML = '<div class="home-empty">Unable to load content.</div>';
       return;
     }
 
@@ -3885,7 +3936,7 @@
 
   function fetchHomeCatalogMode(mode, done) {
     if (state.homeCatalogCache[mode]) {
-      done();
+      done(false);
       return;
     }
 
@@ -3894,7 +3945,7 @@
       var category = cats && cats.length ? cats[0] : null;
       if (!category) {
         state.homeCatalogCache[mode] = { categoryName: '', items: [] };
-        done();
+        done(false);
         return;
       }
 
@@ -3903,26 +3954,33 @@
           categoryName: category.category_name || '',
           items: (items || []).slice(0, MAX_HOME_RAIL_ITEMS)
         };
-        done();
+        done(false);
       }, function () {
         state.homeCatalogCache[mode] = { categoryName: category.category_name || '', items: [] };
-        done();
+        done(true);
       });
     }, function () {
       state.homeCatalogCache[mode] = { categoryName: '', items: [] };
-      done();
+      done(true);
     });
   }
 
   function loadHomeData(onComplete) {
     var remaining = 3;
+    var hadError = false;
     state.homeLoading = true;
+    state.homeLoadError = '';
     refreshHomeView();
 
-    function finishOne() {
+    function finishOne(didFail) {
+      if (didFail) {
+        hadError = true;
+      }
       remaining--;
       if (remaining <= 0) {
         state.homeLoading = false;
+        refreshHomeView();
+        state.homeLoadError = !homeHasEntries() && hadError ? 'Please check your network connection and try again.' : '';
         refreshHomeView();
         if (onComplete) onComplete();
       }
@@ -4977,7 +5035,7 @@
 
         // Show QR
         if (session.qrCode && qrImg && qrPlaceholder) {
-          qrImg.src = session.qrCode;
+          qrImg.src = String(session.qrCode || '').replace(/^http:\/\//i, 'https://');
           qrImg.style.display = 'block';
           qrPlaceholder.style.display = 'none';
         }
@@ -6397,9 +6455,9 @@
       console.log('[Legacy Player] Desktop Chrome 38 — using hls.js for streamId:', streamId);
 
       hlsInstance = new Hls({
-        enableWorker: false,
+        enableWorker: true,
         autoStartLoad: false,
-        maxBufferLength: 30,
+        maxBufferLength: 10,
         liveSyncDurationCount: 3,
         manifestLoadingTimeOut: 10000,
         levelLoadingTimeOut: 10000,
@@ -8118,8 +8176,15 @@
             // Same mode but may be coming from search/watchlist/settings,
             // so always ensure the catalog panel is visible.
             showView('view-catalog');
-            state.focusedPanel = 'catalog-categories';
-            state.focusedIndex = getActiveCategoryIndex();
+            if (state.categories && state.categories.length > 0) {
+              state.focusedPanel = 'catalog-categories';
+              state.focusedIndex = getActiveCategoryIndex();
+            } else {
+              // Keep focus on the sidebar while catalog data is still loading,
+              // empty, or failed so D-pad navigation never gets trapped.
+              state.focusedPanel = 'catalog-sidebar';
+              state.focusedIndex = getSidebarFocusIndex(targetMode);
+            }
             updateFocusUI();
           }
           handled = true;

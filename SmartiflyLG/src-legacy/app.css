@@ -3085,6 +3085,8 @@ html, body {
   background-color: #000;
   position: relative;
   overflow: hidden;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Video fills the player view absolutely — matches React app's playerVideo style.
