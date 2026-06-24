@@ -23,8 +23,8 @@
 html, body {
   margin: 0;
   padding: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 1920px;
+  height: 1080px;
   background-color: #07090f;
   color: #f3f6fb;
   font-family: 'Outfit', 'Inter', Arial, Helvetica, sans-serif;
@@ -1642,6 +1642,11 @@ html, body {
   margin: 0.6%;
   border-radius: 24px;
 }
+
+#watchlist-results-grid .channel-card--poster {
+  width: 15.4%;
+}
+
 
 .channel-card--poster .channel-logo-container img {
   object-fit: cover;
@@ -3374,6 +3379,12 @@ html, body {
   pointer-events: auto;
 }
 
+.player-overlay-left-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .player-media-controls {
   display: flex;
   align-items: center;
@@ -3743,6 +3754,93 @@ html, body {
   margin-top: 8px;
   opacity: 0.7;
 }
+
+/* PLAYER SETTINGS OVERLAY */
+.player-settings-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(5, 7, 12, 0.78);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.player-settings-panel {
+  width: 680px;
+  height: 380px;
+  background-color: #0b0f19;
+  border: 3px solid #1c2635;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.player-settings-header {
+  padding: 18px 24px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  border-bottom: 1px solid #1c2635;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.player-settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.player-settings-categories {
+  width: 240px;
+  border-right: 1px solid #1c2635;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  background-color: #080b12;
+}
+
+.player-settings-options {
+  flex: 1;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.settings-item {
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 700;
+  color: #8c97a5;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.settings-item.active {
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.settings-item.focused {
+  color: #ffffff !important;
+  background-color: #e50914 !important;
+}
+
 
 
 

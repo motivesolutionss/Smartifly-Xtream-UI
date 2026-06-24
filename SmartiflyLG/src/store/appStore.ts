@@ -7,6 +7,7 @@ import {
   type XtreamUserInfo,
   validatePortalCode
 } from '../services/api';
+import type { ExternalSubtitleTrack } from '../services/subtitles';
 import { loadHomeBootstrapData, type HomeBootstrapData } from '../features/home/homeBootstrap';
 import {
   buildHomeBootstrapCacheKey,
@@ -89,6 +90,7 @@ export type PlaybackRequest = {
   seasonNumber?: number;
   episodeNumber?: number;
   containerExtension?: string;
+  subtitleTracks?: ExternalSubtitleTrack[];
 };
 
 type LoginInput = {

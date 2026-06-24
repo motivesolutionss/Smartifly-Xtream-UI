@@ -102,6 +102,7 @@ import useSettingsStore from '../../store/settingsStore';
 import useWatchHistoryStore, { useTrackProgress, generateWatchHistoryId } from '../../store/watchHistoryStore';
 import { createXtreamApi, type XtreamShortEpgEntry } from '../../services/api';
 import { legacyChromiumBrowser, chrome38CompatMode } from '../../utils/legacyBrowser';
+import { convertSrtToVtt } from '../../services/subtitles';
 
 declare global {
   interface Window {
@@ -866,6 +867,8 @@ function PlayerScreen() {
   const webosNativeHlsMediaOption = useSettingsStore((state) => state.webosNativeHlsMediaOption);
   const hlsPlaylistRewrite = useSettingsStore((state) => state.hlsPlaylistRewrite);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const externalSubtitleBlobUrlsRef = useRef<string[]>([]);
+  const externalSubtitleRequestTokenRef = useRef(0);
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
   const hlsRuntime = window.Hls;
@@ -1064,22 +1067,117 @@ function PlayerScreen() {
     if (!video) return;
 
     const tracks = Array.from(video.textTracks || []);
+    const externalTracks = playback?.subtitleTracks ?? [];
     if (tracks.length > 0) {
       setSubtitles(
         tracks.map((t: any, idx: number) => ({
-          id: idx,
+          id: externalTracks[idx]?.id ?? idx,
           label: t.label || t.language || `Track ${idx + 1}`,
           language: t.language || '',
           active: t.mode === 'showing'
         }))
       );
       const activeIdx = tracks.findIndex((t: any) => t.mode === 'showing');
-      setActiveSubtitleId(activeIdx >= 0 ? activeIdx : 'off');
+      setActiveSubtitleId(activeIdx >= 0 ? (externalTracks[activeIdx]?.id ?? activeIdx) : 'off');
     }
+  }, [playback?.subtitleTracks]);
+
+  const clearExternalSubtitleTracks = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      Array.from(video.querySelectorAll('track[data-smartifly-external-subtitle="true"]')).forEach((node) => node.remove());
+    }
+
+    externalSubtitleBlobUrlsRef.current.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // Ignore cleanup failures for revoked blob URLs.
+      }
+    });
+    externalSubtitleBlobUrlsRef.current = [];
   }, []);
+
+  const attachExternalSubtitleTracks = useCallback(async () => {
+    const video = videoRef.current;
+    const subtitleTracks = playback?.subtitleTracks ?? [];
+    const requestToken = externalSubtitleRequestTokenRef.current + 1;
+    externalSubtitleRequestTokenRef.current = requestToken;
+
+    clearExternalSubtitleTracks();
+
+    if (!video || subtitleTracks.length === 0) {
+      return;
+    }
+
+    setSubtitles(
+      subtitleTracks.map((track) => ({
+        id: track.id,
+        label: track.label,
+        language: track.language,
+        active: false
+      }))
+    );
+    setActiveSubtitleId('off');
+
+    for (let index = 0; index < subtitleTracks.length; index++) {
+      const subtitleTrack = subtitleTracks[index];
+      let resolvedUrl = subtitleTrack.url;
+
+      if (subtitleTrack.format === 'srt') {
+        try {
+          const response = await fetch(subtitleTrack.url, { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error(`Subtitle HTTP ${response.status}`);
+          }
+
+          const vttBlob = new Blob([convertSrtToVtt(await response.text())], { type: 'text/vtt' });
+          resolvedUrl = URL.createObjectURL(vttBlob);
+          externalSubtitleBlobUrlsRef.current.push(resolvedUrl);
+        } catch (error) {
+          console.warn(`${PLAYER_LOG_PREFIX} failed to prepare subtitle track`, {
+            url: subtitleTrack.url,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          continue;
+        }
+      }
+
+      if (externalSubtitleRequestTokenRef.current !== requestToken || !videoRef.current) {
+        return;
+      }
+
+      const trackNode = document.createElement('track');
+      trackNode.kind = 'subtitles';
+      trackNode.label = subtitleTrack.label || `Subtitle ${index + 1}`;
+      trackNode.srclang = subtitleTrack.language || '';
+      trackNode.src = resolvedUrl;
+      trackNode.default = false;
+      trackNode.setAttribute('data-smartifly-external-subtitle', 'true');
+      videoRef.current.appendChild(trackNode);
+    }
+
+    window.setTimeout(() => {
+      if (externalSubtitleRequestTokenRef.current === requestToken) {
+        handleNativeTracks();
+      }
+    }, 60);
+  }, [clearExternalSubtitleTracks, handleNativeTracks, playback?.subtitleTracks]);
 
   const handleSubtitleChange = (trackId: string | number) => {
     setActiveSubtitleId(trackId);
+    if ((playback?.subtitleTracks?.length ?? 0) > 0 && videoRef.current) {
+      const tracks = videoRef.current.textTracks;
+      const targetIdx = subtitles.findIndex((track) => track.id === trackId);
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].mode = trackId !== 'off' && i === targetIdx ? 'showing' : 'disabled';
+      }
+      if (shakaPlayerRef.current && trackId === 'off') {
+        shakaPlayerRef.current.setTextTrackVisibility(false);
+      }
+      return;
+    }
+
     if (activeEngineRef.current === 'shaka' && shakaPlayerRef.current) {
       if (trackId === 'off') {
         shakaPlayerRef.current.setTextTrackVisibility(false);
@@ -1147,6 +1245,15 @@ function PlayerScreen() {
     const sources = [playback.streamUrl, ...(playback.fallbackUrls ?? [])];
     return sources.filter((source, index, all) => Boolean(source) && all.indexOf(source) === index);
   }, [playback]);
+
+  useEffect(() => {
+    void attachExternalSubtitleTracks();
+
+    return () => {
+      externalSubtitleRequestTokenRef.current += 1;
+      clearExternalSubtitleTracks();
+    };
+  }, [attachExternalSubtitleTracks, clearExternalSubtitleTracks]);
   const [activeStreamIndex, setActiveStreamIndex] = useState(0);
   const [engineOverride, setEngineOverride] = useState<PlaybackEngine | null>(null);
   const activeStreamUrl = playbackSources[activeStreamIndex] ?? playback?.streamUrl ?? '';

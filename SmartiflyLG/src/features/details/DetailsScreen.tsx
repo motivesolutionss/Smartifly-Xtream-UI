@@ -82,6 +82,7 @@ import {
   readFreshCacheValue,
   writeCacheValue
 } from '../../services/cacheService';
+import { extractSubtitleTracks, type ExternalSubtitleTrack } from '../../services/subtitles';
 import useWatchlistStore, { buildWatchlistKey, buildWatchlistScope } from '../../store/watchlistStore';
 import useWatchHistoryStore from '../../store/watchHistoryStore';
 import { formatFallbackTitle } from '../../utils/fallbackText';
@@ -106,6 +107,7 @@ type DetailState = {
   director?: string;
   trailerUrl?: string;
   containerExtension?: string;
+  subtitleTracks?: ExternalSubtitleTrack[];
 };
 
 type DetailSeason = {
@@ -125,6 +127,7 @@ type DetailEpisode = {
   description?: string;
   extension?: string;
   streamId?: number;
+  subtitleTracks?: ExternalSubtitleTrack[];
 };
 
 type DetailFocusId = 'back' | 'play' | 'save' | 'trailer' | 'close-trailer' | `season:${string}` | `episode:${string}` | `similar:${string}`;
@@ -233,7 +236,12 @@ function mapSeriesSimilar(item: XtreamSeries): DetailCard {
   };
 }
 
-function mapSeriesEpisode(item: XtreamSeriesEpisode, seasonId: string, fallbackArtwork?: string): DetailEpisode {
+function mapSeriesEpisode(
+  item: XtreamSeriesEpisode,
+  seasonId: string,
+  baseUrl: string,
+  fallbackArtwork?: string
+): DetailEpisode {
   const episodeNumber = getEpisodeNumber(item.episode_num);
   const rawId = String(item.id || item.stream_id || `${seasonId}-${episodeNumber || item.title}`).trim();
   const primaryArtwork = pickImage(item.info?.movie_image);
@@ -249,7 +257,8 @@ function mapSeriesEpisode(item: XtreamSeriesEpisode, seasonId: string, fallbackA
     episodeNumber,
     description: item.plot?.trim() || item.info?.plot?.trim(),
     extension: item.container_extension?.trim(),
-    streamId: item.stream_id
+    streamId: item.stream_id,
+    subtitleTracks: extractSubtitleTracks(baseUrl, item)
   };
 }
 
@@ -503,7 +512,7 @@ function safeTrim(value: any): string {
   return String(value).trim();
 }
 
-function parseMovieInfo(info: XtreamMovieInfo, fallback: DetailState): DetailState {
+function parseMovieInfo(baseUrl: string, info: XtreamMovieInfo, fallback: DetailState): DetailState {
   const movieInfo = info.info ?? {};
   return {
     title: safeTrim(movieInfo.name) || fallback.title,
@@ -516,11 +525,12 @@ function parseMovieInfo(info: XtreamMovieInfo, fallback: DetailState): DetailSta
     cast: safeTrim(movieInfo.cast) || fallback.cast,
     director: safeTrim(movieInfo.director) || fallback.director,
     trailerUrl: safeTrim(movieInfo.youtube_trailer) || fallback.trailerUrl,
-    containerExtension: safeTrim(info.movie_data?.container_extension) || fallback.containerExtension
+    containerExtension: safeTrim(info.movie_data?.container_extension) || fallback.containerExtension,
+    subtitleTracks: extractSubtitleTracks(baseUrl, info, fallback.subtitleTracks)
   };
 }
 
-function parseSeriesInfo(info: XtreamSeriesInfo, fallback: DetailState): DetailState {
+function parseSeriesInfo(baseUrl: string, info: XtreamSeriesInfo, fallback: DetailState): DetailState {
   const seriesInfo = info.info ?? {};
   return {
     title: safeTrim(seriesInfo.name) || fallback.title,
@@ -532,7 +542,8 @@ function parseSeriesInfo(info: XtreamSeriesInfo, fallback: DetailState): DetailS
     genre: safeTrim(seriesInfo.genre).split(',')[0]?.trim() || fallback.genre,
     cast: safeTrim(seriesInfo.cast) || fallback.cast,
     director: safeTrim(seriesInfo.director) || fallback.director,
-    trailerUrl: safeTrim(seriesInfo.youtube_trailer) || fallback.trailerUrl
+    trailerUrl: safeTrim(seriesInfo.youtube_trailer) || fallback.trailerUrl,
+    subtitleTracks: extractSubtitleTracks(baseUrl, info, fallback.subtitleTracks)
   };
 }
 
@@ -779,7 +790,8 @@ function DetailsScreen() {
       posterUrl: activeContent.posterUrl,
       backdropUrl: activeContent.backdropUrl,
       year: activeContent.year,
-      rating: activeContent.rating
+      rating: activeContent.rating,
+      subtitleTracks: []
     };
 
     async function loadDetails() {
@@ -819,7 +831,7 @@ function DetailsScreen() {
             categoryMovies = allMovies.filter((m) => m.category_id === activeContent.categoryId);
           }
 
-          const nextDetail = info ? parseMovieInfo(info, fallback) : fallback;
+          const nextDetail = info ? parseMovieInfo(activePortalUrl, info, fallback) : fallback;
           const nextSimilar = buildMovieRecommendations(categoryMovies, allMovies, activeContent.contentId, 10);
 
           setDetail(nextDetail);
@@ -851,7 +863,7 @@ function DetailsScreen() {
             writeCacheValue(buildSeriesInfoCacheKey(portalCode || '', activeUsername, activeContent.contentId), info, DETAILS_CACHE_TTL_MS);
           }
 
-          const nextDetail = info ? parseSeriesInfo(info, fallback) : fallback;
+          const nextDetail = info ? parseSeriesInfo(activePortalUrl, info, fallback) : fallback;
           setDetail(nextDetail);
           setSimilar([]);
           setSeriesInfo(info);
@@ -954,8 +966,8 @@ function DetailsScreen() {
     }
 
     const rawEpisodes = seriesInfo.episodes[selectedSeason] ?? [];
-    return rawEpisodes.map((episode) => mapSeriesEpisode(episode, selectedSeason, episodeFallbackArt));
-  }, [episodeFallbackArt, selectedContent?.kind, selectedSeason, seriesInfo]);
+    return rawEpisodes.map((episode) => mapSeriesEpisode(episode, selectedSeason, portalBaseUrl || '', episodeFallbackArt));
+  }, [episodeFallbackArt, portalBaseUrl, selectedContent?.kind, selectedSeason, seriesInfo]);
 
   const metaBits = useMemo(() => {
     if (!detail) {
@@ -1077,7 +1089,8 @@ function DetailsScreen() {
         resumePosition,
         returnDestination: 'details',
         streamId: selectedContent.contentId,
-        containerExtension: extensions.primary
+        containerExtension: extensions.primary,
+        subtitleTracks: detail?.subtitleTracks || []
       });
       return;
     }
@@ -1112,7 +1125,8 @@ function DetailsScreen() {
       seriesId: selectedContent.contentId,
       seasonNumber: Number(selectedSeason) || 1,
       episodeNumber: episode.episodeNumber || 1,
-      containerExtension: extensions.primary
+      containerExtension: extensions.primary,
+      subtitleTracks: episode.subtitleTracks?.length ? episode.subtitleTracks : detail?.subtitleTracks || []
     });
   };
 
@@ -1153,7 +1167,8 @@ function DetailsScreen() {
       seriesId: selectedContent.contentId,
       seasonNumber: Number(episode.seasonId) || Number(selectedSeason) || 1,
       episodeNumber: episode.episodeNumber || 1,
-      containerExtension: extensions.primary
+      containerExtension: extensions.primary,
+      subtitleTracks: episode.subtitleTracks?.length ? episode.subtitleTracks : detail?.subtitleTracks || []
     });
   };
 

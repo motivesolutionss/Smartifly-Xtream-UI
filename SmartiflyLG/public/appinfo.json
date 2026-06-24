@@ -8,7 +8,7 @@
   "icon": "assets/smartifly_icon_master_1024x1024.webp",
   "largeIcon": "assets/smartifly_icon_master_1024x1024.webp",
   "requiredPermissions": [],
-  "resolution": "1920x1080",
+  "resolution": "1280x720",
   "disableBackHistoryAPI": true,
   "bgColor": "#07090f"
 }
