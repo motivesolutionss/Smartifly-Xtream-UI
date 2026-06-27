@@ -205,8 +205,9 @@ function WelcomeScreen({ onCreateAccount, onSignIn }: WelcomeScreenProps) {
             src="./assets/smartifly_icon.png"
             alt="Smartifly"
             style={{
-              width: '380px',
+              width: '300px',
               maxWidth: '100%',
+              marginLeft: '-12px',
               display: 'block',
               marginBottom: '26px'
             }}

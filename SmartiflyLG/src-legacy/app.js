@@ -1409,7 +1409,7 @@
   }
 
   function setSidebarActiveById(sidebarId) {
-    var sidebarIds = ['sidebar-home', 'sidebar-live', 'sidebar-movies', 'sidebar-series', 'sidebar-search', 'sidebar-watchlist', 'sidebar-settings'];
+    var sidebarIds = ['sidebar-profile', 'sidebar-home', 'sidebar-live', 'sidebar-movies', 'sidebar-series', 'sidebar-search', 'sidebar-watchlist', 'sidebar-settings'];
 
     for (var i = 0; i < sidebarIds.length; i++) {
       var item = document.getElementById(sidebarIds[i]);
@@ -1426,13 +1426,14 @@
   function getSidebarFocusIndex(mode) {
     var activeMode = mode || state.catalogMode;
     var SIDEBAR_MODE_INDEX = {
-      'home': 0,
-      'live': 1,
-      'movies': 2,
-      'series': 3,
-      'search': 4,
-      'watchlist': 5,
-      'settings': 6
+      'profile': 0,
+      'home': 1,
+      'live': 2,
+      'movies': 3,
+      'series': 4,
+      'search': 5,
+      'watchlist': 6,
+      'settings': 7
     };
     return SIDEBAR_MODE_INDEX.hasOwnProperty(activeMode) ? SIDEBAR_MODE_INDEX[activeMode] : 0;
   }
@@ -3658,6 +3659,15 @@
     }
 
     var typeLabel = getContentTypeLabel(entry.mode).toUpperCase();
+    var displayBadgeText = typeLabel;
+    if (typeLabel === 'MOVIE') {
+      displayBadgeText = 'FEATURED MOVIE';
+    } else if (typeLabel === 'SERIES') {
+      displayBadgeText = 'FEATURED SERIES';
+    } else if (typeLabel === 'LIVE') {
+      displayBadgeText = 'FEATURED LIVE';
+    }
+
     if (playBtn) playBtn.style.display = '';
     if (detailsBtn) detailsBtn.style.display = '';
     var categoryLabel = safeTrim(entry.categoryName);
@@ -3672,7 +3682,7 @@
     }
 
     setHomeHeroText(overline, overlineText);
-    setHomeHeroText(typeBadge, typeLabel);
+    setHomeHeroText(typeBadge, displayBadgeText);
     setHomeHeroText(kicker, kickerText);
     if (title) title.textContent = getCatalogItemName(entry.item);
     
@@ -4613,6 +4623,7 @@
       bind('player-btn-seek-forward',       function () { seekPlayerBy(10); });
       bind('player-btn-back',               function () { closePlayer(); });
       bind('player-btn-settings',           function () { openPlayerSettings(); });
+      bind('sidebar-profile',               function () { setupProfilesView(); });
       bind('sidebar-home',                  function () { openHomeView(); });
       bind('sidebar-live',                  function () { loadCatalog('live'); });
       bind('sidebar-movies',                function () { loadCatalog('movies'); });
@@ -7470,7 +7481,7 @@
       return document.getElementById('profiles-list-container').querySelectorAll('.profile-edit-btn.focusable');
     }
     if (state.focusedPanel === 'catalog-sidebar') {
-      return document.querySelector('.sidebar-menu').querySelectorAll('.focusable');
+      return document.querySelector('.sidebar').querySelectorAll('.focusable');
     }
     if (state.focusedPanel === 'home-rails') {
       return document.getElementById('home-rails').querySelectorAll('.focusable');
@@ -7571,6 +7582,15 @@
   }
 
   function updateFocusUI() {
+    var catalogContainer = document.querySelector('.catalog-container');
+    if (catalogContainer) {
+      if (state.focusedPanel === 'catalog-sidebar') {
+        catalogContainer.classList.add('sidebar-focused');
+      } else {
+        catalogContainer.classList.remove('sidebar-focused');
+      }
+    }
+
     // Clear previously focused element in O(1)
     if (state.activeFocusedEl) {
       try {
@@ -7728,6 +7748,27 @@
       } else if (state.focusedPanel === 'watchlist-results') {
         scrollIntoViewIfNeeded(document.getElementById('watchlist-results-scroll'), focusedEl);
       }
+
+      updateSidebarFloatingLabel(focusedEl);
+    } else {
+      updateSidebarFloatingLabel(null);
+    }
+  }
+
+  function updateSidebarFloatingLabel(focusedEl) {
+    var label = document.getElementById('sidebar-focus-label');
+    if (!label) return;
+
+    if (focusedEl && state.focusedPanel === 'catalog-sidebar') {
+      var span = focusedEl.querySelector('span');
+      var text = span ? span.textContent : focusedEl.textContent.trim();
+      label.textContent = text;
+      
+      var rect = focusedEl.getBoundingClientRect();
+      label.style.top = (rect.top + rect.height / 2) + 'px';
+      label.style.display = 'block';
+    } else {
+      label.style.display = 'none';
     }
   }
 
@@ -8785,7 +8826,25 @@
           handled = true;
         }
       } else if (state.focusedPanel === 'catalog-sidebar') {
-        if (state.catalogScreen === 'home' && state.focusedIndex === getSidebarFocusIndex('home')) {
+        if (state.focusedIndex === getSidebarFocusIndex('profile')) {
+          if (state.catalogScreen === 'home') {
+            if (state.homeHeroEntry) {
+              focusHomeHero(0);
+            } else if (document.getElementById('home-rails').querySelectorAll('.focusable').length > 0) {
+              state.focusedPanel = 'home-rails';
+              state.focusedIndex = 0;
+              updateFocusUI();
+            }
+          } else {
+            var categories = document.getElementById('categories-panel-list');
+            if (categories && categories.querySelectorAll('.focusable').length > 0) {
+              state.focusedPanel = 'catalog-categories';
+              state.focusedIndex = getActiveCategoryIndex();
+              updateFocusUI();
+            }
+          }
+          handled = true;
+        } else if (state.catalogScreen === 'home' && state.focusedIndex === getSidebarFocusIndex('home')) {
           if (state.homeHeroEntry) {
             focusHomeHero(0);
           } else if (document.getElementById('home-rails').querySelectorAll('.focusable').length > 0) {

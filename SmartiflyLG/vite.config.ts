@@ -248,6 +248,13 @@ export default defineConfig(({ mode }) => {
                     "var API_BASE_URL = " + JSON.stringify(apiBaseUrl) + ";"
                   );
                   writeFileSync(join(legacyDir, file), content, 'utf8');
+                } else if (file === 'index.html') {
+                  let content = readFileSync(srcFile, 'utf8');
+                  const buildVersion = Date.now().toString();
+                  content = content
+                    .replace('href="./app.css"', `href="./app.css?v=${buildVersion}"`)
+                    .replace('src="./app.js"', `src="./app.js?v=${buildVersion}"`);
+                  writeFileSync(join(legacyDir, file), content, 'utf8');
                 } else {
                   copyFileSync(srcFile, join(legacyDir, file));
                 }

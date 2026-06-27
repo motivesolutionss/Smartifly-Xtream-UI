@@ -3122,12 +3122,12 @@ textarea:focus {
 }
 
 .tv-key {
-  min-height: 33px;
+  min-height: 60px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #1d2331;
   color: #ffffff;
-  font-size: 12px;
+  font-size: 20px;
   font-weight: 700;
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
   transition:
@@ -3435,10 +3435,10 @@ textarea:focus {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 760px;
-  height: 560px;
-  margin-left: -380px;
-  margin-top: -290px;
+  width: 960px;
+  height: 680px;
+  margin-left: -480px;
+  margin-top: -340px;
   transform-origin: center center;
   -webkit-animation: collage-float 7.5s ease-in-out infinite alternate;
   animation: collage-float 7.5s ease-in-out infinite alternate;
@@ -3488,8 +3488,8 @@ textarea:focus {
 .card-left {
   left: 32px;
   top: 120px;
-  width: 254px;
-  height: 368px;
+  width: 320px;
+  height: 472px;
   transform: rotate(-12deg);
   z-index: 1;
   -webkit-animation: card-drift-left 6.8s ease-in-out infinite alternate;
@@ -3497,22 +3497,22 @@ textarea:focus {
 }
 
 .card-center {
-  left: 232px;
-  top: 18px;
-  width: 312px;
-  height: 448px;
-  transform: rotate(-5deg);
+  left: 280px;
+  top: 48px;
+  width: 400px;
+  height: 576px;
+  transform: rotate(-4deg);
   z-index: 3;
   -webkit-animation: card-drift-center 6.4s ease-in-out infinite alternate;
   animation: card-drift-center 6.4s ease-in-out infinite alternate;
 }
 
 .card-right {
-  left: 500px;
-  top: 102px;
-  width: 254px;
-  height: 368px;
-  transform: rotate(8deg);
+  left: 608px;
+  top: 120px;
+  width: 320px;
+  height: 472px;
+  transform: rotate(12deg);
   z-index: 2;
   -webkit-animation: card-drift-right 6.2s ease-in-out infinite alternate;
   animation: card-drift-right 6.2s ease-in-out infinite alternate;
@@ -3629,61 +3629,61 @@ textarea:focus {
 
 @-webkit-keyframes card-drift-left {
   from {
-    -webkit-transform: translateY(28px) rotate(-12deg);
-    transform: translateY(28px) rotate(-12deg);
+    -webkit-transform: translateY(16px) rotate(-12deg);
+    transform: translateY(16px) rotate(-12deg);
   }
   to {
-    -webkit-transform: translateY(12px) rotate(-10deg);
-    transform: translateY(12px) rotate(-10deg);
+    -webkit-transform: translateY(0px) rotate(-10deg);
+    transform: translateY(0px) rotate(-10deg);
   }
 }
 
 @keyframes card-drift-left {
   from {
-    transform: translateY(28px) rotate(-12deg);
+    transform: translateY(16px) rotate(-12deg);
   }
   to {
-    transform: translateY(12px) rotate(-10deg);
+    transform: translateY(0px) rotate(-10deg);
   }
 }
 
 @-webkit-keyframes card-drift-center {
   from {
-    -webkit-transform: translateY(-6px) rotate(-5deg);
-    transform: translateY(-6px) rotate(-5deg);
+    -webkit-transform: translateY(0px) rotate(-4deg);
+    transform: translateY(0px) rotate(-4deg);
   }
   to {
-    -webkit-transform: translateY(-22px) rotate(-4deg);
-    transform: translateY(-22px) rotate(-4deg);
+    -webkit-transform: translateY(-16px) rotate(-3deg);
+    transform: translateY(-16px) rotate(-3deg);
   }
 }
 
 @keyframes card-drift-center {
   from {
-    transform: translateY(-6px) rotate(-5deg);
+    transform: translateY(0px) rotate(-4deg);
   }
   to {
-    transform: translateY(-22px) rotate(-4deg);
+    transform: translateY(-16px) rotate(-3deg);
   }
 }
 
 @-webkit-keyframes card-drift-right {
   from {
-    -webkit-transform: translateY(18px) rotate(8deg);
-    transform: translateY(18px) rotate(8deg);
+    -webkit-transform: translateY(16px) rotate(12deg);
+    transform: translateY(16px) rotate(12deg);
   }
   to {
-    -webkit-transform: translateY(6px) rotate(6deg);
-    transform: translateY(6px) rotate(6deg);
+    -webkit-transform: translateY(0px) rotate(10deg);
+    transform: translateY(0px) rotate(10deg);
   }
 }
 
 @keyframes card-drift-right {
   from {
-    transform: translateY(18px) rotate(8deg);
+    transform: translateY(16px) rotate(12deg);
   }
   to {
-    transform: translateY(6px) rotate(6deg);
+    transform: translateY(0px) rotate(10deg);
   }
 }
 

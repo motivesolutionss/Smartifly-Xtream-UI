@@ -526,7 +526,6 @@ function LoginScreen({ onBack }: LoginScreenProps) {
           </p>
         </div>
       </section>
-
       <section
         style={{
           flex: 1,
@@ -534,11 +533,13 @@ function LoginScreen({ onBack }: LoginScreenProps) {
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          alignItems: 'center'
         }}
       >
-        <div style={{ maxWidth: '920px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px' }}>
+        <div style={{ width: '100%', maxWidth: '920px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', width: '100%' }}>
+            <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
             <span
               style={{
                 color: '#f5d06a',
@@ -546,7 +547,7 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                 fontWeight: 800,
                 letterSpacing: '2px',
                 textTransform: 'uppercase',
-                marginRight: '14px'
+                margin: '0 14px'
               }}
             >
               {activeStep.eyebrow}
@@ -554,8 +555,8 @@ function LoginScreen({ onBack }: LoginScreenProps) {
             <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
           </div>
 
-          <h1 style={{ margin: 0, fontSize: '48px', lineHeight: 1.02, fontWeight: 800 }}>{activeStep.title}</h1>
-          <p style={{ margin: '16px 0 0', maxWidth: '640px', color: 'rgba(231,236,244,0.76)', fontSize: '18px', lineHeight: 1.5 }}>
+          <h1 style={{ margin: 0, fontSize: '48px', lineHeight: 1.02, fontWeight: 800, textAlign: 'center' }}>{activeStep.title}</h1>
+          <p style={{ margin: '16px auto 0', maxWidth: '640px', color: 'rgba(231,236,244,0.76)', fontSize: '18px', lineHeight: 1.5, textAlign: 'center' }}>
             {activeStep.description}
           </p>
 
@@ -571,7 +572,7 @@ function LoginScreen({ onBack }: LoginScreenProps) {
             }}
           >
             <label style={{ display: 'block', marginBottom: '22px' }}>
-              <span style={{ display: 'block', marginBottom: '10px', fontSize: '14px', color: 'rgba(231,236,244,0.76)' }}>
+              <span style={{ display: 'block', marginBottom: '10px', fontSize: '14px', color: 'rgba(231,236,244,0.76)', textAlign: 'center' }}>
                 {activeStep.label}
               </span>
               <div
@@ -581,11 +582,13 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                   padding: '0 20px',
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.1)',
                   color: activeValue ? '#ffffff' : 'rgba(231,236,244,0.4)',
                   fontSize: '24px',
-                  fontWeight: 700
+                  fontWeight: 700,
+                  textAlign: 'center'
                 }}
               >
                 {activeValue ? maskValue(stepId, activeValue) : activeStep.placeholder}
@@ -603,9 +606,9 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                   }}
                 >
                   {row.map((key, colIndex) => {
-                    const isFocused = rowIndex === focusedRow && colIndex === focusedCol;
-                    const spanVal = key.span || 1;
-                    return (
+                     const isFocused = rowIndex === focusedRow && colIndex === focusedCol;
+                     const spanVal = key.span || 1;
+                     return (
                       <button
                         key={`${rowIndex}-${colIndex}-${key.label}`}
                         type="button"
@@ -622,7 +625,7 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                         style={{
                           width: `calc(((100% - 72px) / 10) * ${spanVal} + ${spanVal - 1} * 8px)`,
                           marginRight: colIndex < row.length - 1 ? '8px' : 0,
-                          minHeight: '46px',
+                          minHeight: '60px',
                           border: 0,
                           borderRadius: '12px',
                           background: key.accent
@@ -631,7 +634,7 @@ function LoginScreen({ onBack }: LoginScreenProps) {
                               ? '#242c3d'
                               : '#1d2331',
                           color: '#ffffff',
-                          fontSize: '16px',
+                          fontSize: key.label.length > 3 ? '18px' : '22px',
                           fontWeight: 700,
                           boxShadow: isFocused
                             ? '0 0 0 2px rgba(255,255,255,0.16), 0 8px 16px rgba(0,0,0,0.22)'

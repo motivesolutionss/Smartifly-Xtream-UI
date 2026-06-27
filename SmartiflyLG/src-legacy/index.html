@@ -159,6 +159,7 @@
         <div class="login-right-inner">
           <!-- Step Header -->
           <div class="login-step-header">
+            <span class="login-header-line"></span>
             <span id="login-wizard-eyebrow" class="login-eyebrow">STEP 01 - IDENTITY</span>
             <span class="login-header-line"></span>
           </div>
@@ -207,37 +208,46 @@
   <div id="view-catalog" class="view">
     <div class="catalog-container">
       <!-- Sidebar Panel -->
+      <!-- Sidebar Panel -->
       <div class="sidebar">
-        <div class="sidebar-brand">
-          <img src="./assets/smartifly_icon.png" class="sidebar-logo" alt="Smartifly" />
+        <div class="sidebar-top">
+          <button id="sidebar-profile" class="focusable sidebar-item sidebar-profile-btn">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-4.43-1-5.5-2.28.03-1.83 3.67-2.82 5.5-2.82s5.47.99 5.5 2.82c-1.07 1.28-3.47 2.28-5.5 2.28z"/></svg><span>Profiles</span>
+          </button>
+          <div class="sidebar-divider"></div>
         </div>
+
         <div class="sidebar-menu">
           <button id="sidebar-home" class="focusable sidebar-item active">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>Home
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span>Home</span>
           </button>
           <button id="sidebar-live" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M21 6h-7.59l3.29-3.29L16 2l-4 4-4-4-.71.71L10.59 6H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 14H3V8h18v12z"/></svg>Live TV
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M21 6h-7.59l3.29-3.29L16 2l-4 4-4-4-.71.71L10.59 6H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 14H3V8h18v12z"/></svg><span>Live TV</span>
           </button>
           <button id="sidebar-movies" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>Movies
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg><span>Movies</span>
           </button>
           <button id="sidebar-series" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>Series
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg><span>Series</span>
           </button>
           <button id="sidebar-search" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>Search
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span>Search</span>
           </button>
           <button id="sidebar-watchlist" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>Watchlist
-          </button>
-          <button id="sidebar-settings" class="focusable sidebar-item">
-            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>Settings
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><span>Watchlist</span>
           </button>
         </div>
-        <div style="margin-top: auto; padding-left: 10px; font-size: 11px; color: rgba(255,255,255,0.3)">
-          v2025.05 • LEGACY PORT
+
+        <div class="sidebar-bottom">
+          <div class="sidebar-divider sidebar-divider-bottom"></div>
+          <button id="sidebar-settings" class="focusable sidebar-item sidebar-settings-btn">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span>Settings</span>
+          </button>
         </div>
       </div>
+
+      <!-- Floating Sidebar Label -->
+      <div id="sidebar-focus-label" class="sidebar-focus-label" style="display: none;"></div>
 
       <div id="home-panel" class="home-panel" style="display: none;">
         <div id="home-scroll" class="home-scroll">
@@ -245,6 +255,7 @@
             <div id="home-hero-image" class="home-hero-image"></div>
             <div class="home-hero-scrim"></div>
             <div class="home-hero-copy">
+              <img src="./assets/smartifly_icon.png" class="home-hero-brand-logo" alt="Smartifly" />
               <div id="home-hero-overline" class="home-hero-logo"></div>
               <div class="home-hero-badge-row">
                 <span id="home-hero-type-badge" class="home-hero-top10"></span>
