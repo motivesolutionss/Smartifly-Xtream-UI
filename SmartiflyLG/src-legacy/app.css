@@ -1445,7 +1445,7 @@ html, body {
   background-color: transparent;
   cursor: pointer;
   border: none !important;
-  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
   border-radius: 16px;
   box-sizing: border-box;
 }
@@ -1462,7 +1462,6 @@ html, body {
 .sidebar-item.focused {
   color: #ffffff !important;
   background-color: rgba(255, 255, 255, 0.1) !important;
-  transform: scale(1.15);
 }
 
 .sidebar-icon {

@@ -491,7 +491,7 @@ textarea:focus {
   align-items: center;
   justify-content: flex-start;
   gap: 0;
-  transition: transform 180ms ease, background 120ms ease, color 120ms ease, box-shadow 120ms ease, filter 180ms ease;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease, filter 180ms ease;
   overflow: hidden;
 }
 
@@ -531,7 +531,6 @@ textarea:focus {
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 0 18px rgba(255, 36, 56, 0.12);
-  transform: translateY(-1px) scale(1.01);
 }
 
 .nav-item.selected .nav-item__icon {
